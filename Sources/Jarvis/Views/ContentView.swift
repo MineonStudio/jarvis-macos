@@ -917,19 +917,6 @@ struct ClipboardFilterChip: View {
     }
 }
 
-struct ClipboardKeyCap: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.primary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .jarvisGlass(cornerRadius: 5, interactive: false)
-    }
-}
-
 struct ClipboardEmptyState: View {
     let hasQuery: Bool
 
@@ -1105,7 +1092,6 @@ struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
-    @State private var selectedID: UUID?
     @FocusState private var searchFocused: Bool
 
     private var filteredItems: [ClipboardItem] {
@@ -1131,7 +1117,7 @@ struct ClipboardPanelView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("剪贴板")
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    Text("选择内容后按回车，或使用 ⌘1–9 一键复制")
+                    Text("点击卡片上的一键复制按钮")
                         .font(.system(size: 10))
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
@@ -1198,15 +1184,9 @@ struct ClipboardPanelView: View {
                         )],
                         spacing: HistoryGridMetrics.spacing
                     ) {
-                        ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                        ForEach(filteredItems) { item in
                             ClipboardPanelRow(
                                 item: item,
-                                rank: index < 9 ? index + 1 : nil,
-                                isSelected: selectedID == item.id,
-                                select: {
-                                    selectedID = item.id
-                                    app.clipboardPanelSelectionID = item.id
-                                },
                                 preview: { app.showClipboardMediaPreview(item) },
                                 copy: { app.copyClipboard(item) }
                             )
@@ -1217,9 +1197,7 @@ struct ClipboardPanelView: View {
 
             HStack(spacing: 7) {
                 Image(systemName: "info.circle")
-                Text("回车复制到系统剪贴板")
-                Text("·")
-                Text("⌘1–9 选择最近记录")
+                Text("手动点击一键复制")
                 Spacer()
                 Text("本机保存")
                     .foregroundStyle(Color.jarvisTextSecondary)
@@ -1231,23 +1209,13 @@ struct ClipboardPanelView: View {
         .background(Color.jarvisBackground)
         .onAppear {
             selectedFilter = .all
-            selectedID = filteredItems.first?.id
-            app.clipboardPanelSelectionID = selectedID
             searchFocused = true
-        }
-        .onChange(of: filteredItems.map(\.id)) { _, newIDs in
-            if let selectedID, newIDs.contains(selectedID) { return }
-            selectedID = newIDs.first
-            app.clipboardPanelSelectionID = selectedID
         }
     }
 }
 
 struct ClipboardPanelRow: View {
     let item: ClipboardItem
-    let rank: Int?
-    let isSelected: Bool
-    let select: () -> Void
     let preview: () -> Void
     let copy: () -> Void
 
@@ -1297,9 +1265,6 @@ struct ClipboardPanelRow: View {
             ClipboardMetadata(item: item)
 
             HStack(spacing: 4) {
-                if let rank {
-                    ClipboardKeyCap(title: "⌘\(rank)")
-                }
                 Button {
                     copy()
                 } label: {
@@ -1307,25 +1272,17 @@ struct ClipboardPanelRow: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())
-                .keyboardShortcut(
-                    rank.map { KeyEquivalent(Character("\($0)")) } ?? KeyEquivalent("0"),
-                    modifiers: rank == nil ? [] : .command
-                )
                 .disabled(!item.hasLocalContent)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.035),
-            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-        )
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color.primary.opacity(isSelected ? 0.14 : 0.07), lineWidth: 0.75)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.75)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .onTapGesture(perform: select)
+        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 

@@ -52,7 +52,6 @@ final class AppModel: ObservableObject {
     @Published var selectedSection: AppSection = .overview
     @Published var modelConfiguration = ModelConfiguration()
     @Published var clipboardItems: [ClipboardItem] = []
-    @Published var clipboardPanelSelectionID: UUID?
     @Published var latestScreenshotData: Data?
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
     @Published var latestTranslation = ""
@@ -120,8 +119,6 @@ final class AppModel: ObservableObject {
                 self?.showClipboardPanel()
             }
         }
-
-        clipboardPanelController.prepare(app: self)
 
         clipboardService.start { [weak self] item in
             Task { @MainActor [weak self] in

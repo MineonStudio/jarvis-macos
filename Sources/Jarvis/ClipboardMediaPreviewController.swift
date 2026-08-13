@@ -212,9 +212,12 @@ struct ClipboardMediaPreview: View {
                             model.setZoom(model.zoom > 1 ? 1 : 2)
                         }
                 } else if let player {
-                    ClipboardAVPlayerView(player: player)
+                    ClipboardAVPlayerView(player: player, zoom: model.zoom)
                         .frame(width: displaySize.width, height: displaySize.height)
-                        .scaleEffect(model.zoom)
+                        // AVPlayerView's magnification scales only the video
+                        // for zoom-in. Keep the legacy zoom-out range while
+                        // avoiding a second scale transform for playback UI.
+                        .scaleEffect(model.zoom < 1 ? model.zoom : 1)
                         .offset(model.offset)
                         .contentShape(Rectangle())
                         .gesture(dragGesture)
@@ -291,6 +294,7 @@ struct ClipboardMediaPreview: View {
 
 private struct ClipboardAVPlayerView: NSViewRepresentable {
     let player: AVPlayer
+    let zoom: CGFloat
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
@@ -299,6 +303,8 @@ private struct ClipboardAVPlayerView: NSViewRepresentable {
         view.videoGravity = AVLayerVideoGravity.resizeAspect
         view.showsFullScreenToggleButton = false
         view.allowsVideoFrameAnalysis = false
+        view.allowsMagnification = true
+        view.magnification = max(1, zoom)
         DispatchQueue.main.async {
             guard view.player === player else { return }
             player.play()
@@ -311,6 +317,7 @@ private struct ClipboardAVPlayerView: NSViewRepresentable {
             view.player?.pause()
             view.player = player
         }
+        view.magnification = max(1, zoom)
     }
 
     static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {

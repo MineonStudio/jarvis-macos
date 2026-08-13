@@ -15,4 +15,11 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(JarvisTheme.light.preferredColorScheme, .light)
         XCTAssertEqual(JarvisTheme.dark.preferredColorScheme, .dark)
     }
+
+    func testSystemThemeResolvesToTheCurrentSystemScheme() {
+        XCTAssertEqual(JarvisTheme.system.resolvedColorScheme(system: .dark), .dark)
+        XCTAssertEqual(JarvisTheme.system.resolvedColorScheme(system: .light), .light)
+        XCTAssertEqual(JarvisTheme.light.resolvedColorScheme(system: .dark), .light)
+        XCTAssertEqual(JarvisTheme.dark.resolvedColorScheme(system: .light), .dark)
+    }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 enum AppSection: Hashable, Identifiable {
@@ -65,6 +66,7 @@ final class AppModel: ObservableObject {
     @Published var clipboardShortcut = ScreenshotShortcut.clipboardDefault
     @Published var clipboardShortcutConflictMessage = ""
     @Published var themePreference: JarvisTheme = .system
+    @Published private(set) var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
 
     let modelGateway = ModelGateway()
@@ -80,6 +82,7 @@ final class AppModel: ObservableObject {
     private let updateService = JarvisUpdateService()
     private var screenshotShortcutManager: ScreenshotShortcutManager?
     private var clipboardShortcutManager: ScreenshotShortcutManager?
+    private var systemAppearanceObservation: NSKeyValueObservation?
     private var editingHistoryID: UUID?
 
     private let configurationKey = "jarvis.model.configuration"
@@ -103,6 +106,12 @@ final class AppModel: ObservableObject {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
+        refreshSystemColorScheme()
+        systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.refreshSystemColorScheme()
+            }
+        }
 
         if latestScreenshotData != nil {
             statusMessage = "已恢复上次缓存的截图"
@@ -152,6 +161,12 @@ final class AppModel: ObservableObject {
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
+    }
+
+    private func refreshSystemColorScheme() {
+        let appearance = NSApp.effectiveAppearance
+        let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
+        systemColorScheme = bestMatch == .darkAqua ? .dark : .light
     }
 
     private func loadThemePreference() {

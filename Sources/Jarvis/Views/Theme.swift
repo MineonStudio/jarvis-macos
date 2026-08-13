@@ -33,15 +33,22 @@ enum JarvisTheme: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
+
+    func resolvedColorScheme(system: ColorScheme) -> ColorScheme {
+        preferredColorScheme ?? system
+    }
 }
 
-/// Uses SwiftUI's presentation-level appearance API. Passing nil is important:
-/// it removes Jarvis's override and lets macOS provide the current appearance.
+/// Uses SwiftUI's presentation-level appearance API with the current system
+/// scheme resolved explicitly. Resolving .system to .light/.dark avoids a
+/// macOS Settings scene retaining the previous preferred scheme until another
+/// interaction causes it to redraw.
 private struct JarvisThemeModifier: ViewModifier {
     let theme: JarvisTheme
+    let systemColorScheme: ColorScheme
 
     func body(content: Content) -> some View {
-        content.preferredColorScheme(theme.preferredColorScheme)
+        content.preferredColorScheme(theme.resolvedColorScheme(system: systemColorScheme))
     }
 }
 
@@ -156,8 +163,8 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
 }
 
 extension View {
-    func jarvisTheme(_ theme: JarvisTheme) -> some View {
-        modifier(JarvisThemeModifier(theme: theme))
+    func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {
+        modifier(JarvisThemeModifier(theme: theme, systemColorScheme: systemColorScheme))
     }
 
     func jarvisGlass(

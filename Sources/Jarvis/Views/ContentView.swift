@@ -1264,12 +1264,20 @@ struct ClipboardPanelRow: View {
                 ClipboardKeyCap(title: "⌘\(rank)")
             }
             if let rank {
-                Button("粘贴", action: paste)
+                Button {
+                    paste()
+                } label: {
+                    Label(item.quickPasteTitle, systemImage: item.quickPasteIcon)
+                }
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .keyboardShortcut(KeyEquivalent(Character("\(rank)")), modifiers: .command)
                     .disabled(!item.hasLocalContent)
             } else {
-                Button("粘贴", action: paste)
+                Button {
+                    paste()
+                } label: {
+                    Label(item.quickPasteTitle, systemImage: item.quickPasteIcon)
+                }
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .disabled(!item.hasLocalContent)
             }

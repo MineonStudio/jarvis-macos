@@ -700,9 +700,15 @@ final class AppModel: ObservableObject {
             return pasteboard.setString(text, forType: .string)
         case .image:
             guard let path = item.imagePath,
-                  let image = NSImage(contentsOfFile: path) else { return false }
+                  let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let image = NSImage(data: data) else { return false }
             pasteboard.clearContents()
-            return pasteboard.writeObjects([image])
+            let pasteboardItem = NSPasteboardItem()
+            pasteboardItem.setData(data, forType: .png)
+            if let tiffData = image.tiffRepresentation {
+                pasteboardItem.setData(tiffData, forType: .tiff)
+            }
+            return pasteboard.writeObjects([pasteboardItem])
         case .file, .video:
             guard let path = item.filePath,
                   FileManager.default.fileExists(atPath: path) else { return false }

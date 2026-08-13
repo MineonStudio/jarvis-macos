@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import SwiftUI
 
 @MainActor
@@ -39,12 +40,22 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
 
     func closeAndPaste() {
         let target = previousApplication
+
+        // Writing to the pasteboard itself does not require Accessibility, but
+        // the synthetic Command-V that makes this a one-click workflow does.
+        // Keep the panel open when access is not available yet, so the user can
+        // try again after granting it in System Settings.
+        guard Self.requestPostEventAccess() else {
+            app?.statusMessage = "请允许贾维斯控制其他 App 后再使用一键导入"
+            return
+        }
+
         panel?.orderOut(nil)
         previousApplication = nil
         removeKeyMonitor()
 
         guard let target else { return }
-        target.activate()
+        target.activate(options: [.activateAllWindows])
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             Self.sendPasteShortcut()
         }
@@ -114,6 +125,12 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         keyUp?.flags = .maskCommand
         keyUp?.post(tap: .cghidEventTap)
+    }
+
+    private static func requestPostEventAccess() -> Bool {
+        guard !CGPreflightPostEventAccess() else { return true }
+        _ = CGRequestPostEventAccess()
+        return CGPreflightPostEventAccess()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {

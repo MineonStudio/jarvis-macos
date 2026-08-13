@@ -94,6 +94,7 @@ final class AppModel: ObservableObject {
     private var translationTask: Task<Void, Never>?
     private var translationRequestID = UUID()
     private var translationSourceData: Data?
+    private var translationSourceText: String?
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {
         screenshotController.translationProgress
@@ -662,9 +663,11 @@ final class AppModel: ObservableObject {
         let requestID = UUID()
         translationRequestID = requestID
         translationSourceData = data
+        translationSourceText = nil
         latestTranslation = ""
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
+        screenshotTranslationProgress.isReviewingOCR = false
         statusMessage = "正在本地识别截图文字…"
 
         showTranslationOverlayLoading()
@@ -678,18 +681,80 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }
 
-                statusMessage = "正在翻译识别出的文字…"
+                translationTask = nil
+                translationSourceText = recognizedText
+                screenshotTranslationState = .reviewingOCR(recognizedText)
+                screenshotTranslationProgress.isTranslating = false
+                screenshotTranslationProgress.isReviewingOCR = true
+                statusMessage = "请校对识别出的原文…"
+                overlayController.showOCRReview(
+                    text: recognizedText,
+                    targetLanguage: targetLanguage.rawValue,
+                    anchorWindow: screenshotController.saveWindow(),
+                    anchorFrame: screenshotController.translationAnchorFrame(),
+                    onCancel: { [weak self] in self?.cancelScreenshotTranslation() },
+                    onTranslate: { [weak self] text in self?.translateRecognizedText(text) }
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard translationRequestID == requestID else { return }
+                let message = error.localizedDescription
+                screenshotTranslationState = .failed(message)
+                screenshotTranslationProgress.isTranslating = false
+                screenshotTranslationProgress.isReviewingOCR = false
+                statusMessage = "翻译失败：\(error.localizedDescription)"
+                overlayController.showError(
+                    message: message,
+                    targetLanguage: targetLanguage.rawValue,
+                    anchorWindow: screenshotController.saveWindow(),
+                    anchorFrame: screenshotController.translationAnchorFrame(),
+                    onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+                )
+            }
+        }
+    }
+
+    private func translateRecognizedText(_ sourceText: String) {
+        let normalizedText = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedText.isEmpty else {
+            statusMessage = "请至少保留一段要翻译的文字"
+            return
+        }
+
+        let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
+        guard !key.isEmpty else {
+            selectedSection = .settings
+            statusMessage = "请先在设置中配置 API Key"
+            return
+        }
+
+        translationTask?.cancel()
+        let requestID = translationRequestID
+        translationSourceText = normalizedText
+        screenshotTranslationState = .translating
+        screenshotTranslationProgress.isTranslating = true
+        screenshotTranslationProgress.isReviewingOCR = false
+        statusMessage = "正在翻译识别出的文字…"
+
+        showTranslationOverlayLoading()
+
+        translationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
                 let result = try await modelGateway.translateText(
-                    recognizedText,
+                    normalizedText,
                     targetLanguage: targetLanguage.rawValue,
                     configuration: modelConfiguration,
                     apiKey: key
                 )
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }
+                translationTask = nil
                 latestTranslation = result
                 screenshotTranslationState = .success(result)
                 screenshotTranslationProgress.isTranslating = false
+                screenshotTranslationProgress.isReviewingOCR = false
                 statusMessage = "翻译完成"
                 overlayController.show(
                     text: result,
@@ -702,9 +767,11 @@ final class AppModel: ObservableObject {
                 return
             } catch {
                 guard translationRequestID == requestID else { return }
+                translationTask = nil
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false
+                screenshotTranslationProgress.isReviewingOCR = false
                 statusMessage = "翻译失败：\(error.localizedDescription)"
                 overlayController.showError(
                     message: message,
@@ -718,6 +785,12 @@ final class AppModel: ObservableObject {
     }
 
     func translateCurrentScreenshot() {
+        if let sourceText = translationSourceText,
+           !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            translateRecognizedText(sourceText)
+            return
+        }
+
         let data = screenshotController.currentEditingPNGData() ?? translationSourceData ?? latestScreenshotData
         guard let data else {
             statusMessage = "请先截取一块屏幕区域"
@@ -767,9 +840,11 @@ final class AppModel: ObservableObject {
         translationTask?.cancel()
         translationTask = nil
         translationSourceData = nil
+        translationSourceText = nil
         latestTranslation = ""
         screenshotTranslationState = .idle
         screenshotTranslationProgress.isTranslating = false
+        screenshotTranslationProgress.isReviewingOCR = false
         overlayController.dismiss()
     }
 

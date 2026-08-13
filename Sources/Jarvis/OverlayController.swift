@@ -4,8 +4,10 @@ import SwiftUI
 @MainActor
 final class TranslationOverlayModel: ObservableObject {
     @Published var text = ""
+    @Published var ocrText = ""
     @Published var targetLanguage = "中文"
     @Published var isTranslating = false
+    @Published var isReviewingOCR = false
     @Published var errorMessage = ""
 }
 
@@ -15,6 +17,8 @@ final class OverlayController {
     private weak var parentWindow: NSWindow?
     let model = TranslationOverlayModel()
     private var retryAction: (() -> Void)?
+    private var closeAction: (() -> Void)?
+    private var translateOCRAction: ((String) -> Void)?
 
     func show(
         text: String,
@@ -25,10 +29,15 @@ final class OverlayController {
     ) {
         preparePanel()
         model.text = text
+        model.ocrText = ""
         model.targetLanguage = targetLanguage
         model.isTranslating = false
+        model.isReviewingOCR = false
         model.errorMessage = ""
         retryAction = onRetry
+        translateOCRAction = nil
+        closeAction = { [weak self] in self?.dismiss() }
+        setPanelContentSize(height: 330)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -40,10 +49,37 @@ final class OverlayController {
     ) {
         preparePanel()
         model.text = ""
+        model.ocrText = ""
         model.targetLanguage = targetLanguage
         model.isTranslating = true
+        model.isReviewingOCR = false
         model.errorMessage = ""
         retryAction = onRetry
+        translateOCRAction = nil
+        closeAction = { [weak self] in self?.dismiss() }
+        setPanelContentSize(height: 330)
+        present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
+    }
+
+    func showOCRReview(
+        text: String,
+        targetLanguage: String,
+        anchorWindow: NSWindow?,
+        anchorFrame: CGRect?,
+        onCancel: @escaping () -> Void,
+        onTranslate: @escaping (String) -> Void
+    ) {
+        preparePanel()
+        model.text = ""
+        model.ocrText = text
+        model.targetLanguage = targetLanguage
+        model.isTranslating = false
+        model.isReviewingOCR = true
+        model.errorMessage = ""
+        retryAction = nil
+        closeAction = onCancel
+        translateOCRAction = onTranslate
+        setPanelContentSize(height: 410)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -56,10 +92,15 @@ final class OverlayController {
     ) {
         preparePanel()
         model.text = ""
+        model.ocrText = ""
         model.targetLanguage = targetLanguage
         model.isTranslating = false
+        model.isReviewingOCR = false
         model.errorMessage = message
         retryAction = onRetry
+        translateOCRAction = nil
+        closeAction = { [weak self] in self?.dismiss() }
+        setPanelContentSize(height: 330)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -71,6 +112,8 @@ final class OverlayController {
         panel = nil
         parentWindow = nil
         retryAction = nil
+        closeAction = nil
+        translateOCRAction = nil
     }
 
     private func preparePanel() {
@@ -82,7 +125,7 @@ final class OverlayController {
             backing: .buffered,
             defer: false
         )
-        newPanel.onClose = { [weak self] in self?.dismiss() }
+        newPanel.onClose = { [weak self] in self?.closeAction?() }
         newPanel.level = .floating
         newPanel.isMovableByWindowBackground = true
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -92,11 +135,16 @@ final class OverlayController {
         newPanel.contentView = NSHostingView(
             rootView: FloatingTranslationView(
                 model: model,
-                onClose: { [weak self] in self?.dismiss() },
-                onRetry: { [weak self] in self?.retryAction?() }
+                onClose: { [weak self] in self?.closeAction?() },
+                onRetry: { [weak self] in self?.retryAction?() },
+                onTranslateOCR: { [weak self] text in self?.translateOCRAction?(text) }
             )
         )
         panel = newPanel
+    }
+
+    private func setPanelContentSize(height: CGFloat) {
+        panel?.setContentSize(NSSize(width: 420, height: height))
     }
 
     private func present(anchorWindow: NSWindow?, anchorFrame: CGRect?) {

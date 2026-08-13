@@ -60,6 +60,7 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 @MainActor
 final class ScreenshotTranslationProgress: ObservableObject {
     @Published var isTranslating = false
+    @Published var isReviewingOCR = false
 }
 
 @MainActor
@@ -2006,8 +2007,10 @@ struct ScreenshotToolbar: View {
 
                 actionButton(
                     icon: "character.bubble",
-                    help: translationProgress.isTranslating ? "翻译中…" : "翻译截图",
-                    enabled: !translationProgress.isTranslating
+                    help: translationProgress.isTranslating
+                        ? "翻译中…"
+                        : (translationProgress.isReviewingOCR ? "校对原文…" : "翻译截图"),
+                    enabled: !translationProgress.isTranslating && !translationProgress.isReviewingOCR
                 ) {
                     onAction(.translateRequested(editor.finalPNGData()))
                 }

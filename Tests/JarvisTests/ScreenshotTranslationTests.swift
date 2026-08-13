@@ -18,6 +18,10 @@ final class ScreenshotTranslationTests: XCTestCase {
             ScreenshotTranslationState.success("你好"),
             ScreenshotTranslationState.success("你好")
         )
+        XCTAssertEqual(
+            ScreenshotTranslationState.reviewingOCR("待校对文本"),
+            ScreenshotTranslationState.reviewingOCR("待校对文本")
+        )
         XCTAssertNotEqual(
             ScreenshotTranslationState.translating,
             ScreenshotTranslationState.failed("网络错误")

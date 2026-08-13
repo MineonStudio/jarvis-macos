@@ -1567,6 +1567,7 @@ struct FloatingTranslationView: View {
     @ObservedObject var model: TranslationOverlayModel
     let onClose: () -> Void
     let onRetry: () -> Void
+    let onTranslateOCR: (String) -> Void
     @State private var copied = false
 
     var body: some View {
@@ -1594,6 +1595,33 @@ struct FloatingTranslationView: View {
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 180)
+            } else if model.isReviewingOCR {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("识别到的原文")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    TextEditor(text: $model.ocrText)
+                        .font(.system(size: 13))
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .frame(maxWidth: .infinity, minHeight: 210)
+                    Text("发送前可以修改识别结果，只有点击“开始翻译”后才会调用 API。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    HStack {
+                        Button("取消", action: onClose)
+                            .buttonStyle(.borderless)
+                        Spacer()
+                        Button("开始翻译") {
+                            onTranslateOCR(model.ocrText)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.jarvisCyan)
+                        .disabled(model.ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
             } else if !model.errorMessage.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("翻译失败", systemImage: "exclamationmark.triangle")

@@ -33,29 +33,15 @@ enum JarvisTheme: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
-
-    var appKitAppearance: NSAppearance? {
-        switch self {
-        case .system: return nil
-        case .light: return NSAppearance(named: .aqua)
-        case .dark: return NSAppearance(named: .darkAqua)
-        }
-    }
 }
 
-struct JarvisThemeModifier: ViewModifier {
+/// Uses SwiftUI's presentation-level appearance API. Passing nil is important:
+/// it removes Jarvis's override and lets macOS provide the current appearance.
+private struct JarvisThemeModifier: ViewModifier {
     let theme: JarvisTheme
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        switch theme {
-        case .system:
-            content
-        case .light:
-            content.preferredColorScheme(.light)
-        case .dark:
-            content.preferredColorScheme(.dark)
-        }
+        content.preferredColorScheme(theme.preferredColorScheme)
     }
 }
 

@@ -103,7 +103,6 @@ final class AppModel: ObservableObject {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
-        applyThemeAppearance()
 
         if latestScreenshotData != nil {
             statusMessage = "已恢复上次缓存的截图"
@@ -153,15 +152,6 @@ final class AppModel: ObservableObject {
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
-        applyThemeAppearance()
-    }
-
-    func applyThemeAppearance() {
-        let appearance = themePreference.appKitAppearance
-        NSApp.appearance = appearance
-        for window in NSApp.windows {
-            window.appearance = appearance
-        }
     }
 
     private func loadThemePreference() {

@@ -640,23 +640,13 @@ final class AppModel: ObservableObject {
         clipboardStore.save(clipboardItems)
     }
 
-    func restoreClipboard(_ item: ClipboardItem) {
+    func copyClipboard(_ item: ClipboardItem) {
         guard writeClipboardItem(item) else {
             statusMessage = "内容已不可用，可能已被移动或删除"
             return
         }
         clipboardService.markCurrentPasteboardAsHandled()
-        statusMessage = "已放回剪贴板"
-    }
-
-    func quickPasteClipboard(_ item: ClipboardItem) {
-        guard writeClipboardItem(item) else {
-            statusMessage = "内容已不可用，可能已被移动或删除"
-            return
-        }
-        clipboardService.markCurrentPasteboardAsHandled()
-        clipboardPanelController.closeAndPaste()
-        statusMessage = "已粘贴 \(item.preview)"
+        statusMessage = "已复制 \(item.preview)"
     }
 
     func showClipboardPanel() {

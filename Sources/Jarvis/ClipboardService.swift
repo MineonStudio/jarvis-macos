@@ -139,13 +139,6 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         createdAt.formatted(.dateTime.year().month().day().hour().minute())
     }
 
-    var quickPasteTitle: String {
-        kind == .text ? "一键粘贴" : "一键导入"
-    }
-
-    var quickPasteIcon: String {
-        kind == .text ? "arrow.down.doc" : "square.and.arrow.down"
-    }
 }
 
 final class ClipboardService {

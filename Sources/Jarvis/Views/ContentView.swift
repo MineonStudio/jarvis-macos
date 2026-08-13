@@ -956,7 +956,7 @@ struct ClipboardRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Button {
-                app.restoreClipboard(item)
+                app.copyClipboard(item)
             } label: {
                 ZStack {
                     if item.kind == .text {
@@ -976,7 +976,7 @@ struct ClipboardRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("放回剪贴板")
+            .help("一键复制")
 
             HStack(spacing: 6) {
                 Text(item.kind.title)
@@ -1002,9 +1002,9 @@ struct ClipboardRow: View {
 
             HStack(spacing: 4) {
                 Button {
-                    app.quickPasteClipboard(item)
+                    app.copyClipboard(item)
                 } label: {
-                    Label(item.quickPasteTitle, systemImage: item.quickPasteIcon)
+                    Label("一键复制", systemImage: "doc.on.doc")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())
@@ -1040,7 +1040,7 @@ struct ClipboardRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .contextMenu {
             Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
-            Button("放回剪贴板") { app.restoreClipboard(item) }
+            Button("一键复制") { app.copyClipboard(item) }
             if item.kind != .text {
                 Button("在 Finder 中显示") { app.revealClipboardItem(item) }
             }
@@ -1127,7 +1127,7 @@ struct ClipboardPanelView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("剪贴板")
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    Text("选择内容后按回车，或使用 ⌘1–9 快速粘贴")
+                    Text("选择内容后按回车，或使用 ⌘1–9 一键复制")
                         .font(.system(size: 10))
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
@@ -1194,7 +1194,7 @@ struct ClipboardPanelView: View {
                                     selectedID = item.id
                                     app.clipboardPanelSelectionID = item.id
                                 },
-                                paste: { app.quickPasteClipboard(item) }
+                                copy: { app.copyClipboard(item) }
                             )
                         }
                     }
@@ -1204,7 +1204,7 @@ struct ClipboardPanelView: View {
 
             HStack(spacing: 7) {
                 Image(systemName: "info.circle")
-                Text("回车粘贴到上一个应用")
+                Text("回车复制到系统剪贴板")
                 Text("·")
                 Text("⌘1–9 选择最近记录")
                 Spacer()
@@ -1235,7 +1235,7 @@ struct ClipboardPanelRow: View {
     let rank: Int?
     let isSelected: Bool
     let select: () -> Void
-    let paste: () -> Void
+    let copy: () -> Void
 
     var body: some View {
         HStack(spacing: 11) {
@@ -1265,18 +1265,18 @@ struct ClipboardPanelRow: View {
             }
             if let rank {
                 Button {
-                    paste()
+                    copy()
                 } label: {
-                    Label(item.quickPasteTitle, systemImage: item.quickPasteIcon)
+                    Label("一键复制", systemImage: "doc.on.doc")
                 }
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .keyboardShortcut(KeyEquivalent(Character("\(rank)")), modifiers: .command)
                     .disabled(!item.hasLocalContent)
             } else {
                 Button {
-                    paste()
+                    copy()
                 } label: {
-                    Label(item.quickPasteTitle, systemImage: item.quickPasteIcon)
+                    Label("一键复制", systemImage: "doc.on.doc")
                 }
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .disabled(!item.hasLocalContent)

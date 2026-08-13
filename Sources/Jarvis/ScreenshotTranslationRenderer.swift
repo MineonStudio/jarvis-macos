@@ -48,9 +48,15 @@ enum ScreenshotTranslationRenderer {
 
         if translatedLines.count == ocrResult.blocks.count, !translatedLines.isEmpty {
             for (block, translation) in zip(ocrResult.blocks, translatedLines) {
-                let rect = pixelRect(for: block.boundingBox, width: width, height: height)
+                let sourceRect = pixelRect(for: block.boundingBox, width: width, height: height)
+                let rect = sourceRect
                     .insetBy(dx: -6, dy: -4)
-                drawReplacement(translation, in: rect, context: context)
+                drawReplacement(
+                    translation,
+                    in: rect,
+                    sourceLineHeight: sourceRect.height,
+                    context: context
+                )
             }
         } else if !translatedLines.isEmpty, let firstRect = blurRects.first {
             // A model may slightly change the line count. Keep the translation inside
@@ -59,6 +65,11 @@ enum ScreenshotTranslationRenderer {
             drawReplacement(
                 translatedText,
                 in: unionRect.insetBy(dx: -6, dy: -4),
+                sourceLineHeight: median(
+                    ocrResult.blocks.map {
+                        pixelRect(for: $0.boundingBox, width: width, height: height).height
+                    }
+                ),
                 context: context
             )
         }
@@ -131,20 +142,25 @@ enum ScreenshotTranslationRenderer {
     private static func pixelRect(for normalizedRect: CGRect, width: Int, height: Int) -> CGRect {
         CGRect(
             x: normalizedRect.minX * CGFloat(width),
-            y: (1 - normalizedRect.maxY) * CGFloat(height),
+            y: normalizedRect.minY * CGFloat(height),
             width: normalizedRect.width * CGFloat(width),
             height: normalizedRect.height * CGFloat(height)
         )
     }
 
-    private static func drawReplacement(_ text: String, in rect: CGRect, context: CGContext) {
+    private static func drawReplacement(
+        _ text: String,
+        in rect: CGRect,
+        sourceLineHeight: CGFloat,
+        context: CGContext
+    ) {
         context.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
         context.fill(rect)
         let textRect = rect.insetBy(dx: 8, dy: 4)
         let fontSize = fittedFontSize(
             text,
             in: textRect,
-            startingAt: max(12, min(26, rect.height * 0.62))
+            startingAt: estimatedSourceFontSize(forLineHeight: sourceLineHeight)
         )
         drawText(
             text,
@@ -153,6 +169,15 @@ enum ScreenshotTranslationRenderer {
             color: .black,
             fontSize: fontSize
         )
+    }
+
+    static func estimatedSourceFontSize(forLineHeight lineHeight: CGFloat) -> CGFloat {
+        guard lineHeight > 0 else { return 8 }
+        let probeFont = CTFontCreateWithName("PingFang SC" as CFString, 1, nil)
+        let metrics = CTFontGetAscent(probeFont)
+            + CTFontGetDescent(probeFont)
+            + CTFontGetLeading(probeFont)
+        return max(6, lineHeight / max(metrics, 1) * 0.92)
     }
 
     private static func fittedFontSize(
@@ -181,6 +206,16 @@ enum ScreenshotTranslationRenderer {
             CGSize(width: max(1, width), height: .greatestFiniteMagnitude),
             nil
         )
+    }
+
+    private static func median(_ values: [CGFloat]) -> CGFloat {
+        let sorted = values.filter { $0 > 0 }.sorted()
+        guard !sorted.isEmpty else { return 0 }
+        let middle = sorted[sorted.count / 2]
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[sorted.count / 2 - 1] + middle) / 2
+        }
+        return middle
     }
 
     private static func blurredImage(_ image: CGImage, radius: CGFloat) -> CGImage? {

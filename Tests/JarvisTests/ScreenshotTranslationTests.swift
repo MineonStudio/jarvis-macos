@@ -35,6 +35,14 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertFalse(prompt.contains("image_url"))
     }
 
+    func testTranslationFontSizeFollowsSourceLineHeight() {
+        let smallSource = ScreenshotTranslationRenderer.estimatedSourceFontSize(forLineHeight: 16)
+        let largeSource = ScreenshotTranslationRenderer.estimatedSourceFontSize(forLineHeight: 40)
+
+        XCTAssertGreaterThan(smallSource, 0)
+        XCTAssertGreaterThan(largeSource, smallSource)
+    }
+
     func testTranslationRendererCreatesPNGForAlignedBlocks() {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()

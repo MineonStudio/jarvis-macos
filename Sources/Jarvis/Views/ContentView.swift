@@ -1002,9 +1002,9 @@ struct ClipboardRow: View {
 
             HStack(spacing: 4) {
                 Button {
-                    app.restoreClipboard(item)
+                    app.quickPasteClipboard(item)
                 } label: {
-                    Label("放回", systemImage: "arrow.down.doc")
+                    Label(item.quickPasteTitle, systemImage: item.quickPasteIcon)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())

@@ -3,5 +3,4 @@
   <circle cx="280" cy="640" r="510" fill="#08080a"/>
   <rect x="360" y="322" width="90" height="170" rx="45" fill="#ffffff" transform="rotate(-22 405 407)"/>
   <rect x="584" y="282" width="62" height="160" rx="31" fill="#ffffff" transform="rotate(-22 615 362)"/>
-  <path d="M432 540 Q456 554 480 540" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
 </svg>

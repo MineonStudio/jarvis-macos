@@ -20,7 +20,16 @@ final class AppVersionTests: XCTestCase {
         XCTAssertTrue(JarvisUpdateService.updateLogURL.path.hasSuffix("Library/Logs/Jarvis/update.log"))
     }
 
-    func testInstallerResetsScreenRecordingPermissionBeforeRelaunch() throws {
+    func testScreenRecordingPermissionResetCommandUsesBundleIdentity() {
+        XCTAssertEqual(
+            JarvisUpdateService.screenRecordingPermissionResetArguments(
+                bundleIdentifier: "com.jarvis.mac"
+            ),
+            ["reset", "ScreenCapture", "com.jarvis.mac"]
+        )
+    }
+
+    func testInstallerDoesNotOwnScreenRecordingPermissionReset() throws {
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-update-test-\(UUID().uuidString).zsh")
         defer { try? FileManager.default.removeItem(at: scriptURL) }
@@ -30,18 +39,10 @@ final class AppVersionTests: XCTestCase {
             currentAppURL: URL(fileURLWithPath: "/Applications/Jarvis.app"),
             newAppURL: URL(fileURLWithPath: "/tmp/Jarvis.app"),
             temporaryDirectory: URL(fileURLWithPath: "/tmp/JarvisUpdate"),
-            bundleIdentifier: "com.jarvis.mac",
             parentProcessID: 1234
         )
         let script = try String(contentsOf: scriptURL, encoding: .utf8)
-        XCTAssertTrue(script.contains("/usr/bin/tccutil reset ScreenCapture"))
-        XCTAssertTrue(script.contains("bundle_identifier='com.jarvis.mac'"))
-
-        let resetPosition = try XCTUnwrap(script.range(of: "reset_screen_recording_permission"))
-        let launchPosition = try XCTUnwrap(script.range(of: "if launch_and_verify \"$old_app\""))
-        XCTAssertLessThan(
-            script.distance(from: script.startIndex, to: resetPosition.lowerBound),
-            script.distance(from: script.startIndex, to: launchPosition.lowerBound)
-        )
+        XCTAssertFalse(script.contains("tccutil"))
+        XCTAssertFalse(script.contains("reset_screen_recording_permission"))
     }
 }

@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.32"
-    private static let fallbackBuild = "106"
+    private static let fallbackShortVersion = "0.5.33"
+    private static let fallbackBuild = "107"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -77,6 +77,7 @@ enum JarvisUpdateError: LocalizedError {
     case unsupportedInstallLocation
     case toolFailed(String)
     case checksumMismatch
+    case screenRecordingPermissionResetFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -92,6 +93,8 @@ enum JarvisUpdateError: LocalizedError {
             return "解压更新包失败：\(message)"
         case .checksumMismatch:
             return "更新包校验失败，未进行安装"
+        case .screenRecordingPermissionResetFailed(let message):
+            return "清除旧的屏幕录制权限失败：\(message)"
         }
     }
 }
@@ -99,6 +102,10 @@ enum JarvisUpdateError: LocalizedError {
 struct JarvisUpdateService {
     static let updateLogURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/Jarvis/update.log")
+
+    static func screenRecordingPermissionResetArguments(bundleIdentifier: String) -> [String] {
+        ["reset", "ScreenCapture", bundleIdentifier]
+    }
 
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
         let endpoint = URL(string: "https://api.github.com/repos/MineonStudio/jarvis-macos/releases/latest")!
@@ -148,6 +155,10 @@ struct JarvisUpdateService {
         guard let downloadURL = release.downloadURL else {
             throw JarvisUpdateError.downloadUnavailable
         }
+        // Reset while the current app is still running and the user has just
+        // confirmed the update. The replacement process is deliberately not
+        // responsible for TCC state.
+        try resetScreenRecordingPermission()
 
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
@@ -194,9 +205,6 @@ struct JarvisUpdateService {
         }
         let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
         try validateInstallLocation(currentAppURL)
-        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
-            throw JarvisUpdateError.invalidApplication
-        }
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")
         try makeInstallerScript(
@@ -204,7 +212,6 @@ struct JarvisUpdateService {
             currentAppURL: currentAppURL,
             newAppURL: newAppURL,
             temporaryDirectory: temporaryDirectory,
-            bundleIdentifier: bundleIdentifier,
             parentProcessID: ProcessInfo.processInfo.processIdentifier
         )
 
@@ -218,6 +225,39 @@ struct JarvisUpdateService {
         installer.standardError = FileHandle.nullDevice
         try installer.run()
         handedOffToInstaller = true
+    }
+
+    private func resetScreenRecordingPermission() throws {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            throw JarvisUpdateError.screenRecordingPermissionResetFailed("无法读取应用 Bundle ID")
+        }
+
+        let process = Process()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = Self.screenRecordingPermissionResetArguments(
+            bundleIdentifier: bundleIdentifier
+        )
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw JarvisUpdateError.screenRecordingPermissionResetFailed(
+                error.localizedDescription
+            )
+        }
+
+        guard process.terminationStatus == 0 else {
+            let message = String(
+                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw JarvisUpdateError.screenRecordingPermissionResetFailed(
+                message?.isEmpty == false ? message! : "tccutil 返回状态码 \(process.terminationStatus)"
+            )
+        }
     }
 
     private func versionParts(_ version: String) -> [Int] {
@@ -328,7 +368,6 @@ struct JarvisUpdateService {
         currentAppURL: URL,
         newAppURL: URL,
         temporaryDirectory: URL,
-        bundleIdentifier: String,
         parentProcessID: Int32
     ) throws {
         let backupURL = currentAppURL.deletingLastPathComponent()
@@ -347,7 +386,6 @@ struct JarvisUpdateService {
         new_app=\(shellQuote(newAppURL.path))
         backup_app=\(shellQuote(backupURL.path))
         temp_dir=\(shellQuote(temporaryDirectory.path))
-        bundle_identifier=\(shellQuote(bundleIdentifier))
         parent_pid=\(parentProcessID)
 
         log "开始安装更新：$new_app -> $old_app"
@@ -406,17 +444,6 @@ struct JarvisUpdateService {
             /bin/mv "$backup_app" "$old_app"
         }
 
-        reset_screen_recording_permission() {
-            # TCC permissions are keyed by the app's bundle identity and are
-            # intentionally reset after an update so the new signed bundle
-            # receives a fresh native Screen Recording prompt.
-            if /usr/bin/tccutil reset ScreenCapture "$bundle_identifier" >/dev/null 2>&1; then
-                log "已清除旧的屏幕录制权限：$bundle_identifier"
-            else
-                log "清除旧的屏幕录制权限失败：$bundle_identifier"
-            fi
-        }
-
         cleanup_with_authorization() {
             /usr/bin/osascript - "$backup_app" "$temp_dir" <<'APPLESCRIPT'
         on run argv
@@ -452,7 +479,6 @@ struct JarvisUpdateService {
                 return 1
             fi
             log "新应用已替换到原路径"
-            reset_screen_recording_permission
 
             if launch_and_verify "$old_app"; then
                 cleanup_user_owned
@@ -485,7 +511,6 @@ struct JarvisUpdateService {
                 exit 1
             fi
             log "管理员权限替换完成"
-            reset_screen_recording_permission
 
             if launch_and_verify "$old_app"; then
                 cleanup_with_authorization || log "清理备份文件失败：$backup_app"

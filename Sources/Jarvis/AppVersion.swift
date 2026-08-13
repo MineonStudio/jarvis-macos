@@ -6,8 +6,8 @@ enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.0"
-    private static let fallbackBuild = "74"
+    private static let fallbackShortVersion = "0.5.1"
+    private static let fallbackBuild = "75"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -295,6 +295,11 @@ struct JarvisUpdateService {
         if /bin/mv "$old_app" "$backup_app" 2>/dev/null; then
             if /usr/bin/ditto "$new_app" "$old_app" 2>/dev/null; then
                 /bin/rm -rf "$backup_app"
+                # The current distribution is ad-hoc signed, so macOS may
+                # associate Screen Recording with the previous code identity.
+                # Reset only after a successful replacement and let the new
+                # app request the native permission again on first capture.
+                /usr/bin/tccutil reset ScreenCapture com.jarvis.mac >/dev/null 2>&1 || true
                 /usr/bin/open -na "$old_app"
                 /bin/rm -rf "$temp_dir"
                 exit 0
@@ -317,6 +322,7 @@ struct JarvisUpdateService {
         then
             exit 1
         fi
+        /usr/bin/tccutil reset ScreenCapture com.jarvis.mac >/dev/null 2>&1 || true
         /usr/bin/open -na "$old_app"
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)

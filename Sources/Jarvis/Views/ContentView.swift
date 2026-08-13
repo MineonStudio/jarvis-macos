@@ -866,8 +866,13 @@ struct ClipboardFilterChip: View {
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(isSelected ? Color.accentColor : Color.jarvisTextSecondary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .jarvisGlass(tint: isSelected ? .accentColor : nil, in: Capsule(), interactive: false)
+            .padding(.vertical, 8)
+            .frame(minHeight: 36)
+            .jarvisGlass(
+                tint: isSelected ? .accentColor.opacity(0.20) : Color.white.opacity(0.08),
+                in: Capsule(),
+                interactive: false
+            )
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

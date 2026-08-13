@@ -683,6 +683,17 @@ enum ClipboardViewFilter: String, CaseIterable, Identifiable {
         case .video: return ClipboardKind.video.icon
         }
     }
+
+    func matches(_ item: ClipboardItem) -> Bool {
+        switch self {
+        case .all: return true
+        case .favorites: return item.isPinned
+        case .text: return item.kind == .text
+        case .image: return item.kind == .image
+        case .file: return item.kind == .file
+        case .video: return item.kind == .video
+        }
+    }
 }
 
 struct ClipboardView: View {
@@ -695,18 +706,14 @@ struct ClipboardView: View {
 
     private var filteredItems: [ClipboardItem] {
         app.clipboardItems.filter { item in
-            let matchesFilter: Bool
-            switch selectedFilter {
-            case .all: matchesFilter = true
-            case .favorites: matchesFilter = item.isPinned
-            case .text: matchesFilter = item.kind == .text
-            case .image: matchesFilter = item.kind == .image
-            case .file: matchesFilter = item.kind == .file
-            case .video: matchesFilter = item.kind == .video
-            }
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return matchesFilter && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
+            return selectedFilter.matches(item)
+                && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
         }
+    }
+
+    private func count(for filter: ClipboardViewFilter) -> Int {
+        app.clipboardItems.filter { filter.matches($0) }.count
     }
 
     private var totalPages: Int {
@@ -722,48 +729,40 @@ struct ClipboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    ClipboardSummary(icon: "clock.arrow.circlepath", value: "\(app.clipboardItems.count)", title: "条历史")
-                    ClipboardSummary(icon: ClipboardKind.text.icon, value: "\(app.clipboardItems.filter { $0.kind == .text }.count)", title: "文本")
-                    ClipboardSummary(icon: ClipboardKind.image.icon, value: "\(app.clipboardItems.filter { $0.kind == .image }.count)", title: "图片")
-                    ClipboardSummary(icon: ClipboardKind.file.icon, value: "\(app.clipboardItems.filter { $0.kind == .file || $0.kind == .video }.count)", title: "文件")
-                    Spacer()
-                }
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                    TextField("搜索文本、文件名…", text: $searchText)
-                        .textFieldStyle(.plain)
-                    if !searchText.isEmpty {
-                        Button { searchText = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                        TextField("搜索文本、文件名…", text: $searchText)
+                            .textFieldStyle(.plain)
+                        if !searchText.isEmpty {
+                            Button { searchText = "" } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.jarvisTextSecondary)
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Color.jarvisTextSecondary)
                     }
-                    Text("\(filteredItems.count) 条")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 11)
-                .jarvisGlass(cornerRadius: JarvisMetrics.controlRadius, interactive: false)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 11)
+                    .jarvisGlass(cornerRadius: JarvisMetrics.controlRadius, interactive: false)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) {
-                        ForEach(ClipboardViewFilter.allCases) { filter in
-                            ClipboardFilterChip(filter: filter, isSelected: selectedFilter == filter) {
-                                selectedFilter = filter
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(ClipboardViewFilter.allCases) { filter in
+                                ClipboardFilterChip(
+                                    filter: filter,
+                                    count: count(for: filter),
+                                    isSelected: selectedFilter == filter
+                                ) {
+                                    selectedFilter = filter
+                                }
                             }
                         }
                     }
                 }
-            }
-
                 if filteredItems.isEmpty {
                     ClipboardEmptyState(
                         hasQuery: !searchText.isEmpty || selectedFilter != .all
@@ -849,31 +848,9 @@ struct ClipboardShortcutSettingsCard: View {
     }
 }
 
-struct ClipboardSummary: View {
-    let icon: String
-    let value: String
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 25, height: 25)
-                .jarvisIconGlass(tint: .accentColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-        }
-    }
-}
-
 struct ClipboardFilterChip: View {
     let filter: ClipboardViewFilter
+    let count: Int
     let isSelected: Bool
     let action: () -> Void
 
@@ -884,7 +861,7 @@ struct ClipboardFilterChip: View {
                     Image(systemName: icon)
                         .font(.system(size: 10, weight: .semibold))
                 }
-                Text(filter.title)
+                Text("\(filter.title)（\(count)）")
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(isSelected ? Color.accentColor : Color.jarvisTextSecondary)
@@ -1068,18 +1045,14 @@ struct ClipboardPanelView: View {
 
     private var filteredItems: [ClipboardItem] {
         app.clipboardItems.filter { item in
-            let matchesFilter: Bool
-            switch selectedFilter {
-            case .all: matchesFilter = true
-            case .favorites: matchesFilter = item.isPinned
-            case .text: matchesFilter = item.kind == .text
-            case .image: matchesFilter = item.kind == .image
-            case .file: matchesFilter = item.kind == .file
-            case .video: matchesFilter = item.kind == .video
-            }
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return matchesFilter && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
+            return selectedFilter.matches(item)
+                && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
         }
+    }
+
+    private func count(for filter: ClipboardViewFilter) -> Int {
+        app.clipboardItems.filter { filter.matches($0) }.count
     }
 
     var body: some View {
@@ -1098,9 +1071,6 @@ struct ClipboardPanelView: View {
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
                 Spacer()
-                Text("\(filteredItems.count) 条")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.jarvisTextSecondary)
                 Button { app.closeClipboardPanel() } label: {
                     Image(systemName: "xmark")
                         .frame(width: 28, height: 28)
@@ -1134,7 +1104,11 @@ struct ClipboardPanelView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
                     ForEach(ClipboardViewFilter.allCases) { filter in
-                        ClipboardFilterChip(filter: filter, isSelected: selectedFilter == filter) {
+                        ClipboardFilterChip(
+                            filter: filter,
+                            count: count(for: filter),
+                            isSelected: selectedFilter == filter
+                        ) {
                             selectedFilter = filter
                         }
                     }

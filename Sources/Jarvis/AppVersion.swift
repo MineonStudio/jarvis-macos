@@ -6,8 +6,8 @@ enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.12"
-    private static let fallbackBuild = "86"
+    private static let fallbackShortVersion = "0.5.13"
+    private static let fallbackBuild = "87"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -86,7 +86,7 @@ enum JarvisUpdateError: LocalizedError {
         case .invalidApplication:
             return "更新包中的贾维斯应用无效"
         case .unsupportedInstallLocation:
-            return "当前应用不是从标准 macOS 应用包启动，无法自动更新"
+            return "当前应用位于只读磁盘映像或临时转移路径，无法自动更新。请先将贾维斯复制到“应用程序”文件夹后重试"
         case .toolFailed(let message):
             return "解压更新包失败：\(message)"
         case .checksumMismatch:
@@ -96,6 +96,9 @@ enum JarvisUpdateError: LocalizedError {
 }
 
 struct JarvisUpdateService {
+    static let updateLogURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/Jarvis/update.log")
+
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
         let endpoint = URL(string: "https://api.github.com/repos/MineonStudio/jarvis-macos/releases/latest")!
         var request = URLRequest(url: endpoint)
@@ -188,6 +191,7 @@ struct JarvisUpdateService {
               currentAppURL.lastPathComponent == "Jarvis.app" else {
             throw JarvisUpdateError.unsupportedInstallLocation
         }
+        try validateInstallLocation(currentAppURL)
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")
         try makeInstallerScript(
@@ -215,6 +219,18 @@ struct JarvisUpdateService {
             .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             .split(separator: ".")
             .compactMap { Int($0) }
+    }
+
+    private func validateInstallLocation(_ appURL: URL) throws {
+        let path = appURL.path
+        if path.range(of: "/AppTranslocation/", options: .caseInsensitive) != nil {
+            throw JarvisUpdateError.unsupportedInstallLocation
+        }
+
+        let resourceValues = try? appURL.resourceValues(forKeys: [.volumeIsReadOnlyKey])
+        if resourceValues?.volumeIsReadOnly == true {
+            throw JarvisUpdateError.unsupportedInstallLocation
+        }
     }
 
     private func verifyDigest(of fileURL: URL, expected: String?) throws {
@@ -284,11 +300,156 @@ struct JarvisUpdateService {
         let script = """
         #!/bin/zsh
         set -u
+        log_file=\(shellQuote(Self.updateLogURL.path))
+        /bin/mkdir -p "$(/usr/bin/dirname "$log_file")" 2>/dev/null || true
+        exec >> "$log_file" 2>&1
+        log() {
+            echo "[$(/bin/date '+%Y-%m-%d %H:%M:%S')] $*"
+        }
+
         old_app=\(shellQuote(currentAppURL.path))
         new_app=\(shellQuote(newAppURL.path))
         backup_app=\(shellQuote(backupURL.path))
         temp_dir=\(shellQuote(temporaryDirectory.path))
         parent_pid=\(parentProcessID)
+
+        log "开始安装更新：$new_app -> $old_app"
+        log "当前进程 PID：$parent_pid"
+
+        # The archive was explicitly downloaded from inside Jarvis. Remove a
+        # possible quarantine flag copied from the browser/URL session so the
+        # existing ad-hoc signed app can be relaunched consistently.
+        if /usr/bin/xattr -p com.apple.quarantine "$new_app" >/dev/null 2>&1; then
+            log "检测到更新包 quarantine 标记，移除"
+            /usr/bin/xattr -dr com.apple.quarantine "$new_app" 2>&1 || log "移除 quarantine 失败"
+        fi
+
+        if /usr/bin/codesign --verify --deep --strict "$new_app" >/dev/null 2>&1; then
+            log "新应用签名校验通过"
+        else
+            log "新应用签名校验失败，取消替换"
+            exit 1
+        fi
+
+        is_app_running() {
+            local target="$1"
+            /bin/ps -axo pid=,command= \\
+                | /usr/bin/grep -F "$target/Contents/MacOS/Jarvis" \\
+                | /usr/bin/grep -v -F "/usr/bin/grep" >/dev/null 2>&1
+        }
+
+        launch_and_verify() {
+            local target="$1"
+            local attempt
+            local tick
+            for attempt in 1 2 3; do
+                log "启动应用（第 $attempt 次）：$target"
+                if ! /usr/bin/open -na "$target"; then
+                    log "open 启动命令失败"
+                fi
+                for tick in {1..40}; do
+                    if is_app_running "$target"; then
+                        log "检测到新进程已启动"
+                        return 0
+                    fi
+                    /bin/sleep 0.25
+                done
+                log "等待应用进程超时"
+            done
+            return 1
+        }
+
+        cleanup_user_owned() {
+            /bin/rm -rf "$backup_app" "$temp_dir"
+        }
+
+        restore_user_owned() {
+            log "回滚到旧版本"
+            /bin/rm -rf "$old_app"
+            /bin/mv "$backup_app" "$old_app"
+        }
+
+        cleanup_with_authorization() {
+            /usr/bin/osascript - "$backup_app" "$temp_dir" <<'APPLESCRIPT'
+        on run argv
+            set backupApp to item 1 of argv
+            set tempDir to item 2 of argv
+            set command to "/bin/rm -rf " & quoted form of backupApp & " " & quoted form of tempDir
+            do shell script command with administrator privileges
+        end run
+        APPLESCRIPT
+        }
+
+        restore_with_authorization() {
+            /usr/bin/osascript - "$old_app" "$backup_app" <<'APPLESCRIPT'
+        on run argv
+            set oldApp to item 1 of argv
+            set backupApp to item 2 of argv
+            set command to "/bin/rm -rf " & quoted form of oldApp & " && /bin/mv " & quoted form of backupApp & " " & quoted form of oldApp
+            do shell script command with administrator privileges
+        end run
+        APPLESCRIPT
+        }
+
+        replace_without_authorization() {
+            if ! /bin/mv "$old_app" "$backup_app"; then
+                log "普通权限移动旧应用失败"
+                return 1
+            fi
+            log "旧应用已暂存为备份"
+
+            if ! /usr/bin/ditto "$new_app" "$old_app"; then
+                log "普通权限复制新应用失败"
+                restore_user_owned
+                return 1
+            fi
+            log "新应用已替换到原路径"
+
+            if launch_and_verify "$old_app"; then
+                cleanup_user_owned
+                log "更新成功"
+                exit 0
+            fi
+
+            log "新应用启动失败，执行回滚"
+            restore_user_owned
+            launch_and_verify "$old_app" || log "旧版本恢复后启动也失败"
+            /bin/rm -rf "$temp_dir"
+            exit 1
+        }
+
+        replace_with_authorization() {
+            log "请求系统管理员授权替换应用"
+            if ! /usr/bin/osascript - "$old_app" "$new_app" "$backup_app" <<'APPLESCRIPT'
+        on run argv
+            set oldApp to item 1 of argv
+            set newApp to item 2 of argv
+            set backupApp to item 3 of argv
+            set command to "/bin/mv " & quoted form of oldApp & " " & quoted form of backupApp & " && if /usr/bin/ditto " & quoted form of newApp & " " & quoted form of oldApp & "; then exit 0; else /bin/mv " & quoted form of backupApp & " " & quoted form of oldApp & "; exit 1; end if"
+            do shell script command with administrator privileges
+        end run
+        APPLESCRIPT
+            then
+                log "管理员授权失败或用户取消"
+                exit 1
+            fi
+            log "管理员权限替换完成"
+
+            if launch_and_verify "$old_app"; then
+                cleanup_with_authorization || log "清理备份文件失败：$backup_app"
+                log "更新成功"
+                exit 0
+            fi
+
+            log "新应用启动失败，执行管理员回滚"
+            if restore_with_authorization; then
+                launch_and_verify "$old_app" || log "旧版本恢复后启动也失败"
+            else
+                log "管理员回滚失败：$backup_app"
+            fi
+            /bin/rm -rf "$temp_dir"
+            exit 1
+        }
 
         # Wait for a clean termination, but do not block forever if AppKit
         # leaves the process as a zombie or a termination request is ignored.
@@ -300,44 +461,20 @@ struct JarvisUpdateService {
             (( wait_ticks += 1 ))
         done
         if /bin/kill -0 "$parent_pid" 2>/dev/null; then
+            log "应用未在等待期内退出，发送 TERM"
             /bin/kill -TERM "$parent_pid" 2>/dev/null || true
             /bin/sleep 0.5
+        fi
+        if /bin/kill -0 "$parent_pid" 2>/dev/null; then
+            log "应用仍未退出，发送 KILL"
             /bin/kill -KILL "$parent_pid" 2>/dev/null || true
         fi
         /bin/sleep 0.4
 
-        if /bin/mv "$old_app" "$backup_app" 2>/dev/null; then
-            if /usr/bin/ditto "$new_app" "$old_app" 2>/dev/null; then
-                /bin/rm -rf "$backup_app"
-                # The current distribution is ad-hoc signed, so macOS may
-                # associate Screen Recording with the previous code identity.
-                # Reset only after a successful replacement and let the new
-                # app request the native permission again on first capture.
-                /usr/bin/tccutil reset ScreenCapture com.jarvis.mac >/dev/null 2>&1 || true
-                /usr/bin/open -na "$old_app"
-                /bin/rm -rf "$temp_dir"
-                exit 0
-            fi
-            /bin/mv "$backup_app" "$old_app" 2>/dev/null || true
+        if replace_without_authorization; then
+            exit 0
         fi
-
-        # /Applications may be owned by root. Ask macOS for authorization only
-        # when the normal user-owned replacement is denied.
-        if ! /usr/bin/osascript - "$old_app" "$new_app" "$backup_app" "$temp_dir" <<'APPLESCRIPT'
-        on run argv
-            set oldApp to item 1 of argv
-            set newApp to item 2 of argv
-            set backupApp to item 3 of argv
-            set tempDir to item 4 of argv
-            set command to "/bin/mv " & quoted form of oldApp & " " & quoted form of backupApp & " && if /usr/bin/ditto " & quoted form of newApp & " " & quoted form of oldApp & "; then /bin/rm -rf " & quoted form of backupApp & " " & quoted form of tempDir & "; else /bin/mv " & quoted form of backupApp & " " & quoted form of oldApp & "; exit 1; end if"
-            do shell script command with administrator privileges
-        end run
-        APPLESCRIPT
-        then
-            exit 1
-        fi
-        /usr/bin/tccutil reset ScreenCapture com.jarvis.mac >/dev/null 2>&1 || true
-        /usr/bin/open -na "$old_app"
+        replace_with_authorization
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(

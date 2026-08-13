@@ -472,16 +472,35 @@ final class AppModel: ObservableObject {
                 updateState = updateService.isNewer(
                     release.version,
                     than: JarvisAppVersion.shortVersion
-                ) ? .available(version: release.version, url: release.url) : .upToDate
+                ) ? .available(release) : .upToDate
             } catch {
-                updateState = .failed
+                updateState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    func downloadAndInstallUpdate() {
+        guard case .available(let release) = updateState else { return }
+        updateState = .downloading(version: release.version)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                updateState = .downloading(version: release.version)
+                try await updateService.downloadAndInstall(release)
+                updateState = .installing(version: release.version)
+                // The detached installer waits for this process to exit before
+                // replacing the bundle and opening the updated app.
+                try await Task.sleep(for: .milliseconds(250))
+                NSApp.terminate(nil)
+            } catch {
+                updateState = .failed(message: error.localizedDescription)
             }
         }
     }
 
     func openLatestRelease() {
-        if case .available(_, let url) = updateState {
-            NSWorkspace.shared.open(url)
+        if case .available(let release) = updateState {
+            NSWorkspace.shared.open(release.releaseURL)
         } else {
             NSWorkspace.shared.open(JarvisAppVersion.releasesURL)
         }

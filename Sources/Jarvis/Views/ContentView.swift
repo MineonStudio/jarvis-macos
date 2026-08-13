@@ -1353,17 +1353,23 @@ struct SettingsView: View {
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                     updateStatusLabel
                 }
-                if case .available = app.updateState {
-                    Button("打开更新") {
-                        app.openLatestRelease()
+                switch app.updateState {
+                case .available:
+                    Button("下载并更新") {
+                        app.downloadAndInstallUpdate()
                     }
                     .buttonStyle(JarvisPrimaryButtonStyle())
+                case .downloading, .installing:
+                    ProgressView()
+                        .controlSize(.small)
+                default:
+                    EmptyView()
                 }
                 Button(app.updateState == .checking ? "检查中…" : "手动检查更新") {
                     app.checkForUpdates()
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())
-                .disabled(app.updateState == .checking)
+                .disabled(app.updateState == .checking || isUpdating)
             }
         }
     }
@@ -1378,15 +1384,26 @@ struct SettingsView: View {
                 Text("正在检查更新…")
             case .upToDate:
                 Text("已是最新版本")
-            case .available(let version, _):
-                Text("发现新版本 \(version)")
+            case .available(let release):
+                Text("发现新版本 \(release.version)")
                     .foregroundStyle(Color.accentColor)
-            case .failed:
-                Text("检查失败，请稍后重试")
+            case .downloading(let version):
+                Text("正在下载 \(version)…")
+            case .installing(let version):
+                Text("正在安装 \(version)…")
+            case .failed(let message):
+                Text(message)
             }
         }
         .font(.system(size: 10))
         .foregroundStyle(Color.jarvisTextSecondary)
+    }
+
+    private var isUpdating: Bool {
+        switch app.updateState {
+        case .downloading, .installing: return true
+        default: return false
+        }
     }
 }
 

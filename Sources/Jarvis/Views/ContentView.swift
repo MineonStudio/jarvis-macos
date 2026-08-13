@@ -868,11 +868,14 @@ struct ClipboardFilterChip: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(minHeight: 36)
-            .jarvisGlass(
-                tint: isSelected ? .accentColor.opacity(0.20) : Color.white.opacity(0.08),
-                in: Capsule(),
-                interactive: false
+            .background(
+                isSelected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.045),
+                in: Capsule()
             )
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.primary.opacity(isSelected ? 0.16 : 0.08), lineWidth: 0.75)
+            }
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -980,7 +983,11 @@ struct ClipboardRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
-        .jarvisGlass(cornerRadius: 12, interactive: false)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.75)
+        }
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
             Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
@@ -1221,7 +1228,14 @@ struct ClipboardPanelRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .jarvisGlass(tint: isSelected ? .accentColor : nil, cornerRadius: 11, interactive: false)
+            .background(
+                isSelected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.035),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isSelected ? 0.14 : 0.07), lineWidth: 0.75)
+            }
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .onTapGesture(perform: select)
     }

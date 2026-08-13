@@ -6,8 +6,8 @@ enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.1"
-    private static let fallbackBuild = "75"
+    private static let fallbackShortVersion = "0.5.2"
+    private static let fallbackBuild = "76"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -199,8 +199,11 @@ struct JarvisUpdateService {
         )
 
         let installer = Process()
-        installer.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        installer.arguments = [scriptURL.path]
+        // Keep the installer alive after Jarvis exits. A detached shell is
+        // required here because the updater must replace the bundle that owns
+        // the current process and then launch it again.
+        installer.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
+        installer.arguments = ["/bin/zsh", scriptURL.path]
         installer.standardOutput = FileHandle.nullDevice
         installer.standardError = FileHandle.nullDevice
         try installer.run()
@@ -287,9 +290,20 @@ struct JarvisUpdateService {
         temp_dir=\(shellQuote(temporaryDirectory.path))
         parent_pid=\(parentProcessID)
 
-        while /bin/kill -0 "$parent_pid" 2>/dev/null; do
+        # Wait for a clean termination, but do not block forever if AppKit
+        # leaves the process as a zombie or a termination request is ignored.
+        wait_ticks=0
+        while /bin/kill -0 "$parent_pid" 2>/dev/null && (( wait_ticks < 150 )); do
+            process_state=$(/bin/ps -p "$parent_pid" -o stat= 2>/dev/null || true)
+            [[ "$process_state" == Z* ]] && break
             /bin/sleep 0.1
+            (( wait_ticks += 1 ))
         done
+        if /bin/kill -0 "$parent_pid" 2>/dev/null; then
+            /bin/kill -TERM "$parent_pid" 2>/dev/null || true
+            /bin/sleep 0.5
+            /bin/kill -KILL "$parent_pid" 2>/dev/null || true
+        fi
         /bin/sleep 0.4
 
         if /bin/mv "$old_app" "$backup_app" 2>/dev/null; then

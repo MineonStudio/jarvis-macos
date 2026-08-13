@@ -4,6 +4,154 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
+private struct SourceTextStyle {
+    let fontSize: CGFloat
+    let color: NSColor
+}
+
+private struct SourcePixelSampler {
+    private struct ColorBucket {
+        var count = 0
+        var red = 0
+        var green = 0
+        var blue = 0
+
+        mutating func append(red: UInt8, green: UInt8, blue: UInt8) {
+            count += 1
+            self.red += Int(red)
+            self.green += Int(green)
+            self.blue += Int(blue)
+        }
+
+        var average: (CGFloat, CGFloat, CGFloat) {
+            guard count > 0 else { return (0, 0, 0) }
+            let divisor = CGFloat(count * 255)
+            return (
+                CGFloat(red) / divisor,
+                CGFloat(green) / divisor,
+                CGFloat(blue) / divisor
+            )
+        }
+    }
+
+    private let bytes: [UInt8]
+    private let width: Int
+    private let height: Int
+    private let bytesPerRow: Int
+
+    init?(image: CGImage) {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let rawData = context.data else {
+            return nil
+        }
+
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let byteCount = context.bytesPerRow * image.height
+        self.bytes = Array(
+            UnsafeBufferPointer(
+                start: rawData.assumingMemoryBound(to: UInt8.self),
+                count: byteCount
+            )
+        )
+        self.width = image.width
+        self.height = image.height
+        self.bytesPerRow = context.bytesPerRow
+    }
+
+    func foregroundColor(in rect: CGRect) -> NSColor {
+        let xStart = max(0, Int(floor(rect.minX)))
+        let xEnd = min(width - 1, Int(ceil(rect.maxX)))
+        let yStart = max(0, Int(floor(rect.minY)))
+        let yEnd = min(height - 1, Int(ceil(rect.maxY)))
+        guard xStart <= xEnd, yStart <= yEnd else { return .black }
+
+        let step = max(1, Int(min(rect.width, rect.height) / 28))
+        var buckets = [Int: ColorBucket]()
+        var sampleCount = 0
+        for y in stride(from: yStart, through: yEnd, by: step) {
+            for x in stride(from: xStart, through: xEnd, by: step) {
+                let pixel = pixel(x: x, y: y)
+                guard pixel.alpha > 16 else { continue }
+                let red = pixel.red / 16
+                let green = pixel.green / 16
+                let blue = pixel.blue / 16
+                let key = (Int(red) << 8) | (Int(green) << 4) | Int(blue)
+                buckets[key, default: ColorBucket()].append(
+                    red: pixel.red,
+                    green: pixel.green,
+                    blue: pixel.blue
+                )
+                sampleCount += 1
+            }
+        }
+
+        guard let background = buckets.max(by: { $0.value.count < $1.value.count })?.value.average else {
+            return .black
+        }
+
+        let minimumCandidateCount = max(2, sampleCount / 2500)
+        let candidate = buckets
+            .filter { $0.value.count >= minimumCandidateCount }
+            .max { lhs, rhs in
+                foregroundScore(lhs.value, against: background) < foregroundScore(rhs.value, against: background)
+            }?.value.average
+
+        guard let candidate,
+              colorDistance(candidate, background) > 0.035 else {
+            return .black
+        }
+        return NSColor(
+            calibratedRed: candidate.0,
+            green: candidate.1,
+            blue: candidate.2,
+            alpha: 1
+        )
+    }
+
+    private func pixel(x: Int, y: Int) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8) {
+        let clampedX = min(max(x, 0), width - 1)
+        let clampedY = min(max(y, 0), height - 1)
+        // Bitmap context rows are top-down while Vision bounding boxes use a
+        // bottom-left origin. Convert back before sampling the source color.
+        let row = height - 1 - clampedY
+        let offset = row * bytesPerRow + clampedX * 4
+        return (
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3]
+        )
+    }
+
+    private func foregroundScore(
+        _ bucket: ColorBucket,
+        against background: (CGFloat, CGFloat, CGFloat)
+    ) -> CGFloat {
+        let distance = colorDistance(bucket.average, background)
+        return distance * log(CGFloat(bucket.count) + 1)
+    }
+
+    private func colorDistance(
+        _ lhs: (CGFloat, CGFloat, CGFloat),
+        _ rhs: (CGFloat, CGFloat, CGFloat)
+    ) -> CGFloat {
+        sqrt(
+            pow(lhs.0 - rhs.0, 2)
+                + pow(lhs.1 - rhs.1, 2)
+                + pow(lhs.2 - rhs.2, 2)
+        )
+    }
+}
+
 enum ScreenshotTranslationRenderer {
     static func render(
         sourceData: Data,
@@ -38,6 +186,7 @@ enum ScreenshotTranslationRenderer {
         let blurRects = ocrResult.blocks.map {
             pixelRect(for: $0.boundingBox, width: width, height: height)
         }
+        let pixelSampler = SourcePixelSampler(image: sourceImage)
         if let blurredImage = blurredImage(sourceImage, radius: 10), !blurRects.isEmpty {
             context.saveGState()
             blurRects.forEach { context.addRect($0) }
@@ -51,10 +200,16 @@ enum ScreenshotTranslationRenderer {
                 let sourceRect = pixelRect(for: block.boundingBox, width: width, height: height)
                 let rect = sourceRect
                     .insetBy(dx: -6, dy: -4)
+                let style = sourceStyle(
+                    for: block.text,
+                    in: sourceRect,
+                    sampler: pixelSampler
+                )
                 drawReplacement(
                     translation,
                     in: rect,
-                    sourceLineHeight: sourceRect.height,
+                    sourceFontSize: style.fontSize,
+                    textColor: style.color,
                     context: context
                 )
             }
@@ -62,14 +217,14 @@ enum ScreenshotTranslationRenderer {
             // A model may slightly change the line count. Keep the translation inside
             // the blurred OCR area instead of putting it in a separate result panel.
             let unionRect = blurRects.dropFirst().reduce(firstRect) { $0.union($1) }
+            let styles = zip(ocrResult.blocks, blurRects).map { block, rect in
+                sourceStyle(for: block.text, in: rect, sampler: pixelSampler)
+            }
             drawReplacement(
                 translatedText,
                 in: unionRect.insetBy(dx: -6, dy: -4),
-                sourceLineHeight: median(
-                    ocrResult.blocks.map {
-                        pixelRect(for: $0.boundingBox, width: width, height: height).height
-                    }
-                ),
+                sourceFontSize: median(styles.map(\.fontSize)),
+                textColor: averageColor(styles.map(\.color)),
                 context: context
             )
         }
@@ -151,7 +306,8 @@ enum ScreenshotTranslationRenderer {
     private static func drawReplacement(
         _ text: String,
         in rect: CGRect,
-        sourceLineHeight: CGFloat,
+        sourceFontSize: CGFloat,
+        textColor: NSColor,
         context: CGContext
     ) {
         context.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
@@ -160,15 +316,55 @@ enum ScreenshotTranslationRenderer {
         let fontSize = fittedFontSize(
             text,
             in: textRect,
-            startingAt: estimatedSourceFontSize(forLineHeight: sourceLineHeight)
+            startingAt: sourceFontSize
         )
         drawText(
             text,
             in: textRect,
             context: context,
-            color: .black,
+            color: textColor,
             fontSize: fontSize
         )
+    }
+
+    private static func sourceStyle(
+        for text: String,
+        in sourceRect: CGRect,
+        sampler: SourcePixelSampler?
+    ) -> SourceTextStyle {
+        SourceTextStyle(
+            fontSize: estimatedSourceFontSize(for: text, in: sourceRect),
+            color: sampler?.foregroundColor(in: sourceRect) ?? .black
+        )
+    }
+
+    static func estimatedSourceFontSize(for text: String, in sourceRect: CGRect) -> CGFloat {
+        let lineBasedSize = estimatedSourceFontSize(forLineHeight: sourceRect.height)
+        guard !text.isEmpty, sourceRect.width > 0, lineBasedSize > 0 else {
+            return lineBasedSize
+        }
+
+        let measured = measuredNaturalTextSize(text, fontSize: lineBasedSize)
+        guard measured.width > 0, measured.height > 0 else { return lineBasedSize }
+        let widthBasedSize = lineBasedSize * sourceRect.width / measured.width
+        let heightBasedSize = lineBasedSize * sourceRect.height / measured.height
+        return max(6, min(widthBasedSize, heightBasedSize))
+    }
+
+    static func estimatedSourceTextColor(
+        for sourceData: Data,
+        boundingBox: CGRect
+    ) -> NSColor {
+        guard let sourceImage = image(from: sourceData),
+              let sampler = SourcePixelSampler(image: sourceImage) else {
+            return .black
+        }
+        let sourceRect = pixelRect(
+            for: boundingBox,
+            width: sourceImage.width,
+            height: sourceImage.height
+        )
+        return sampler.foregroundColor(in: sourceRect)
     }
 
     static func estimatedSourceFontSize(forLineHeight lineHeight: CGFloat) -> CGFloat {
@@ -186,14 +382,14 @@ enum ScreenshotTranslationRenderer {
         startingAt startingSize: CGFloat
     ) -> CGFloat {
         var size = startingSize
-        while size > 8 {
+        while size > 6 {
             let measured = measuredTextSize(text, fontSize: size, width: rect.width)
             if measured.width <= rect.width + 1 && measured.height <= rect.height + 1 {
                 return size
             }
-            size -= 1
+            size -= 0.5
         }
-        return 8
+        return 6
     }
 
     private static func measuredTextSize(_ text: String, fontSize: CGFloat, width: CGFloat) -> CGSize {
@@ -208,6 +404,21 @@ enum ScreenshotTranslationRenderer {
         )
     }
 
+    private static func measuredNaturalTextSize(_ text: String, fontSize: CGFloat) -> CGSize {
+        let attributedText = makeAttributedText(text, fontSize: fontSize, color: .black)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        return CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            CGSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            nil
+        )
+    }
+
     private static func median(_ values: [CGFloat]) -> CGFloat {
         let sorted = values.filter { $0 > 0 }.sorted()
         guard !sorted.isEmpty else { return 0 }
@@ -216,6 +427,21 @@ enum ScreenshotTranslationRenderer {
             return (sorted[sorted.count / 2 - 1] + middle) / 2
         }
         return middle
+    }
+
+    private static func averageColor(_ colors: [NSColor]) -> NSColor {
+        let components = colors.compactMap { color -> (CGFloat, CGFloat, CGFloat, CGFloat)? in
+            guard let rgb = color.usingColorSpace(.deviceRGB) else { return nil }
+            return (rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent)
+        }
+        guard !components.isEmpty else { return .black }
+        let count = CGFloat(components.count)
+        return NSColor(
+            calibratedRed: components.reduce(0) { $0 + $1.0 } / count,
+            green: components.reduce(0) { $0 + $1.1 } / count,
+            blue: components.reduce(0) { $0 + $1.2 } / count,
+            alpha: components.reduce(0) { $0 + $1.3 } / count
+        )
     }
 
     private static func blurredImage(_ image: CGImage, radius: CGFloat) -> CGImage? {

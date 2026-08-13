@@ -724,6 +724,46 @@ enum ClipboardViewFilter: String, CaseIterable, Identifiable {
     }
 }
 
+struct ClipboardSearchField: View {
+    @Binding var text: String
+    let placeholder: String
+    let focusesOnAppear: Bool
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Color.jarvisTextSecondary)
+
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            }
+        }
+        .padding(.horizontal, 15)
+        .frame(minHeight: 44)
+        .jarvisGlass(in: Capsule(), interactive: false)
+        .contentShape(Capsule())
+        .onTapGesture {
+            isFocused = true
+        }
+        .onAppear {
+            if focusesOnAppear {
+                isFocused = true
+            }
+        }
+    }
+}
+
 struct ClipboardView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
@@ -756,24 +796,11 @@ struct ClipboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                        TextField("搜索文本、文件名…", text: $searchText)
-                            .textFieldStyle(.plain)
-                        if !searchText.isEmpty {
-                            Button { searchText = "" } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .frame(width: 28, height: 28)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                        }
-                    }
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 11)
-                    .jarvisGlass(cornerRadius: JarvisMetrics.controlRadius, interactive: false)
+                    ClipboardSearchField(
+                        text: $searchText,
+                        placeholder: "搜索文本、文件名…",
+                        focusesOnAppear: false
+                    )
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 7) {
@@ -1137,7 +1164,6 @@ struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
-    @FocusState private var searchFocused: Bool
 
     private var filteredItems: [ClipboardItem] {
         app.clipboardItems.filter { item in
@@ -1153,25 +1179,11 @@ struct ClipboardPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 9) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                TextField("搜索文本或文件名…", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .focused($searchFocused)
-                if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .jarvisGlass(cornerRadius: JarvisMetrics.controlRadius, interactive: false)
+            ClipboardSearchField(
+                text: $searchText,
+                placeholder: "搜索文本或文件名…",
+                focusesOnAppear: true
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
@@ -1233,7 +1245,6 @@ struct ClipboardPanelView: View {
         .background(Color.jarvisBackground)
         .onAppear {
             selectedFilter = .all
-            searchFocused = true
         }
     }
 }

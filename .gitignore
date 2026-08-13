@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+dist/
+
+# Xcode / SwiftPM local state
+*.xcuserstate
+DerivedData/
+
+# Local application data and secrets
+.env
+*.local

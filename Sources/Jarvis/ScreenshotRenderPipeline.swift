@@ -1,0 +1,257 @@
+import AppKit
+import CoreGraphics
+
+/// Renders the final screenshot independently from the interactive SwiftUI
+/// canvas. SwiftUI remains responsible for preview and gestures; export uses
+/// one deterministic Core Graphics pass so the final image does not depend on
+/// view layout or transient editor state.
+final class ScreenshotRenderPipeline {
+    func renderFullCanvas(
+        image: NSImage,
+        canvasSize: CGSize,
+        pixelScale: CGFloat,
+        annotations: [ScreenshotAnnotation],
+        blurredImage: NSImage?,
+        pixelatedImage: NSImage?
+    ) -> Data? {
+        guard let baseImage = cgImage(from: image),
+              canvasSize.width > 0,
+              canvasSize.height > 0 else {
+            return nil
+        }
+
+        let scale = max(pixelScale, 1)
+        let pixelWidth = max(1, Int((canvasSize.width * scale).rounded()))
+        let pixelHeight = max(1, Int((canvasSize.height * scale).rounded()))
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: pixelWidth * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        let canvasRect = CGRect(origin: .zero, size: canvasSize)
+        context.interpolationQuality = .high
+        context.saveGState()
+        // The bitmap context is measured in physical pixels. Draw the source
+        // image in logical canvas points after applying the Retina scale;
+        // otherwise edited exports only occupy the top-left 1x portion of a
+        // 2x canvas before the final crop is applied.
+        context.scaleBy(x: scale, y: scale)
+        context.draw(baseImage, in: canvasRect)
+        context.restoreGState()
+
+        for annotation in annotations {
+            guard annotation.kind != .text else { continue }
+            context.saveGState()
+            // Annotation points come from the SwiftUI canvas (top-left
+            // origin), while the exported bitmap keeps the source image's
+            // native bottom-left pixel coordinates.
+            context.translateBy(x: 0, y: CGFloat(pixelHeight))
+            context.scaleBy(x: scale, y: -scale)
+            switch annotation.kind {
+            case .arrow:
+                drawArrow(annotation, in: context)
+            case .mosaic:
+                drawMosaic(
+                    annotation,
+                    in: context,
+                    canvasRect: canvasRect,
+                    blurredImage: blurredImage,
+                    pixelatedImage: pixelatedImage
+                )
+            case .text:
+                break
+            }
+            context.restoreGState()
+        }
+
+        for annotation in annotations where annotation.kind == .text {
+            drawText(annotation, in: context, canvasSize: canvasSize, scale: scale)
+        }
+
+        guard let renderedImage = context.makeImage() else { return nil }
+        return NSBitmapImageRep(cgImage: renderedImage)
+            .representation(using: .png, properties: [:])
+    }
+
+    private func drawArrow(_ annotation: ScreenshotAnnotation, in context: CGContext) {
+        let start = annotation.start
+        let end = annotation.end
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let headLength = max(annotation.arrowHeadSize, annotation.lineWidth * 2.6)
+        let direction = CGPoint(x: cos(angle), y: sin(angle))
+        let perpendicular = CGPoint(x: -direction.y, y: direction.x)
+        let headBase = CGPoint(
+            x: end.x - direction.x * headLength,
+            y: end.y - direction.y * headLength
+        )
+        let lineEnd = annotation.arrowHeadStyle == .none ? end : headBase
+        let color = annotation.color.nsColor.withAlphaComponent(0.96).cgColor
+
+        context.saveGState()
+        context.setStrokeColor(color)
+        context.setLineWidth(annotation.lineWidth)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.move(to: start)
+        context.addLine(to: lineEnd)
+        context.strokePath()
+
+        if annotation.arrowHeadStyle != .none {
+            let halfWidth = headLength * 0.34
+            let left = CGPoint(
+                x: headBase.x + perpendicular.x * halfWidth,
+                y: headBase.y + perpendicular.y * halfWidth
+            )
+            let right = CGPoint(
+                x: headBase.x - perpendicular.x * halfWidth,
+                y: headBase.y - perpendicular.y * halfWidth
+            )
+            context.setFillColor(color)
+            context.move(to: end)
+            context.addLine(to: left)
+            context.addLine(to: right)
+            context.closePath()
+            context.fillPath()
+        }
+        context.restoreGState()
+    }
+
+    private func drawMosaic(
+        _ annotation: ScreenshotAnnotation,
+        in context: CGContext,
+        canvasRect: CGRect,
+        blurredImage: NSImage?,
+        pixelatedImage: NSImage?
+    ) {
+        let image: NSImage?
+        switch annotation.mosaicStyle {
+        case .blur: image = blurredImage
+        case .pixelate: image = pixelatedImage
+        }
+        guard let image, let filteredImage = cgImage(from: image) else { return }
+
+        context.saveGState()
+        switch annotation.mosaicMode {
+        case .rectangle:
+            let rect = CGRect(
+                x: min(annotation.start.x, annotation.end.x),
+                y: min(annotation.start.y, annotation.end.y),
+                width: abs(annotation.end.x - annotation.start.x),
+                height: abs(annotation.end.y - annotation.start.y)
+            )
+            guard rect.width > 0, rect.height > 0 else {
+                context.restoreGState()
+                return
+            }
+            context.clip(to: rect)
+        case .brush:
+            guard annotation.points.count > 1 else {
+                context.restoreGState()
+                return
+            }
+            let path = CGMutablePath()
+            path.move(to: annotation.points[0])
+            for point in annotation.points.dropFirst() {
+                path.addLine(to: point)
+            }
+            context.addPath(path)
+            context.setLineWidth(max(annotation.brushSize, 2))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.replacePathWithStrokedPath()
+            context.clip()
+        }
+
+        context.interpolationQuality = annotation.mosaicStyle == .pixelate ? .none : .high
+        context.draw(filteredImage, in: canvasRect)
+        context.restoreGState()
+    }
+
+    private func drawText(
+        _ annotation: ScreenshotAnnotation,
+        in context: CGContext,
+        canvasSize: CGSize,
+        scale: CGFloat
+    ) {
+        guard let text = annotation.text, !text.isEmpty else { return }
+
+        let baseFont = NSFont.systemFont(
+            ofSize: annotation.fontSize,
+            weight: annotation.isBold ? .semibold : .regular
+        )
+        var descriptor = baseFont.fontDescriptor
+        if annotation.isItalic {
+            var traits = descriptor.symbolicTraits
+            traits.insert(.italic)
+            descriptor = descriptor.withSymbolicTraits(traits)
+        }
+        let font = NSFont(descriptor: descriptor, size: annotation.fontSize) ?? baseFont
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: annotation.textColor.nsColor,
+            .strikethroughStyle: annotation.isStrikethrough ? NSUnderlineStyle.single.rawValue : 0
+        ]
+        let textSize = annotation.textSize
+        let lines = text.components(separatedBy: "\n")
+        let lineHeight = max(
+            annotation.fontSize * 1.22,
+            font.ascender - font.descender + font.leading
+        )
+        let top = annotation.start.y - textSize.height / 2 + 9
+        let left = annotation.start.x - textSize.width / 2 + 9
+
+        context.saveGState()
+        // The previous canvas pass restored the context to its identity
+        // transform. Text is drawn in the native bottom-left coordinate
+        // system, scaled back to logical points for AppKit typography.
+        context.scaleBy(x: scale, y: scale)
+        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        for (index, line) in lines.enumerated() {
+            let lineWidth = (line as NSString).size(withAttributes: attributes).width
+            let baselineY = canvasSize.height - (top + font.ascender + CGFloat(index) * lineHeight)
+            NSAttributedString(string: line, attributes: attributes)
+                .draw(at: NSPoint(x: left, y: baselineY))
+
+            if annotation.isStrikethrough {
+                annotation.textColor.nsColor.setStroke()
+                let strikeY = baselineY + font.pointSize * 0.28
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: left, y: strikeY))
+                path.line(to: NSPoint(x: left + lineWidth, y: strikeY))
+                path.lineWidth = max(1, annotation.fontSize / 14)
+                path.stroke()
+            }
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        context.restoreGState()
+    }
+
+    private func cgImage(from image: NSImage) -> CGImage? {
+        var proposedRect = NSRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
+    }
+}
+
+private extension ScreenshotTextColor {
+    var nsColor: NSColor {
+        switch self {
+        case .red: return NSColor(red: 1, green: 0.12, blue: 0.12, alpha: 1)
+        case .yellow: return .systemYellow
+        case .white: return .white
+        case .black: return .black
+        case .cyan: return .cyan
+        case .blue: return NSColor(red: 0.1, green: 0.38, blue: 0.95, alpha: 1)
+        case .green: return NSColor(red: 0.12, green: 0.62, blue: 0.25, alpha: 1)
+        }
+    }
+}

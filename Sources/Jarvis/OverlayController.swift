@@ -6,6 +6,7 @@ final class TranslationOverlayModel: ObservableObject {
     @Published var text = ""
     @Published var ocrText = ""
     @Published var sourceImage: NSImage?
+    @Published var translatedImage: NSImage?
     @Published var targetLanguage = "中文"
     @Published var isTranslating = false
     @Published var isReviewingOCR = false
@@ -20,27 +21,35 @@ final class OverlayController {
     private var retryAction: (() -> Void)?
     private var closeAction: (() -> Void)?
     private var translateOCRAction: ((String) -> Void)?
+    private var saveImageAction: (() -> Void)?
+    private var copyImageAction: (() -> Void)?
 
     func show(
         text: String,
         sourceImageData: Data? = nil,
+        translatedImageData: Data? = nil,
         targetLanguage: String = "中文",
         anchorWindow: NSWindow? = nil,
         anchorFrame: CGRect? = nil,
-        onRetry: @escaping () -> Void = {}
+        onRetry: @escaping () -> Void = {},
+        onSaveImage: @escaping () -> Void = {},
+        onCopyImage: @escaping () -> Void = {}
     ) {
         preparePanel()
         model.text = text
         model.ocrText = ""
         model.sourceImage = sourceImageData.flatMap(NSImage.init(data:))
+        model.translatedImage = translatedImageData.flatMap(NSImage.init(data:))
         model.targetLanguage = targetLanguage
         model.isTranslating = false
         model.isReviewingOCR = false
         model.errorMessage = ""
         retryAction = onRetry
+        saveImageAction = onSaveImage
+        copyImageAction = onCopyImage
         translateOCRAction = nil
         closeAction = { [weak self] in self?.dismiss() }
-        setPanelContentSize(width: model.sourceImage == nil ? 420 : 760, height: model.sourceImage == nil ? 330 : 450)
+        setPanelContentSize(width: model.translatedImage == nil ? 420 : 760, height: model.translatedImage == nil ? 330 : 600)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -54,11 +63,14 @@ final class OverlayController {
         model.text = ""
         model.ocrText = ""
         model.sourceImage = nil
+        model.translatedImage = nil
         model.targetLanguage = targetLanguage
         model.isTranslating = true
         model.isReviewingOCR = false
         model.errorMessage = ""
         retryAction = onRetry
+        saveImageAction = nil
+        copyImageAction = nil
         translateOCRAction = nil
         closeAction = { [weak self] in self?.dismiss() }
         setPanelContentSize(width: 420, height: 330)
@@ -77,11 +89,14 @@ final class OverlayController {
         model.text = ""
         model.ocrText = text
         model.sourceImage = nil
+        model.translatedImage = nil
         model.targetLanguage = targetLanguage
         model.isTranslating = false
         model.isReviewingOCR = true
         model.errorMessage = ""
         retryAction = nil
+        saveImageAction = nil
+        copyImageAction = nil
         closeAction = onCancel
         translateOCRAction = onTranslate
         setPanelContentSize(width: 420, height: 410)
@@ -99,11 +114,14 @@ final class OverlayController {
         model.text = ""
         model.ocrText = ""
         model.sourceImage = nil
+        model.translatedImage = nil
         model.targetLanguage = targetLanguage
         model.isTranslating = false
         model.isReviewingOCR = false
         model.errorMessage = message
         retryAction = onRetry
+        saveImageAction = nil
+        copyImageAction = nil
         translateOCRAction = nil
         closeAction = { [weak self] in self?.dismiss() }
         setPanelContentSize(width: 420, height: 330)
@@ -120,6 +138,8 @@ final class OverlayController {
         retryAction = nil
         closeAction = nil
         translateOCRAction = nil
+        saveImageAction = nil
+        copyImageAction = nil
     }
 
     private func preparePanel() {
@@ -143,7 +163,9 @@ final class OverlayController {
                 model: model,
                 onClose: { [weak self] in self?.closeAction?() },
                 onRetry: { [weak self] in self?.retryAction?() },
-                onTranslateOCR: { [weak self] text in self?.translateOCRAction?(text) }
+                onTranslateOCR: { [weak self] text in self?.translateOCRAction?(text) },
+                onSaveImage: { [weak self] in self?.saveImageAction?() },
+                onCopyImage: { [weak self] in self?.copyImageAction?() }
             )
         )
         panel = newPanel

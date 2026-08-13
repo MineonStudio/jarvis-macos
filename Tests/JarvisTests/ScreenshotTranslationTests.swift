@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Jarvis
 
@@ -36,5 +37,29 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(prompt.contains("只返回完整译文"))
         XCTAssertTrue(prompt.contains("Hello\nWorld"))
         XCTAssertFalse(prompt.contains("image_url"))
+    }
+
+    func testTranslationRendererCreatesPNGForAlignedBlocks() {
+        let image = NSImage(size: NSSize(width: 120, height: 80))
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: 120, height: 80).fill()
+        image.unlockFocus()
+
+        let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
+        let sourceData = bitmap.representation(using: .png, properties: [:])!
+        let ocrResult = ScreenshotOCRResult(
+            text: "原文",
+            blocks: [ScreenshotOCRBlock(text: "原文", boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.3, height: 0.2))]
+        )
+
+        let output = ScreenshotTranslationRenderer.render(
+            sourceData: sourceData,
+            ocrResult: ocrResult,
+            translatedText: "Translation"
+        )
+
+        XCTAssertNotNil(output)
+        XCTAssertNotNil(output.flatMap(NSImage.init(data:)))
     }
 }

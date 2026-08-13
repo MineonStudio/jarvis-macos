@@ -1568,6 +1568,8 @@ struct FloatingTranslationView: View {
     let onClose: () -> Void
     let onRetry: () -> Void
     let onTranslateOCR: (String) -> Void
+    let onSaveImage: () -> Void
+    let onCopyImage: () -> Void
     @State private var copied = false
 
     var body: some View {
@@ -1645,7 +1647,8 @@ struct FloatingTranslationView: View {
 
     @ViewBuilder
     private var translationResultContent: some View {
-        if let sourceImage = model.sourceImage {
+        if let sourceImage = model.sourceImage,
+           let translatedImage = model.translatedImage {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("截图")
@@ -1663,28 +1666,45 @@ struct FloatingTranslationView: View {
                 .frame(width: 330)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("译文")
+                    Text("双语截图")
                         .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    Image(nsImage: translatedImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 230)
+                        .padding(8)
+                        .background(Color.black.opacity(0.18))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    Text("译文")
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.jarvisTextSecondary)
                     ScrollView {
                         Text(model.text)
-                            .font(.system(size: 15))
-                            .lineSpacing(5)
+                            .font(.system(size: 13))
+                            .lineSpacing(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     }
-                    .frame(height: 300)
+                    .frame(height: 92)
                     HStack {
                         Button("重试", action: onRetry)
                             .buttonStyle(.borderless)
                         Spacer()
-                        Button(copied ? "已复制" : "复制结果") {
+                        Button(copied ? "已复制译文" : "复制译文") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(model.text, forType: .string)
                             copied = true
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.jarvisCyan)
+                        .buttonStyle(.bordered)
+                    }
+                    HStack {
+                        Button("复制双语图", action: onCopyImage)
+                            .buttonStyle(.bordered)
+                        Button("保存双语图", action: onSaveImage)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.jarvisCyan)
                     }
                 }
                 .frame(width: 350)

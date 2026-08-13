@@ -95,6 +95,8 @@ final class AppModel: ObservableObject {
     private var translationRequestID = UUID()
     private var translationSourceData: Data?
     private var translationSourceText: String?
+    private var translationOCRResult: ScreenshotOCRResult?
+    private var translatedScreenshotData: Data?
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {
         screenshotController.translationProgress
@@ -664,6 +666,8 @@ final class AppModel: ObservableObject {
         translationRequestID = requestID
         translationSourceData = data
         translationSourceText = nil
+        translationOCRResult = nil
+        translatedScreenshotData = nil
         latestTranslation = ""
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
@@ -675,20 +679,21 @@ final class AppModel: ObservableObject {
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let recognizedText = try await Task.detached(priority: .userInitiated) {
-                    try ScreenshotTextRecognizer.recognizeText(in: data)
+                let ocrResult = try await Task.detached(priority: .userInitiated) {
+                    try ScreenshotTextRecognizer.recognize(in: data)
                 }.value
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }
 
                 translationTask = nil
-                translationSourceText = recognizedText
-                screenshotTranslationState = .reviewingOCR(recognizedText)
+                translationOCRResult = ocrResult
+                translationSourceText = ocrResult.text
+                screenshotTranslationState = .reviewingOCR(ocrResult.text)
                 screenshotTranslationProgress.isTranslating = false
                 screenshotTranslationProgress.isReviewingOCR = true
                 statusMessage = "请校对识别出的原文…"
                 overlayController.showOCRReview(
-                    text: recognizedText,
+                    text: ocrResult.text,
                     targetLanguage: targetLanguage.rawValue,
                     anchorWindow: screenshotController.saveWindow(),
                     anchorFrame: screenshotController.translationAnchorFrame(),
@@ -732,6 +737,7 @@ final class AppModel: ObservableObject {
         translationTask?.cancel()
         let requestID = translationRequestID
         translationSourceText = normalizedText
+        translatedScreenshotData = nil
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
         screenshotTranslationProgress.isReviewingOCR = false
@@ -752,6 +758,14 @@ final class AppModel: ObservableObject {
                 guard translationRequestID == requestID else { return }
                 translationTask = nil
                 latestTranslation = result
+                translatedScreenshotData = translationOCRResult.flatMap { ocrResult in
+                    guard let sourceData = self.translationSourceData else { return nil }
+                    return ScreenshotTranslationRenderer.render(
+                        sourceData: sourceData,
+                        ocrResult: ocrResult,
+                        translatedText: result
+                    )
+                }
                 screenshotTranslationState = .success(result)
                 screenshotTranslationProgress.isTranslating = false
                 screenshotTranslationProgress.isReviewingOCR = false
@@ -759,10 +773,13 @@ final class AppModel: ObservableObject {
                 overlayController.show(
                     text: result,
                     sourceImageData: translationSourceData,
+                    translatedImageData: translatedScreenshotData,
                     targetLanguage: targetLanguage.rawValue,
                     anchorWindow: screenshotController.saveWindow(),
                     anchorFrame: screenshotController.translationAnchorFrame(),
-                    onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+                    onRetry: { [weak self] in self?.translateCurrentScreenshot() },
+                    onSaveImage: { [weak self] in self?.saveTranslatedScreenshot() },
+                    onCopyImage: { [weak self] in self?.copyTranslatedScreenshot() }
                 )
             } catch is CancellationError {
                 return
@@ -808,10 +825,37 @@ final class AppModel: ObservableObject {
         overlayController.show(
             text: text,
             sourceImageData: translationSourceData,
+            translatedImageData: translatedScreenshotData,
             targetLanguage: targetLanguage.rawValue,
             anchorWindow: screenshotController.saveWindow(),
             anchorFrame: screenshotController.translationAnchorFrame(),
-            onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+            onRetry: { [weak self] in self?.translateCurrentScreenshot() },
+            onSaveImage: { [weak self] in self?.saveTranslatedScreenshot() },
+            onCopyImage: { [weak self] in self?.copyTranslatedScreenshot() }
+        )
+    }
+
+    func copyTranslatedScreenshot() {
+        guard let data = translatedScreenshotData else {
+            statusMessage = "暂无可复制的双语截图"
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setData(data, forType: .png)
+        statusMessage = "双语截图已复制到剪贴板"
+    }
+
+    func saveTranslatedScreenshot() {
+        guard let data = translatedScreenshotData else {
+            statusMessage = "暂无可保存的双语截图"
+            return
+        }
+        presentSavePanel(
+            for: data,
+            historyID: nil,
+            finalizesHistory: false,
+            successMessage: "双语截图已保存",
+            presentingWindow: screenshotController.saveWindow()
         )
     }
 
@@ -843,6 +887,8 @@ final class AppModel: ObservableObject {
         translationTask = nil
         translationSourceData = nil
         translationSourceText = nil
+        translationOCRResult = nil
+        translatedScreenshotData = nil
         latestTranslation = ""
         screenshotTranslationState = .idle
         screenshotTranslationProgress.isTranslating = false

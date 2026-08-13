@@ -15,6 +15,16 @@ enum ScreenshotTextRecognitionError: LocalizedError {
     }
 }
 
+struct ScreenshotOCRBlock: Equatable {
+    let text: String
+    let boundingBox: CGRect
+}
+
+struct ScreenshotOCRResult: Equatable {
+    let text: String
+    let blocks: [ScreenshotOCRBlock]
+}
+
 enum ScreenshotTextRecognizer {
     private static let recognitionLanguages = [
         "zh-Hans",
@@ -27,11 +37,15 @@ enum ScreenshotTextRecognizer {
     ]
 
     static func recognizeText(in imageData: Data) throws -> String {
+        try recognize(in: imageData).text
+    }
+
+    static func recognize(in imageData: Data) throws -> ScreenshotOCRResult {
         guard !imageData.isEmpty else {
             throw ScreenshotTextRecognitionError.invalidImage
         }
 
-        var recognizedText = ""
+        var recognitionResult: ScreenshotOCRResult?
         var recognitionError: Error?
         let request = VNRecognizeTextRequest { request, error in
             if let error {
@@ -40,7 +54,11 @@ enum ScreenshotTextRecognizer {
             }
 
             let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
-            recognizedText = orderedText(from: observations)
+            let blocks = orderedBlocks(from: observations)
+            recognitionResult = ScreenshotOCRResult(
+                text: blocks.map(\.text).joined(separator: "\n"),
+                blocks: blocks
+            )
         }
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -61,23 +79,21 @@ enum ScreenshotTextRecognizer {
             throw recognitionError
         }
 
-        let text = recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
+        guard let result = recognitionResult,
+              !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ScreenshotTextRecognitionError.noText
         }
-        return text
+        return result
     }
 
-    private static func orderedText(from observations: [VNRecognizedTextObservation]) -> String {
+    private static func orderedBlocks(from observations: [VNRecognizedTextObservation]) -> [ScreenshotOCRBlock] {
         let lines = observations.compactMap { observation -> OCRLine? in
             guard let candidate = observation.topCandidates(1).first else { return nil }
             let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
             return OCRLine(
                 text: text,
-                centerY: observation.boundingBox.midY,
-                minX: observation.boundingBox.minX,
-                height: observation.boundingBox.height
+                boundingBox: observation.boundingBox
             )
         }
 
@@ -98,15 +114,25 @@ enum ScreenshotTextRecognizer {
             }
         }
 
-        return orderedLines
-            .map { $0.sorted { $0.minX < $1.minX }.map(\.text).joined(separator: " ") }
-            .joined(separator: "\n")
+        return orderedLines.compactMap { group in
+            let sortedGroup = group.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+            guard let first = sortedGroup.first else { return nil }
+            let boundingBox = sortedGroup.dropFirst().reduce(first.boundingBox) { result, line in
+                result.union(line.boundingBox)
+            }
+            return ScreenshotOCRBlock(
+                text: sortedGroup.map(\.text).joined(separator: " "),
+                boundingBox: boundingBox
+            )
+        }
     }
 
     private struct OCRLine {
         let text: String
-        let centerY: CGFloat
-        let minX: CGFloat
-        let height: CGFloat
+        let boundingBox: CGRect
+
+        var centerY: CGFloat { boundingBox.midY }
+        var minX: CGFloat { boundingBox.minX }
+        var height: CGFloat { boundingBox.height }
     }
 }

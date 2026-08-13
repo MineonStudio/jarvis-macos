@@ -859,56 +859,6 @@ struct ClipboardView: View {
     }
 }
 
-struct ClipboardShortcutSettingsCard: View {
-    @EnvironmentObject private var app: AppModel
-    @State private var clipboardShortcut = ScreenshotShortcut.clipboardDefault
-    @State private var isRecordingShortcut = false
-
-    var body: some View {
-        JarvisCard {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label("剪贴板快捷键", systemImage: "keyboard")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("唤起独立剪贴板面板")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                Spacer()
-                ShortcutRecorderControl(
-                    shortcut: $clipboardShortcut,
-                    isRecording: $isRecordingShortcut
-                )
-                .frame(width: 170, height: 32)
-                if !app.clipboardShortcutConflictMessage.isEmpty {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .help(app.clipboardShortcutConflictMessage)
-                }
-                Button("恢复默认") {
-                    let previous = clipboardShortcut
-                    if !app.updateClipboardShortcut(.clipboardDefault) {
-                        clipboardShortcut = previous
-                    } else {
-                        clipboardShortcut = .clipboardDefault
-                    }
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-            }
-        }
-        .onAppear {
-            clipboardShortcut = app.clipboardShortcut
-            _ = app.validateClipboardShortcut(clipboardShortcut)
-        }
-        .onChange(of: clipboardShortcut) { _, newValue in
-            if app.validateClipboardShortcut(newValue) {
-                guard newValue != app.clipboardShortcut else { return }
-                _ = app.updateClipboardShortcut(newValue)
-            }
-        }
-    }
-}
-
 struct ClipboardFilterChip: View {
     let filter: ClipboardViewFilter
     let count: Int
@@ -1321,28 +1271,26 @@ struct ClipboardPanelRow: View {
     }
 }
 
-struct ScreenshotSkillSettingsCard: View {
+struct ShortcutSettingsCard: View {
     @EnvironmentObject private var app: AppModel
     @State private var screenshotShortcut = ScreenshotShortcut.default
-    @State private var isRecordingShortcut = false
+    @State private var clipboardShortcut = ScreenshotShortcut.clipboardDefault
+    @State private var isRecordingScreenshotShortcut = false
+    @State private var isRecordingClipboardShortcut = false
 
     var body: some View {
         JarvisCard {
-            HStack(spacing: 14) {
-                Label("截图快捷键", systemImage: "keyboard")
+            VStack(alignment: .leading, spacing: 15) {
+                Label("快捷键", systemImage: "keyboard")
                     .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                ShortcutRecorderControl(
+
+                shortcutRow(
+                    title: "截图",
+                    subtitle: "框选屏幕或快速选中窗口",
                     shortcut: $screenshotShortcut,
-                    isRecording: $isRecordingShortcut
-                )
-                .frame(width: 170, height: 32)
-                if !app.screenshotShortcutConflictMessage.isEmpty {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .help(app.screenshotShortcutConflictMessage)
-                }
-                Button("恢复默认") {
+                    isRecording: $isRecordingScreenshotShortcut,
+                    conflictMessage: app.screenshotShortcutConflictMessage
+                ) {
                     let previous = screenshotShortcut
                     if !app.updateScreenshotShortcut(.default) {
                         screenshotShortcut = previous
@@ -1350,18 +1298,74 @@ struct ScreenshotSkillSettingsCard: View {
                         screenshotShortcut = .default
                     }
                 }
-                .buttonStyle(JarvisSecondaryButtonStyle())
+
+                Divider().overlay(Color.primary.opacity(0.12))
+
+                shortcutRow(
+                    title: "剪贴板",
+                    subtitle: "唤起独立剪贴板面板",
+                    shortcut: $clipboardShortcut,
+                    isRecording: $isRecordingClipboardShortcut,
+                    conflictMessage: app.clipboardShortcutConflictMessage
+                ) {
+                    let previous = clipboardShortcut
+                    if !app.updateClipboardShortcut(.clipboardDefault) {
+                        clipboardShortcut = previous
+                    } else {
+                        clipboardShortcut = .clipboardDefault
+                    }
+                }
             }
         }
         .onAppear {
             screenshotShortcut = app.screenshotShortcut
+            clipboardShortcut = app.clipboardShortcut
             _ = app.validateScreenshotShortcut(screenshotShortcut)
+            _ = app.validateClipboardShortcut(clipboardShortcut)
         }
         .onChange(of: screenshotShortcut) { _, newValue in
             if app.validateScreenshotShortcut(newValue) {
                 guard newValue != app.screenshotShortcut else { return }
                 _ = app.updateScreenshotShortcut(newValue)
             }
+        }
+        .onChange(of: clipboardShortcut) { _, newValue in
+            if app.validateClipboardShortcut(newValue) {
+                guard newValue != app.clipboardShortcut else { return }
+                _ = app.updateClipboardShortcut(newValue)
+            }
+        }
+    }
+
+    private func shortcutRow(
+        title: String,
+        subtitle: String,
+        shortcut: Binding<ScreenshotShortcut>,
+        isRecording: Binding<Bool>,
+        conflictMessage: String,
+        onRestore: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            }
+            Spacer(minLength: 8)
+            ShortcutRecorderControl(
+                shortcut: shortcut,
+                isRecording: isRecording
+            )
+            .frame(width: 170, height: 32)
+            if !conflictMessage.isEmpty {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .help(conflictMessage)
+            }
+            Button("恢复默认", action: onRestore)
+                .buttonStyle(JarvisSecondaryButtonStyle())
         }
     }
 }
@@ -1429,10 +1433,7 @@ struct SettingsView: View {
                     }
                 }
 
-                SectionHeader(title: "快捷键", subtitle: "自定义截图与剪贴板快捷键")
-
-                ScreenshotSkillSettingsCard()
-                ClipboardShortcutSettingsCard()
+                ShortcutSettingsCard()
             }
             .padding(JarvisMetrics.pageInset)
         }

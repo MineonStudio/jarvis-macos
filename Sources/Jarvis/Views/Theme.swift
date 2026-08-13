@@ -33,6 +33,30 @@ enum JarvisTheme: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
+
+    var appKitAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
+struct JarvisThemeModifier: ViewModifier {
+    let theme: JarvisTheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch theme {
+        case .system:
+            content
+        case .light:
+            content.preferredColorScheme(.light)
+        case .dark:
+            content.preferredColorScheme(.dark)
+        }
+    }
 }
 
 extension Color {
@@ -146,6 +170,10 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
 }
 
 extension View {
+    func jarvisTheme(_ theme: JarvisTheme) -> some View {
+        modifier(JarvisThemeModifier(theme: theme))
+    }
+
     func jarvisGlass(
         tint: Color? = nil,
         cornerRadius: CGFloat = JarvisMetrics.controlRadius,

@@ -26,36 +26,34 @@ final class ModelGateway {
     func testConnection(configuration: ModelConfiguration, apiKey: String) async throws {
         _ = try await request(
             prompt: "Reply with exactly: JARVIS_OK",
-            imageData: nil,
-            targetLanguage: nil,
             configuration: configuration,
             apiKey: apiKey
         )
     }
 
-    func translateImage(
-        _ imageData: Data,
+    func translateText(
+        _ sourceText: String,
         targetLanguage: String,
         configuration: ModelConfiguration,
         apiKey: String
     ) async throws -> String {
         try await request(
-            prompt: Self.translationPrompt(targetLanguage: targetLanguage),
-            imageData: imageData,
-            targetLanguage: targetLanguage,
+            prompt: Self.translationPrompt(sourceText: sourceText, targetLanguage: targetLanguage),
             configuration: configuration,
             apiKey: apiKey
         )
     }
 
     static func translationPrompt(targetLanguage: String) -> String {
-        "请识别截图中所有可读文字，自动判断源语言，并翻译成\(targetLanguage)。保留原文的段落、列表和换行结构，只返回完整译文，不要解释过程。若没有可识别文字，只返回：未识别到文字。"
+        translationPrompt(sourceText: "", targetLanguage: targetLanguage)
+    }
+
+    static func translationPrompt(sourceText: String, targetLanguage: String) -> String {
+        "下面是由 macOS 本地 OCR 识别出的原文。请自动判断源语言，并将原文翻译成\(targetLanguage)。保留原文的段落、列表和换行结构，只返回完整译文，不要解释过程。若原文为空，只返回：未识别到文字。\n\n原文：\n---\n\(sourceText)\n---"
     }
 
     private func request(
         prompt: String,
-        imageData: Data?,
-        targetLanguage _: String?,
         configuration: ModelConfiguration,
         apiKey: String
     ) async throws -> String {
@@ -76,27 +74,12 @@ final class ModelGateway {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        var content: [[String: Any]] = [[
-            "type": "text",
-            "text": prompt
-        ]]
-
-        if let imageData {
-            content.append([
-                "type": "image_url",
-                "image_url": [
-                    "url": "data:image/png;base64,\(imageData.base64EncodedString())",
-                    "detail": "high"
-                ]
-            ])
-        }
-
         let payload: [String: Any] = [
             "model": configuration.modelName,
             "temperature": 0.2,
             "messages": [[
                 "role": "user",
-                "content": content
+                "content": prompt
             ]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)

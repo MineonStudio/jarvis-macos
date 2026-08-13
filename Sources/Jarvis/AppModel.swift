@@ -665,15 +665,22 @@ final class AppModel: ObservableObject {
         latestTranslation = ""
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
-        statusMessage = "大脑正在理解截图…"
+        statusMessage = "正在本地识别截图文字…"
 
         showTranslationOverlayLoading()
 
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let result = try await modelGateway.translateImage(
-                    data,
+                let recognizedText = try await Task.detached(priority: .userInitiated) {
+                    try ScreenshotTextRecognizer.recognizeText(in: data)
+                }.value
+                try Task.checkCancellation()
+                guard translationRequestID == requestID else { return }
+
+                statusMessage = "正在翻译识别出的文字…"
+                let result = try await modelGateway.translateText(
+                    recognizedText,
                     targetLanguage: targetLanguage.rawValue,
                     configuration: modelConfiguration,
                     apiKey: key

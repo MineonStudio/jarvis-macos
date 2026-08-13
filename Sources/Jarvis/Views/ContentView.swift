@@ -202,7 +202,7 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("本机优先")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("剪贴板历史保存在本机；截图只有在你主动翻译时才会发送给配置的 API 服务商。")
+                        Text("剪贴板历史保存在本机；截图文字先由 macOS 在本地识别，只有识别出的文字会在你主动翻译时发送给配置的 API 服务商。")
                             .font(.system(size: 12))
                             .foregroundStyle(Color.jarvisTextSecondary)
                             .lineSpacing(2)
@@ -1490,7 +1490,7 @@ struct SettingsView: View {
                     .frame(width: 180, alignment: .leading)
                 }
 
-                Text("翻译会将当前截图选区发送给已配置的模型服务商，原图和翻译结果不会自动保存到本地历史。")
+                Text("截图先由 macOS 在本地 OCR，只有识别出的文字会发送给模型服务商；原图和翻译结果不会自动保存到本地历史。")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1589,7 +1589,7 @@ struct FloatingTranslationView: View {
             if model.isTranslating {
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("正在识别并翻译截图…")
+                    Text("正在本地识别并翻译文字…")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }

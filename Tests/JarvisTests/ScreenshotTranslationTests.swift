@@ -25,10 +25,12 @@ final class ScreenshotTranslationTests: XCTestCase {
     }
 
     func testTranslationPromptPreservesFormattingRequirements() {
-        let prompt = ModelGateway.translationPrompt(targetLanguage: "English")
+        let prompt = ModelGateway.translationPrompt(sourceText: "Hello\nWorld", targetLanguage: "English")
 
         XCTAssertTrue(prompt.contains("English"))
         XCTAssertTrue(prompt.contains("段落、列表和换行"))
         XCTAssertTrue(prompt.contains("只返回完整译文"))
+        XCTAssertTrue(prompt.contains("Hello\nWorld"))
+        XCTAssertFalse(prompt.contains("image_url"))
     }
 }

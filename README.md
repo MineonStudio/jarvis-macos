@@ -9,6 +9,7 @@
 - SwiftUI 原生 macOS 应用外壳
 - OpenAI-compatible API 配置
 - API Key 保存到 macOS Keychain
+- 设置中支持跟随系统、浅色和深色主题
 - 框选截图
 - ScreenCaptureKit 单帧抓取 + 自定义全屏暗幕、窗口命中和框选
 - 截图后在原屏幕位置保留，截图窗口和工具栏独立分离且可一起拖动

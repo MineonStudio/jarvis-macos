@@ -64,6 +64,7 @@ final class AppModel: ObservableObject {
     @Published var screenshotShortcutConflictMessage = ""
     @Published var clipboardShortcut = ScreenshotShortcut.clipboardDefault
     @Published var clipboardShortcutConflictMessage = ""
+    @Published var themePreference: JarvisTheme = .system
     @Published var updateState: JarvisUpdateState = .idle
 
     let modelGateway = ModelGateway()
@@ -85,6 +86,7 @@ final class AppModel: ObservableObject {
     private let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     private let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     private let clipboardShortcutKey = "jarvis.clipboard.shortcut"
+    private let themePreferenceKey = "jarvis.theme.preference"
 
     init() {
         clipboardItems = clipboardStore.load()
@@ -100,6 +102,7 @@ final class AppModel: ObservableObject {
         loadConfiguration()
         loadScreenshotShortcut()
         loadClipboardShortcut()
+        loadThemePreference()
 
         if latestScreenshotData != nil {
             statusMessage = "已恢复上次缓存的截图"
@@ -144,6 +147,19 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(data, forKey: configurationKey)
         }
         statusMessage = "模型配置已保存"
+    }
+
+    func updateThemePreference(_ preference: JarvisTheme) {
+        themePreference = preference
+        UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
+    }
+
+    private func loadThemePreference() {
+        guard let rawValue = UserDefaults.standard.string(forKey: themePreferenceKey),
+              let preference = JarvisTheme(rawValue: rawValue) else {
+            return
+        }
+        themePreference = preference
     }
 
     func clearAPIKey() {

@@ -1375,6 +1375,8 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 22) {
                 versionAndUpdateCard
 
+                themeSettingsCard
+
                 JarvisCard {
                     VStack(alignment: .leading, spacing: 15) {
                         Label("模型 API", systemImage: "brain.head.profile")
@@ -1436,6 +1438,33 @@ struct SettingsView: View {
         }
         .onAppear {
             apiKey = ""
+        }
+    }
+
+    private var themeSettingsCard: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 15) {
+                Label("主题", systemImage: "circle.lefthalf.filled")
+                    .font(.system(size: 15, weight: .semibold))
+
+                LabeledSetting(title: "外观") {
+                    Picker("外观", selection: Binding(
+                        get: { app.themePreference },
+                        set: { app.updateThemePreference($0) }
+                    )) {
+                        ForEach(JarvisTheme.allCases) { theme in
+                            Label(theme.title, systemImage: theme.icon)
+                                .tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                Text("跟随系统会根据 macOS 当前的浅色或深色外观自动切换。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            }
         }
     }
 

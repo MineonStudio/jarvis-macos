@@ -10,6 +10,7 @@ struct JarvisApp: App {
             ContentView()
                 .environmentObject(appModel)
                 .tint(.accentColor)
+                .preferredColorScheme(appModel.themePreference.preferredColorScheme)
                 .frame(minWidth: 980, minHeight: 680)
                 .background(JarvisMainWindowChrome())
         }
@@ -19,6 +20,7 @@ struct JarvisApp: App {
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(appModel)
+                .preferredColorScheme(appModel.themePreference.preferredColorScheme)
         } label: {
             Text("JARVIS")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -30,9 +32,10 @@ struct JarvisApp: App {
         }
 
         Settings {
-            SettingsView()
-                .environmentObject(appModel)
-                .frame(width: 620, height: 520)
+                SettingsView()
+                    .environmentObject(appModel)
+                    .preferredColorScheme(appModel.themePreference.preferredColorScheme)
+                    .frame(width: 620, height: 520)
         }
     }
 }

@@ -5,6 +5,7 @@ import SwiftUI
 final class TranslationOverlayModel: ObservableObject {
     @Published var text = ""
     @Published var ocrText = ""
+    @Published var sourceImage: NSImage?
     @Published var targetLanguage = "中文"
     @Published var isTranslating = false
     @Published var isReviewingOCR = false
@@ -22,6 +23,7 @@ final class OverlayController {
 
     func show(
         text: String,
+        sourceImageData: Data? = nil,
         targetLanguage: String = "中文",
         anchorWindow: NSWindow? = nil,
         anchorFrame: CGRect? = nil,
@@ -30,6 +32,7 @@ final class OverlayController {
         preparePanel()
         model.text = text
         model.ocrText = ""
+        model.sourceImage = sourceImageData.flatMap(NSImage.init(data:))
         model.targetLanguage = targetLanguage
         model.isTranslating = false
         model.isReviewingOCR = false
@@ -37,7 +40,7 @@ final class OverlayController {
         retryAction = onRetry
         translateOCRAction = nil
         closeAction = { [weak self] in self?.dismiss() }
-        setPanelContentSize(height: 330)
+        setPanelContentSize(width: model.sourceImage == nil ? 420 : 760, height: model.sourceImage == nil ? 330 : 450)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -50,6 +53,7 @@ final class OverlayController {
         preparePanel()
         model.text = ""
         model.ocrText = ""
+        model.sourceImage = nil
         model.targetLanguage = targetLanguage
         model.isTranslating = true
         model.isReviewingOCR = false
@@ -57,7 +61,7 @@ final class OverlayController {
         retryAction = onRetry
         translateOCRAction = nil
         closeAction = { [weak self] in self?.dismiss() }
-        setPanelContentSize(height: 330)
+        setPanelContentSize(width: 420, height: 330)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -72,6 +76,7 @@ final class OverlayController {
         preparePanel()
         model.text = ""
         model.ocrText = text
+        model.sourceImage = nil
         model.targetLanguage = targetLanguage
         model.isTranslating = false
         model.isReviewingOCR = true
@@ -79,7 +84,7 @@ final class OverlayController {
         retryAction = nil
         closeAction = onCancel
         translateOCRAction = onTranslate
-        setPanelContentSize(height: 410)
+        setPanelContentSize(width: 420, height: 410)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -93,6 +98,7 @@ final class OverlayController {
         preparePanel()
         model.text = ""
         model.ocrText = ""
+        model.sourceImage = nil
         model.targetLanguage = targetLanguage
         model.isTranslating = false
         model.isReviewingOCR = false
@@ -100,7 +106,7 @@ final class OverlayController {
         retryAction = onRetry
         translateOCRAction = nil
         closeAction = { [weak self] in self?.dismiss() }
-        setPanelContentSize(height: 330)
+        setPanelContentSize(width: 420, height: 330)
         present(anchorWindow: anchorWindow, anchorFrame: anchorFrame)
     }
 
@@ -143,8 +149,8 @@ final class OverlayController {
         panel = newPanel
     }
 
-    private func setPanelContentSize(height: CGFloat) {
-        panel?.setContentSize(NSSize(width: 420, height: height))
+    private func setPanelContentSize(width: CGFloat, height: CGFloat) {
+        panel?.setContentSize(NSSize(width: width, height: height))
     }
 
     private func present(anchorWindow: NSWindow?, anchorFrame: CGRect?) {

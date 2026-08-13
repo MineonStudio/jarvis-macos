@@ -758,6 +758,7 @@ final class AppModel: ObservableObject {
                 statusMessage = "翻译完成"
                 overlayController.show(
                     text: result,
+                    sourceImageData: translationSourceData,
                     targetLanguage: targetLanguage.rawValue,
                     anchorWindow: screenshotController.saveWindow(),
                     anchorFrame: screenshotController.translationAnchorFrame(),
@@ -806,6 +807,7 @@ final class AppModel: ObservableObject {
         }
         overlayController.show(
             text: text,
+            sourceImageData: translationSourceData,
             targetLanguage: targetLanguage.rawValue,
             anchorWindow: screenshotController.saveWindow(),
             anchorFrame: screenshotController.translationAnchorFrame(),

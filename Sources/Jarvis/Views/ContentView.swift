@@ -1635,30 +1635,81 @@ struct FloatingTranslationView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
             } else {
-                ScrollView {
-                    Text(model.text)
-                        .font(.system(size: 15))
-                        .lineSpacing(5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                HStack {
-                    Button("重试", action: onRetry)
-                        .buttonStyle(.borderless)
-                    Spacer()
-                    Button(copied ? "已复制" : "复制结果") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(model.text, forType: .string)
-                        copied = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.jarvisCyan)
-                }
+                translationResultContent
             }
         }
         .padding(20)
         .jarvisGlass(cornerRadius: 18, interactive: false)
         .onChange(of: model.text) { _, _ in copied = false }
+    }
+
+    @ViewBuilder
+    private var translationResultContent: some View {
+        if let sourceImage = model.sourceImage {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("截图")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    Image(nsImage: sourceImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 300)
+                        .padding(8)
+                        .background(Color.black.opacity(0.18))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .frame(width: 330)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("译文")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    ScrollView {
+                        Text(model.text)
+                            .font(.system(size: 15))
+                            .lineSpacing(5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(height: 300)
+                    HStack {
+                        Button("重试", action: onRetry)
+                            .buttonStyle(.borderless)
+                        Spacer()
+                        Button(copied ? "已复制" : "复制结果") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(model.text, forType: .string)
+                            copied = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.jarvisCyan)
+                    }
+                }
+                .frame(width: 350)
+            }
+        } else {
+            ScrollView {
+                Text(model.text)
+                    .font(.system(size: 15))
+                    .lineSpacing(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            HStack {
+                Button("重试", action: onRetry)
+                    .buttonStyle(.borderless)
+                Spacer()
+                Button(copied ? "已复制" : "复制结果") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(model.text, forType: .string)
+                    copied = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.jarvisCyan)
+            }
+        }
     }
 }
 

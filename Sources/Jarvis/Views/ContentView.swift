@@ -1109,18 +1109,6 @@ struct ClipboardPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: "clipboard.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
-                    .jarvisIconGlass(tint: .accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("剪贴板")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    Text("点击卡片上的一键复制按钮")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
                 Spacer()
                 Button { app.closeClipboardPanel() } label: {
                     Image(systemName: "xmark")

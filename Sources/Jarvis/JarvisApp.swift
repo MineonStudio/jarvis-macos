@@ -71,11 +71,28 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
+        window.isOpaque = true
         window.backgroundColor = .textBackgroundColor
+
+        // Keep the native titlebar's backing layers on the same semantic
+        // color as the SwiftUI page. This avoids the titlebar material being
+        // composited as a visibly lighter strip above the content.
+        let backgroundColor = NSColor.textBackgroundColor.cgColor
+        for view in [window.contentView, window.contentView?.superview].compactMap({ $0 }) {
+            view.wantsLayer = true
+            view.layer?.backgroundColor = backgroundColor
+        }
 
         if let close = window.standardWindowButton(.closeButton),
            let miniaturize = window.standardWindowButton(.miniaturizeButton),
            let zoom = window.standardWindowButton(.zoomButton) {
+            var titlebarAncestor = close.superview
+            while let view = titlebarAncestor {
+                view.wantsLayer = true
+                view.layer?.backgroundColor = backgroundColor
+                titlebarAncestor = view.superview
+            }
+
             // The native traffic lights belong to the sidebar in the reference
             // layout, so move the standard button group into that column.
             let titlebarY = close.frame.minY

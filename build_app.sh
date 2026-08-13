@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.34}"
-JARVIS_BUILD="${JARVIS_BUILD:-108}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.35}"
+JARVIS_BUILD="${JARVIS_BUILD:-109}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -27,6 +27,35 @@ rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
 
 if [[ -f "$ROOT_DIR/Resources/Jarvis.icns" ]]; then
   cp "$ROOT_DIR/Resources/Jarvis.icns" "$APP_DIR/Contents/Resources/Jarvis.icns"
+fi
+
+# Compile the macOS Asset Catalog as well as the legacy ICNS fallback. Recent
+# system surfaces, including Privacy & Security, prefer Assets.car and the
+# named AppIcon asset when resolving an application's icon.
+rm -f "$APP_DIR/Contents/Resources/Assets.car" \
+      "$APP_DIR/Contents/Resources/AppIcon.icns"
+ACTOOL="$(xcrun --find actool 2>/dev/null || true)"
+if [[ -n "$ACTOOL" && -f "$ROOT_DIR/Resources/AppIcon.appiconset/Contents.json" ]]; then
+  ICON_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-app-icon.XXXXXX")"
+  trap 'rm -rf "$ICON_STAGE"' EXIT
+  mkdir -p "$ICON_STAGE/Assets.xcassets/AppIcon.appiconset" "$ICON_STAGE/output"
+  cp "$ROOT_DIR/Resources/AppIcon.appiconset/Contents.json" \
+     "$ICON_STAGE/Assets.xcassets/AppIcon.appiconset/Contents.json"
+  cp "$ROOT_DIR/Resources/Jarvis.iconset/"*.png \
+     "$ICON_STAGE/Assets.xcassets/AppIcon.appiconset/"
+  "$ACTOOL" \
+    --compile "$ICON_STAGE/output" \
+    --platform macosx \
+    --minimum-deployment-target 14.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$ICON_STAGE/partial.plist" \
+    "$ICON_STAGE/Assets.xcassets" >/dev/null
+  cp "$ICON_STAGE/output/Assets.car" "$APP_DIR/Contents/Resources/Assets.car"
+  cp "$ICON_STAGE/output/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP_DIR/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$APP_DIR/Contents/Info.plist"
+else
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP_DIR/Contents/Info.plist" >/dev/null 2>&1 || true
 fi
 
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then

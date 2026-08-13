@@ -1356,17 +1356,6 @@ struct SettingsView: View {
                     }
                 }
 
-                JarvisCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("权限提示", systemImage: "lock.shield")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("首次使用截图时，macOS 可能会请求屏幕录制权限。剪贴板监听只在贾维斯运行时生效，历史内容保存在本机 Application Support 目录。")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                            .lineSpacing(4)
-                    }
-                }
-
                 SectionHeader(title: "快捷键", subtitle: "自定义截图与剪贴板快捷键")
 
                 ScreenshotSkillSettingsCard()

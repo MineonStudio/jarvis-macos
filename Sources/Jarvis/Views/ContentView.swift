@@ -22,6 +22,23 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             ZStack {
                 TopNavigationBar(selection: selectedSectionBinding)
+
+                HStack {
+                    Spacer()
+                    Button {
+                        navigationSelection = .settings
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 17, weight: .medium))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                    .help("设置")
+                }
+                .padding(.horizontal, 28)
             }
             .frame(height: 70)
             // The window uses a full-size transparent title bar. Keep the
@@ -87,8 +104,7 @@ private struct TopNavigationBar: View {
     private let sections: [AppSection] = [
         .overview,
         .skill(.screenshot),
-        .skill(.clipboard),
-        .settings
+        .skill(.clipboard)
     ]
 
     var body: some View {
@@ -252,20 +268,26 @@ struct ScreenshotView: View {
     }
 }
 
+enum HistoryGridMetrics {
+    static let pageSize = 12
+    static let minimumCardWidth: CGFloat = 180
+    static let maximumCardWidth: CGFloat = 280
+    static let previewHeight: CGFloat = 132
+    static let spacing: CGFloat = 12
+}
+
 struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
     @State private var currentPage = 1
 
-    private let pageSize = 12
-
     private var totalPages: Int {
-        max(1, (app.screenshotHistory.count + pageSize - 1) / pageSize)
+        max(1, (app.screenshotHistory.count + HistoryGridMetrics.pageSize - 1) / HistoryGridMetrics.pageSize)
     }
 
     private var pageItems: [ScreenshotHistoryItem] {
         let page = min(max(currentPage, 1), totalPages)
-        let startIndex = (page - 1) * pageSize
-        return Array(app.screenshotHistory.dropFirst(startIndex).prefix(pageSize))
+        let startIndex = (page - 1) * HistoryGridMetrics.pageSize
+        return Array(app.screenshotHistory.dropFirst(startIndex).prefix(HistoryGridMetrics.pageSize))
     }
 
     var body: some View {
@@ -297,8 +319,14 @@ struct ScreenshotHistorySection: View {
                     .frame(maxWidth: .infinity, minHeight: 120)
                 } else {
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 180, maximum: 280), spacing: 12)],
-                        spacing: 12
+                        columns: [GridItem(
+                            .adaptive(
+                                minimum: HistoryGridMetrics.minimumCardWidth,
+                                maximum: HistoryGridMetrics.maximumCardWidth
+                            ),
+                            spacing: HistoryGridMetrics.spacing
+                        )],
+                        spacing: HistoryGridMetrics.spacing
                     ) {
                         ForEach(pageItems) { item in
                             ScreenshotHistoryCard(item: item)
@@ -702,8 +730,6 @@ struct ClipboardView: View {
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
 
-    private let pageSize = 20
-
     private var filteredItems: [ClipboardItem] {
         app.clipboardItems.filter { item in
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -717,13 +743,13 @@ struct ClipboardView: View {
     }
 
     private var totalPages: Int {
-        max(1, (filteredItems.count + pageSize - 1) / pageSize)
+        max(1, (filteredItems.count + HistoryGridMetrics.pageSize - 1) / HistoryGridMetrics.pageSize)
     }
 
     private var pageItems: [ClipboardItem] {
         let page = min(max(currentPage, 1), totalPages)
-        let startIndex = (page - 1) * pageSize
-        return Array(filteredItems.dropFirst(startIndex).prefix(pageSize))
+        let startIndex = (page - 1) * HistoryGridMetrics.pageSize
+        return Array(filteredItems.dropFirst(startIndex).prefix(HistoryGridMetrics.pageSize))
     }
 
     var body: some View {
@@ -768,12 +794,20 @@ struct ClipboardView: View {
                         hasQuery: !searchText.isEmpty || selectedFilter != .all
                     )
                 } else {
-                    LazyVStack(spacing: 9) {
+                    LazyVGrid(
+                        columns: [GridItem(
+                            .adaptive(
+                                minimum: HistoryGridMetrics.minimumCardWidth,
+                                maximum: HistoryGridMetrics.maximumCardWidth
+                            ),
+                            spacing: HistoryGridMetrics.spacing
+                        )],
+                        spacing: HistoryGridMetrics.spacing
+                    ) {
                         ForEach(pageItems) { item in
                             ClipboardRow(item: item)
                         }
                     }
-                    .padding(.vertical, 2)
 
                     if totalPages > 1 {
                         PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
@@ -920,75 +954,90 @@ struct ClipboardRow: View {
     let item: ClipboardItem
 
     var body: some View {
-        HStack(alignment: .center, spacing: 13) {
-            HStack(alignment: .center, spacing: 13) {
-                    ClipboardItemPreview(item: item, size: 46)
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 7) {
-                            Text(item.kind.title)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
-                            if item.isPinned {
-                                Image(systemName: "star.fill")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(.orange)
-                            }
-                            Text(item.shortTimestamp)
-                                .font(.system(size: 10))
-                                .foregroundStyle(Color.jarvisTextSecondary)
-                        }
-                        Text(item.preview)
-                            .font(.system(size: 13, weight: .regular))
-                            .lineLimit(item.kind == .text ? 2 : 1)
-                            .textSelection(.enabled)
-                        ClipboardMetadata(item: item)
-                    }
-                    Spacer(minLength: 10)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    app.restoreClipboard(item)
-                }
-
+        VStack(alignment: .leading, spacing: 9) {
             Button {
                 app.restoreClipboard(item)
             } label: {
-                Label("放回", systemImage: "arrow.down.doc")
+                ZStack {
+                    if item.kind == .text {
+                        Text(item.preview)
+                            .font(.system(size: 12, weight: .regular))
+                            .lineLimit(6)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(12)
+                    } else {
+                        ClipboardItemPreview(item: item, size: 78)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: HistoryGridMetrics.previewHeight)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(Rectangle())
             }
-            .buttonStyle(JarvisSecondaryButtonStyle())
+            .buttonStyle(.plain)
             .help("放回剪贴板")
-            Button {
-                app.toggleClipboardPin(item)
-            } label: {
-                Image(systemName: item.isPinned ? "star.slash" : "star")
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+
+            HStack(spacing: 6) {
+                Text(item.kind.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                if item.isPinned {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+                Spacer(minLength: 0)
+                Text(item.shortTimestamp)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(item.isPinned ? .yellow : Color.jarvisTextSecondary)
-            .help(item.isPinned ? "取消收藏" : "收藏")
-            Button {
-                app.deleteClipboardItem(item)
-            } label: {
-                Image(systemName: "trash")
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+
+            Text(item.preview)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(item.kind == .text ? 2 : 1)
+                .textSelection(.enabled)
+            ClipboardMetadata(item: item)
+
+            HStack(spacing: 4) {
+                Button {
+                    app.restoreClipboard(item)
+                } label: {
+                    Label("放回", systemImage: "arrow.down.doc")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                Button {
+                    app.toggleClipboardPin(item)
+                } label: {
+                    Image(systemName: item.isPinned ? "star.slash" : "star")
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(item.isPinned ? .yellow : Color.jarvisTextSecondary)
+                .help(item.isPinned ? "取消收藏" : "收藏")
+                Button {
+                    app.deleteClipboardItem(item)
+                } label: {
+                    Image(systemName: "trash")
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red.opacity(0.72))
+                .help("删除")
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.red.opacity(0.72))
-            .help("删除")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 13)
-        .padding(.vertical, 11)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.75)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .contextMenu {
             Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
             Button("放回剪贴板") { app.restoreClipboard(item) }
@@ -1293,8 +1342,6 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                SectionHeader(title: "设置", subtitle: "给贾维斯接入一个可替换的大脑")
-
                 versionAndUpdateCard
 
                 JarvisCard {

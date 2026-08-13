@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.35"
-    private static let fallbackBuild = "109"
+    private static let fallbackShortVersion = "0.5.36"
+    private static let fallbackBuild = "110"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -438,6 +438,7 @@ struct JarvisUpdateService {
             local target="$1"
             local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
             if [[ -x "$lsregister" ]]; then
+                "$lsregister" -u "$target" >/dev/null 2>&1 || true
                 "$lsregister" -f "$target" >/dev/null 2>&1 || log "刷新 LaunchServices 图标注册失败"
             fi
         }

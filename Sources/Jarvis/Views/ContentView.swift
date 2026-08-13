@@ -1556,11 +1556,6 @@ struct MenuBarView: View {
             Label("框选截图", systemImage: "viewfinder")
         }
         Button {
-            app.reselectScreenshotDisplay()
-        } label: {
-            Label("重新选择截图显示器", systemImage: "display.2")
-        }
-        Button {
             NSApp.activate(ignoringOtherApps: true)
             app.selectedSection = .overview
         } label: {

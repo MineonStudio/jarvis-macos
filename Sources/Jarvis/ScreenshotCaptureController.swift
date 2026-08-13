@@ -72,8 +72,8 @@ final class ScreenshotCaptureController {
     private(set) var sessionPhase: ScreenshotSessionPhase = .idle
     private var activeSessionID: UUID?
 
-    func resetDisplaySelection() {
-        screenshotService.resetSelectedDisplay()
+    func requestScreenCaptureAccess() -> Bool {
+        screenshotService.requestScreenCaptureAccess()
     }
 
     func beginCapture(completion: @escaping (Result<ScreenshotEditingSession, Error>) -> Void) {
@@ -96,9 +96,11 @@ final class ScreenshotCaptureController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let frozenScreen = try await self.screenshotService.captureSelectedDisplay()
+                let frozenScreens = try await self.screenshotService.captureFullScreens(
+                    screenFrames: NSScreen.screens.map(\.frame)
+                )
                 presentSelection(
-                    frozenScreens: [frozenScreen],
+                    frozenScreens: frozenScreens,
                     sessionID: sessionID,
                     completion: completion
                 )

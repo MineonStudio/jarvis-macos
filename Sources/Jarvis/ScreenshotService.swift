@@ -4,92 +4,47 @@ import Foundation
 import ScreenCaptureKit
 
 final class ScreenshotService {
-    @MainActor
-    private var pickerObserver: ScreenshotPickerObserver?
-    @MainActor
-    private var selectedDisplayFilter: SCContentFilter?
+    func requestScreenCaptureAccess() -> Bool {
+        if CGPreflightScreenCaptureAccess() {
+            return true
+        }
+        return CGRequestScreenCaptureAccess()
+    }
 
-    /// Captures from the previously selected display whenever possible. The
-    /// system picker is only shown for the first capture in this app session,
-    /// or after the cached source stops being valid.
-    @MainActor
-    func captureSelectedDisplay() async throws -> ScreenshotCapture {
-        let filter: SCContentFilter
-        if let selectedDisplayFilter {
-            filter = selectedDisplayFilter
-        } else {
-            filter = try await selectDisplay()
-            selectedDisplayFilter = filter
+    /// Freezes every connected display before Jarvis presents its own overlay.
+    /// Window picking then works against these pixels, so no system content
+    /// sharing picker is needed for the normal screenshot flow.
+    func captureFullScreens(screenFrames: [CGRect]) async throws -> [ScreenshotCapture] {
+        var captures: [ScreenshotCapture] = []
+        captures.reserveCapacity(screenFrames.count)
+
+        for screenFrame in screenFrames {
+            captures.append(try await capture(screenRect: screenFrame))
+        }
+
+        return captures
+    }
+
+    /// Captures one display-sized rectangle with ScreenCaptureKit's single
+    /// frame API. macOS 15.2 and later can capture the rectangle directly;
+    /// macOS 14 uses the equivalent display filter without showing a picker.
+    /// Both paths keep the original coordinate space used by the overlay.
+    func capture(screenRect: CGRect) async throws -> ScreenshotCapture {
+        guard !screenRect.isEmpty else {
+            throw ScreenshotError.captureFailed("无法识别要截图的显示器")
         }
 
         do {
-            return try await capture(displayFilter: filter)
-        } catch {
-            // A disconnected display or revoked permission makes the filter
-            // unusable. Do not keep retrying a stale source on every shortcut.
-            selectedDisplayFilter = nil
-            throw error
-        }
-    }
-
-    @MainActor
-    func resetSelectedDisplay() {
-        selectedDisplayFilter = nil
-    }
-
-    /// Presents Apple's system content picker and limits the choice to one
-    /// display. Jarvis keeps its own region-selection/editor UI after this
-    /// step, so the user can still drag-select and annotate a sub-region.
-    @MainActor
-    func selectDisplay() async throws -> SCContentFilter {
-        let picker = SCContentSharingPicker.shared
-        var configuration = SCContentSharingPickerConfiguration()
-        configuration.allowedPickerModes = .singleDisplay
-        configuration.allowsChangingSelectedContent = false
-        if let bundleIdentifier = Bundle.main.bundleIdentifier {
-            configuration.excludedBundleIDs = [bundleIdentifier]
-        }
-
-        let observer = ScreenshotPickerObserver()
-        pickerObserver = observer
-        picker.defaultConfiguration = configuration
-        picker.add(observer)
-        picker.isActive = true
-
-        defer {
-            picker.isActive = false
-            picker.remove(observer)
-            if pickerObserver === observer {
-                pickerObserver = nil
+            let image: CGImage
+            if #available(macOS 15.2, *) {
+                image = try await SCScreenshotManager.captureImage(in: screenRect)
+            } else {
+                image = try await captureDisplayFilter(for: screenRect)
             }
-        }
-
-        picker.present(using: .display)
-        return try await observer.waitForSelection()
-    }
-
-    func capture(displayFilter filter: SCContentFilter) async throws -> ScreenshotCapture {
-        guard filter.style == .display else {
-            throw ScreenshotError.captureFailed("系统选择器返回了非显示器来源")
-        }
-
-        let screenFrame = try screenFrame(for: filter.contentRect)
-        let pixelScale = CGFloat(filter.pointPixelScale)
-        let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int((filter.contentRect.width * pixelScale).rounded()))
-        configuration.height = max(1, Int((filter.contentRect.height * pixelScale).rounded()))
-        configuration.showsCursor = false
-        configuration.capturesAudio = false
-
-        do {
-            let image = try await SCScreenshotManager.captureImage(
-                contentFilter: filter,
-                configuration: configuration
-            )
-            guard let data = Self.pngData(from: image, logicalSize: screenFrame.size) else {
+            guard let data = Self.pngData(from: image, logicalSize: screenRect.size) else {
                 throw ScreenshotError.captureFailed("无法将屏幕图像编码为 PNG")
             }
-            return ScreenshotCapture(data: data, screenFrame: screenFrame)
+            return ScreenshotCapture(data: data, screenFrame: screenRect)
         } catch let error as ScreenshotError {
             throw error
         } catch let error as NSError {
@@ -98,21 +53,51 @@ final class ScreenshotService {
                 throw ScreenshotError.permissionDenied
             }
             throw ScreenshotError.captureFailed(
-                "ScreenCaptureKit 无法读取所选显示器：\(error.localizedDescription)"
+                "ScreenCaptureKit 无法读取当前显示器：\(error.localizedDescription)"
             )
         }
     }
 
-    private func screenFrame(for contentRect: CGRect) throws -> CGRect {
-        guard let screen = NSScreen.screens.first(where: { screen in
-            abs(screen.frame.minX - contentRect.minX) < 1
-                && abs(screen.frame.minY - contentRect.minY) < 1
-                && abs(screen.frame.width - contentRect.width) < 1
-                && abs(screen.frame.height - contentRect.height) < 1
+    @available(macOS, introduced: 14.0, deprecated: 15.2, message: "Use SCScreenshotManager.captureImage(in:) on macOS 15.2 and later")
+    private func captureDisplayFilter(for screenRect: CGRect) async throws -> CGImage {
+        let shareableContent = try await SCShareableContent.current
+        let displayID = displayID(for: screenRect)
+        guard let display = shareableContent.displays.first(where: { display in
+            if let displayID {
+                return display.displayID == displayID
+            }
+            return display.frame == screenRect
         }) else {
-            throw ScreenshotError.captureFailed("无法定位系统选择的显示器")
+            throw ScreenshotError.captureFailed("无法识别要截图的显示器")
         }
-        return screen.frame
+
+        let excludedApplications = Bundle.main.bundleIdentifier.flatMap { bundleIdentifier in
+            shareableContent.applications.filter { $0.bundleIdentifier == bundleIdentifier }
+        } ?? []
+        let filter = SCContentFilter(
+            display: display,
+            excludingApplications: excludedApplications,
+            exceptingWindows: []
+        )
+        let pixelScale = CGFloat(filter.pointPixelScale)
+        let configuration = SCStreamConfiguration()
+        configuration.width = max(1, Int((filter.contentRect.width * pixelScale).rounded()))
+        configuration.height = max(1, Int((filter.contentRect.height * pixelScale).rounded()))
+        configuration.showsCursor = false
+        configuration.capturesAudio = false
+        return try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: configuration
+        )
+    }
+
+    private func displayID(for screenFrame: CGRect) -> CGDirectDisplayID? {
+        let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
+        guard let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }),
+              let number = screen.deviceDescription[screenNumberKey] as? NSNumber else {
+            return nil
+        }
+        return CGDirectDisplayID(number.uint32Value)
     }
 
     private static func pngData(from image: CGImage, logicalSize: CGSize) -> Data? {
@@ -199,65 +184,6 @@ final class ScreenshotService {
             height: clippedRect.height
         )
         return ScreenshotCapture(data: data, screenFrame: outputFrame)
-    }
-}
-
-private final class ScreenshotPickerObserver: NSObject, @unchecked Sendable, SCContentSharingPickerObserver {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<SCContentFilter, Error>?
-    private var pendingResult: Result<SCContentFilter, Error>?
-    private var didFinish = false
-
-    func waitForSelection() async throws -> SCContentFilter {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            if let pendingResult {
-                self.pendingResult = nil
-                lock.unlock()
-                continuation.resume(with: pendingResult)
-            } else {
-                self.continuation = continuation
-                lock.unlock()
-            }
-        }
-    }
-
-    func contentSharingPicker(
-        _ picker: SCContentSharingPicker,
-        didCancelFor stream: SCStream?
-    ) {
-        finish(.failure(ScreenshotError.cancelled))
-    }
-
-    func contentSharingPicker(
-        _ picker: SCContentSharingPicker,
-        didUpdateWith filter: SCContentFilter,
-        for stream: SCStream?
-    ) {
-        finish(.success(filter))
-    }
-
-    func contentSharingPickerStartDidFailWithError(_ error: Error) {
-        finish(.failure(ScreenshotError.captureFailed(
-            "系统内容选择器启动失败：\(error.localizedDescription)"
-        )))
-    }
-
-    private func finish(_ result: Result<SCContentFilter, Error>) {
-        lock.lock()
-        guard !didFinish else {
-            lock.unlock()
-            return
-        }
-        didFinish = true
-        if let continuation {
-            self.continuation = nil
-            lock.unlock()
-            continuation.resume(with: result)
-        } else {
-            pendingResult = result
-            lock.unlock()
-        }
     }
 }
 

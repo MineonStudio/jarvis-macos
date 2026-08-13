@@ -266,11 +266,20 @@ final class AppModel: ObservableObject {
         }
 
         editingHistoryID = nil
-        // The system picker owns source selection and permission. Jarvis only
-        // activates its custom overlay after ScreenCaptureKit has returned a
-        // frozen frame, so the host window is never included in the capture.
+        guard screenshotController.requestScreenCaptureAccess() else {
+            isCapturing = false
+            // CGRequestScreenCaptureAccess() presents macOS's native Screen
+            // Recording permission flow. Do not add a Jarvis-owned alert or
+            // activate the host window on top of that system UI.
+            statusMessage = "等待 macOS 屏幕录制权限"
+            return
+        }
+
+        // Capture the desktop before activating Jarvis. The custom overlay is
+        // shown only after ScreenCaptureKit has returned frozen pixels, so the
+        // host window is never included in the screenshot.
         isCapturing = true
-        statusMessage = "请选择要截图的显示器"
+        statusMessage = "请在屏幕上框选区域"
 
         screenshotController.beginCapture { [weak self] result in
             guard let self else { return }
@@ -286,24 +295,14 @@ final class AppModel: ObservableObject {
                 statusMessage = error.localizedDescription
                 switch error {
                 case ScreenshotError.cancelled, ScreenshotError.permissionDenied:
-                    // The system picker owns source selection and permission.
-                    // Cancellation or denial should not create a second Jarvis
-                    // alert or pull the host window in front of the user.
+                    // Keep normal cancellation and native permission failures
+                    // from pulling the Jarvis host window in front of the user.
                     break
                 default:
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
         }
-    }
-
-    func reselectScreenshotDisplay() {
-        guard screenshotController.sessionPhase == .idle else {
-            statusMessage = "请先完成当前截图操作"
-            return
-        }
-        screenshotController.resetDisplaySelection()
-        statusMessage = "已清除截图显示器选择，下次截图时重新选择"
     }
 
     private func handleScreenshotAction(_ action: ScreenshotAction) {

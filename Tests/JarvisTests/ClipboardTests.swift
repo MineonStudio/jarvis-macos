@@ -6,6 +6,7 @@ final class ClipboardTests: XCTestCase {
         let item = ClipboardItem(
             kind: .video,
             filePath: "/tmp/example.mov",
+            thumbnailPath: "/tmp/example-thumbnail.png",
             fileName: "example.mov",
             fileSize: 2048,
             fileUTI: "com.apple.quicktime-movie",
@@ -21,6 +22,7 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(decoded.kind, .video)
         XCTAssertTrue(decoded.isPinned)
         XCTAssertTrue(decoded.isStoredCopy)
+        XCTAssertEqual(decoded.thumbnailPath, "/tmp/example-thumbnail.png")
     }
 
     func testClipboardItemDecodesHistoryWrittenByOlderBuild() throws {
@@ -40,5 +42,14 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(item.kind, .image)
         XCTAssertFalse(item.isPinned)
         XCTAssertFalse(item.isStoredCopy)
+        XCTAssertNil(item.thumbnailPath)
+    }
+
+    func testVideoThumbnailGeneratorFailsSafelyForMissingFile() {
+        let image = ClipboardVideoThumbnailGenerator.makePNGData(
+            for: URL(fileURLWithPath: "/tmp/jarvis-missing-video.mov")
+        )
+
+        XCTAssertNil(image)
     }
 }

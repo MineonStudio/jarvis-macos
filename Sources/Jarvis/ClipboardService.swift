@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CryptoKit
 import Foundation
 import UniformTypeIdentifiers
@@ -35,6 +36,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     let text: String?
     let imagePath: String?
     let filePath: String?
+    let thumbnailPath: String?
     let fileName: String?
     let fileSize: Int64?
     let fileUTI: String?
@@ -49,6 +51,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         text: String? = nil,
         imagePath: String? = nil,
         filePath: String? = nil,
+        thumbnailPath: String? = nil,
         fileName: String? = nil,
         fileSize: Int64? = nil,
         fileUTI: String? = nil,
@@ -62,6 +65,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         self.text = text
         self.imagePath = imagePath
         self.filePath = filePath
+        self.thumbnailPath = thumbnailPath
         self.fileName = fileName
         self.fileSize = fileSize
         self.fileUTI = fileUTI
@@ -71,7 +75,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, createdAt, kind, text, imagePath, filePath, fileName
+        case id, createdAt, kind, text, imagePath, filePath, thumbnailPath, fileName
         case fileSize, fileUTI, fingerprintValue, isStoredCopy, isPinned
     }
 
@@ -83,6 +87,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         text = try container.decodeIfPresent(String.self, forKey: .text)
         imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
         filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
+        thumbnailPath = try container.decodeIfPresent(String.self, forKey: .thumbnailPath)
         fileName = try container.decodeIfPresent(String.self, forKey: .fileName)
         fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize)
         fileUTI = try container.decodeIfPresent(String.self, forKey: .fileUTI)
@@ -224,10 +229,14 @@ final class ClipboardService {
             let kind = Self.kind(for: url, contentType: contentType)
             let storedPath = self.storeFile(url, fileSize: fileSize)
             let path = storedPath ?? url.path
+            let thumbnailPath = kind == .video
+                ? self.saveVideoThumbnail(for: URL(fileURLWithPath: path))
+                : nil
             let fingerprint = "\(url.path)|\(fileSize)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
             let item = ClipboardItem(
                 kind: kind,
                 filePath: path,
+                thumbnailPath: thumbnailPath,
                 fileName: url.lastPathComponent,
                 fileSize: fileSize,
                 fileUTI: contentType?.identifier,
@@ -272,6 +281,13 @@ final class ClipboardService {
         } catch {
             return nil
         }
+    }
+
+    private func saveVideoThumbnail(for url: URL) -> String? {
+        guard let data = ClipboardVideoThumbnailGenerator.makePNGData(for: url) else {
+            return nil
+        }
+        return saveData(data, fileExtension: "png")
     }
 
     private func storageDirectory() throws -> URL {
@@ -321,6 +337,10 @@ final class ClipboardStore {
 
     func removeStoredFiles(for items: [ClipboardItem]) {
         for item in items {
+            if let thumbnailPath = item.thumbnailPath {
+                try? FileManager.default.removeItem(atPath: thumbnailPath)
+            }
+
             let path: String?
             switch item.kind {
             case .image: path = item.imagePath

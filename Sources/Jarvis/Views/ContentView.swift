@@ -1063,28 +1063,73 @@ struct ClipboardMetadata: View {
 }
 
 struct ClipboardItemPreview: View {
+    private static let videoThumbnailCache = NSCache<NSString, NSImage>()
+
     let item: ClipboardItem
     let size: CGFloat
+    @State private var videoThumbnail: NSImage?
 
     var body: some View {
         ZStack {
             if item.kind == .image,
                let path = item.imagePath,
                let image = NSImage(contentsOfFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: size, height: size)
-                    .clipped()
+                mediaImage(image)
+            } else if item.kind == .video,
+                      let image = videoThumbnail {
+                mediaImage(image)
+                    .overlay(alignment: .bottomLeading) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(6)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .padding(7)
+                    }
             } else {
                 Image(systemName: item.kind.icon)
                     .font(.system(size: size * 0.36, weight: .medium))
                     .foregroundStyle(Color.accentColor)
-                }
             }
-            .frame(width: size, height: size)
+        }
+        .frame(width: size, height: size)
         .jarvisIconGlass(tint: .accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task(id: item.id) {
+            guard item.kind == .video,
+                  let videoPath = item.filePath else { return }
+
+            let cacheKey = (item.thumbnailPath ?? videoPath) as NSString
+            if let cached = Self.videoThumbnailCache.object(forKey: cacheKey) {
+                videoThumbnail = cached
+                return
+            }
+
+            if let thumbnailPath = item.thumbnailPath,
+               let thumbnail = NSImage(contentsOfFile: thumbnailPath) {
+                Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
+                videoThumbnail = thumbnail
+                return
+            }
+
+            ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: videoPath)) { image in
+                guard let image else { return }
+                let thumbnail = NSImage(
+                    cgImage: image,
+                    size: NSSize(width: image.width, height: image.height)
+                )
+                Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
+                videoThumbnail = thumbnail
+            }
+        }
+    }
+
+    private func mediaImage(_ image: NSImage) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipped()
     }
 }
 

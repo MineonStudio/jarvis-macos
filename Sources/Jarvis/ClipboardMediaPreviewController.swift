@@ -140,7 +140,6 @@ final class ClipboardMediaPreviewController {
         self.player = mediaPlayer
         dimmingPanel.orderFrontRegardless()
         previewPanel.makeKeyAndOrderFront(nil)
-        mediaPlayer?.play()
     }
 
     func dismiss() {
@@ -213,7 +212,7 @@ struct ClipboardMediaPreview: View {
                             model.setZoom(model.zoom > 1 ? 1 : 2)
                         }
                 } else if let player {
-                    VideoPlayer(player: player)
+                    ClipboardAVPlayerView(player: player)
                         .frame(width: displaySize.width, height: displaySize.height)
                         .scaleEffect(model.zoom)
                         .offset(model.offset)
@@ -287,6 +286,36 @@ struct ClipboardMediaPreview: View {
             .onEnded { _ in
                 toolbarDragStartOffset = nil
             }
+    }
+}
+
+private struct ClipboardAVPlayerView: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .floating
+        view.videoGravity = AVLayerVideoGravity.resizeAspect
+        view.showsFullScreenToggleButton = false
+        view.allowsVideoFrameAnalysis = false
+        DispatchQueue.main.async {
+            guard view.player === player else { return }
+            player.play()
+        }
+        return view
+    }
+
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        if view.player !== player {
+            view.player?.pause()
+            view.player = player
+        }
+    }
+
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+        view.player?.pause()
+        view.player = nil
     }
 }
 

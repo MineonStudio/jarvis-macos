@@ -13,15 +13,15 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.15</string>
+	<string>0.5.16</string>
 	<key>CFBundleVersion</key>
-	<string>89</string>
+	<string>90</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>贾维斯需要读取屏幕内容来完成框选截图。</string>
+	<string>贾维斯使用 macOS 系统选择器选择显示器，再读取画面完成框选截图；不使用系统音频或麦克风。</string>
 	<key>CFBundleIconFile</key>
 	<string>Jarvis.icns</string>
 </dict>

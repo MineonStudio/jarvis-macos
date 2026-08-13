@@ -336,20 +336,6 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
         XCTAssertEqual(representation.pixelsHigh, 16)
     }
 
-    func testNativeCaptureReturnsPNGWhenScreenRecordingIsAvailable() async throws {
-        guard CGPreflightScreenCaptureAccess() else {
-            throw XCTSkip("Screen Recording permission is not available in this test process")
-        }
-        guard let screen = NSScreen.main else {
-            throw XCTSkip("No main screen is available")
-        }
-
-        let capture = try await ScreenshotService().capture(screenRect: screen.frame)
-        XCTAssertEqual(capture.screenFrame, screen.frame)
-        XCTAssertTrue(capture.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
-        XCTAssertNotNil(NSImage(data: capture.data))
-    }
-
     private func colorAtPNGData(_ data: Data, x: Int, y: Int) -> NSColor? {
         guard let representation = NSBitmapImageRep(data: data),
               let color = representation.colorAt(x: x, y: y) else {

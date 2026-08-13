@@ -265,25 +265,12 @@ final class AppModel: ObservableObject {
             return
         }
 
-        // Do not activate Jarvis before the frozen frame is captured. The
-        // caller may have invoked this from another app, and activating here
-        // would make Jarvis itself part of the screenshot. The capture
-        // controller activates only after the pixels are safely frozen.
-        guard screenshotController.requestScreenCaptureAccess() else {
-            isCapturing = false
-            // CGRequestScreenCaptureAccess() already presents macOS's native
-            // Screen Recording permission prompt. Do not put a Jarvis alert
-            // or activation in front of that system-owned prompt.
-            statusMessage = "等待 macOS 屏幕录制权限"
-            return
-        }
-
         editingHistoryID = nil
-        // Freeze the current desktop first. The selection overlay will cover
-        // the frozen pixels, so Jarvis itself never needs to be hidden before
-        // capture starts (which caused a visible flash and stale hidden state).
+        // The system picker owns source selection and permission. Jarvis only
+        // activates its custom overlay after ScreenCaptureKit has returned a
+        // frozen frame, so the host window is never included in the capture.
         isCapturing = true
-        statusMessage = "请在屏幕上框选区域"
+        statusMessage = "请选择要截图的显示器"
 
         screenshotController.beginCapture { [weak self] result in
             guard let self else { return }
@@ -297,10 +284,13 @@ final class AppModel: ObservableObject {
                 }
             case .failure(let error):
                 statusMessage = error.localizedDescription
-                if case ScreenshotError.permissionDenied = error {
-                    // The access request above owns the native permission UI.
-                    // A denied capture should not create a second Jarvis alert.
-                } else {
+                switch error {
+                case ScreenshotError.cancelled, ScreenshotError.permissionDenied:
+                    // The system picker owns source selection and permission.
+                    // Cancellation or denial should not create a second Jarvis
+                    // alert or pull the host window in front of the user.
+                    break
+                default:
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }

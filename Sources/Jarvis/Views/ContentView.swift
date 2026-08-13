@@ -956,7 +956,11 @@ struct ClipboardRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Button {
-                app.copyClipboard(item)
+                if item.kind == .image || item.kind == .video {
+                    app.showClipboardMediaPreview(item)
+                } else {
+                    app.copyClipboard(item)
+                }
             } label: {
                 ZStack {
                     if item.kind == .text {
@@ -976,7 +980,7 @@ struct ClipboardRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("一键复制")
+            .help(item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
 
             HStack(spacing: 6) {
                 Text(item.kind.title)
@@ -1184,7 +1188,16 @@ struct ClipboardPanelView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 7) {
+                    LazyVGrid(
+                        columns: [GridItem(
+                            .adaptive(
+                                minimum: HistoryGridMetrics.minimumCardWidth,
+                                maximum: HistoryGridMetrics.maximumCardWidth
+                            ),
+                            spacing: HistoryGridMetrics.spacing
+                        )],
+                        spacing: HistoryGridMetrics.spacing
+                    ) {
                         ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
                             ClipboardPanelRow(
                                 item: item,
@@ -1194,11 +1207,11 @@ struct ClipboardPanelView: View {
                                     selectedID = item.id
                                     app.clipboardPanelSelectionID = item.id
                                 },
+                                preview: { app.showClipboardMediaPreview(item) },
                                 copy: { app.copyClipboard(item) }
                             )
                         }
                     }
-                    .padding(.vertical, 2)
                 }
             }
 
@@ -1235,64 +1248,82 @@ struct ClipboardPanelRow: View {
     let rank: Int?
     let isSelected: Bool
     let select: () -> Void
+    let preview: () -> Void
     let copy: () -> Void
 
     var body: some View {
-        HStack(spacing: 11) {
-            ClipboardItemPreview(item: item, size: 42)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(item.kind.title)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                    if item.isPinned {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: 9) {
+            Button(action: preview) {
+                ZStack {
+                    if item.kind == .text {
+                        Text(item.preview)
+                            .font(.system(size: 12))
+                            .lineLimit(6)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(12)
+                    } else {
+                        ClipboardItemPreview(item: item, size: 78)
                     }
-                    Text(item.shortTimestamp)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
-                Text(item.preview)
-                    .font(.system(size: 12))
-                    .lineLimit(item.kind == .text ? 2 : 1)
-                ClipboardMetadata(item: item)
+                .frame(maxWidth: .infinity)
+                .frame(height: HistoryGridMetrics.previewHeight)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 8)
-            if let rank {
-                ClipboardKeyCap(title: "⌘\(rank)")
+            .buttonStyle(.plain)
+            .disabled(item.kind != .image && item.kind != .video)
+            .help(item.kind == .image || item.kind == .video ? "查看大图" : "")
+
+            HStack(spacing: 6) {
+                Text(item.kind.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                if item.isPinned {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+                Spacer(minLength: 0)
+                Text(item.shortTimestamp)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
             }
-            if let rank {
+
+            Text(item.preview)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(item.kind == .text ? 2 : 1)
+            ClipboardMetadata(item: item)
+
+            HStack(spacing: 4) {
+                if let rank {
+                    ClipboardKeyCap(title: "⌘\(rank)")
+                }
                 Button {
                     copy()
                 } label: {
                     Label("一键复制", systemImage: "doc.on.doc")
+                        .frame(maxWidth: .infinity)
                 }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .keyboardShortcut(KeyEquivalent(Character("\(rank)")), modifiers: .command)
-                    .disabled(!item.hasLocalContent)
-            } else {
-                Button {
-                    copy()
-                } label: {
-                    Label("一键复制", systemImage: "doc.on.doc")
-                }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(!item.hasLocalContent)
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .keyboardShortcut(
+                    rank.map { KeyEquivalent(Character("\($0)")) } ?? KeyEquivalent("0"),
+                    modifiers: rank == nil ? [] : .command
+                )
+                .disabled(!item.hasLocalContent)
             }
         }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.035),
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(isSelected ? 0.14 : 0.07), lineWidth: 0.75)
-            }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.035),
+            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(Color.primary.opacity(isSelected ? 0.14 : 0.07), lineWidth: 0.75)
+        }
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .onTapGesture(perform: select)
     }

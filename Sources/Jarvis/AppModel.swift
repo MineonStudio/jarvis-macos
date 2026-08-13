@@ -76,6 +76,7 @@ final class AppModel: ObservableObject {
     private let overlayController = OverlayController()
     private let screenshotController = ScreenshotCaptureController()
     private let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
+    private let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     private let updateService = JarvisUpdateService()
     private var screenshotShortcutManager: ScreenshotShortcutManager?
     private var clipboardShortcutManager: ScreenshotShortcutManager?
@@ -647,6 +648,18 @@ final class AppModel: ObservableObject {
         }
         clipboardService.markCurrentPasteboardAsHandled()
         statusMessage = "已复制 \(item.preview)"
+    }
+
+    func showClipboardMediaPreview(_ item: ClipboardItem) {
+        guard item.kind == .image || item.kind == .video else {
+            copyClipboard(item)
+            return
+        }
+        guard item.hasLocalContent else {
+            statusMessage = "媒体文件已不可用"
+            return
+        }
+        clipboardMediaPreviewController.show(item: item, app: self)
     }
 
     func showClipboardPanel() {

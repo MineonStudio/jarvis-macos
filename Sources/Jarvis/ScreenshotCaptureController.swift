@@ -14,6 +14,7 @@ enum ScreenshotAction {
     case redo
     case delete
     case duplicate
+    case translateRequested(Data)
 }
 
 struct ScreenshotEditingSession: Sendable {
@@ -57,8 +58,14 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 }
 
 @MainActor
+final class ScreenshotTranslationProgress: ObservableObject {
+    @Published var isTranslating = false
+}
+
+@MainActor
 final class ScreenshotCaptureController {
     private let screenshotService = ScreenshotService()
+    let translationProgress = ScreenshotTranslationProgress()
     private var selectionWindows: [SelectionOverlayWindow] = []
     private var resultWindow: NSPanel?
     private var toolbarWindow: NSPanel?
@@ -69,6 +76,7 @@ final class ScreenshotCaptureController {
     private var pinNextSelectionResult = false
     private var pinnedItems: [UUID: PinnedScreenshotItem] = [:]
     private var selectedPinnedID: UUID?
+    private var activeCaptureScreenFrame: CGRect?
     private(set) var sessionPhase: ScreenshotSessionPhase = .idle
     private var activeSessionID: UUID?
 
@@ -211,7 +219,11 @@ final class ScreenshotCaptureController {
         }
     }
 
-    func showResult(_ session: ScreenshotEditingSession, onAction: @escaping (ScreenshotAction) -> Void) {
+    func showResult(
+        _ session: ScreenshotEditingSession,
+        translationProgress: ScreenshotTranslationProgress,
+        onAction: @escaping (ScreenshotAction) -> Void
+    ) {
         guard activeSessionID == session.id else { return }
         let capture = session.frozenScreen
         guard let image = NSImage(data: capture.data) else { return }
@@ -229,6 +241,7 @@ final class ScreenshotCaptureController {
             outputRect: session.selectionRect
         )
         activeEditor = editor
+        activeCaptureScreenFrame = capture.screenFrame
 
         let imagePanel: NSPanel
         let cancelEditing: () -> Void = { [weak self] in
@@ -327,6 +340,7 @@ final class ScreenshotCaptureController {
             rootView: ScreenshotToolbar(
                 editor: editor,
                 layout: toolbarLayout,
+                translationProgress: translationProgress,
                 onAction: { [weak self] action in
                 switch action {
                 case .saveRequested:
@@ -364,6 +378,8 @@ final class ScreenshotCaptureController {
                 case .duplicate:
                     editor.duplicateSelectedAnnotation()
                     onAction(.duplicate)
+                case .translateRequested:
+                    onAction(action)
                 }
             })
         )
@@ -398,7 +414,11 @@ final class ScreenshotCaptureController {
     /// by a fresh capture. The synthetic full-screen session keeps the editor's
     /// coordinate space identical to the PNG, so annotations are not offset on
     /// a second edit.
-    func showHistoryResult(data: Data, onAction: @escaping (ScreenshotAction) -> Void) {
+    func showHistoryResult(
+        data: Data,
+        translationProgress: ScreenshotTranslationProgress,
+        onAction: @escaping (ScreenshotAction) -> Void
+    ) {
         guard sessionPhase == .idle,
               let image = NSImage(data: data),
               image.size.width > 0,
@@ -422,7 +442,7 @@ final class ScreenshotCaptureController {
             initialCapture: capture
         )
         activeSessionID = session.id
-        showResult(session, onAction: onAction)
+        showResult(session, translationProgress: translationProgress, onAction: onAction)
     }
 
     func dismissResult() {
@@ -434,6 +454,7 @@ final class ScreenshotCaptureController {
         toolbarWindow = nil
         resultWindow = nil
         activeEditor = nil
+        activeCaptureScreenFrame = nil
         toolbarLayout = nil
         editorObservation?.cancel()
         editorObservation = nil
@@ -445,6 +466,15 @@ final class ScreenshotCaptureController {
 
     func saveWindow() -> NSWindow? {
         resultWindow
+    }
+
+    func currentEditingPNGData() -> Data? {
+        activeEditor?.finalPNGData()
+    }
+
+    func translationAnchorFrame() -> CGRect? {
+        guard let activeEditor, let activeCaptureScreenFrame else { return nil }
+        return activeEditor.selectionFrame(on: activeCaptureScreenFrame) ?? activeCaptureScreenFrame
     }
 
     private func pinScreenshot(
@@ -594,6 +624,7 @@ final class ScreenshotCaptureController {
             rootView: ScreenshotToolbar(
                 editor: item.editor,
                 layout: layout,
+                translationProgress: translationProgress,
                 onAction: { [weak self, weak item] action in
                     guard let self, let item else { return }
                     self.handlePinnedToolbarAction(action, for: item)
@@ -690,6 +721,8 @@ final class ScreenshotCaptureController {
         case .duplicate:
             item.editor.duplicateSelectedAnnotation()
             item.onAction?(.duplicate)
+        case .translateRequested(let data):
+            item.onAction?(.translateRequested(data))
         case .pin:
             break
         }
@@ -1934,7 +1967,7 @@ final class SelectionOverlayView: NSView {
 }
 
 struct ScreenshotToolbar: View {
-    static let baseWidth: CGFloat = 392
+    static let baseWidth: CGFloat = 440
 
     static func preferredWidth(
         for tool: ScreenshotTool?,
@@ -1950,6 +1983,7 @@ struct ScreenshotToolbar: View {
 
     @ObservedObject var editor: ScreenshotEditorModel
     @ObservedObject var layout: ScreenshotToolbarLayoutModel
+    @ObservedObject var translationProgress: ScreenshotTranslationProgress
     let onAction: (ScreenshotAction) -> Void
 
     var body: some View {
@@ -1969,6 +2003,14 @@ struct ScreenshotToolbar: View {
                 }
 
                 toolbarDivider
+
+                actionButton(
+                    icon: "character.bubble",
+                    help: translationProgress.isTranslating ? "翻译中…" : "翻译截图",
+                    enabled: !translationProgress.isTranslating
+                ) {
+                    onAction(.translateRequested(editor.finalPNGData()))
+                }
 
                 actionButton(icon: "square.and.arrow.down", help: "另存为") {
                     onAction(.saveRequested)

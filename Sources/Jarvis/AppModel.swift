@@ -56,9 +56,9 @@ final class AppModel: ObservableObject {
     @Published var latestScreenshotData: Data?
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
     @Published var latestTranslation = ""
-    @Published var targetLanguage = "中文"
+    @Published var targetLanguage: ScreenshotTranslationLanguage = .chinese
+    @Published private(set) var screenshotTranslationState: ScreenshotTranslationState = .idle
     @Published var isCapturing = false
-    @Published var isTranslating = false
     @Published var statusMessage = "系统就绪"
     @Published var connectionStatus = "尚未测试连接"
     @Published var screenshotShortcut = ScreenshotShortcut.default
@@ -90,6 +90,14 @@ final class AppModel: ObservableObject {
     private let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     private let clipboardShortcutKey = "jarvis.clipboard.shortcut"
     private let themePreferenceKey = "jarvis.theme.preference"
+    private let translationLanguageKey = "jarvis.screenshot.translation.language"
+    private var translationTask: Task<Void, Never>?
+    private var translationRequestID = UUID()
+    private var translationSourceData: Data?
+
+    var screenshotTranslationProgress: ScreenshotTranslationProgress {
+        screenshotController.translationProgress
+    }
 
     init() {
         clipboardItems = clipboardStore.load()
@@ -106,6 +114,7 @@ final class AppModel: ObservableObject {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
+        loadTranslationLanguage()
         refreshSystemColorScheme()
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
@@ -296,6 +305,8 @@ final class AppModel: ObservableObject {
             return
         }
 
+        cancelScreenshotTranslation()
+
         editingHistoryID = nil
         guard screenshotController.requestScreenCaptureAccess() else {
             isCapturing = false
@@ -319,7 +330,10 @@ final class AppModel: ObservableObject {
             switch result {
             case .success(let session):
                 statusMessage = "截图已保留在冻结画面上，可以直接编辑"
-                screenshotController.showResult(session) { [weak self] action in
+                screenshotController.showResult(
+                    session,
+                    translationProgress: screenshotTranslationProgress
+                ) { [weak self] action in
                     self?.handleScreenshotAction(action)
                 }
             case .failure(let error):
@@ -351,15 +365,20 @@ final class AppModel: ObservableObject {
             )
         case .confirm(let data):
             finalizeScreenshot(data, historyID: editingHistoryID)
+            cancelScreenshotTranslation()
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setData(data, forType: .png)
             statusMessage = "截图已确认并复制到剪贴板"
         case .pin(let data):
             finalizeScreenshot(data, historyID: editingHistoryID)
+            cancelScreenshotTranslation()
             statusMessage = "截图已贴在屏幕上"
         case .cancel:
+            cancelScreenshotTranslation()
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
+        case .translateRequested(let data):
+            translateScreenshot(data: data)
         case .tool(let tool):
             statusMessage = "已选择\(tool.title)，在截图上拖动即可使用"
         case .undo:
@@ -483,6 +502,7 @@ final class AppModel: ObservableObject {
     }
 
     func clearScreenshotCache() {
+        cancelScreenshotTranslation()
         screenshotCacheStore.clear()
         latestScreenshotData = nil
         latestTranslation = ""
@@ -581,7 +601,10 @@ final class AppModel: ObservableObject {
         editingHistoryID = item.id
         selectedSection = .skill(.screenshot)
         statusMessage = "正在编辑历史截图"
-        screenshotController.showHistoryResult(data: data) { [weak self] action in
+        screenshotController.showHistoryResult(
+            data: data,
+            translationProgress: screenshotTranslationProgress
+        ) { [weak self] action in
             self?.handleScreenshotAction(action)
         }
     }
@@ -603,6 +626,7 @@ final class AppModel: ObservableObject {
                 screenshotCacheStore.clear()
                 latestScreenshotData = nil
                 latestTranslation = ""
+                screenshotTranslationState = .idle
             }
         }
         statusMessage = "已删除历史截图"
@@ -618,6 +642,15 @@ final class AppModel: ObservableObject {
             return
         }
 
+        translateScreenshot(data: screenshotData)
+    }
+
+    func translateScreenshot(data: Data) {
+        guard !data.isEmpty else {
+            statusMessage = "截图内容为空，无法翻译"
+            return
+        }
+
         let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
         guard !key.isEmpty else {
             selectedSection = .settings
@@ -625,31 +658,112 @@ final class AppModel: ObservableObject {
             return
         }
 
-        isTranslating = true
+        translationTask?.cancel()
+        let requestID = UUID()
+        translationRequestID = requestID
+        translationSourceData = data
+        latestTranslation = ""
+        screenshotTranslationState = .translating
+        screenshotTranslationProgress.isTranslating = true
         statusMessage = "大脑正在理解截图…"
-        Task {
+
+        showTranslationOverlayLoading()
+
+        translationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
                 let result = try await modelGateway.translateImage(
-                    screenshotData,
-                    targetLanguage: targetLanguage,
+                    data,
+                    targetLanguage: targetLanguage.rawValue,
                     configuration: modelConfiguration,
                     apiKey: key
                 )
+                try Task.checkCancellation()
+                guard translationRequestID == requestID else { return }
                 latestTranslation = result
+                screenshotTranslationState = .success(result)
+                screenshotTranslationProgress.isTranslating = false
                 statusMessage = "翻译完成"
+                overlayController.show(
+                    text: result,
+                    targetLanguage: targetLanguage.rawValue,
+                    anchorWindow: screenshotController.saveWindow(),
+                    anchorFrame: screenshotController.translationAnchorFrame(),
+                    onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+                )
+            } catch is CancellationError {
+                return
             } catch {
+                guard translationRequestID == requestID else { return }
+                let message = error.localizedDescription
+                screenshotTranslationState = .failed(message)
+                screenshotTranslationProgress.isTranslating = false
                 statusMessage = "翻译失败：\(error.localizedDescription)"
+                overlayController.showError(
+                    message: message,
+                    targetLanguage: targetLanguage.rawValue,
+                    anchorWindow: screenshotController.saveWindow(),
+                    anchorFrame: screenshotController.translationAnchorFrame(),
+                    onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+                )
             }
-            isTranslating = false
         }
     }
 
+    func translateCurrentScreenshot() {
+        let data = screenshotController.currentEditingPNGData() ?? translationSourceData ?? latestScreenshotData
+        guard let data else {
+            statusMessage = "请先截取一块屏幕区域"
+            return
+        }
+        translateScreenshot(data: data)
+    }
+
     func showTranslationOverlay() {
-        guard !latestTranslation.isEmpty else {
+        guard case .success(let text) = screenshotTranslationState else {
             statusMessage = "请先完成一次翻译"
             return
         }
-        overlayController.show(text: latestTranslation)
+        overlayController.show(
+            text: text,
+            targetLanguage: targetLanguage.rawValue,
+            anchorWindow: screenshotController.saveWindow(),
+            anchorFrame: screenshotController.translationAnchorFrame(),
+            onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+        )
+    }
+
+    func updateTranslationLanguage(_ language: ScreenshotTranslationLanguage) {
+        targetLanguage = language
+        UserDefaults.standard.set(language.rawValue, forKey: translationLanguageKey)
+    }
+
+    private func loadTranslationLanguage() {
+        guard let rawValue = UserDefaults.standard.string(forKey: translationLanguageKey),
+              let language = ScreenshotTranslationLanguage(rawValue: rawValue) else {
+            return
+        }
+        targetLanguage = language
+    }
+
+    private func showTranslationOverlayLoading() {
+        overlayController.showLoading(
+            targetLanguage: targetLanguage.rawValue,
+            anchorWindow: screenshotController.saveWindow(),
+            anchorFrame: screenshotController.translationAnchorFrame(),
+            onRetry: { [weak self] in self?.translateCurrentScreenshot() }
+        )
+    }
+
+    private func cancelScreenshotTranslation() {
+        translationRequestID = UUID()
+        translationTask?.cancel()
+        translationTask = nil
+        translationSourceData = nil
+        latestTranslation = ""
+        screenshotTranslationState = .idle
+        screenshotTranslationProgress.isTranslating = false
+        overlayController.dismiss()
     }
 
     func receiveClipboardItem(_ item: ClipboardItem) {

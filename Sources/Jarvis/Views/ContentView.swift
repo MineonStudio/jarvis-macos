@@ -1381,6 +1381,8 @@ struct SettingsView: View {
 
                 themeSettingsCard
 
+                screenshotTranslationSettingsCard
+
                 JarvisCard {
                     VStack(alignment: .leading, spacing: 15) {
                         Label("模型 API", systemImage: "brain.head.profile")
@@ -1469,6 +1471,33 @@ struct SettingsView: View {
         }
     }
 
+    private var screenshotTranslationSettingsCard: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 15) {
+                Label("截图翻译", systemImage: "character.bubble")
+                    .font(.system(size: 15, weight: .semibold))
+
+                LabeledSetting(title: "翻译为") {
+                    Picker("翻译为", selection: Binding(
+                        get: { app.targetLanguage },
+                        set: { app.updateTranslationLanguage($0) }
+                    )) {
+                        ForEach(ScreenshotTranslationLanguage.allCases) { language in
+                            Text(language.rawValue).tag(language)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 180, alignment: .leading)
+                }
+
+                Text("翻译会将当前截图选区发送给已配置的模型服务商，原图和翻译结果不会自动保存到本地历史。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private var versionAndUpdateCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
@@ -1535,15 +1564,19 @@ struct SettingsView: View {
 }
 
 struct FloatingTranslationView: View {
-    let text: String
+    @ObservedObject var model: TranslationOverlayModel
     let onClose: () -> Void
+    let onRetry: () -> Void
     @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("贾维斯 · 翻译结果", systemImage: "character.bubble")
+                Label("贾维斯 · 截图翻译", systemImage: "character.bubble")
                     .font(.system(size: 13, weight: .semibold))
+                Text("→ \\(model.targetLanguage)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.jarvisTextSecondary)
                 Spacer()
                 Button { onClose() } label: {
                     Image(systemName: "xmark")
@@ -1553,26 +1586,51 @@ struct FloatingTranslationView: View {
                     .buttonStyle(.borderless)
             }
             Divider()
-            ScrollView {
-                Text(text)
-                    .font(.system(size: 15))
-                    .lineSpacing(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-            }
-            HStack {
-                Spacer()
-                Button(copied ? "已复制" : "复制结果") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    copied = true
+            if model.isTranslating {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("正在识别并翻译截图…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.jarvisCyan)
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else if !model.errorMessage.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("翻译失败", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                    Text(model.errorMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .textSelection(.enabled)
+                    Button("重试", action: onRetry)
+                        .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+            } else {
+                ScrollView {
+                    Text(model.text)
+                        .font(.system(size: 15))
+                        .lineSpacing(5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button("重试", action: onRetry)
+                        .buttonStyle(.borderless)
+                    Spacer()
+                    Button(copied ? "已复制" : "复制结果") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(model.text, forType: .string)
+                        copied = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.jarvisCyan)
+                }
             }
         }
         .padding(20)
         .jarvisGlass(cornerRadius: 18, interactive: false)
+        .onChange(of: model.text) { _, _ in copied = false }
     }
 }
 

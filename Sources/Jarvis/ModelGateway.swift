@@ -40,12 +40,16 @@ final class ModelGateway {
         apiKey: String
     ) async throws -> String {
         try await request(
-            prompt: "请识别这张截图中的文字，并将其翻译成\(targetLanguage)。只返回清晰、完整的译文，不要解释过程。",
+            prompt: Self.translationPrompt(targetLanguage: targetLanguage),
             imageData: imageData,
             targetLanguage: targetLanguage,
             configuration: configuration,
             apiKey: apiKey
         )
+    }
+
+    static func translationPrompt(targetLanguage: String) -> String {
+        "请识别截图中所有可读文字，自动判断源语言，并翻译成\(targetLanguage)。保留原文的段落、列表和换行结构，只返回完整译文，不要解释过程。若没有可识别文字，只返回：未识别到文字。"
     }
 
     private func request(

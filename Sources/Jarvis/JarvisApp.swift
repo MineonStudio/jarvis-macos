@@ -6,7 +6,7 @@ struct JarvisApp: App {
     @StateObject private var appModel = AppModel()
 
     var body: some Scene {
-        WindowGroup("贾维斯") {
+        WindowGroup("Jarvis") {
             ContentView()
                 .environmentObject(appModel)
                 .tint(.accentColor)
@@ -18,7 +18,6 @@ struct JarvisApp: App {
                 .background(JarvisMainWindowChrome())
         }
         .defaultSize(width: 1120, height: 760)
-        .windowStyle(.hiddenTitleBar)
 
         MenuBarExtra {
             MenuBarView()
@@ -68,7 +67,7 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
 
     private func configure(window: NSWindow?) {
         guard let window else { return }
-        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)

@@ -44,5 +44,7 @@ final class AppVersionTests: XCTestCase {
         let script = try String(contentsOf: scriptURL, encoding: .utf8)
         XCTAssertFalse(script.contains("tccutil"))
         XCTAssertFalse(script.contains("reset_screen_recording_permission"))
+        XCTAssertTrue(script.contains("refresh_launch_services"))
+        XCTAssertTrue(script.contains("lsregister"))
     }
 }

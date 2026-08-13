@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.33}"
-JARVIS_BUILD="${JARVIS_BUILD:-107}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.34}"
+JARVIS_BUILD="${JARVIS_BUILD:-108}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -36,5 +36,12 @@ else
   # Screen Recording again after the executable changes. Use a stable Apple
   # Development identity for persistent TCC permissions when available.
   codesign --force --deep --sign - "$APP_DIR" >/dev/null
+fi
+
+# Refresh the local LaunchServices registration so System Settings and Finder
+# resolve the standalone ICNS immediately after a local production build.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+  "$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1 || true
 fi
 echo "Built: $APP_DIR"

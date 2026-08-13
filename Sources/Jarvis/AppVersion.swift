@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.33"
-    private static let fallbackBuild = "107"
+    private static let fallbackShortVersion = "0.5.34"
+    private static let fallbackBuild = "108"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -434,6 +434,14 @@ struct JarvisUpdateService {
             return 1
         }
 
+        refresh_launch_services() {
+            local target="$1"
+            local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+            if [[ -x "$lsregister" ]]; then
+                "$lsregister" -f "$target" >/dev/null 2>&1 || log "刷新 LaunchServices 图标注册失败"
+            fi
+        }
+
         cleanup_user_owned() {
             /bin/rm -rf "$backup_app" "$temp_dir"
         }
@@ -479,6 +487,7 @@ struct JarvisUpdateService {
                 return 1
             fi
             log "新应用已替换到原路径"
+            refresh_launch_services "$old_app"
 
             if launch_and_verify "$old_app"; then
                 cleanup_user_owned
@@ -511,6 +520,7 @@ struct JarvisUpdateService {
                 exit 1
             fi
             log "管理员权限替换完成"
+            refresh_launch_services "$old_app"
 
             if launch_and_verify "$old_app"; then
                 cleanup_with_authorization || log "清理备份文件失败：$backup_app"

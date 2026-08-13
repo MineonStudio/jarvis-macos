@@ -35,6 +35,32 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertFalse(prompt.contains("image_url"))
     }
 
+    func testTranslationBlocksPromptAndParserPreserveOneToOneMapping() {
+        let prompt = ModelGateway.translationBlocksPrompt(
+            sourceBlocks: ["Small red text", "Large blue text"],
+            targetLanguage: "中文"
+        )
+        XCTAssertTrue(prompt.contains("2 个独立原文块"))
+        XCTAssertTrue(prompt.contains("<<<JARVIS_SOURCE_1>>>"))
+        XCTAssertTrue(prompt.contains("<<<JARVIS_SOURCE_2>>>"))
+        XCTAssertTrue(prompt.contains("<<<JARVIS_TRANSLATION_2>>>"))
+
+        let response = """
+        <<<JARVIS_TRANSLATION_1>>>
+        小号红色文字
+        <<<END_JARVIS_TRANSLATION_1>>>
+        <<<JARVIS_TRANSLATION_2>>>
+        大号蓝色文字
+        第二行
+        <<<END_JARVIS_TRANSLATION_2>>>
+        """
+        XCTAssertEqual(
+            ModelGateway.parseTranslatedBlocks(response, count: 2),
+            ["小号红色文字", "大号蓝色文字\n第二行"]
+        )
+        XCTAssertNil(ModelGateway.parseTranslatedBlocks("统一译文", count: 2))
+    }
+
     func testTranslationFontSizeFollowsSourceLineHeight() {
         let smallSource = ScreenshotTranslationRenderer.estimatedSourceFontSize(forLineHeight: 16)
         let largeSource = ScreenshotTranslationRenderer.estimatedSourceFontSize(forLineHeight: 40)
@@ -81,6 +107,32 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertNotNil(output.flatMap(NSImage.init(data:)))
         let outputBitmap = output.flatMap(NSBitmapImageRep.init(data:))
         XCTAssertGreaterThan(outputBitmap?.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 0.99)
+    }
+
+    func testTranslationRendererRejectsMismatchedBlockCount() {
+        let image = NSImage(size: NSSize(width: 120, height: 80))
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: 120, height: 80).fill()
+        image.unlockFocus()
+
+        let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
+        let sourceData = bitmap.representation(using: .png, properties: [:])!
+        let ocrResult = ScreenshotOCRResult(
+            text: "第一行\n第二行",
+            blocks: [
+                ScreenshotOCRBlock(text: "第一行", boundingBox: CGRect(x: 0.1, y: 0.55, width: 0.3, height: 0.2)),
+                ScreenshotOCRBlock(text: "第二行", boundingBox: CGRect(x: 0.1, y: 0.25, width: 0.3, height: 0.2))
+            ]
+        )
+
+        XCTAssertNil(
+            ScreenshotTranslationRenderer.render(
+                sourceData: sourceData,
+                ocrResult: ocrResult,
+                translatedBlocks: ["只有一块译文"]
+            )
+        )
     }
 
     func testTranslationTextColorMatchesSourceForegroundColor() {

@@ -682,7 +682,7 @@ final class AppModel: ObservableObject {
 
                 translationTask = nil
                 translationOCRResult = ocrResult
-                translateRecognizedText(ocrResult.text, requestID: requestID)
+                translateRecognizedText(ocrResult, requestID: requestID)
             } catch is CancellationError {
                 return
             } catch {
@@ -695,9 +695,16 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func translateRecognizedText(_ sourceText: String, requestID: UUID) {
-        let normalizedText = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedText.isEmpty else {
+    private func translateRecognizedText(
+        _ ocrResult: ScreenshotOCRResult,
+        requestID: UUID
+    ) {
+        let sourceBlocks = ocrResult.blocks.map {
+            $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard sourceBlocks.count == ocrResult.blocks.count,
+              !sourceBlocks.isEmpty,
+              sourceBlocks.allSatisfy({ !$0.isEmpty }) else {
             screenshotTranslationState = .failed("截图中未识别到文字")
             screenshotTranslationProgress.isTranslating = false
             statusMessage = "截图中未识别到文字"
@@ -721,8 +728,8 @@ final class AppModel: ObservableObject {
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let result = try await modelGateway.translateText(
-                    normalizedText,
+                let translatedBlocks = try await modelGateway.translateBlocks(
+                    sourceBlocks,
                     targetLanguage: targetLanguage.rawValue,
                     configuration: modelConfiguration,
                     apiKey: key
@@ -730,13 +737,13 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }
                 translationTask = nil
-                latestTranslation = result
+                latestTranslation = translatedBlocks.joined(separator: "\n")
                 guard let ocrResult = translationOCRResult,
                       let sourceData = translationSourceData,
                       let translatedData = ScreenshotTranslationRenderer.render(
                           sourceData: sourceData,
                           ocrResult: ocrResult,
-                          translatedText: result
+                          translatedBlocks: translatedBlocks
                       ),
                       screenshotController.applyTranslatedScreenshot(translatedData) else {
                     screenshotTranslationState = .failed("无法生成翻译后的截图")
@@ -744,7 +751,7 @@ final class AppModel: ObservableObject {
                     statusMessage = "无法生成翻译后的截图"
                     return
                 }
-                screenshotTranslationState = .success(result)
+                screenshotTranslationState = .success(latestTranslation)
                 screenshotTranslationProgress.isTranslating = false
                 statusMessage = "翻译完成，已替换原文区域"
             } catch is CancellationError {

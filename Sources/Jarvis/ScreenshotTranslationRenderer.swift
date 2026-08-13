@@ -158,6 +158,22 @@ enum ScreenshotTranslationRenderer {
         ocrResult: ScreenshotOCRResult,
         translatedText: String
     ) -> Data? {
+        let translatedBlocks = translatedText
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return render(
+            sourceData: sourceData,
+            ocrResult: ocrResult,
+            translatedBlocks: translatedBlocks
+        )
+    }
+
+    static func render(
+        sourceData: Data,
+        ocrResult: ScreenshotOCRResult,
+        translatedBlocks: [String]
+    ) -> Data? {
         guard let sourceImage = image(from: sourceData),
               sourceImage.width > 0,
               sourceImage.height > 0 else { return nil }
@@ -178,10 +194,8 @@ enum ScreenshotTranslationRenderer {
         context.interpolationQuality = .high
         context.draw(sourceImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        let translatedLines = translatedText
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        guard translatedBlocks.count == ocrResult.blocks.count,
+              !translatedBlocks.isEmpty else { return nil }
 
         let blurRects = ocrResult.blocks.map {
             pixelRect(for: $0.boundingBox, width: width, height: height)
@@ -195,36 +209,20 @@ enum ScreenshotTranslationRenderer {
             context.restoreGState()
         }
 
-        if translatedLines.count == ocrResult.blocks.count, !translatedLines.isEmpty {
-            for (block, translation) in zip(ocrResult.blocks, translatedLines) {
-                let sourceRect = pixelRect(for: block.boundingBox, width: width, height: height)
-                let rect = sourceRect
-                    .insetBy(dx: -6, dy: -4)
-                let style = sourceStyle(
-                    for: block.text,
-                    in: sourceRect,
-                    sampler: pixelSampler
-                )
-                drawReplacement(
-                    translation,
-                    in: rect,
-                    sourceFontSize: style.fontSize,
-                    textColor: style.color,
-                    context: context
-                )
-            }
-        } else if !translatedLines.isEmpty, let firstRect = blurRects.first {
-            // A model may slightly change the line count. Keep the translation inside
-            // the blurred OCR area instead of putting it in a separate result panel.
-            let unionRect = blurRects.dropFirst().reduce(firstRect) { $0.union($1) }
-            let styles = zip(ocrResult.blocks, blurRects).map { block, rect in
-                sourceStyle(for: block.text, in: rect, sampler: pixelSampler)
-            }
+        for (block, translation) in zip(ocrResult.blocks, translatedBlocks) {
+            let sourceRect = pixelRect(for: block.boundingBox, width: width, height: height)
+            let rect = sourceRect
+                .insetBy(dx: -6, dy: -4)
+            let style = sourceStyle(
+                for: block.text,
+                in: sourceRect,
+                sampler: pixelSampler
+            )
             drawReplacement(
-                translatedText,
-                in: unionRect.insetBy(dx: -6, dy: -4),
-                sourceFontSize: median(styles.map(\.fontSize)),
-                textColor: averageColor(styles.map(\.color)),
+                translation,
+                in: rect,
+                sourceFontSize: style.fontSize,
+                textColor: style.color,
                 context: context
             )
         }
@@ -416,31 +414,6 @@ enum ScreenshotTranslationRenderer {
                 height: CGFloat.greatestFiniteMagnitude
             ),
             nil
-        )
-    }
-
-    private static func median(_ values: [CGFloat]) -> CGFloat {
-        let sorted = values.filter { $0 > 0 }.sorted()
-        guard !sorted.isEmpty else { return 0 }
-        let middle = sorted[sorted.count / 2]
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[sorted.count / 2 - 1] + middle) / 2
-        }
-        return middle
-    }
-
-    private static func averageColor(_ colors: [NSColor]) -> NSColor {
-        let components = colors.compactMap { color -> (CGFloat, CGFloat, CGFloat, CGFloat)? in
-            guard let rgb = color.usingColorSpace(.deviceRGB) else { return nil }
-            return (rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent)
-        }
-        guard !components.isEmpty else { return .black }
-        let count = CGFloat(components.count)
-        return NSColor(
-            calibratedRed: components.reduce(0) { $0 + $1.0 } / count,
-            green: components.reduce(0) { $0 + $1.1 } / count,
-            blue: components.reduce(0) { $0 + $1.2 } / count,
-            alpha: components.reduce(0) { $0 + $1.3 } / count
         )
     }
 

@@ -77,6 +77,7 @@ final class ScreenshotCaptureController {
     private var pinnedItems: [UUID: PinnedScreenshotItem] = [:]
     private var selectedPinnedID: UUID?
     private var activeCaptureScreenFrame: CGRect?
+    private var previousFrontmostApplication: NSRunningApplication?
     private(set) var sessionPhase: ScreenshotSessionPhase = .idle
     private var activeSessionID: UUID?
 
@@ -146,6 +147,10 @@ final class ScreenshotCaptureController {
             )
         }
 
+        let currentProcessID = ProcessInfo.processInfo.processIdentifier
+        previousFrontmostApplication = NSWorkspace.shared.frontmostApplication?.processIdentifier == currentProcessID
+            ? nil
+            : NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
 
@@ -247,6 +252,7 @@ final class ScreenshotCaptureController {
         let cancelEditing: () -> Void = { [weak self] in
             guard let self else { return }
             self.dismissResult()
+            self.restorePreviousApplication()
             onAction(.cancel)
         }
         let quickCopyAndClose: () -> Void = { [weak self, weak editor] in
@@ -362,6 +368,7 @@ final class ScreenshotCaptureController {
                     break
                 case .cancel:
                     self?.dismissResult()
+                    self?.restorePreviousApplication()
                     onAction(.cancel)
                 case .tool(let tool):
                     self?.resizeToolbar(for: editor, on: capture.screenFrame)
@@ -842,6 +849,7 @@ final class ScreenshotCaptureController {
               !selectionCompletionDelivered else { return }
         selectionCompletionDelivered = true
         dismissSelectionWindows()
+        restorePreviousApplication()
         activeSessionID = nil
         sessionPhase = .idle
         completion(.failure(error))
@@ -853,6 +861,18 @@ final class ScreenshotCaptureController {
         if NSCursor.current == NSCursor.crosshair {
             NSCursor.pop()
         }
+    }
+
+    private func restorePreviousApplication() {
+        guard let previousApplication = previousFrontmostApplication else { return }
+        previousFrontmostApplication = nil
+        guard !previousApplication.isTerminated else { return }
+
+        // The capture overlay activates Jarvis so it can receive Escape. Once
+        // the user cancels, hide Jarvis and hand focus back to the app that
+        // was in front instead of exposing Jarvis's main window.
+        NSApp.hide(nil)
+        previousApplication.activate(options: [])
     }
 }
 

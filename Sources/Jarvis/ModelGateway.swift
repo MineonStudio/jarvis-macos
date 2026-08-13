@@ -44,12 +44,87 @@ final class ModelGateway {
         )
     }
 
+    func translateBlocks(
+        _ sourceBlocks: [String],
+        targetLanguage: String,
+        configuration: ModelConfiguration,
+        apiKey: String
+    ) async throws -> [String] {
+        guard !sourceBlocks.isEmpty else {
+            throw ModelGatewayError.invalidResponse
+        }
+
+        let response = try await request(
+            prompt: Self.translationBlocksPrompt(
+                sourceBlocks: sourceBlocks,
+                targetLanguage: targetLanguage
+            ),
+            configuration: configuration,
+            apiKey: apiKey
+        )
+        guard let translatedBlocks = Self.parseTranslatedBlocks(
+            response,
+            count: sourceBlocks.count
+        ) else {
+            throw ModelGatewayError.invalidResponse
+        }
+        return translatedBlocks
+    }
+
     static func translationPrompt(targetLanguage: String) -> String {
         translationPrompt(sourceText: "", targetLanguage: targetLanguage)
     }
 
     static func translationPrompt(sourceText: String, targetLanguage: String) -> String {
         "下面是由 macOS 本地 OCR 识别出的原文。请自动判断源语言，并将原文翻译成\(targetLanguage)。保留原文的段落、列表和换行结构，只返回完整译文，不要解释过程。若原文为空，只返回：未识别到文字。\n\n原文：\n---\n\(sourceText)\n---"
+    }
+
+    static func translationBlocksPrompt(sourceBlocks: [String], targetLanguage: String) -> String {
+        let blocks = sourceBlocks.enumerated()
+            .map { index, block in
+                "<<<JARVIS_SOURCE_\(index + 1)>>>\n\(block)\n<<<END_JARVIS_SOURCE_\(index + 1)>>>"
+            }
+            .joined(separator: "\n\n")
+        return """
+        下面是由 macOS 本地 OCR 识别出的 \(sourceBlocks.count) 个独立原文块。请自动判断源语言，并将每个原文块翻译成\(targetLanguage)。
+        每个原文块必须分别翻译，严禁合并、拆分、调换顺序或遗漏。请严格使用与输入对应的输出标记，只返回译文标记块，不要解释过程：
+        <<<JARVIS_TRANSLATION_1>>>
+        第 1 个原文块的译文
+        <<<END_JARVIS_TRANSLATION_1>>>
+        ...
+        <<<JARVIS_TRANSLATION_\(sourceBlocks.count)>>>
+        第 \(sourceBlocks.count) 个原文块的译文
+        <<<END_JARVIS_TRANSLATION_\(sourceBlocks.count)>>>
+
+        原文块：
+        \(blocks)
+        """
+    }
+
+    static func parseTranslatedBlocks(_ response: String, count: Int) -> [String]? {
+        guard count > 0 else { return [] }
+        let normalized = response.replacingOccurrences(of: "\r\n", with: "\n")
+        var translatedBlocks: [String] = []
+        var searchStart = normalized.startIndex
+
+        for index in 1...count {
+            let opening = "<<<JARVIS_TRANSLATION_\(index)>>>"
+            let closing = "<<<END_JARVIS_TRANSLATION_\(index)>>>"
+            guard let openingRange = normalized.range(of: opening, range: searchStart..<normalized.endIndex) else {
+                return nil
+            }
+            let contentStart = openingRange.upperBound
+            guard let closingRange = normalized.range(of: closing, range: contentStart..<normalized.endIndex) else {
+                return nil
+            }
+            let block = normalized[contentStart..<closingRange.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !block.isEmpty else { return nil }
+            translatedBlocks.append(block)
+            searchStart = closingRange.upperBound
+        }
+
+        return translatedBlocks.count == count ? translatedBlocks : nil
     }
 
     private func request(

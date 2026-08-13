@@ -19,10 +19,6 @@ final class ScreenshotTranslationTests: XCTestCase {
             ScreenshotTranslationState.success("你好"),
             ScreenshotTranslationState.success("你好")
         )
-        XCTAssertEqual(
-            ScreenshotTranslationState.reviewingOCR("待校对文本"),
-            ScreenshotTranslationState.reviewingOCR("待校对文本")
-        )
         XCTAssertNotEqual(
             ScreenshotTranslationState.translating,
             ScreenshotTranslationState.failed("网络错误")
@@ -61,5 +57,7 @@ final class ScreenshotTranslationTests: XCTestCase {
 
         XCTAssertNotNil(output)
         XCTAssertNotNil(output.flatMap(NSImage.init(data:)))
+        let outputBitmap = output.flatMap(NSBitmapImageRep.init(data:))
+        XCTAssertGreaterThan(outputBitmap?.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 0.99)
     }
 }

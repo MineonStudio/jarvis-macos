@@ -154,9 +154,9 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
 
 @MainActor
 final class ScreenshotEditorModel: ObservableObject {
-    let originalImage: NSImage
-    let originalData: Data
-    let originalOutputData: Data
+    @Published private(set) var originalImage: NSImage
+    private(set) var originalData: Data
+    private(set) var originalOutputData: Data
     let canvasSize: CGSize
     private var blurredImageCache: NSImage?
     private var pixelatedImageCache: NSImage?
@@ -432,6 +432,35 @@ final class ScreenshotEditorModel: ObservableObject {
         return renderedPNGData() ?? originalOutputData
     }
 
+    @discardableResult
+    func replaceBaseImage(with data: Data) -> Bool {
+        guard let image = NSImage(data: data),
+              image.size.width > 0,
+              image.size.height > 0 else { return false }
+        originalImage = image
+        originalData = data
+        if let outputRect {
+            let capture = ScreenshotCapture(
+                data: data,
+                screenFrame: CGRect(origin: .zero, size: canvasSize)
+            )
+            originalOutputData = (try? ScreenshotService().crop(
+                capture,
+                to: outputRect,
+                on: CGRect(origin: .zero, size: canvasSize)
+            ).data) ?? data
+        } else {
+            originalOutputData = data
+        }
+        annotations.removeAll()
+        undoStack.removeAll()
+        redoStack.removeAll()
+        selectedAnnotationID = nil
+        blurredImageCache = nil
+        pixelatedImageCache = nil
+        return true
+    }
+
     func renderedPNGData() -> Data? {
         guard let data = ScreenshotRenderPipeline().renderFullCanvas(
             image: originalImage,
@@ -543,7 +572,7 @@ struct ScreenshotCanvasView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Image(nsImage: image)
+            Image(nsImage: editor.originalImage)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: editor.canvasSize.width, height: editor.canvasSize.height)

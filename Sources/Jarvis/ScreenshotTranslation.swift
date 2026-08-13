@@ -14,7 +14,6 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable 
 enum ScreenshotTranslationState: Equatable {
     case idle
     case translating
-    case reviewingOCR(String)
     case success(String)
     case failed(String)
 }

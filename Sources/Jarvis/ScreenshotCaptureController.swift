@@ -60,7 +60,6 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 @MainActor
 final class ScreenshotTranslationProgress: ObservableObject {
     @Published var isTranslating = false
-    @Published var isReviewingOCR = false
 }
 
 @MainActor
@@ -471,6 +470,19 @@ final class ScreenshotCaptureController {
 
     func currentEditingPNGData() -> Data? {
         activeEditor?.finalPNGData()
+    }
+
+    @discardableResult
+    func applyTranslatedScreenshot(_ translatedSelectionData: Data) -> Bool {
+        guard let activeEditor else { return false }
+        let outputRect = activeEditor.outputRect ?? CGRect(origin: .zero, size: activeEditor.canvasSize)
+        let fullCanvasData = ScreenshotTranslationRenderer.composite(
+            baseData: activeEditor.originalData,
+            translatedSelectionData: translatedSelectionData,
+            outputRect: outputRect,
+            canvasSize: activeEditor.canvasSize
+        ) ?? translatedSelectionData
+        return activeEditor.replaceBaseImage(with: fullCanvasData)
     }
 
     func translationAnchorFrame() -> CGRect? {
@@ -2007,10 +2019,8 @@ struct ScreenshotToolbar: View {
 
                 actionButton(
                     icon: "character.bubble",
-                    help: translationProgress.isTranslating
-                        ? "翻译中…"
-                        : (translationProgress.isReviewingOCR ? "校对原文…" : "翻译截图"),
-                    enabled: !translationProgress.isTranslating && !translationProgress.isReviewingOCR
+                    help: translationProgress.isTranslating ? "翻译中…" : "自动翻译截图",
+                    enabled: !translationProgress.isTranslating
                 ) {
                     onAction(.translateRequested(editor.finalPNGData()))
                 }

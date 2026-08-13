@@ -35,25 +35,80 @@ enum ScreenshotTranslationRenderer {
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
+        let blurRects = ocrResult.blocks.map {
+            pixelRect(for: $0.boundingBox, width: width, height: height)
+        }
+        if let blurredImage = blurredImage(sourceImage, radius: 10), !blurRects.isEmpty {
+            context.saveGState()
+            blurRects.forEach { context.addRect($0) }
+            context.clip()
+            context.draw(blurredImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.restoreGState()
+        }
+
         if translatedLines.count == ocrResult.blocks.count, !translatedLines.isEmpty {
             for (block, translation) in zip(ocrResult.blocks, translatedLines) {
                 let rect = pixelRect(for: block.boundingBox, width: width, height: height)
                     .insetBy(dx: -6, dy: -4)
                 drawReplacement(translation, in: rect, context: context)
             }
-        } else {
-            let panelHeight = min(CGFloat(height) * 0.36, max(120, CGFloat(translatedLines.count) * 34 + 44))
-            let panelRect = CGRect(x: 0, y: 0, width: CGFloat(width), height: panelHeight)
-            context.setFillColor(NSColor.black.withAlphaComponent(0.82).cgColor)
-            context.fill(panelRect)
-            drawText(
+        } else if !translatedLines.isEmpty, let firstRect = blurRects.first {
+            // A model may slightly change the line count. Keep the translation inside
+            // the blurred OCR area instead of putting it in a separate result panel.
+            let unionRect = blurRects.dropFirst().reduce(firstRect) { $0.union($1) }
+            drawReplacement(
                 translatedText,
-                in: panelRect.insetBy(dx: 24, dy: 18),
-                context: context,
-                color: .white,
-                fontSize: 22
+                in: unionRect.insetBy(dx: -6, dy: -4),
+                context: context
             )
         }
+
+        guard let outputImage = context.makeImage() else { return nil }
+        let outputData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            outputData,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+        CGImageDestinationAddImage(destination, outputImage, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return outputData as Data
+    }
+
+    static func composite(
+        baseData: Data,
+        translatedSelectionData: Data,
+        outputRect: CGRect,
+        canvasSize: CGSize
+    ) -> Data? {
+        guard let baseImage = image(from: baseData),
+              let translatedImage = image(from: translatedSelectionData),
+              canvasSize.width > 0,
+              canvasSize.height > 0 else { return nil }
+
+        let width = baseImage.width
+        let height = baseImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.interpolationQuality = .high
+        context.draw(baseImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let targetRect = CGRect(
+            x: outputRect.minX / canvasSize.width * CGFloat(width),
+            y: outputRect.minY / canvasSize.height * CGFloat(height),
+            width: outputRect.width / canvasSize.width * CGFloat(width),
+            height: outputRect.height / canvasSize.height * CGFloat(height)
+        )
+        context.draw(translatedImage, in: targetRect)
 
         guard let outputImage = context.makeImage() else { return nil }
         let outputData = NSMutableData()
@@ -83,18 +138,58 @@ enum ScreenshotTranslationRenderer {
     }
 
     private static func drawReplacement(_ text: String, in rect: CGRect, context: CGContext) {
-        context.setFillColor(NSColor.white.withAlphaComponent(0.9).cgColor)
+        context.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
         context.fill(rect)
-        context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.65).cgColor)
-        context.setLineWidth(2)
-        context.stroke(rect)
+        let textRect = rect.insetBy(dx: 8, dy: 4)
+        let fontSize = fittedFontSize(
+            text,
+            in: textRect,
+            startingAt: max(12, min(26, rect.height * 0.62))
+        )
         drawText(
             text,
-            in: rect.insetBy(dx: 8, dy: 4),
+            in: textRect,
             context: context,
             color: .black,
-            fontSize: max(12, min(26, rect.height * 0.62))
+            fontSize: fontSize
         )
+    }
+
+    private static func fittedFontSize(
+        _ text: String,
+        in rect: CGRect,
+        startingAt startingSize: CGFloat
+    ) -> CGFloat {
+        var size = startingSize
+        while size > 8 {
+            let measured = measuredTextSize(text, fontSize: size, width: rect.width)
+            if measured.width <= rect.width + 1 && measured.height <= rect.height + 1 {
+                return size
+            }
+            size -= 1
+        }
+        return 8
+    }
+
+    private static func measuredTextSize(_ text: String, fontSize: CGFloat, width: CGFloat) -> CGSize {
+        let attributedText = makeAttributedText(text, fontSize: fontSize, color: .black)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        return CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            CGSize(width: max(1, width), height: .greatestFiniteMagnitude),
+            nil
+        )
+    }
+
+    private static func blurredImage(_ image: CGImage, radius: CGFloat) -> CGImage? {
+        let input = CIImage(cgImage: image)
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
+        filter.setValue(input, forKey: kCIInputImageKey)
+        filter.setValue(radius, forKey: kCIInputRadiusKey)
+        guard let output = filter.outputImage?.cropped(to: input.extent) else { return nil }
+        return CIContext(options: nil).createCGImage(output, from: input.extent)
     }
 
     private static func drawText(
@@ -105,12 +200,7 @@ enum ScreenshotTranslationRenderer {
         fontSize: CGFloat
     ) {
         guard !text.isEmpty, rect.width > 0, rect.height > 0 else { return }
-        let font = CTFontCreateWithName("PingFang SC" as CFString, fontSize, nil)
-        let attributes: [NSAttributedString.Key: Any] = [
-            NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor
-        ]
-        let attributedText = NSAttributedString(string: text, attributes: attributes)
+        let attributedText = makeAttributedText(text, fontSize: fontSize, color: color)
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
         let path = CGPath(rect: rect, transform: nil)
         let frame = CTFramesetterCreateFrame(
@@ -120,5 +210,18 @@ enum ScreenshotTranslationRenderer {
             nil
         )
         CTFrameDraw(frame, context)
+    }
+
+    private static func makeAttributedText(
+        _ text: String,
+        fontSize: CGFloat,
+        color: NSColor
+    ) -> NSAttributedString {
+        let font = CTFontCreateWithName("PingFang SC" as CFString, fontSize, nil)
+        let attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor
+        ]
+        return NSAttributedString(string: text, attributes: attributes)
     }
 }

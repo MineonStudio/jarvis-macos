@@ -75,7 +75,6 @@ final class AppModel: ObservableObject {
     private let clipboardPanelController = ClipboardPanelController()
     private let screenshotCacheStore = ScreenshotCacheStore()
     private let screenshotHistoryStore = ScreenshotHistoryStore()
-    private let overlayController = OverlayController()
     private let screenshotController = ScreenshotCaptureController()
     private let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
     private let clipboardMediaPreviewController = ClipboardMediaPreviewController()
@@ -94,9 +93,7 @@ final class AppModel: ObservableObject {
     private var translationTask: Task<Void, Never>?
     private var translationRequestID = UUID()
     private var translationSourceData: Data?
-    private var translationSourceText: String?
     private var translationOCRResult: ScreenshotOCRResult?
-    private var translatedScreenshotData: Data?
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {
         screenshotController.translationProgress
@@ -381,7 +378,7 @@ final class AppModel: ObservableObject {
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
         case .translateRequested(let data):
-            translateScreenshot(data: data)
+            translateScreenshot(data: translationSourceData ?? data)
         case .tool(let tool):
             statusMessage = "已选择\(tool.title)，在截图上拖动即可使用"
         case .undo:
@@ -595,6 +592,7 @@ final class AppModel: ObservableObject {
             statusMessage = "请先完成当前截图操作"
             return
         }
+        cancelScreenshotTranslation()
         guard let data = screenshotHistoryStore.data(for: item) else {
             statusMessage = "历史截图文件不存在"
             reloadScreenshotHistory()
@@ -657,6 +655,8 @@ final class AppModel: ObservableObject {
         let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
         guard !key.isEmpty else {
             selectedSection = .settings
+            screenshotTranslationState = .failed("请先在设置中配置 API Key")
+            screenshotTranslationProgress.isTranslating = false
             statusMessage = "请先在设置中配置 API Key"
             return
         }
@@ -665,16 +665,11 @@ final class AppModel: ObservableObject {
         let requestID = UUID()
         translationRequestID = requestID
         translationSourceData = data
-        translationSourceText = nil
         translationOCRResult = nil
-        translatedScreenshotData = nil
         latestTranslation = ""
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
-        screenshotTranslationProgress.isReviewingOCR = false
         statusMessage = "正在本地识别截图文字…"
-
-        showTranslationOverlayLoading()
 
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -687,19 +682,7 @@ final class AppModel: ObservableObject {
 
                 translationTask = nil
                 translationOCRResult = ocrResult
-                translationSourceText = ocrResult.text
-                screenshotTranslationState = .reviewingOCR(ocrResult.text)
-                screenshotTranslationProgress.isTranslating = false
-                screenshotTranslationProgress.isReviewingOCR = true
-                statusMessage = "请校对识别出的原文…"
-                overlayController.showOCRReview(
-                    text: ocrResult.text,
-                    targetLanguage: targetLanguage.rawValue,
-                    anchorWindow: screenshotController.saveWindow(),
-                    anchorFrame: screenshotController.translationAnchorFrame(),
-                    onCancel: { [weak self] in self?.cancelScreenshotTranslation() },
-                    onTranslate: { [weak self] text in self?.translateRecognizedText(text) }
-                )
+                translateRecognizedText(ocrResult.text, requestID: requestID)
             } catch is CancellationError {
                 return
             } catch {
@@ -707,43 +690,33 @@ final class AppModel: ObservableObject {
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false
-                screenshotTranslationProgress.isReviewingOCR = false
                 statusMessage = "翻译失败：\(error.localizedDescription)"
-                overlayController.showError(
-                    message: message,
-                    targetLanguage: targetLanguage.rawValue,
-                    anchorWindow: screenshotController.saveWindow(),
-                    anchorFrame: screenshotController.translationAnchorFrame(),
-                    onRetry: { [weak self] in self?.translateCurrentScreenshot() }
-                )
             }
         }
     }
 
-    private func translateRecognizedText(_ sourceText: String) {
+    private func translateRecognizedText(_ sourceText: String, requestID: UUID) {
         let normalizedText = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedText.isEmpty else {
-            statusMessage = "请至少保留一段要翻译的文字"
+            screenshotTranslationState = .failed("截图中未识别到文字")
+            screenshotTranslationProgress.isTranslating = false
+            statusMessage = "截图中未识别到文字"
             return
         }
 
         let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
         guard !key.isEmpty else {
             selectedSection = .settings
+            screenshotTranslationState = .failed("请先在设置中配置 API Key")
+            screenshotTranslationProgress.isTranslating = false
             statusMessage = "请先在设置中配置 API Key"
             return
         }
 
         translationTask?.cancel()
-        let requestID = translationRequestID
-        translationSourceText = normalizedText
-        translatedScreenshotData = nil
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
-        screenshotTranslationProgress.isReviewingOCR = false
         statusMessage = "正在翻译识别出的文字…"
-
-        showTranslationOverlayLoading()
 
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -758,29 +731,22 @@ final class AppModel: ObservableObject {
                 guard translationRequestID == requestID else { return }
                 translationTask = nil
                 latestTranslation = result
-                translatedScreenshotData = translationOCRResult.flatMap { ocrResult in
-                    guard let sourceData = self.translationSourceData else { return nil }
-                    return ScreenshotTranslationRenderer.render(
-                        sourceData: sourceData,
-                        ocrResult: ocrResult,
-                        translatedText: result
-                    )
+                guard let ocrResult = translationOCRResult,
+                      let sourceData = translationSourceData,
+                      let translatedData = ScreenshotTranslationRenderer.render(
+                          sourceData: sourceData,
+                          ocrResult: ocrResult,
+                          translatedText: result
+                      ),
+                      screenshotController.applyTranslatedScreenshot(translatedData) else {
+                    screenshotTranslationState = .failed("无法生成翻译后的截图")
+                    screenshotTranslationProgress.isTranslating = false
+                    statusMessage = "无法生成翻译后的截图"
+                    return
                 }
                 screenshotTranslationState = .success(result)
                 screenshotTranslationProgress.isTranslating = false
-                screenshotTranslationProgress.isReviewingOCR = false
-                statusMessage = "翻译完成"
-                overlayController.show(
-                    text: result,
-                    sourceImageData: translationSourceData,
-                    translatedImageData: translatedScreenshotData,
-                    targetLanguage: targetLanguage.rawValue,
-                    anchorWindow: screenshotController.saveWindow(),
-                    anchorFrame: screenshotController.translationAnchorFrame(),
-                    onRetry: { [weak self] in self?.translateCurrentScreenshot() },
-                    onSaveImage: { [weak self] in self?.saveTranslatedScreenshot() },
-                    onCopyImage: { [weak self] in self?.copyTranslatedScreenshot() }
-                )
+                statusMessage = "翻译完成，已替换原文区域"
             } catch is CancellationError {
                 return
             } catch {
@@ -789,74 +755,18 @@ final class AppModel: ObservableObject {
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false
-                screenshotTranslationProgress.isReviewingOCR = false
                 statusMessage = "翻译失败：\(error.localizedDescription)"
-                overlayController.showError(
-                    message: message,
-                    targetLanguage: targetLanguage.rawValue,
-                    anchorWindow: screenshotController.saveWindow(),
-                    anchorFrame: screenshotController.translationAnchorFrame(),
-                    onRetry: { [weak self] in self?.translateCurrentScreenshot() }
-                )
             }
         }
     }
 
     func translateCurrentScreenshot() {
-        if let sourceText = translationSourceText,
-           !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            translateRecognizedText(sourceText)
-            return
-        }
-
         let data = screenshotController.currentEditingPNGData() ?? translationSourceData ?? latestScreenshotData
         guard let data else {
             statusMessage = "请先截取一块屏幕区域"
             return
         }
-        translateScreenshot(data: data)
-    }
-
-    func showTranslationOverlay() {
-        guard case .success(let text) = screenshotTranslationState else {
-            statusMessage = "请先完成一次翻译"
-            return
-        }
-        overlayController.show(
-            text: text,
-            sourceImageData: translationSourceData,
-            translatedImageData: translatedScreenshotData,
-            targetLanguage: targetLanguage.rawValue,
-            anchorWindow: screenshotController.saveWindow(),
-            anchorFrame: screenshotController.translationAnchorFrame(),
-            onRetry: { [weak self] in self?.translateCurrentScreenshot() },
-            onSaveImage: { [weak self] in self?.saveTranslatedScreenshot() },
-            onCopyImage: { [weak self] in self?.copyTranslatedScreenshot() }
-        )
-    }
-
-    func copyTranslatedScreenshot() {
-        guard let data = translatedScreenshotData else {
-            statusMessage = "暂无可复制的双语截图"
-            return
-        }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setData(data, forType: .png)
-        statusMessage = "双语截图已复制到剪贴板"
-    }
-
-    func saveTranslatedScreenshot() {
-        guard let data = translatedScreenshotData else {
-            statusMessage = "暂无可保存的双语截图"
-            return
-        }
-        presentSavePanel(
-            for: data,
-            historyID: nil,
-            finalizesHistory: false,
-            successMessage: "双语截图已保存",
-            presentingWindow: screenshotController.saveWindow()
-        )
+        translateScreenshot(data: translationSourceData ?? data)
     }
 
     func updateTranslationLanguage(_ language: ScreenshotTranslationLanguage) {
@@ -872,28 +782,15 @@ final class AppModel: ObservableObject {
         targetLanguage = language
     }
 
-    private func showTranslationOverlayLoading() {
-        overlayController.showLoading(
-            targetLanguage: targetLanguage.rawValue,
-            anchorWindow: screenshotController.saveWindow(),
-            anchorFrame: screenshotController.translationAnchorFrame(),
-            onRetry: { [weak self] in self?.translateCurrentScreenshot() }
-        )
-    }
-
     private func cancelScreenshotTranslation() {
         translationRequestID = UUID()
         translationTask?.cancel()
         translationTask = nil
         translationSourceData = nil
-        translationSourceText = nil
         translationOCRResult = nil
-        translatedScreenshotData = nil
         latestTranslation = ""
         screenshotTranslationState = .idle
         screenshotTranslationProgress.isTranslating = false
-        screenshotTranslationProgress.isReviewingOCR = false
-        overlayController.dismiss()
     }
 
     func receiveClipboardItem(_ item: ClipboardItem) {

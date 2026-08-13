@@ -1,13 +1,14 @@
 import AppKit
 import CryptoKit
+import CoreServices
 import Foundation
 
 enum JarvisAppVersion {
     static let repositoryURL = URL(string: "https://github.com/MineonStudio/jarvis-macos")!
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.14"
-    private static let fallbackBuild = "88"
+    private static let fallbackShortVersion = "0.5.15"
+    private static let fallbackBuild = "89"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -186,11 +187,12 @@ struct JarvisUpdateService {
             throw JarvisUpdateError.invalidApplication
         }
 
-        let currentAppURL = Bundle.main.bundleURL.standardizedFileURL
-        guard currentAppURL.pathExtension.lowercased() == "app",
-              currentAppURL.lastPathComponent == "Jarvis.app" else {
+        let launchedAppURL = Bundle.main.bundleURL.standardizedFileURL
+        guard launchedAppURL.pathExtension.lowercased() == "app",
+              launchedAppURL.lastPathComponent == "Jarvis.app" else {
             throw JarvisUpdateError.unsupportedInstallLocation
         }
+        let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
         try validateInstallLocation(currentAppURL)
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")
@@ -231,6 +233,35 @@ struct JarvisUpdateService {
         if resourceValues?.volumeIsReadOnly == true {
             throw JarvisUpdateError.unsupportedInstallLocation
         }
+    }
+
+    private func resolveInstallLocation(for launchedURL: URL) throws -> URL {
+        guard launchedURL.path.range(of: "/AppTranslocation/", options: .caseInsensitive) != nil else {
+            return launchedURL
+        }
+
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier,
+              let unmanagedURLs = LSCopyApplicationURLsForBundleIdentifier(
+                  bundleIdentifier as CFString,
+                  nil
+              ) else {
+            throw JarvisUpdateError.unsupportedInstallLocation
+        }
+
+        let registeredURLs = unmanagedURLs.takeRetainedValue() as NSArray
+        let candidates = registeredURLs.compactMap { $0 as? URL }
+            .map { $0.standardizedFileURL }
+            .filter { candidate in
+                candidate.pathExtension.lowercased() == "app"
+                    && candidate.lastPathComponent == "Jarvis.app"
+                    && candidate.path.range(of: "/AppTranslocation/", options: .caseInsensitive) == nil
+                    && isValidApplicationBundle(candidate)
+            }
+
+        guard let originalURL = candidates.first else {
+            throw JarvisUpdateError.unsupportedInstallLocation
+        }
+        return originalURL
     }
 
     private func verifyDigest(of fileURL: URL, expected: String?) throws {
@@ -431,6 +462,8 @@ struct JarvisUpdateService {
         APPLESCRIPT
             then
                 log "管理员授权失败或用户取消"
+                launch_and_verify "$old_app" || log "授权取消后旧版本启动失败"
+                /bin/rm -rf "$temp_dir"
                 exit 1
             fi
             log "管理员权限替换完成"

@@ -15,4 +15,8 @@ final class AppVersionTests: XCTestCase {
         XCTAssertTrue(JarvisAppVersion.displayName.contains(JarvisAppVersion.shortVersion))
         XCTAssertTrue(JarvisAppVersion.displayName.contains(JarvisAppVersion.build))
     }
+
+    func testUpdateLogUsesUserLibraryLogsDirectory() {
+        XCTAssertTrue(JarvisUpdateService.updateLogURL.path.hasSuffix("Library/Logs/Jarvis/update.log"))
+    }
 }

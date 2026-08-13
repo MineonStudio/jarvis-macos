@@ -297,6 +297,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func reselectScreenshotDisplay() {
+        guard screenshotController.sessionPhase == .idle else {
+            statusMessage = "请先完成当前截图操作"
+            return
+        }
+        screenshotController.resetDisplaySelection()
+        statusMessage = "已清除截图显示器选择，下次截图时重新选择"
+    }
+
     private func handleScreenshotAction(_ action: ScreenshotAction) {
         switch action {
         case .saveRequested, .confirmRequested:

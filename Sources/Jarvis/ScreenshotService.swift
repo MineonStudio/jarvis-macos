@@ -6,6 +6,36 @@ import ScreenCaptureKit
 final class ScreenshotService {
     @MainActor
     private var pickerObserver: ScreenshotPickerObserver?
+    @MainActor
+    private var selectedDisplayFilter: SCContentFilter?
+
+    /// Captures from the previously selected display whenever possible. The
+    /// system picker is only shown for the first capture in this app session,
+    /// or after the cached source stops being valid.
+    @MainActor
+    func captureSelectedDisplay() async throws -> ScreenshotCapture {
+        let filter: SCContentFilter
+        if let selectedDisplayFilter {
+            filter = selectedDisplayFilter
+        } else {
+            filter = try await selectDisplay()
+            selectedDisplayFilter = filter
+        }
+
+        do {
+            return try await capture(displayFilter: filter)
+        } catch {
+            // A disconnected display or revoked permission makes the filter
+            // unusable. Do not keep retrying a stale source on every shortcut.
+            selectedDisplayFilter = nil
+            throw error
+        }
+    }
+
+    @MainActor
+    func resetSelectedDisplay() {
+        selectedDisplayFilter = nil
+    }
 
     /// Presents Apple's system content picker and limits the choice to one
     /// display. Jarvis keeps its own region-selection/editor UI after this

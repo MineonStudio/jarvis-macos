@@ -1302,6 +1302,8 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 22) {
                 SectionHeader(title: "设置", subtitle: "给贾维斯接入一个可替换的大脑")
 
+                versionAndUpdateCard
+
                 JarvisCard {
                     VStack(alignment: .leading, spacing: 15) {
                         Label("模型 API", systemImage: "brain.head.profile")
@@ -1369,35 +1371,37 @@ struct SettingsView: View {
 
                 ScreenshotSkillSettingsCard()
                 ClipboardShortcutSettingsCard()
-
-                JarvisCard {
-                    HStack(spacing: 14) {
-                        Label("版本与更新", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 14, weight: .semibold))
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 3) {
-                            Text(JarvisAppVersion.displayName)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            updateStatusLabel
-                        }
-                        if case .available = app.updateState {
-                            Button("打开更新") {
-                                app.openLatestRelease()
-                            }
-                            .buttonStyle(JarvisPrimaryButtonStyle())
-                        }
-                        Button(app.updateState == .checking ? "检查中…" : "检查更新") {
-                            app.checkForUpdates()
-                        }
-                        .buttonStyle(JarvisSecondaryButtonStyle())
-                        .disabled(app.updateState == .checking)
-                    }
-                }
             }
             .padding(JarvisMetrics.pageInset)
         }
         .onAppear {
             apiKey = ""
+        }
+    }
+
+    private var versionAndUpdateCard: some View {
+        JarvisCard {
+            HStack(spacing: 14) {
+                Label("版本与更新", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("当前版本 \(JarvisAppVersion.displayName)")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    updateStatusLabel
+                }
+                if case .available = app.updateState {
+                    Button("打开更新") {
+                        app.openLatestRelease()
+                    }
+                    .buttonStyle(JarvisPrimaryButtonStyle())
+                }
+                Button(app.updateState == .checking ? "检查中…" : "手动检查更新") {
+                    app.checkForUpdates()
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .disabled(app.updateState == .checking)
+            }
         }
     }
 

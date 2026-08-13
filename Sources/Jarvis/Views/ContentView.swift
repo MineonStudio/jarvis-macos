@@ -1107,19 +1107,7 @@ struct ClipboardPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Spacer()
-                Button { app.closeClipboardPanel() } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .keyboardShortcut(.cancelAction)
-                .help("关闭面板")
-            }
-
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.jarvisTextSecondary)
@@ -1153,8 +1141,11 @@ struct ClipboardPanelView: View {
                     }
                 }
             }
+            .padding(.top, 2)
 
-            Divider().overlay(Color.primary.opacity(0.10))
+            Divider()
+                .overlay(Color.primary.opacity(0.10))
+                .padding(.vertical, 2)
 
             if filteredItems.isEmpty {
                 ClipboardEmptyState(

@@ -47,8 +47,16 @@ struct ContentView: View {
             .padding(.top, 32)
             .zIndex(1)
         }
+        .overlay(alignment: .bottom) {
+            if let toastMessage = app.toastMessage {
+                JarvisToast(message: toastMessage)
+                    .padding(.bottom, 26)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .tint(.accentColor)
         .ignoresSafeArea(.container, edges: .top)
+        .animation(.easeInOut(duration: 0.2), value: app.toastMessage)
         .onChange(of: app.selectedSection) { _, newSection in
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar first;
@@ -144,7 +152,7 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 HStack(alignment: .firstTextBaseline, spacing: 18) {
-                    SectionHeader(title: "你好，贾维斯", subtitle: "本地 macOS 工具人 · API 大脑可替换")
+                    SectionHeader(title: "你好，贾维斯")
                     Spacer()
                     StatusPill(
                         text: app.hasAPIKey ? "API 已连接" : "未配置 API",
@@ -164,16 +172,16 @@ struct DashboardView: View {
                     }
 
                     HStack(spacing: 10) {
-                        QuickActionButton(title: "框选截图", subtitle: "翻译 / 识别", icon: "viewfinder", tint: .accentColor) {
+                        QuickActionButton(title: "框选截图", icon: "viewfinder", tint: .accentColor) {
                             // This is an in-window action, so it may move the
                             // main window to the screenshot tab explicitly.
                             app.selectedSection = .skill(.screenshot)
                             app.captureScreenshot()
                         }
-                        QuickActionButton(title: "打开剪贴板", subtitle: "搜索历史内容", icon: "clipboard", tint: .accentColor) {
+                        QuickActionButton(title: "打开剪贴板", icon: "clipboard", tint: .accentColor) {
                             app.selectedSection = .skill(.clipboard)
                         }
-                        QuickActionButton(title: "模型设置", subtitle: "接入 API 大脑", icon: "brain.head.profile", tint: .accentColor) {
+                        QuickActionButton(title: "模型设置", icon: "brain.head.profile", tint: .accentColor) {
                             app.selectedSection = .settings
                         }
                     }
@@ -1286,7 +1294,6 @@ struct ShortcutSettingsCard: View {
 
                 shortcutRow(
                     title: "截图",
-                    subtitle: "框选屏幕或快速选中窗口",
                     shortcut: $screenshotShortcut,
                     isRecording: $isRecordingScreenshotShortcut,
                     conflictMessage: app.screenshotShortcutConflictMessage
@@ -1303,7 +1310,6 @@ struct ShortcutSettingsCard: View {
 
                 shortcutRow(
                     title: "剪贴板",
-                    subtitle: "唤起独立剪贴板面板",
                     shortcut: $clipboardShortcut,
                     isRecording: $isRecordingClipboardShortcut,
                     conflictMessage: app.clipboardShortcutConflictMessage
@@ -1339,20 +1345,14 @@ struct ShortcutSettingsCard: View {
 
     private func shortcutRow(
         title: String,
-        subtitle: String,
         shortcut: Binding<ScreenshotShortcut>,
         isRecording: Binding<Bool>,
         conflictMessage: String,
         onRestore: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 8)
             ShortcutRecorderControl(
                 shortcut: shortcut,
@@ -1373,6 +1373,7 @@ struct ShortcutSettingsCard: View {
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @State private var apiKey = ""
+    @State private var modelConfigurationSaved = false
 
     var body: some View {
         ScrollView {
@@ -1419,18 +1420,17 @@ struct SettingsView: View {
                         Divider().overlay(Color.primary.opacity(0.12))
 
                         HStack(spacing: 10) {
-                            Button("保存配置") {
+                            Button(modelConfigurationSaved ? "已保存" : "保存配置") {
                                 app.saveModelSettings(apiKey: apiKey)
                                 apiKey = ""
+                                modelConfigurationSaved = true
                             }
                             .buttonStyle(JarvisPrimaryButtonStyle())
+                            .disabled(modelConfigurationSaved)
                             Button("测试连接") {
                                 app.testConnection(apiKeyOverride: apiKey)
                             }
                             .buttonStyle(JarvisSecondaryButtonStyle())
-                            Text(app.connectionStatus)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.jarvisTextSecondary)
                         }
                     }
                 }
@@ -1441,6 +1441,13 @@ struct SettingsView: View {
         }
         .onAppear {
             apiKey = ""
+            modelConfigurationSaved = false
+        }
+        .onChange(of: app.modelConfiguration) { _, _ in
+            modelConfigurationSaved = false
+        }
+        .onChange(of: apiKey) { _, _ in
+            modelConfigurationSaved = false
         }
     }
 
@@ -1597,7 +1604,6 @@ struct MenuBarView: View {
 
 struct QuickActionButton: View {
     let title: String
-    let subtitle: String
     let icon: String
     let tint: Color
     let action: () -> Void
@@ -1610,10 +1616,7 @@ struct QuickActionButton: View {
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
                     .jarvisIconGlass(tint: tint, in: Circle())
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 13, weight: .semibold))
-                    Text(subtitle).font(.system(size: 11)).foregroundStyle(Color.jarvisTextSecondary)
-                }
+                Text(title).font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
@@ -1627,6 +1630,27 @@ struct QuickActionButton: View {
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+}
+
+struct JarvisToast: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
+            }
+            .shadow(color: Color.black.opacity(0.15), radius: 14, y: 6)
+            .frame(maxWidth: 520)
     }
 }
 

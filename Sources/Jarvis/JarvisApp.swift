@@ -36,16 +36,6 @@ struct JarvisApp: App {
                 .accessibilityLabel("贾维斯")
                 .help("贾维斯")
         }
-
-        Settings {
-            SettingsView()
-                .environmentObject(appModel)
-                .jarvisTheme(
-                    appModel.themePreference,
-                    systemColorScheme: appModel.systemColorScheme
-                )
-                .frame(width: 620, height: 520)
-        }
     }
 }
 

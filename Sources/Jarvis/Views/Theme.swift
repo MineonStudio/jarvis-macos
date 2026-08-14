@@ -88,17 +88,11 @@ struct JarvisCard<Content: View>: View {
 
 struct SectionHeader: View {
     let title: String
-    let subtitle: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-            Text(subtitle)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color.jarvisTextSecondary)
-        }
+        Text(title)
+            .font(.system(size: 26, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary)
     }
 }
 

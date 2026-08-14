@@ -60,7 +60,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var screenshotTranslationState: ScreenshotTranslationState = .idle
     @Published var isCapturing = false
     @Published var statusMessage = "系统就绪"
-    @Published var connectionStatus = "尚未测试连接"
+    @Published var toastMessage: String?
     @Published var screenshotShortcut = ScreenshotShortcut.default
     @Published var screenshotShortcutConflictMessage = ""
     @Published var clipboardShortcut = ScreenshotShortcut.clipboardDefault
@@ -94,6 +94,7 @@ final class AppModel: ObservableObject {
     private var translationRequestID = UUID()
     private var translationSourceData: Data?
     private var translationOCRResult: ScreenshotOCRResult?
+    private var toastDismissTask: Task<Void, Never>?
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {
         screenshotController.translationProgress
@@ -156,6 +157,20 @@ final class AppModel: ObservableObject {
         hasAPIKey ? "API Key 已安全保存到 macOS 钥匙串" : "尚未配置 API Key"
     }
 
+    deinit {
+        toastDismissTask?.cancel()
+    }
+
+    func showToast(_ message: String) {
+        toastDismissTask?.cancel()
+        toastMessage = message
+        toastDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            self?.toastMessage = nil
+        }
+    }
+
     func saveModelSettings(apiKey: String) {
         if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             KeychainStore.shared.setValue(apiKey, for: "jarvis.api-key")
@@ -164,7 +179,7 @@ final class AppModel: ObservableObject {
         if let data = try? JSONEncoder().encode(modelConfiguration) {
             UserDefaults.standard.set(data, forKey: configurationKey)
         }
-        statusMessage = "模型配置已保存"
+        showToast("模型配置已保存")
     }
 
     func updateThemePreference(_ preference: JarvisTheme) {
@@ -188,7 +203,6 @@ final class AppModel: ObservableObject {
 
     func clearAPIKey() {
         KeychainStore.shared.deleteValue(for: "jarvis.api-key")
-        connectionStatus = "API Key 已删除"
         statusMessage = "API Key 已从钥匙串删除"
     }
 
@@ -280,17 +294,19 @@ final class AppModel: ObservableObject {
             : apiKeyOverride
 
         guard !key.isEmpty else {
-            connectionStatus = "请先填写 API Key"
+            showToast("请先填写 API Key")
             return
         }
 
-        connectionStatus = "正在测试连接…"
-        Task {
+        showToast("正在测试连接…")
+        let configuration = modelConfiguration
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
-                try await modelGateway.testConnection(configuration: modelConfiguration, apiKey: key)
-                connectionStatus = "连接成功 · \(modelConfiguration.modelName)"
+                try await self.modelGateway.testConnection(configuration: configuration, apiKey: key)
+                self.showToast("连接成功 · \(configuration.modelName)")
             } catch {
-                connectionStatus = "连接失败：\(error.localizedDescription)"
+                self.showToast("连接失败：\(error.localizedDescription)")
             }
         }
     }

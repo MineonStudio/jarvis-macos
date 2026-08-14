@@ -20,10 +20,4 @@ enum SkillID: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .screenshot: return "框选、编辑、翻译与复制"
-        case .clipboard: return "记录、搜索与恢复复制内容"
-        }
-    }
 }

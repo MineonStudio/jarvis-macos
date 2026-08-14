@@ -6,7 +6,6 @@ import UniformTypeIdentifiers
 
 private struct SourceTextStyle {
     let fontSize: CGFloat
-    let color: NSColor
 }
 
 private struct SourcePixelSampler {
@@ -156,7 +155,8 @@ enum ScreenshotTranslationRenderer {
     static func render(
         sourceData: Data,
         ocrResult: ScreenshotOCRResult,
-        translatedText: String
+        translatedText: String,
+        isDarkMode: Bool = false
     ) -> Data? {
         let translatedBlocks = translatedText
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -165,14 +165,16 @@ enum ScreenshotTranslationRenderer {
         return render(
             sourceData: sourceData,
             ocrResult: ocrResult,
-            translatedBlocks: translatedBlocks
+            translatedBlocks: translatedBlocks,
+            isDarkMode: isDarkMode
         )
     }
 
     static func render(
         sourceData: Data,
         ocrResult: ScreenshotOCRResult,
-        translatedBlocks: [String]
+        translatedBlocks: [String],
+        isDarkMode: Bool = false
     ) -> Data? {
         guard let sourceImage = image(from: sourceData),
               sourceImage.width > 0,
@@ -200,8 +202,11 @@ enum ScreenshotTranslationRenderer {
         let blurRects = ocrResult.blocks.map {
             pixelRect(for: $0.boundingBox, width: width, height: height)
         }
-        let pixelSampler = SourcePixelSampler(image: sourceImage)
-        if let blurredImage = blurredImage(sourceImage, radius: 10), !blurRects.isEmpty {
+        if let blurredImage = blurredImage(
+            sourceImage,
+            radius: 10,
+            brightness: translationBlurBrightness(isDarkMode: isDarkMode)
+        ), !blurRects.isEmpty {
             context.saveGState()
             blurRects.forEach { context.addRect($0) }
             context.clip()
@@ -215,14 +220,13 @@ enum ScreenshotTranslationRenderer {
                 .insetBy(dx: -6, dy: -4)
             let style = sourceStyle(
                 for: block.text,
-                in: sourceRect,
-                sampler: pixelSampler
+                in: sourceRect
             )
             drawReplacement(
                 translation,
                 in: rect,
                 sourceFontSize: style.fontSize,
-                textColor: style.color,
+                isDarkMode: isDarkMode,
                 context: context
             )
         }
@@ -305,10 +309,12 @@ enum ScreenshotTranslationRenderer {
         _ text: String,
         in rect: CGRect,
         sourceFontSize: CGFloat,
-        textColor: NSColor,
+        isDarkMode: Bool,
         context: CGContext
     ) {
-        context.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
+        let fillColor = (isDarkMode ? NSColor.white : NSColor.black)
+            .withAlphaComponent(0.22)
+        context.setFillColor(fillColor.cgColor)
         context.fill(rect)
         let textRect = rect.insetBy(dx: 8, dy: 4)
         let fontSize = fittedFontSize(
@@ -320,19 +326,17 @@ enum ScreenshotTranslationRenderer {
             text,
             in: textRect,
             context: context,
-            color: textColor,
+            color: translationTextColor(isDarkMode: isDarkMode),
             fontSize: fontSize
         )
     }
 
     private static func sourceStyle(
         for text: String,
-        in sourceRect: CGRect,
-        sampler: SourcePixelSampler?
+        in sourceRect: CGRect
     ) -> SourceTextStyle {
         SourceTextStyle(
-            fontSize: estimatedSourceFontSize(for: text, in: sourceRect),
-            color: sampler?.foregroundColor(in: sourceRect) ?? .black
+            fontSize: estimatedSourceFontSize(for: text, in: sourceRect)
         )
     }
 
@@ -363,6 +367,14 @@ enum ScreenshotTranslationRenderer {
             height: sourceImage.height
         )
         return sampler.foregroundColor(in: sourceRect)
+    }
+
+    static func translationTextColor(isDarkMode: Bool) -> NSColor {
+        isDarkMode ? .black : .white
+    }
+
+    static func translationBlurBrightness(isDarkMode: Bool) -> CGFloat {
+        isDarkMode ? 0.22 : -0.22
     }
 
     static func estimatedSourceFontSize(forLineHeight lineHeight: CGFloat) -> CGFloat {
@@ -417,12 +429,24 @@ enum ScreenshotTranslationRenderer {
         )
     }
 
-    private static func blurredImage(_ image: CGImage, radius: CGFloat) -> CGImage? {
+    private static func blurredImage(
+        _ image: CGImage,
+        radius: CGFloat,
+        brightness: CGFloat
+    ) -> CGImage? {
         let input = CIImage(cgImage: image)
         guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
         filter.setValue(input, forKey: kCIInputImageKey)
         filter.setValue(radius, forKey: kCIInputRadiusKey)
-        guard let output = filter.outputImage?.cropped(to: input.extent) else { return nil }
+        guard let blurredOutput = filter.outputImage?.cropped(to: input.extent),
+              let colorFilter = CIFilter(name: "CIColorControls") else {
+            return nil
+        }
+        colorFilter.setValue(blurredOutput, forKey: kCIInputImageKey)
+        colorFilter.setValue(brightness, forKey: kCIInputBrightnessKey)
+        colorFilter.setValue(1, forKey: kCIInputContrastKey)
+        colorFilter.setValue(1, forKey: kCIInputSaturationKey)
+        guard let output = colorFilter.outputImage?.cropped(to: input.extent) else { return nil }
         return CIContext(options: nil).createCGImage(output, from: input.extent)
     }
 

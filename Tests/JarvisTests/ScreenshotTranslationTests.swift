@@ -25,6 +25,30 @@ final class ScreenshotTranslationTests: XCTestCase {
         )
     }
 
+    func testTranslationAppearanceFollowsThemeContrast() {
+        let lightText = ScreenshotTranslationRenderer
+            .translationTextColor(isDarkMode: false)
+            .usingColorSpace(.deviceRGB)!
+        let darkText = ScreenshotTranslationRenderer
+            .translationTextColor(isDarkMode: true)
+            .usingColorSpace(.deviceRGB)!
+
+        XCTAssertEqual(lightText.redComponent, 1, accuracy: 0.001)
+        XCTAssertEqual(lightText.greenComponent, 1, accuracy: 0.001)
+        XCTAssertEqual(lightText.blueComponent, 1, accuracy: 0.001)
+        XCTAssertEqual(darkText.redComponent, 0, accuracy: 0.001)
+        XCTAssertEqual(darkText.greenComponent, 0, accuracy: 0.001)
+        XCTAssertEqual(darkText.blueComponent, 0, accuracy: 0.001)
+        XCTAssertLessThan(
+            ScreenshotTranslationRenderer.translationBlurBrightness(isDarkMode: false),
+            0
+        )
+        XCTAssertGreaterThan(
+            ScreenshotTranslationRenderer.translationBlurBrightness(isDarkMode: true),
+            0
+        )
+    }
+
     func testTranslationPromptPreservesFormattingRequirements() {
         let prompt = ModelGateway.translationPrompt(sourceText: "Hello\nWorld", targetLanguage: "English")
 

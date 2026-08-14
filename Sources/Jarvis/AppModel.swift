@@ -769,7 +769,8 @@ final class AppModel: ObservableObject {
                       let translatedData = ScreenshotTranslationRenderer.render(
                           sourceData: sourceData,
                           ocrResult: ocrResult,
-                          translatedBlocks: translatedBlocks
+                          translatedBlocks: translatedBlocks,
+                          isDarkMode: themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
                       ),
                       screenshotController.applyTranslatedScreenshot(translatedData) else {
                     screenshotTranslationState = .failed("无法生成翻译后的截图")

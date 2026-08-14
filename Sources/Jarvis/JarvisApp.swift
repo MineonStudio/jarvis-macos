@@ -63,6 +63,7 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.backgroundColor = .textBackgroundColor
+        window.sharingType = .readOnly
 
         if let close = window.standardWindowButton(.closeButton),
            let miniaturize = window.standardWindowButton(.miniaturizeButton),

@@ -242,7 +242,6 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
     private var updateControls: some View {
         Group {
             switch app.updateState {

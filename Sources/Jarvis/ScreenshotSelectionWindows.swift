@@ -558,6 +558,7 @@ final class PinnedScreenshotItem {
         window.level = .screenSaver
         window.backgroundColor = .clear
         window.isOpaque = false
+        window.sharingType = .readOnly
         window.hasShadow = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hidesOnDeactivate = false

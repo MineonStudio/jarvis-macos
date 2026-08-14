@@ -1038,6 +1038,18 @@ private enum WindowSelectionDetector {
                 desktopTop: desktopTop,
                 screenBounds: screenBounds
             )
+            // Notification Center and other macOS system surfaces can report
+            // themselves as full-screen positive-layer windows. They sit in
+            // front of every app in the window list and would therefore win
+            // every hit test, making normal app windows impossible to select.
+            // The Dock is handled separately using its actual selectable
+            // region, so keep it out of this exclusion.
+            let isFullScreenSystemSurface = layer > 0
+                && !isDock
+                && localRect.width >= screenBounds.width * 0.9
+                && localRect.height >= screenBounds.height * 0.9
+            guard !isFullScreenSystemSurface else { continue }
+
             let minimumWidth: CGFloat = (layer > 0 || isMenubar) ? 18 : 80
             let minimumHeight: CGFloat = (layer > 0 || isMenubar) ? 10 : 60
             guard localRect.width >= minimumWidth, localRect.height >= minimumHeight else {

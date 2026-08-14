@@ -145,12 +145,19 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     }
 
     var sizeDescription: String? {
-        guard let fileSize else { return nil }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         formatter.includesUnit = true
         formatter.includesCount = true
-        return formatter.string(fromByteCount: fileSize)
+        if let fileSize {
+            return formatter.string(fromByteCount: fileSize)
+        }
+        if let text,
+           let byteCount = text.data(using: .utf8)?.count
+        {
+            return formatter.string(fromByteCount: Int64(byteCount))
+        }
+        return nil
     }
 
     var shortTimestamp: String {

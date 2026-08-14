@@ -12,17 +12,77 @@ struct ScreenshotView: View {
     }
 }
 
+enum GridThumbnailDisplayMode: String, CaseIterable, Identifiable, Hashable {
+    case square
+    case aspectRatio
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .square: "正方形"
+        case .aspectRatio: "完整比例"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .square: "square.grid.2x2"
+        case .aspectRatio: "rectangle.grid.2x2"
+        }
+    }
+}
+
+struct GridThumbnailModeMenu: View {
+    @Binding var rawValue: String
+
+    private var selectedMode: GridThumbnailDisplayMode {
+        GridThumbnailDisplayMode(rawValue: rawValue) ?? .square
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(GridThumbnailDisplayMode.allCases) { mode in
+                Button {
+                    rawValue = mode.rawValue
+                } label: {
+                    HStack {
+                        Label(mode.title, systemImage: mode.icon)
+                        if mode == selectedMode {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: selectedMode.icon)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .help("缩略图显示方式：(selectedMode.title)")
+    }
+}
+
 enum HistoryGridMetrics {
     static let pageSize = 12
-    static let minimumCardWidth: CGFloat = 180
-    static let maximumCardWidth: CGFloat = 280
-    static let previewHeight: CGFloat = 132
+    static let cardWidth: CGFloat = 220
+    static let cardHeight: CGFloat = 294
+    static let previewHeight: CGFloat = 200
+    static let cardPadding: CGFloat = 10
+    static let minimumCardWidth = cardWidth
+    static let maximumCardWidth = cardWidth
     static let spacing: CGFloat = 12
 }
 
 struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
     @State private var currentPage = 1
+    @AppStorage("jarvis.screenshotGridThumbnailMode") private var thumbnailModeRawValue = GridThumbnailDisplayMode.square.rawValue
 
     private var totalPages: Int {
         max(1, (app.screenshotHistory.count + HistoryGridMetrics.pageSize - 1) / HistoryGridMetrics.pageSize)
@@ -46,6 +106,7 @@ struct ScreenshotHistorySection: View {
                     Text("\(app.screenshotHistory.count) 张")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.jarvisTextSecondary)
+                    GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
                 }
 
                 if app.screenshotHistory.isEmpty {
@@ -70,7 +131,10 @@ struct ScreenshotHistorySection: View {
                         spacing: HistoryGridMetrics.spacing
                     ) {
                         ForEach(pageItems) { item in
-                            ScreenshotHistoryCard(item: item)
+                            ScreenshotHistoryCard(
+                                item: item,
+                                thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square
+                            )
                         }
                     }
 
@@ -127,22 +191,33 @@ struct PaginationControl: View {
 struct ScreenshotHistoryCard: View {
     @EnvironmentObject private var app: AppModel
     let item: ScreenshotHistoryItem
+    let thumbnailDisplayMode: GridThumbnailDisplayMode
     @State private var showingDeleteConfirmation = false
 
+    private var data: Data? {
+        app.screenshotHistoryData(for: item)
+    }
+
+    private var fileSizeDescription: String? {
+        guard let data else { return nil }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        return formatter.string(fromByteCount: Int64(data.count))
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                if let data = app.screenshotHistoryData(for: item),
+                Color.primary.opacity(0.035)
+                if let data,
                    let image = NSImage(data: data)
                 {
                     Button {
                         app.showScreenshotHistoryPreview(item)
                     } label: {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(8)
+                        thumbnailImage(image)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -155,8 +230,9 @@ struct ScreenshotHistoryCard: View {
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 132)
+            .frame(width: HistoryGridMetrics.cardWidth - (HistoryGridMetrics.cardPadding * 2))
+            .frame(height: HistoryGridMetrics.previewHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .clipped()
 
             HStack(spacing: 7) {
@@ -164,6 +240,17 @@ struct ScreenshotHistoryCard: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(1)
+                Spacer(minLength: 0)
+                if let fileSizeDescription {
+                    Text(fileSizeDescription)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(height: 18)
+
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 Button {
                     app.editScreenshotHistory(item)
@@ -185,8 +272,14 @@ struct ScreenshotHistoryCard: View {
                 .foregroundStyle(.red.opacity(0.78))
                 .help("删除")
             }
+            .frame(height: 30)
         }
-        .padding(10)
+        .padding(HistoryGridMetrics.cardPadding)
+        .frame(
+            width: HistoryGridMetrics.cardWidth,
+            height: HistoryGridMetrics.cardHeight,
+            alignment: .topLeading
+        )
         .jarvisGlass(cornerRadius: 13, interactive: false)
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .confirmationDialog(
@@ -200,6 +293,27 @@ struct ScreenshotHistoryCard: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("删除后无法恢复。")
+        }
+    }
+
+    @ViewBuilder
+    private func thumbnailImage(_ image: NSImage) -> some View {
+        switch thumbnailDisplayMode {
+        case .square:
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(
+                    width: HistoryGridMetrics.previewHeight,
+                    height: HistoryGridMetrics.previewHeight
+                )
+                .clipped()
+        case .aspectRatio:
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(8)
         }
     }
 }

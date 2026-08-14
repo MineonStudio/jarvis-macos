@@ -142,6 +142,7 @@ struct ClipboardView: View {
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
+    @AppStorage("jarvis.clipboardGridThumbnailMode") private var thumbnailModeRawValue = GridThumbnailDisplayMode.square.rawValue
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -164,6 +165,16 @@ struct ClipboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Label("剪贴板", systemImage: "clipboard")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Text("\(app.clipboardItems.count) 条")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                    GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
+                }
+
                 ClipboardFilterBar(
                     searchText: $searchText,
                     selectedFilter: $selectedFilter,
@@ -187,7 +198,11 @@ struct ClipboardView: View {
                         spacing: HistoryGridMetrics.spacing
                     ) {
                         ForEach(pageItems) { item in
-                            ClipboardCard(item: item, presentation: .main)
+                            ClipboardCard(
+                                item: item,
+                                presentation: .main,
+                                thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square
+                            )
                         }
                     }
 
@@ -277,15 +292,18 @@ struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
     let item: ClipboardItem
     let presentation: ClipboardCardPresentation
+    let thumbnailDisplayMode: GridThumbnailDisplayMode
     let onPreview: (() -> Void)?
 
     init(
         item: ClipboardItem,
         presentation: ClipboardCardPresentation,
+        thumbnailDisplayMode: GridThumbnailDisplayMode = .square,
         onPreview: (() -> Void)? = nil
     ) {
         self.item = item
         self.presentation = presentation
+        self.thumbnailDisplayMode = thumbnailDisplayMode
         self.onPreview = onPreview
     }
 
@@ -320,12 +338,28 @@ struct ClipboardCard: View {
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding(12)
+                } else if item.kind == .file {
+                    VStack(spacing: 10) {
+                        Image(systemName: item.kind.icon)
+                            .font(.system(size: 38, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                        Text(item.preview)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(3)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ClipboardItemPreview(item: item, size: 78)
+                    ClipboardItemPreview(item: item, displayMode: thumbnailDisplayMode)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: HistoryGridMetrics.previewHeight)
+            .frame(
+                width: HistoryGridMetrics.cardWidth - (HistoryGridMetrics.cardPadding * 2),
+                height: HistoryGridMetrics.previewHeight
+            )
+            .background(Color.primary.opacity(0.035))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -335,30 +369,19 @@ struct ClipboardCard: View {
 
     private var metadataRow: some View {
         HStack(spacing: 6) {
-            Text(item.kind.title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-            if item.isPinned {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.orange)
-            }
-            Spacer(minLength: 0)
             Text(item.shortTimestamp)
                 .font(.system(size: 9))
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
+            Spacer(minLength: 0)
+            if let size = item.sizeDescription {
+                Text(size)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
+            }
         }
-    }
-
-    @ViewBuilder
-    private var textPreview: some View {
-        if item.kind != .image {
-            Text(item.preview)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(item.kind == .text ? 2 : 1)
-                .textSelection(.enabled)
-        }
+        .frame(height: 18)
     }
 
     private var actionBar: some View {
@@ -395,18 +418,21 @@ struct ClipboardCard: View {
                 .help("删除")
             }
         }
+        .frame(height: 30)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             previewButton
             metadataRow
-            textPreview
-            ClipboardMetadata(item: item)
             actionBar
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .padding(HistoryGridMetrics.cardPadding)
+        .frame(
+            width: HistoryGridMetrics.cardWidth,
+            height: HistoryGridMetrics.cardHeight,
+            alignment: .topLeading
+        )
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -427,104 +453,11 @@ struct ClipboardCard: View {
     }
 }
 
-struct ClipboardMetadata: View {
-    let item: ClipboardItem
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let size = item.sizeDescription {
-                Text(size)
-            }
-            if item.kind == .file || item.kind == .video {
-                Text(item.hasLocalContent ? "本地副本" : "原文件引用")
-            } else if item.kind == .image {
-                Text(item.hasLocalContent ? "已保存到本机" : "文件不可用")
-            } else {
-                Text("本机记录")
-            }
-        }
-        .font(.system(size: 10))
-        .foregroundStyle(Color.jarvisTextSecondary)
-    }
-}
-
-struct ClipboardItemPreview: View {
-    private static let videoThumbnailCache = NSCache<NSString, NSImage>()
-
-    let item: ClipboardItem
-    let size: CGFloat
-    @State private var videoThumbnail: NSImage?
-
-    var body: some View {
-        ZStack {
-            if item.kind == .image,
-               let path = item.imagePath,
-               let image = NSImage(contentsOfFile: path)
-            {
-                mediaImage(image)
-            } else if item.kind == .video,
-                      let image = videoThumbnail
-            {
-                mediaImage(image)
-                    .overlay(alignment: .bottomLeading) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(6)
-                            .background(.black.opacity(0.55), in: Circle())
-                            .padding(7)
-                    }
-            } else {
-                Image(systemName: item.kind.icon)
-                    .font(.system(size: size * 0.36, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .task(id: item.id) {
-            guard item.kind == .video,
-                  let videoPath = item.filePath else { return }
-
-            let cacheKey = (item.thumbnailPath ?? videoPath) as NSString
-            if let cached = Self.videoThumbnailCache.object(forKey: cacheKey) {
-                videoThumbnail = cached
-                return
-            }
-
-            if let thumbnailPath = item.thumbnailPath,
-               let thumbnail = NSImage(contentsOfFile: thumbnailPath)
-            {
-                Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
-                videoThumbnail = thumbnail
-                return
-            }
-
-            ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: videoPath)) { image in
-                guard let image else { return }
-                let thumbnail = NSImage(
-                    cgImage: image,
-                    size: NSSize(width: image.width, height: image.height)
-                )
-                Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
-                videoThumbnail = thumbnail
-            }
-        }
-    }
-
-    private func mediaImage(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipped()
-    }
-}
-
 struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
+    @AppStorage("jarvis.clipboardGridThumbnailMode") private var thumbnailModeRawValue = GridThumbnailDisplayMode.square.rawValue
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -536,6 +469,13 @@ struct ClipboardPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("剪贴板", systemImage: "clipboard")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
+            }
+
             ClipboardFilterBar(
                 searchText: $searchText,
                 selectedFilter: $selectedFilter,
@@ -568,6 +508,7 @@ struct ClipboardPanelView: View {
                             ClipboardCard(
                                 item: item,
                                 presentation: .panel,
+                                thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square,
                                 onPreview: { app.showClipboardMediaPreview(item) }
                             )
                         }
@@ -579,8 +520,6 @@ struct ClipboardPanelView: View {
                 Image(systemName: "info.circle")
                 Text("手动点击一键复制")
                 Spacer()
-                Text("本机保存")
-                    .foregroundStyle(Color.jarvisTextSecondary)
             }
             .font(.system(size: 10))
             .foregroundStyle(Color.jarvisTextSecondary)

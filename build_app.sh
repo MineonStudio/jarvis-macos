@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.36}"
-JARVIS_BUILD="${JARVIS_BUILD:-110}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.37}"
+JARVIS_BUILD="${JARVIS_BUILD:-111}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -29,13 +29,10 @@ if [[ -f "$ROOT_DIR/Resources/Jarvis.icns" ]]; then
   cp "$ROOT_DIR/Resources/Jarvis.icns" "$APP_DIR/Contents/Resources/Jarvis.icns"
 fi
 
-# Keep the standalone ICNS as the single source of truth for both Dock and
-# system permission surfaces. An Asset Catalog applies the macOS app-icon
-# mask and changes the appearance of this intentionally flat logo.
+# Use the same single standard ICNS resource as the known-good 0.5 release.
+# Do not add custom menu icons or a second Asset Catalog source of truth.
 rm -f "$APP_DIR/Contents/Resources/Assets.car" \
       "$APP_DIR/Contents/Resources/AppIcon.icns"
-/usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP_DIR/Contents/Info.plist" >/dev/null 2>&1 || true
-/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile Jarvis.icns" "$APP_DIR/Contents/Info.plist"
 
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --deep --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null

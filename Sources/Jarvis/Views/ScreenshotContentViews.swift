@@ -64,7 +64,7 @@ struct GridThumbnailModeMenu: View {
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
-        .help("缩略图显示方式：(selectedMode.title)")
+        .help("缩略图显示方式：\(selectedMode.title)")
     }
 }
 

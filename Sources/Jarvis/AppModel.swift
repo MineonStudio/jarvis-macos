@@ -52,6 +52,7 @@ enum AppSection: Hashable, Identifiable {
 final class AppModel: ObservableObject {
     @Published var selectedSection: AppSection = .overview
     @Published var modelConfiguration = ModelConfiguration()
+    @Published private(set) var isModelConfigurationSaved = false
     @Published var clipboardItems: [ClipboardItem] = []
     @Published var latestScreenshotData: Data?
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
@@ -82,9 +83,11 @@ final class AppModel: ObservableObject {
     private var screenshotShortcutManager: ScreenshotShortcutManager?
     private var clipboardShortcutManager: ScreenshotShortcutManager?
     private var systemAppearanceObservation: NSKeyValueObservation?
+    private var modelConfigurationObservation: AnyCancellable?
     private var editingHistoryID: UUID?
 
     private let configurationKey = "jarvis.model.configuration"
+    private let modelConfigurationSavedKey = "jarvis.model.configuration.saved"
     private let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     private let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     private let clipboardShortcutKey = "jarvis.clipboard.shortcut"
@@ -112,6 +115,13 @@ final class AppModel: ObservableObject {
             screenshotHistory = [migratedItem]
         }
         loadConfiguration()
+        modelConfigurationObservation = $modelConfiguration
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.isModelConfigurationSaved = false
+                UserDefaults.standard.set(false, forKey: self.modelConfigurationSavedKey)
+            }
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
@@ -153,10 +163,6 @@ final class AppModel: ObservableObject {
         KeychainStore.shared.value(for: "jarvis.api-key") != nil
     }
 
-    var apiKeyHint: String {
-        hasAPIKey ? "API Key 已安全保存到 macOS 钥匙串" : "尚未配置 API Key"
-    }
-
     deinit {
         toastDismissTask?.cancel()
     }
@@ -178,6 +184,8 @@ final class AppModel: ObservableObject {
 
         if let data = try? JSONEncoder().encode(modelConfiguration) {
             UserDefaults.standard.set(data, forKey: configurationKey)
+            UserDefaults.standard.set(true, forKey: modelConfigurationSavedKey)
+            isModelConfigurationSaved = true
         }
         showToast("模型配置已保存")
     }
@@ -203,6 +211,8 @@ final class AppModel: ObservableObject {
 
     func clearAPIKey() {
         KeychainStore.shared.deleteValue(for: "jarvis.api-key")
+        UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
+        isModelConfigurationSaved = false
         statusMessage = "API Key 已从钥匙串删除"
     }
 
@@ -929,6 +939,7 @@ final class AppModel: ObservableObject {
             return
         }
         modelConfiguration = configuration
+        isModelConfigurationSaved = (UserDefaults.standard.object(forKey: modelConfigurationSavedKey) as? Bool) ?? true
     }
 
     private func loadScreenshotShortcut() {

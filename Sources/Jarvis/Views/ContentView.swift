@@ -305,9 +305,6 @@ struct ScreenshotHistorySection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Label("截图历史", systemImage: "clock.arrow.circlepath")
                             .font(.system(size: 15, weight: .semibold))
-                        Text("截图会保存在本机，可随时重新编辑或删除")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.jarvisTextSecondary)
                     }
                     Spacer()
                     Text("\(app.screenshotHistory.count) 张")
@@ -423,7 +420,6 @@ struct ScreenshotHistoryCard: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 132)
-            .jarvisGlass(cornerRadius: 10, interactive: false)
             .clipped()
 
             HStack(spacing: 7) {
@@ -948,7 +944,6 @@ struct ClipboardRow: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: HistoryGridMetrics.previewHeight)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -970,10 +965,12 @@ struct ClipboardRow: View {
                     .lineLimit(1)
             }
 
-            Text(item.preview)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(item.kind == .text ? 2 : 1)
-                .textSelection(.enabled)
+            if item.kind != .image {
+                Text(item.preview)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(item.kind == .text ? 2 : 1)
+                    .textSelection(.enabled)
+            }
             ClipboardMetadata(item: item)
 
             HStack(spacing: 4) {
@@ -1078,7 +1075,6 @@ struct ClipboardItemPreview: View {
             }
         }
         .frame(width: size, height: size)
-        .jarvisIconGlass(tint: .accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .task(id: item.id) {
             guard item.kind == .video,
@@ -1229,7 +1225,6 @@ struct ClipboardPanelRow: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: HistoryGridMetrics.previewHeight)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1252,9 +1247,11 @@ struct ClipboardPanelRow: View {
                     .lineLimit(1)
             }
 
-            Text(item.preview)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(item.kind == .text ? 2 : 1)
+            if item.kind != .image {
+                Text(item.preview)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(item.kind == .text ? 2 : 1)
+            }
             ClipboardMetadata(item: item)
 
             HStack(spacing: 4) {
@@ -1373,7 +1370,10 @@ struct ShortcutSettingsCard: View {
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @State private var apiKey = ""
-    @State private var modelConfigurationSaved = false
+
+    private var modelConfigurationSaved: Bool {
+        app.isModelConfigurationSaved && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         ScrollView {
@@ -1407,9 +1407,6 @@ struct SettingsView: View {
                         }
 
                         HStack {
-                            Text(app.apiKeyHint)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.jarvisTextSecondary)
                             Spacer()
                             Button("删除 Key") { app.clearAPIKey() }
                                 .buttonStyle(.borderless)
@@ -1423,7 +1420,6 @@ struct SettingsView: View {
                             Button(modelConfigurationSaved ? "已保存" : "保存配置") {
                                 app.saveModelSettings(apiKey: apiKey)
                                 apiKey = ""
-                                modelConfigurationSaved = true
                             }
                             .buttonStyle(JarvisPrimaryButtonStyle())
                             .disabled(modelConfigurationSaved)
@@ -1441,13 +1437,6 @@ struct SettingsView: View {
         }
         .onAppear {
             apiKey = ""
-            modelConfigurationSaved = false
-        }
-        .onChange(of: app.modelConfiguration) { _, _ in
-            modelConfigurationSaved = false
-        }
-        .onChange(of: apiKey) { _, _ in
-            modelConfigurationSaved = false
         }
     }
 
@@ -1458,22 +1447,11 @@ struct SettingsView: View {
                     .font(.system(size: 15, weight: .semibold))
 
                 LabeledSetting(title: "外观") {
-                    Picker("外观", selection: Binding(
+                    JarvisThemePicker(selection: Binding(
                         get: { app.themePreference },
                         set: { app.updateThemePreference($0) }
-                    )) {
-                        ForEach(JarvisTheme.allCases) { theme in
-                            Label(theme.title, systemImage: theme.icon)
-                                .tag(theme)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    ))
                 }
-
-                Text("跟随系统会根据 macOS 当前的浅色或深色外观自动切换。")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
     }
@@ -1496,11 +1474,6 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     .frame(width: 180, alignment: .leading)
                 }
-
-                Text("截图先由 macOS 在本地 OCR，只有识别出的文字会发送给模型服务商；原图和翻译结果不会自动保存到本地历史。")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1518,21 +1491,20 @@ struct SettingsView: View {
                 }
                 switch app.updateState {
                 case .available:
-                    Button("下载并更新") {
+                    Button("下载最新版") {
                         app.downloadAndInstallUpdate()
                     }
                     .buttonStyle(JarvisPrimaryButtonStyle())
-                case .downloading, .installing:
+                case .checking, .downloading, .installing:
                     ProgressView()
                         .controlSize(.small)
                 default:
-                    EmptyView()
+                    Button(updateActionTitle) {
+                        app.checkForUpdates()
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(isUpdating)
                 }
-                Button(app.updateState == .checking ? "检查中…" : "手动检查更新") {
-                    app.checkForUpdates()
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-                .disabled(app.updateState == .checking || isUpdating)
             }
         }
     }
@@ -1542,7 +1514,7 @@ struct SettingsView: View {
         Group {
             switch app.updateState {
             case .idle:
-                Text("尚未检查更新")
+                EmptyView()
             case .checking:
                 Text("正在检查更新…")
             case .upToDate:
@@ -1562,11 +1534,48 @@ struct SettingsView: View {
         .foregroundStyle(Color.jarvisTextSecondary)
     }
 
+    private var updateActionTitle: String {
+        if case .failed = app.updateState {
+            return "重新检查"
+        }
+        return "检查更新"
+    }
+
     private var isUpdating: Bool {
         switch app.updateState {
-        case .downloading, .installing: return true
+        case .checking, .downloading, .installing: return true
         default: return false
         }
+    }
+}
+
+struct JarvisThemePicker: View {
+    @Binding var selection: JarvisTheme
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(JarvisTheme.allCases) { theme in
+                Button {
+                    selection = theme
+                } label: {
+                    Text(theme.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(selection == theme ? Color.white : Color.secondary)
+                        .frame(minWidth: 64, minHeight: 34)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .contentShape(Capsule())
+                        .background(
+                            selection == theme ? Color.accentColor.opacity(0.82) : .clear,
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .contentShape(Capsule())
+            }
+        }
+        .padding(3)
+        .jarvisGlass(in: Capsule(), interactive: false)
     }
 }
 

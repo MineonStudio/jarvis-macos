@@ -1578,11 +1578,11 @@ struct JarvisThemePicker: View {
                     selection = theme
                 } label: {
                     Text(theme.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(selection == theme ? Color.white : Color.secondary)
-                        .frame(minWidth: 64, minHeight: 34)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .frame(minWidth: 54, minHeight: 28)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                         .contentShape(Capsule())
                         .background(
                             selection == theme ? Color.accentColor.opacity(0.82) : .clear,
@@ -1593,7 +1593,7 @@ struct JarvisThemePicker: View {
                 .contentShape(Capsule())
             }
         }
-        .padding(3)
+        .padding(2)
         .jarvisGlass(in: Capsule(), interactive: false)
     }
 }

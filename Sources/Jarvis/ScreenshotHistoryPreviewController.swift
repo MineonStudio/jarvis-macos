@@ -142,10 +142,16 @@ final class ScreenshotHistoryPreviewController {
     }
 
     func dismiss() {
+        let previewPanel = panel
+        let dimmingPanel = self.dimmingPanel
+        previewPanel?.onWindowClose = nil
+        previewPanel?.onEscape = nil
+        self.dimmingPanel = nil
+        self.panel = nil
+        previewPanel?.orderOut(nil)
+        previewPanel?.close()
         dimmingPanel?.orderOut(nil)
-        panel?.orderOut(nil)
-        dimmingPanel = nil
-        panel = nil
+        dimmingPanel?.close()
     }
 
     private func displaySize(for imageSize: CGSize, maximumSize: CGSize) -> CGSize {
@@ -185,6 +191,13 @@ private final class ScreenshotHistoryPreviewPanel: NSPanel {
 
     override func performClose(_ sender: Any?) {
         onWindowClose?()
+    }
+
+    override func close() {
+        let closeHandler = onWindowClose
+        onWindowClose = nil
+        closeHandler?()
+        super.close()
     }
 
     override func sendEvent(_ event: NSEvent) {

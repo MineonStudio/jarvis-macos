@@ -143,12 +143,18 @@ final class ClipboardMediaPreviewController {
     }
 
     func dismiss() {
+        let previewPanel = panel
+        let dimmingPanel = self.dimmingPanel
         player?.pause()
-        dimmingPanel?.orderOut(nil)
-        panel?.orderOut(nil)
-        dimmingPanel = nil
-        panel = nil
+        previewPanel?.onWindowClose = nil
+        previewPanel?.onEscape = nil
+        self.dimmingPanel = nil
+        self.panel = nil
         player = nil
+        previewPanel?.orderOut(nil)
+        previewPanel?.close()
+        dimmingPanel?.orderOut(nil)
+        dimmingPanel?.close()
     }
 
     private static func displaySize(for mediaSize: CGSize, maximumSize: CGSize) -> CGSize {
@@ -404,6 +410,13 @@ private final class ClipboardMediaPreviewPanel: NSPanel {
 
     override func performClose(_ sender: Any?) {
         onWindowClose?()
+    }
+
+    override func close() {
+        let closeHandler = onWindowClose
+        onWindowClose = nil
+        closeHandler?()
+        super.close()
     }
 
     override func sendEvent(_ event: NSEvent) {

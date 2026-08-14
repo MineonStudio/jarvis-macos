@@ -19,6 +19,12 @@ final class ClipboardMediaPreviewModel: ObservableObject {
     }
 }
 
+private struct ClipboardMediaSource {
+    let image: NSImage?
+    let displaySize: CGSize
+    let player: AVPlayer?
+}
+
 @MainActor
 final class ClipboardMediaPreviewController {
     private var dimmingPanel: ClipboardMediaDimmingPanel?
@@ -39,21 +45,10 @@ final class ClipboardMediaPreviewController {
         let screenFrame = frames.screen
         let visibleFrame = frames.visible
         let maximumSize = PreviewWindowSupport.maximumContentSize(for: screenFrame)
-        let displaySize: CGSize
-        let image: NSImage?
-        let mediaPlayer: AVPlayer?
-
-        if item.kind == .image,
-           let loadedImage = NSImage(contentsOfFile: path)
-        {
-            image = loadedImage
-            displaySize = Self.displaySize(for: loadedImage.size, maximumSize: maximumSize)
-            mediaPlayer = nil
-        } else {
-            image = nil
-            displaySize = Self.videoDisplaySize(maximumSize: maximumSize)
-            mediaPlayer = AVPlayer(url: URL(fileURLWithPath: path))
-        }
+        let source = mediaSource(for: item, path: path, maximumSize: maximumSize)
+        let image = source.image
+        let displaySize = source.displaySize
+        let mediaPlayer = source.player
 
         let contentWidth = max(displaySize.width, ClipboardMediaPreviewToolbar.preferredWidth + 22)
         let contentHeight = displaySize.height
@@ -116,6 +111,27 @@ final class ClipboardMediaPreviewController {
         player = mediaPlayer
         dimmingPanel.orderFrontRegardless()
         previewPanel.makeKeyAndOrderFront(nil)
+    }
+
+    private func mediaSource(
+        for item: ClipboardItem,
+        path: String,
+        maximumSize: CGSize
+    ) -> ClipboardMediaSource {
+        guard item.kind == .image,
+              let image = NSImage(contentsOfFile: path)
+        else {
+            return ClipboardMediaSource(
+                image: nil,
+                displaySize: Self.videoDisplaySize(maximumSize: maximumSize),
+                player: AVPlayer(url: URL(fileURLWithPath: path))
+            )
+        }
+        return ClipboardMediaSource(
+            image: image,
+            displaySize: Self.displaySize(for: image.size, maximumSize: maximumSize),
+            player: nil
+        )
     }
 
     func dismiss() {

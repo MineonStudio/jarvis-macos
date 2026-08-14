@@ -18,6 +18,15 @@ final class ScreenshotHistoryPreviewModel: ObservableObject {
     }
 }
 
+private struct ScreenshotHistoryPreviewPresentation {
+    let item: ScreenshotHistoryItem
+    let image: NSImage
+    let imageDisplaySize: CGSize
+    let imageViewportSize: CGSize
+    let model: ScreenshotHistoryPreviewModel
+    let previewPanel: ScreenshotHistoryPreviewPanel
+}
+
 @MainActor
 final class ScreenshotHistoryPreviewController {
     private var dimmingPanel: ScreenshotHistoryDimmingPanel?
@@ -71,32 +80,16 @@ final class ScreenshotHistoryPreviewController {
             model?.adjustZoom(by: delta)
         }
 
-        let imageHostingView = NSHostingView(
-            rootView: ScreenshotHistoryPreview(
+        let imageHostingView = makeHostingView(
+            ScreenshotHistoryPreviewPresentation(
+                item: item,
                 image: image,
                 imageDisplaySize: imageDisplaySize,
                 imageViewportSize: imageViewportSize,
                 model: model,
-                onClose: { [weak self] in
-                    self?.dismiss()
-                },
-                onEdit: { [weak self, weak app] in
-                    self?.dismiss()
-                    DispatchQueue.main.async {
-                        app?.editScreenshotHistory(item)
-                    }
-                },
-                onCopy: { [weak app] in
-                    app?.copyScreenshotHistory(item)
-                },
-                onSave: { [weak app, weak previewPanel] in
-                    app?.saveScreenshotHistory(item, presentingWindow: previewPanel)
-                },
-                onDelete: { [weak self, weak app] in
-                    self?.dismiss()
-                    app?.deleteScreenshotHistory(item)
-                }
-            )
+                previewPanel: previewPanel
+            ),
+            app: app
         )
         imageHostingView.frame = NSRect(origin: .zero, size: contentFrame.size)
         imageHostingView.autoresizingMask = [.width, .height]
@@ -114,6 +107,42 @@ final class ScreenshotHistoryPreviewController {
         panel = previewPanel
         dimmingPanel.orderFrontRegardless()
         previewPanel.makeKeyAndOrderFront(nil)
+    }
+
+    private func makeHostingView(
+        _ presentation: ScreenshotHistoryPreviewPresentation,
+        app: AppModel
+    ) -> NSHostingView<ScreenshotHistoryPreview> {
+        NSHostingView(
+            rootView: ScreenshotHistoryPreview(
+                image: presentation.image,
+                imageDisplaySize: presentation.imageDisplaySize,
+                imageViewportSize: presentation.imageViewportSize,
+                model: presentation.model,
+                onClose: { [weak self] in
+                    self?.dismiss()
+                },
+                onEdit: { [weak self, weak app] in
+                    self?.dismiss()
+                    DispatchQueue.main.async {
+                        app?.editScreenshotHistory(presentation.item)
+                    }
+                },
+                onCopy: { [weak app] in
+                    app?.copyScreenshotHistory(presentation.item)
+                },
+                onSave: { [weak app, weak previewPanel = presentation.previewPanel] in
+                    app?.saveScreenshotHistory(
+                        presentation.item,
+                        presentingWindow: previewPanel
+                    )
+                },
+                onDelete: { [weak self, weak app] in
+                    self?.dismiss()
+                    app?.deleteScreenshotHistory(presentation.item)
+                }
+            )
+        )
     }
 
     func dismiss() {

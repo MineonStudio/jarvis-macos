@@ -25,16 +25,15 @@ final class ScreenshotService {
         return captures
     }
 
-    /// Captures one display-sized rectangle with ScreenCaptureKit's display
-    /// filter API. This path is available across the full macOS 14 deployment
-    /// target and keeps the original coordinate space used by the overlay.
+    /// Captures one display-sized rectangle with macOS 26's direct
+    /// ScreenCaptureKit API, preserving the overlay's coordinate space.
     func capture(screenRect: CGRect) async throws -> ScreenshotCapture {
         guard !screenRect.isEmpty else {
             throw ScreenshotError.captureFailed("无法识别要截图的显示器")
         }
 
         do {
-            let image = try await captureDisplayFilter(for: screenRect)
+            let image = try await SCScreenshotManager.captureImage(in: screenRect)
             guard let data = Self.pngData(from: image, logicalSize: screenRect.size) else {
                 throw ScreenshotError.captureFailed("无法将屏幕图像编码为 PNG")
             }
@@ -51,49 +50,6 @@ final class ScreenshotService {
                 "ScreenCaptureKit 无法读取当前显示器：\(error.localizedDescription)"
             )
         }
-    }
-
-    @available(macOS, introduced: 14.0, deprecated: 15.2, message: "Use SCScreenshotManager.captureImage(in:) on macOS 15.2 and later")
-    private func captureDisplayFilter(for screenRect: CGRect) async throws -> CGImage {
-        let shareableContent = try await SCShareableContent.current
-        let displayID = displayID(for: screenRect)
-        guard let display = shareableContent.displays.first(where: { display in
-            if let displayID {
-                return display.displayID == displayID
-            }
-            return display.frame == screenRect
-        }) else {
-            throw ScreenshotError.captureFailed("无法识别要截图的显示器")
-        }
-
-        let excludedApplications = Bundle.main.bundleIdentifier.flatMap { bundleIdentifier in
-            shareableContent.applications.filter { $0.bundleIdentifier == bundleIdentifier }
-        } ?? []
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: excludedApplications,
-            exceptingWindows: []
-        )
-        let pixelScale = CGFloat(filter.pointPixelScale)
-        let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int((filter.contentRect.width * pixelScale).rounded()))
-        configuration.height = max(1, Int((filter.contentRect.height * pixelScale).rounded()))
-        configuration.showsCursor = false
-        configuration.capturesAudio = false
-        return try await SCScreenshotManager.captureImage(
-            contentFilter: filter,
-            configuration: configuration
-        )
-    }
-
-    private func displayID(for screenFrame: CGRect) -> CGDirectDisplayID? {
-        let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
-        guard let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }),
-              let number = screen.deviceDescription[screenNumberKey] as? NSNumber
-        else {
-            return nil
-        }
-        return CGDirectDisplayID(number.uint32Value)
     }
 
     private static func pngData(from image: CGImage, logicalSize: CGSize) -> Data? {

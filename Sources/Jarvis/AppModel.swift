@@ -50,17 +50,24 @@ enum AppSection: Hashable, Identifiable {
     }
 }
 
+private struct ScreenshotSaveRequest {
+    let data: Data
+    let historyID: UUID?
+    let finalizesHistory: Bool
+    let successMessage: String
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var selectedSection: AppSection = .overview
     @Published var modelConfiguration = ModelConfiguration()
-    @Published private(set) var isModelConfigurationSaved = false
+    @Published var isModelConfigurationSaved = false
     @Published var clipboardItems: [ClipboardItem] = []
     @Published var latestScreenshotData: Data?
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
     @Published var latestTranslation = ""
     @Published var targetLanguage: ScreenshotTranslationLanguage = .chinese
-    @Published private(set) var screenshotTranslationState: ScreenshotTranslationState = .idle
+    @Published var screenshotTranslationState: ScreenshotTranslationState = .idle
     @Published var isCapturing = false
     @Published var statusMessage = "系统就绪"
     @Published var toastMessage: String?
@@ -69,37 +76,37 @@ final class AppModel: ObservableObject {
     @Published var clipboardShortcut = ScreenshotShortcut.clipboardDefault
     @Published var clipboardShortcutConflictMessage = ""
     @Published var themePreference: JarvisTheme = .system
-    @Published private(set) var systemColorScheme: ColorScheme = .light
+    @Published var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
 
     let modelGateway = ModelGateway()
-    private let clipboardService = ClipboardService()
-    private let clipboardStore = ClipboardStore()
-    private let clipboardPanelController = ClipboardPanelController()
-    private let screenshotCacheStore = ScreenshotCacheStore()
-    private let screenshotHistoryStore = ScreenshotHistoryStore()
-    private let screenshotController = ScreenshotCaptureController()
-    private let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
-    private let clipboardMediaPreviewController = ClipboardMediaPreviewController()
-    private let updateService = JarvisUpdateService()
-    private var screenshotShortcutManager: ScreenshotShortcutManager?
-    private var clipboardShortcutManager: ScreenshotShortcutManager?
-    private var systemAppearanceObservation: NSKeyValueObservation?
-    private var modelConfigurationObservation: AnyCancellable?
-    private var editingHistoryID: UUID?
+    let clipboardService = ClipboardService()
+    let clipboardStore = ClipboardStore()
+    let clipboardPanelController = ClipboardPanelController()
+    let screenshotCacheStore = ScreenshotCacheStore()
+    let screenshotHistoryStore = ScreenshotHistoryStore()
+    let screenshotController = ScreenshotCaptureController()
+    let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
+    let clipboardMediaPreviewController = ClipboardMediaPreviewController()
+    let updateService = JarvisUpdateService()
+    var screenshotShortcutManager: ScreenshotShortcutManager?
+    var clipboardShortcutManager: ScreenshotShortcutManager?
+    var systemAppearanceObservation: NSKeyValueObservation?
+    var modelConfigurationObservation: AnyCancellable?
+    var editingHistoryID: UUID?
 
-    private let configurationKey = "jarvis.model.configuration"
-    private let modelConfigurationSavedKey = "jarvis.model.configuration.saved"
-    private let screenshotShortcutKey = "jarvis.screenshot.shortcut"
-    private let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
-    private let clipboardShortcutKey = "jarvis.clipboard.shortcut"
-    private let themePreferenceKey = "jarvis.theme.preference"
-    private let translationLanguageKey = "jarvis.screenshot.translation.language"
-    private var translationTask: Task<Void, Never>?
-    private var translationRequestID = UUID()
-    private var translationSourceData: Data?
-    private var translationOCRResult: ScreenshotOCRResult?
-    private var toastDismissTask: Task<Void, Never>?
+    let configurationKey = "jarvis.model.configuration"
+    let modelConfigurationSavedKey = "jarvis.model.configuration.saved"
+    let screenshotShortcutKey = "jarvis.screenshot.shortcut"
+    let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
+    let clipboardShortcutKey = "jarvis.clipboard.shortcut"
+    let themePreferenceKey = "jarvis.theme.preference"
+    let translationLanguageKey = "jarvis.screenshot.translation.language"
+    var translationTask: Task<Void, Never>?
+    var translationRequestID = UUID()
+    var translationSourceData: Data?
+    var translationOCRResult: ScreenshotOCRResult?
+    var toastDismissTask: Task<Void, Never>?
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {
         screenshotController.translationProgress
@@ -169,172 +176,9 @@ final class AppModel: ObservableObject {
     deinit {
         toastDismissTask?.cancel()
     }
+}
 
-    // MARK: - Shared UI state
-
-    func showToast(_ message: String) {
-        toastDismissTask?.cancel()
-        toastMessage = message
-        toastDismissTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            self?.toastMessage = nil
-        }
-    }
-
-    func saveModelSettings(apiKey: String) {
-        do {
-            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try KeychainStore.shared.setValue(apiKey, for: "jarvis.api-key")
-            }
-
-            let data = try JSONEncoder().encode(modelConfiguration)
-            UserDefaults.standard.set(data, forKey: configurationKey)
-            UserDefaults.standard.set(true, forKey: modelConfigurationSavedKey)
-            isModelConfigurationSaved = true
-            showToast("模型配置已保存")
-        } catch {
-            isModelConfigurationSaved = false
-            showToast("模型配置保存失败：\(error.localizedDescription)")
-        }
-    }
-
-    func updateThemePreference(_ preference: JarvisTheme) {
-        themePreference = preference
-        UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
-    }
-
-    private func refreshSystemColorScheme() {
-        let appearance = NSApp.effectiveAppearance
-        let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
-        systemColorScheme = bestMatch == .darkAqua ? .dark : .light
-    }
-
-    private func loadThemePreference() {
-        guard let rawValue = UserDefaults.standard.string(forKey: themePreferenceKey),
-              let preference = JarvisTheme(rawValue: rawValue)
-        else {
-            return
-        }
-        themePreference = preference
-    }
-
-    func clearAPIKey() {
-        do {
-            try KeychainStore.shared.deleteValue(for: "jarvis.api-key")
-            UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
-            isModelConfigurationSaved = false
-            statusMessage = "API Key 已从钥匙串删除"
-        } catch {
-            statusMessage = "API Key 删除失败：\(error.localizedDescription)"
-        }
-    }
-
-    @discardableResult
-    func updateScreenshotShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
-        let previous = screenshotShortcut
-        guard let manager = screenshotShortcutManager else {
-            statusMessage = "快捷键服务尚未就绪"
-            return false
-        }
-        let validation = manager.validate(shortcut)
-        guard validation == .available else {
-            screenshotShortcutConflictMessage = validation.message
-            statusMessage = validation.message
-            return false
-        }
-        guard manager.update(shortcut) else {
-            _ = manager.update(previous)
-            screenshotShortcut = previous
-            screenshotShortcutConflictMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
-            statusMessage = screenshotShortcutConflictMessage
-            return false
-        }
-
-        screenshotShortcut = shortcut
-        screenshotShortcutConflictMessage = ""
-        if let data = try? JSONEncoder().encode(shortcut) {
-            UserDefaults.standard.set(data, forKey: screenshotShortcutKey)
-        }
-        statusMessage = "截图快捷键已更新为 \(shortcut.displayString)"
-        return true
-    }
-
-    @discardableResult
-    func validateScreenshotShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
-        guard let manager = screenshotShortcutManager else {
-            screenshotShortcutConflictMessage = "快捷键服务尚未就绪"
-            return false
-        }
-        let validation = manager.validate(shortcut)
-        screenshotShortcutConflictMessage = validation == .available ? "" : validation.message
-        return validation == .available
-    }
-
-    @discardableResult
-    func updateClipboardShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
-        let previous = clipboardShortcut
-        guard let manager = clipboardShortcutManager else {
-            statusMessage = "快捷键服务尚未就绪"
-            return false
-        }
-        let validation = manager.validate(shortcut)
-        guard validation == .available else {
-            clipboardShortcutConflictMessage = validation.message
-            statusMessage = validation.message
-            return false
-        }
-        guard manager.update(shortcut) else {
-            _ = manager.update(previous)
-            clipboardShortcut = previous
-            clipboardShortcutConflictMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
-            statusMessage = clipboardShortcutConflictMessage
-            return false
-        }
-
-        clipboardShortcut = shortcut
-        clipboardShortcutConflictMessage = ""
-        if let data = try? JSONEncoder().encode(shortcut) {
-            UserDefaults.standard.set(data, forKey: clipboardShortcutKey)
-        }
-        statusMessage = "剪贴板快捷键已更新为 \(shortcut.displayString)"
-        return true
-    }
-
-    @discardableResult
-    func validateClipboardShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
-        guard let manager = clipboardShortcutManager else {
-            clipboardShortcutConflictMessage = "快捷键服务尚未就绪"
-            return false
-        }
-        let validation = manager.validate(shortcut)
-        clipboardShortcutConflictMessage = validation == .available ? "" : validation.message
-        return validation == .available
-    }
-
-    func testConnection(apiKeyOverride: String = "") {
-        let key = apiKeyOverride.isEmpty
-            ? (KeychainStore.shared.value(for: "jarvis.api-key") ?? "")
-            : apiKeyOverride
-
-        guard !key.isEmpty else {
-            showToast("请先填写 API Key")
-            return
-        }
-
-        showToast("正在测试连接…")
-        let configuration = modelConfiguration
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await modelGateway.testConnection(configuration: configuration, apiKey: key)
-                showToast("连接成功 · \(configuration.modelName)")
-            } catch {
-                showToast("连接失败：\(error.localizedDescription)")
-            }
-        }
-    }
-
+extension AppModel {
     // MARK: - Screenshot workflow
 
     /// Starts a screenshot from a global/menu-bar action without changing the
@@ -421,6 +265,13 @@ final class AppModel: ObservableObject {
             statusMessage = "已取消截图编辑，未执行任何操作"
         case let .translateRequested(data):
             translateScreenshot(data: translationSourceData ?? data)
+        default:
+            handleEditorStatusAction(action)
+        }
+    }
+
+    private func handleEditorStatusAction(_ action: ScreenshotAction) {
+        switch action {
         case let .tool(tool):
             statusMessage = "已选择\(tool.title)，在截图上拖动即可使用"
         case .undo:
@@ -431,6 +282,8 @@ final class AppModel: ObservableObject {
             statusMessage = "已删除选中的标注"
         case .duplicate:
             statusMessage = "已复制选中的标注"
+        default:
+            break
         }
     }
 
@@ -500,10 +353,12 @@ final class AppModel: ObservableObject {
                 self?.finishSavePanel(
                     savePanel,
                     response: response,
-                    data: data,
-                    historyID: historyID,
-                    finalizesHistory: finalizesHistory,
-                    successMessage: successMessage
+                    request: ScreenshotSaveRequest(
+                        data: data,
+                        historyID: historyID,
+                        finalizesHistory: finalizesHistory,
+                        successMessage: successMessage
+                    )
                 )
             }
         } else {
@@ -511,10 +366,12 @@ final class AppModel: ObservableObject {
                 self?.finishSavePanel(
                     savePanel,
                     response: response,
-                    data: data,
-                    historyID: historyID,
-                    finalizesHistory: finalizesHistory,
-                    successMessage: successMessage
+                    request: ScreenshotSaveRequest(
+                        data: data,
+                        historyID: historyID,
+                        finalizesHistory: finalizesHistory,
+                        successMessage: successMessage
+                    )
                 )
             }
         }
@@ -523,21 +380,18 @@ final class AppModel: ObservableObject {
     private func finishSavePanel(
         _ savePanel: NSSavePanel,
         response: NSApplication.ModalResponse,
-        data: Data,
-        historyID: UUID?,
-        finalizesHistory: Bool,
-        successMessage: String
+        request: ScreenshotSaveRequest
     ) {
         guard response == .OK, let url = savePanel.url else {
             statusMessage = "已取消保存"
             return
         }
         do {
-            try data.write(to: url, options: .atomic)
-            if finalizesHistory {
-                finalizeScreenshot(data, historyID: historyID)
+            try request.data.write(to: url, options: .atomic)
+            if request.finalizesHistory {
+                finalizeScreenshot(request.data, historyID: request.historyID)
             }
-            statusMessage = successMessage
+            statusMessage = request.successMessage
         } catch {
             statusMessage = "保存失败：\(error.localizedDescription)"
         }
@@ -698,338 +552,5 @@ final class AppModel: ObservableObject {
 
     private func reloadScreenshotHistory() {
         screenshotHistory = screenshotHistoryStore.load()
-    }
-
-    func translateScreenshot() {
-        guard let screenshotData = latestScreenshotData else {
-            statusMessage = "请先截取一块屏幕区域"
-            return
-        }
-
-        translateScreenshot(data: screenshotData)
-    }
-
-    func translateScreenshot(data: Data) {
-        guard !data.isEmpty else {
-            statusMessage = "截图内容为空，无法翻译"
-            return
-        }
-
-        let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
-        guard !key.isEmpty else {
-            selectedSection = .settings
-            screenshotTranslationState = .failed("请先在设置中配置 API Key")
-            screenshotTranslationProgress.isTranslating = false
-            statusMessage = "请先在设置中配置 API Key"
-            return
-        }
-
-        translationTask?.cancel()
-        let requestID = UUID()
-        translationRequestID = requestID
-        translationSourceData = data
-        translationOCRResult = nil
-        latestTranslation = ""
-        screenshotTranslationState = .translating
-        screenshotTranslationProgress.isTranslating = true
-        statusMessage = "正在本地识别截图文字…"
-
-        translationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let ocrResult = try await Task.detached(priority: .userInitiated) {
-                    try ScreenshotTextRecognizer.recognize(in: data)
-                }.value
-                try Task.checkCancellation()
-                guard translationRequestID == requestID else { return }
-
-                translationTask = nil
-                translationOCRResult = ocrResult
-                translateRecognizedText(ocrResult, requestID: requestID)
-            } catch is CancellationError {
-                return
-            } catch {
-                guard translationRequestID == requestID else { return }
-                let message = error.localizedDescription
-                screenshotTranslationState = .failed(message)
-                screenshotTranslationProgress.isTranslating = false
-                statusMessage = "翻译失败：\(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func translateRecognizedText(
-        _ ocrResult: ScreenshotOCRResult,
-        requestID: UUID
-    ) {
-        let sourceBlocks = ocrResult.blocks.map {
-            $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard sourceBlocks.count == ocrResult.blocks.count,
-              !sourceBlocks.isEmpty,
-              sourceBlocks.allSatisfy({ !$0.isEmpty })
-        else {
-            screenshotTranslationState = .failed("截图中未识别到文字")
-            screenshotTranslationProgress.isTranslating = false
-            statusMessage = "截图中未识别到文字"
-            return
-        }
-
-        let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
-        guard !key.isEmpty else {
-            selectedSection = .settings
-            screenshotTranslationState = .failed("请先在设置中配置 API Key")
-            screenshotTranslationProgress.isTranslating = false
-            statusMessage = "请先在设置中配置 API Key"
-            return
-        }
-
-        translationTask?.cancel()
-        screenshotTranslationState = .translating
-        screenshotTranslationProgress.isTranslating = true
-        statusMessage = "正在翻译识别出的文字…"
-
-        translationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let translatedBlocks = try await modelGateway.translateBlocks(
-                    sourceBlocks,
-                    targetLanguage: targetLanguage.rawValue,
-                    configuration: modelConfiguration,
-                    apiKey: key
-                )
-                try Task.checkCancellation()
-                guard translationRequestID == requestID else { return }
-                translationTask = nil
-                latestTranslation = translatedBlocks.joined(separator: "\n")
-                guard let ocrResult = translationOCRResult,
-                      let sourceData = translationSourceData,
-                      let translatedData = ScreenshotTranslationRenderer.render(
-                          sourceData: sourceData,
-                          ocrResult: ocrResult,
-                          translatedBlocks: translatedBlocks,
-                          isDarkMode: themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
-                      ),
-                      screenshotController.applyTranslatedScreenshot(translatedData)
-                else {
-                    screenshotTranslationState = .failed("无法生成翻译后的截图")
-                    screenshotTranslationProgress.isTranslating = false
-                    statusMessage = "无法生成翻译后的截图"
-                    return
-                }
-                screenshotTranslationState = .success(latestTranslation)
-                screenshotTranslationProgress.isTranslating = false
-                statusMessage = "翻译完成，已替换原文区域"
-            } catch is CancellationError {
-                return
-            } catch {
-                guard translationRequestID == requestID else { return }
-                translationTask = nil
-                let message = error.localizedDescription
-                screenshotTranslationState = .failed(message)
-                screenshotTranslationProgress.isTranslating = false
-                statusMessage = "翻译失败：\(error.localizedDescription)"
-            }
-        }
-    }
-
-    func translateCurrentScreenshot() {
-        let data = screenshotController.currentEditingPNGData() ?? translationSourceData ?? latestScreenshotData
-        guard let data else {
-            statusMessage = "请先截取一块屏幕区域"
-            return
-        }
-        translateScreenshot(data: translationSourceData ?? data)
-    }
-
-    func updateTranslationLanguage(_ language: ScreenshotTranslationLanguage) {
-        targetLanguage = language
-        UserDefaults.standard.set(language.rawValue, forKey: translationLanguageKey)
-    }
-
-    private func loadTranslationLanguage() {
-        guard let rawValue = UserDefaults.standard.string(forKey: translationLanguageKey),
-              let language = ScreenshotTranslationLanguage(rawValue: rawValue)
-        else {
-            return
-        }
-        targetLanguage = language
-    }
-
-    private func cancelScreenshotTranslation() {
-        translationRequestID = UUID()
-        translationTask?.cancel()
-        translationTask = nil
-        translationSourceData = nil
-        translationOCRResult = nil
-        latestTranslation = ""
-        screenshotTranslationState = .idle
-        screenshotTranslationProgress.isTranslating = false
-    }
-
-    // MARK: - Clipboard workflow
-
-    func receiveClipboardItem(_ item: ClipboardItem) {
-        let matchingItems = clipboardItems.filter { $0.fingerprint == item.fingerprint }
-        let wasPinned = matchingItems.contains(where: \.isPinned)
-        clipboardStore.removeStoredFiles(for: matchingItems)
-
-        var item = item
-        item.isPinned = wasPinned
-        clipboardItems.removeAll { $0.fingerprint == item.fingerprint }
-        clipboardItems.insert(item, at: 0)
-        let removedItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
-        clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
-        clipboardStore.removeStoredFiles(for: removedItems)
-        if !clipboardStore.save(clipboardItems) {
-            statusMessage = "剪贴板历史保存失败"
-        }
-    }
-
-    func copyClipboard(_ item: ClipboardItem) {
-        guard writeClipboardItem(item) else {
-            statusMessage = "内容已不可用，可能已被移动或删除"
-            return
-        }
-        clipboardService.markCurrentPasteboardAsHandled()
-        statusMessage = "已复制 \(item.preview)"
-    }
-
-    func showClipboardMediaPreview(_ item: ClipboardItem) {
-        guard item.kind == .image || item.kind == .video else {
-            copyClipboard(item)
-            return
-        }
-        guard item.hasLocalContent else {
-            statusMessage = "媒体文件已不可用"
-            return
-        }
-        clipboardMediaPreviewController.show(item: item, app: self)
-    }
-
-    func showClipboardPanel() {
-        clipboardPanelController.show(app: self)
-    }
-
-    func closeClipboardPanel() {
-        clipboardPanelController.close()
-    }
-
-    func toggleClipboardPin(_ item: ClipboardItem) {
-        guard let index = clipboardItems.firstIndex(where: { $0.id == item.id }) else { return }
-        clipboardItems[index].isPinned.toggle()
-        clipboardItems.sort {
-            if $0.isPinned != $1.isPinned {
-                return $0.isPinned
-            }
-            return $0.createdAt > $1.createdAt
-        }
-        guard clipboardStore.save(clipboardItems) else {
-            statusMessage = "剪贴板收藏状态保存失败"
-            return
-        }
-        statusMessage = clipboardItems.first(where: { $0.id == item.id })?.isPinned == true
-            ? "已收藏剪贴板内容"
-            : "已取消收藏"
-    }
-
-    func revealClipboardItem(_ item: ClipboardItem) {
-        let path = item.kind == .image ? item.imagePath : item.filePath
-        guard let path, FileManager.default.fileExists(atPath: path) else {
-            statusMessage = "本地文件已不可用"
-            return
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-    }
-
-    @discardableResult
-    func writeClipboardItem(_ item: ClipboardItem) -> Bool {
-        let pasteboard = NSPasteboard.general
-
-        switch item.kind {
-        case .text:
-            guard let text = item.text else { return false }
-            pasteboard.clearContents()
-            return pasteboard.setString(text, forType: .string)
-        case .image:
-            guard let path = item.imagePath,
-                  let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-                  let image = NSImage(data: data) else { return false }
-            pasteboard.clearContents()
-            let pasteboardItem = NSPasteboardItem()
-            pasteboardItem.setData(data, forType: .png)
-            if let tiffData = image.tiffRepresentation {
-                pasteboardItem.setData(tiffData, forType: .tiff)
-            }
-            return pasteboard.writeObjects([pasteboardItem])
-        case .file, .video:
-            guard let path = item.filePath,
-                  FileManager.default.fileExists(atPath: path) else { return false }
-            pasteboard.clearContents()
-            return pasteboard.writeObjects([URL(fileURLWithPath: path) as NSURL])
-        }
-    }
-
-    func deleteClipboardItem(_ item: ClipboardItem) {
-        clipboardStore.removeStoredFiles(for: [item])
-        clipboardItems.removeAll { $0.id == item.id }
-        if !clipboardStore.save(clipboardItems) {
-            statusMessage = "剪贴板历史保存失败"
-        }
-    }
-
-    func clearClipboardHistory() {
-        clipboardStore.removeStoredFiles(for: clipboardItems)
-        clipboardItems.removeAll()
-        statusMessage = clipboardStore.save(clipboardItems)
-            ? "剪贴板历史已清空"
-            : "剪贴板历史清空后保存失败"
-    }
-
-    // MARK: - UserDefaults loading
-
-    private func loadConfiguration() {
-        guard let data = UserDefaults.standard.data(forKey: configurationKey),
-              let configuration = try? JSONDecoder().decode(ModelConfiguration.self, from: data)
-        else {
-            return
-        }
-        modelConfiguration = configuration
-        isModelConfigurationSaved = (UserDefaults.standard.object(forKey: modelConfigurationSavedKey) as? Bool) ?? true
-    }
-
-    private func loadScreenshotShortcut() {
-        guard let data = UserDefaults.standard.data(forKey: screenshotShortcutKey),
-              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data)
-        else {
-            UserDefaults.standard.set(true, forKey: screenshotShortcutDefaultMigrationKey)
-            return
-        }
-
-        // The previous build could leave a custom or stale binding behind while
-        // F1 is now the product default. Migrate that binding once; any custom
-        // shortcut selected after this build is preserved on future launches.
-        if !UserDefaults.standard.bool(forKey: screenshotShortcutDefaultMigrationKey)
-            || shortcut == .legacyDefault
-            || shortcut == .previousDefault
-        {
-            screenshotShortcut = .default
-            if let migratedData = try? JSONEncoder().encode(ScreenshotShortcut.default) {
-                UserDefaults.standard.set(migratedData, forKey: screenshotShortcutKey)
-            }
-            UserDefaults.standard.set(true, forKey: screenshotShortcutDefaultMigrationKey)
-            return
-        }
-
-        screenshotShortcut = shortcut
-    }
-
-    private func loadClipboardShortcut() {
-        guard let data = UserDefaults.standard.data(forKey: clipboardShortcutKey),
-              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data)
-        else {
-            return
-        }
-        clipboardShortcut = shortcut
     }
 }

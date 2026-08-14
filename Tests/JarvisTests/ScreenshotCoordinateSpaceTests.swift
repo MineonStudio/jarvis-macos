@@ -98,7 +98,9 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
             CGRect(x: 0, y: 0, width: 180, height: 170)
         )
     }
+}
 
+extension ScreenshotCoordinateSpaceTests {
     func testRenderPipelineProducesPNGForAnnotation() {
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -130,14 +132,14 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
             arrowHeadStyle: .filled
         )
 
-        let data = ScreenshotRenderPipeline().renderFullCanvas(
+        let data = ScreenshotRenderPipeline().renderFullCanvas(.init(
             image: image,
             canvasSize: image.size,
             pixelScale: 1,
             annotations: [annotation],
             blurredImage: nil,
             pixelatedImage: nil
-        )
+        ))
 
         XCTAssertNotNil(data)
         XCTAssertEqual(data?.prefix(8), Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
@@ -188,14 +190,14 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
             to: selection,
             on: CGRect(origin: .zero, size: canvasSize)
         )
-        guard let renderedData = ScreenshotRenderPipeline().renderFullCanvas(
+        guard let renderedData = ScreenshotRenderPipeline().renderFullCanvas(.init(
             image: image,
             canvasSize: canvasSize,
             pixelScale: 1,
             annotations: [],
             blurredImage: nil,
             pixelatedImage: nil
-        ) else {
+        )) else {
             XCTFail("Unable to render test canvas")
             return
         }
@@ -308,14 +310,14 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
             arrowHeadSize: 20,
             arrowHeadStyle: .filled
         )
-        guard let renderedData = ScreenshotRenderPipeline().renderFullCanvas(
+        guard let renderedData = ScreenshotRenderPipeline().renderFullCanvas(.init(
             image: image,
             canvasSize: canvasSize,
             pixelScale: 2,
             annotations: [annotation],
             blurredImage: nil,
             pixelatedImage: nil
-        ) else {
+        )) else {
             XCTFail("Unable to render edited Retina canvas")
             return
         }

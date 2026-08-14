@@ -1,29 +1,31 @@
 import AppKit
 import CoreGraphics
 
+struct ScreenshotRenderRequest {
+    let image: NSImage
+    let canvasSize: CGSize
+    let pixelScale: CGFloat
+    let annotations: [ScreenshotAnnotation]
+    let blurredImage: NSImage?
+    let pixelatedImage: NSImage?
+}
+
 /// Renders the final screenshot independently from the interactive SwiftUI
 /// canvas. SwiftUI remains responsible for preview and gestures; export uses
 /// one deterministic Core Graphics pass so the final image does not depend on
 /// view layout or transient editor state.
 final class ScreenshotRenderPipeline {
-    func renderFullCanvas(
-        image: NSImage,
-        canvasSize: CGSize,
-        pixelScale: CGFloat,
-        annotations: [ScreenshotAnnotation],
-        blurredImage: NSImage?,
-        pixelatedImage: NSImage?
-    ) -> Data? {
-        guard let baseImage = cgImage(from: image),
-              canvasSize.width > 0,
-              canvasSize.height > 0
+    func renderFullCanvas(_ request: ScreenshotRenderRequest) -> Data? {
+        guard let baseImage = cgImage(from: request.image),
+              request.canvasSize.width > 0,
+              request.canvasSize.height > 0
         else {
             return nil
         }
 
-        let scale = max(pixelScale, 1)
-        let pixelWidth = max(1, Int((canvasSize.width * scale).rounded()))
-        let pixelHeight = max(1, Int((canvasSize.height * scale).rounded()))
+        let scale = max(request.pixelScale, 1)
+        let pixelWidth = max(1, Int((request.canvasSize.width * scale).rounded()))
+        let pixelHeight = max(1, Int((request.canvasSize.height * scale).rounded()))
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(
             data: nil,
@@ -37,7 +39,7 @@ final class ScreenshotRenderPipeline {
             return nil
         }
 
-        let canvasRect = CGRect(origin: .zero, size: canvasSize)
+        let canvasRect = CGRect(origin: .zero, size: request.canvasSize)
         context.interpolationQuality = .high
         context.saveGState()
         // The bitmap context is measured in physical pixels. Draw the source
@@ -48,7 +50,7 @@ final class ScreenshotRenderPipeline {
         context.draw(baseImage, in: canvasRect)
         context.restoreGState()
 
-        for annotation in annotations {
+        for annotation in request.annotations {
             guard annotation.kind != .text else { continue }
             context.saveGState()
             // Annotation points come from the SwiftUI canvas (top-left
@@ -64,8 +66,8 @@ final class ScreenshotRenderPipeline {
                     annotation,
                     in: context,
                     canvasRect: canvasRect,
-                    blurredImage: blurredImage,
-                    pixelatedImage: pixelatedImage
+                    blurredImage: request.blurredImage,
+                    pixelatedImage: request.pixelatedImage
                 )
             case .text:
                 break
@@ -73,8 +75,8 @@ final class ScreenshotRenderPipeline {
             context.restoreGState()
         }
 
-        for annotation in annotations where annotation.kind == .text {
-            drawText(annotation, in: context, canvasSize: canvasSize, scale: scale)
+        for annotation in request.annotations where annotation.kind == .text {
+            drawText(annotation, in: context, canvasSize: request.canvasSize, scale: scale)
         }
 
         guard let renderedImage = context.makeImage() else { return nil }

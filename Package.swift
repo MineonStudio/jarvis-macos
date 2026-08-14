@@ -1,10 +1,10 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "Jarvis",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v26)
     ],
     products: [
         .executable(name: "Jarvis", targets: ["Jarvis"])
@@ -12,12 +12,14 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Jarvis",
-            path: "Sources/Jarvis"
+            path: "Sources/Jarvis",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "JarvisTests",
             dependencies: ["Jarvis"],
-            path: "Tests/JarvisTests"
+            path: "Tests/JarvisTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]
 )

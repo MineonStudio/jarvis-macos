@@ -244,22 +244,37 @@ final class ClipboardService {
             let kind = Self.kind(for: url, contentType: contentType)
             let storedPath = storeFile(url, fileSize: fileSize)
             let path = storedPath ?? url.path
-            let thumbnailPath = kind == .video
-                ? saveVideoThumbnail(for: URL(fileURLWithPath: path))
-                : nil
-            let fingerprint = "\(url.path)|\(fileSize)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
-            let item = ClipboardItem(
-                kind: kind,
-                filePath: path,
-                thumbnailPath: thumbnailPath,
-                fileName: url.lastPathComponent,
-                fileSize: fileSize,
-                fileUTI: contentType?.identifier,
-                fingerprintValue: fingerprint,
-                isStoredCopy: storedPath != nil
-            )
-            DispatchQueue.main.async {
-                callback?(item)
+            let finishCapture: (String?) -> Void = { thumbnailPath in
+                let fingerprint = "\(url.path)|\(fileSize)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+                let item = ClipboardItem(
+                    kind: kind,
+                    filePath: path,
+                    thumbnailPath: thumbnailPath,
+                    fileName: url.lastPathComponent,
+                    fileSize: fileSize,
+                    fileUTI: contentType?.identifier,
+                    fingerprintValue: fingerprint,
+                    isStoredCopy: storedPath != nil
+                )
+                DispatchQueue.main.async {
+                    callback?(item)
+                }
+            }
+
+            guard kind == .video else {
+                finishCapture(nil)
+                return
+            }
+
+            ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: path)) { [weak self] image in
+                guard let self,
+                      let image,
+                      let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+                else {
+                    finishCapture(nil)
+                    return
+                }
+                finishCapture(self.saveData(data, fileExtension: "png"))
             }
         }
     }
@@ -296,13 +311,6 @@ final class ClipboardService {
         } catch {
             return nil
         }
-    }
-
-    private func saveVideoThumbnail(for url: URL) -> String? {
-        guard let data = ClipboardVideoThumbnailGenerator.makePNGData(for: url) else {
-            return nil
-        }
-        return saveData(data, fileExtension: "png")
     }
 
     private func storageDirectory() throws -> URL {

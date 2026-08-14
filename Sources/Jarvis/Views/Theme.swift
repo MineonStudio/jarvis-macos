@@ -91,21 +91,24 @@ struct SectionHeader: View {
     }
 }
 
-/// A small compatibility wrapper for custom controls. On macOS 26 it uses the
-/// native Liquid Glass effect; on older supported systems it keeps the same
-/// geometry and falls back to the standard system material.
+/// Native macOS 26 Liquid Glass wrapper shared by cards and controls.
 struct JarvisGlassModifier: ViewModifier {
     let tint: Color?
     let cornerRadius: CGFloat
     let interactive: Bool
 
     func body(content: Content) -> some View {
-        JarvisGlassRenderer.render(
-            content,
-            tint: tint,
-            cornerRadius: cornerRadius,
-            interactive: interactive
-        )
+        if let tint {
+            content.glassEffect(
+                .regular.tint(tint).interactive(interactive),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+        } else {
+            content.glassEffect(
+                .regular.interactive(interactive),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+        }
     }
 }
 
@@ -115,12 +118,17 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
     let interactive: Bool
 
     func body(content: Content) -> some View {
-        JarvisGlassRenderer.render(
-            content,
-            tint: tint,
-            shape: shape,
-            interactive: interactive
-        )
+        if let tint {
+            content.glassEffect(
+                .regular.tint(tint).interactive(interactive),
+                in: shape
+            )
+        } else {
+            content.glassEffect(
+                .regular.interactive(interactive),
+                in: shape
+            )
+        }
     }
 }
 

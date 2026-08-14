@@ -3,40 +3,54 @@ import AVFoundation
 import Foundation
 
 enum ClipboardVideoThumbnailGenerator {
-    static func makePNGData(for url: URL) -> Data? {
-        guard let image = makeCGImage(for: url) else { return nil }
-        let bitmap = NSBitmapImageRep(cgImage: image)
-        return bitmap.representation(using: .png, properties: [:])
-    }
-
     static func makeCGImageAsync(for url: URL, completion: @escaping (CGImage?) -> Void) {
         DispatchQueue.global(qos: .utility).async {
-            let image = makeCGImage(for: url)
-            DispatchQueue.main.async {
-                completion(image)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                DispatchQueue.main.async { completion(nil) }
+                return
             }
+
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 640, height: 640)
+
+            // Prefer a frame shortly after the start so a fade-in does not
+            // leave every card black, then fall back to the first frame for
+            // very short or unusual containers.
+            generateFrame(
+                with: generator,
+                at: [0.1, 0.0],
+                index: 0,
+                completion: completion
+            )
         }
     }
 
-    private static func makeCGImage(for url: URL) -> CGImage? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    private static func generateFrame(
+        with generator: AVAssetImageGenerator,
+        at seconds: [Double],
+        index: Int,
+        completion: @escaping (CGImage?) -> Void
+    ) {
+        guard index < seconds.count else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
 
-        let asset = AVAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 640, height: 640)
-
-        // Prefer a frame shortly after the start so a fade-in does not leave
-        // every card black, then fall back to the first frame for very short
-        // or unusual containers.
-        for seconds in [0.1, 0.0] {
-            if let image = try? generator.copyCGImage(
-                at: CMTime(seconds: seconds, preferredTimescale: 600),
-                actualTime: nil
-            ) {
-                return image
+        generator.generateCGImageAsynchronously(
+            for: CMTime(seconds: seconds[index], preferredTimescale: 600)
+        ) { image, _, _ in
+            if let image {
+                DispatchQueue.main.async { completion(image) }
+            } else {
+                generateFrame(
+                    with: generator,
+                    at: seconds,
+                    index: index + 1,
+                    completion: completion
+                )
             }
         }
-        return nil
     }
 }

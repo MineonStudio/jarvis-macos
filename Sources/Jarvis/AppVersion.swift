@@ -4,10 +4,11 @@ import CryptoKit
 import Foundation
 
 enum JarvisAppVersion {
-    static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
+    static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
+        ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.5.54"
-    private static let fallbackBuild = "128"
+    private static let fallbackShortVersion = "0.5.55"
+    private static let fallbackBuild = "129"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -260,7 +261,9 @@ struct JarvisUpdateService {
                 encoding: .utf8
             )?.trimmingCharacters(in: .whitespacesAndNewlines)
             throw JarvisUpdateError.screenRecordingPermissionResetFailed(
-                message?.isEmpty == false ? message! : "tccutil 返回状态码 \(process.terminationStatus)"
+                message?.isEmpty == false
+                    ? message ?? ""
+                    : "tccutil 返回状态码 \(process.terminationStatus)"
             )
         }
     }
@@ -369,7 +372,12 @@ struct JarvisUpdateService {
             throw JarvisUpdateError.toolFailed(message)
         }
     }
+}
 
+extension JarvisUpdateService {
+    // Keep the replacement/rollback script as one transaction so that every
+    // path shares the same quoting, logging, and recovery behavior.
+    // swiftlint:disable:next function_body_length
     func makeInstallerScript(
         at scriptURL: URL,
         currentAppURL: URL,

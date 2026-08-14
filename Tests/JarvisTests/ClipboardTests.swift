@@ -27,7 +27,7 @@ final class ClipboardTests: XCTestCase {
 
     func testClipboardItemDecodesHistoryWrittenByOlderBuild() throws {
         let id = UUID()
-        let json = """
+        let json = Data("""
         {
           "id": "\(id.uuidString)",
           "createdAt": 0,
@@ -35,7 +35,7 @@ final class ClipboardTests: XCTestCase {
           "text": null,
           "imagePath": "/tmp/legacy-image.png"
         }
-        """.data(using: .utf8)!
+        """.utf8)
 
         let item = try JSONDecoder().decode(ClipboardItem.self, from: json)
         XCTAssertEqual(item.id, id)
@@ -46,11 +46,14 @@ final class ClipboardTests: XCTestCase {
     }
 
     func testVideoThumbnailGeneratorFailsSafelyForMissingFile() {
-        let image = ClipboardVideoThumbnailGenerator.makePNGData(
+        let expectation = expectation(description: "Missing video returns no thumbnail")
+        ClipboardVideoThumbnailGenerator.makeCGImageAsync(
             for: URL(fileURLWithPath: "/tmp/jarvis-missing-video.mov")
-        )
-
-        XCTAssertNil(image)
+        ) { image in
+            XCTAssertNil(image)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 2)
     }
 
     func testClipboardFilterLogicKeepsSearchAndTypeFilteringConsistent() {

@@ -18,6 +18,9 @@ disabled_rules:
   - identifier_name
   - line_length
   - large_tuple
+  # SwiftFormat intentionally places multiline conditional braces on their
+  # own line; keep SwiftLint from disagreeing with the formatter.
+  - opening_brace
 
 function_body_length:
   warning: 80

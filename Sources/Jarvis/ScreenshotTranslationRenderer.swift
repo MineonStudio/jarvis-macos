@@ -232,16 +232,7 @@ enum ScreenshotTranslationRenderer {
         }
 
         guard let outputImage = context.makeImage() else { return nil }
-        let outputData = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            outputData,
-            UTType.png.identifier as CFString,
-            1,
-            nil
-        ) else { return nil }
-        CGImageDestinationAddImage(destination, outputImage, nil)
-        guard CGImageDestinationFinalize(destination) else { return nil }
-        return outputData as Data
+        return encodePNG(outputImage)
     }
 
     static func composite(
@@ -279,6 +270,15 @@ enum ScreenshotTranslationRenderer {
         context.draw(translatedImage, in: targetRect)
 
         guard let outputImage = context.makeImage() else { return nil }
+        return encodePNG(outputImage)
+    }
+
+    private static func image(from data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    private static func encodePNG(_ image: CGImage) -> Data? {
         let outputData = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             outputData,
@@ -286,14 +286,9 @@ enum ScreenshotTranslationRenderer {
             1,
             nil
         ) else { return nil }
-        CGImageDestinationAddImage(destination, outputImage, nil)
+        CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return outputData as Data
-    }
-
-    private static func image(from data: Data) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     private static func pixelRect(for normalizedRect: CGRect, width: Int, height: Int) -> CGRect {

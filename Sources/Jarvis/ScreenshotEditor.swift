@@ -741,65 +741,19 @@ struct ScreenshotCanvasView: View {
         }
     }
 
-    @ViewBuilder
     private func inlineTextEditor(at point: CGPoint) -> some View {
-        HStack(spacing: 6) {
-            TextEditor(text: $textDraft)
-                .scrollContentBackground(.hidden)
-                .font(.system(size: editor.textFontSize, weight: editor.textBold ? .semibold : .regular))
-                .italic(editor.textItalic)
-                .strikethrough(editor.textStrikethrough, color: editor.textColor.color)
-                .foregroundStyle(editor.textColor.color)
-                .tint(editor.textColor.color)
-                .focused($textFieldFocused)
-                .frame(width: inlineFieldWidth, height: inlineTextEditorHeight)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-
-            VStack(spacing: 5) {
-                Button(action: commitText) {
-                    Image(systemName: "checkmark")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisCyan)
-
-                Button(action: cancelText) {
-                    Image(systemName: "xmark")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.black.opacity(0.56))
-            }
-            .font(.system(size: max(12, editor.textFontSize * 0.58), weight: .medium))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(width: inlineEditorWidth, height: inlineEditorHeight)
-        .background(Color.white.opacity(0.82))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.black.opacity(0.12), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .shadow(color: Color.black.opacity(0.14), radius: 8, y: 3)
-        .position(
-            x: min(
-                max(point.x + inlineEditorWidth / 2, inlineEditorWidth / 2),
-                max(inlineEditorWidth / 2, editor.canvasSize.width - inlineEditorWidth / 2)
-            ),
-            y: min(
-                max(point.y + inlineEditorHeight / 2, inlineEditorHeight / 2),
-                max(inlineEditorHeight / 2, editor.canvasSize.height - inlineEditorHeight / 2)
-            )
+        ScreenshotInlineTextEditor(
+            editor: editor,
+            textDraft: $textDraft,
+            textFieldFocused: $textFieldFocused,
+            point: point,
+            fieldWidth: inlineFieldWidth,
+            editorWidth: inlineEditorWidth,
+            editorHeight: inlineEditorHeight,
+            textEditorHeight: inlineTextEditorHeight,
+            onCommit: commitText,
+            onCancel: cancelText
         )
-        .onAppear {
-            DispatchQueue.main.async {
-                textFieldFocused = true
-            }
-        }
     }
 
     private func beginTextEditing(id: UUID) {
@@ -884,6 +838,86 @@ struct ScreenshotCanvasView: View {
 
     private func distance(from start: CGPoint, to end: CGPoint) -> CGFloat {
         hypot(end.x - start.x, end.y - start.y)
+    }
+}
+
+private struct ScreenshotInlineTextEditor: View {
+    @ObservedObject var editor: ScreenshotEditorModel
+    @Binding var textDraft: String
+    @FocusState.Binding var textFieldFocused: Bool
+    let point: CGPoint
+    let fieldWidth: CGFloat
+    let editorWidth: CGFloat
+    let editorHeight: CGFloat
+    let textEditorHeight: CGFloat
+    let onCommit: () -> Void
+    let onCancel: () -> Void
+
+    private var editorField: some View {
+        TextEditor(text: $textDraft)
+            .scrollContentBackground(.hidden)
+            .font(.system(size: editor.textFontSize, weight: editor.textBold ? .semibold : .regular))
+            .italic(editor.textItalic)
+            .strikethrough(editor.textStrikethrough, color: editor.textColor.color)
+            .foregroundStyle(editor.textColor.color)
+            .tint(editor.textColor.color)
+            .focused($textFieldFocused)
+            .frame(width: fieldWidth, height: textEditorHeight)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: 5) {
+            Button(action: onCommit) {
+                Image(systemName: "checkmark")
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.jarvisCyan)
+
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.black.opacity(0.56))
+        }
+        .font(.system(size: max(12, editor.textFontSize * 0.58), weight: .medium))
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            editorField
+            actionButtons
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(width: editorWidth, height: editorHeight)
+        .background(Color.white.opacity(0.82))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.black.opacity(0.12), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .shadow(color: Color.black.opacity(0.14), radius: 8, y: 3)
+        .position(
+            x: min(
+                max(point.x + editorWidth / 2, editorWidth / 2),
+                max(editorWidth / 2, editor.canvasSize.width - editorWidth / 2)
+            ),
+            y: min(
+                max(point.y + editorHeight / 2, editorHeight / 2),
+                max(editorHeight / 2, editor.canvasSize.height - editorHeight / 2)
+            )
+        )
+        .onAppear {
+            DispatchQueue.main.async {
+                textFieldFocused = true
+            }
+        }
     }
 }
 

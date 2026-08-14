@@ -4,6 +4,11 @@ import CryptoKit
 import Foundation
 import UniformTypeIdentifiers
 
+enum ClipboardLimits {
+    static let maximumItemCount = 300
+    static let maximumStoredFileSize: Int64 = 1024 * 1024 * 1024
+}
+
 enum ClipboardKind: String, Codable, CaseIterable {
     case text
     case image
@@ -260,7 +265,7 @@ final class ClipboardService {
     private func storeFile(_ sourceURL: URL, fileSize: Int64) -> String? {
         // Keep very large files as references so copying a movie never blocks
         // the app or silently fills the user's disk.
-        guard fileSize <= 1024 * 1024 * 1024 else { return nil }
+        guard fileSize <= ClipboardLimits.maximumStoredFileSize else { return nil }
         do {
             let directory = try storageDirectory()
             let extensionPart = sourceURL.pathExtension.isEmpty ? "" : ".\(sourceURL.pathExtension)"
@@ -323,22 +328,39 @@ final class ClipboardStore {
     }
 
     func load() -> [ClipboardItem] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let items = try? JSONDecoder().decode([ClipboardItem].self, from: data) else {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return []
         }
-        return sort(items)
+
+        do {
+            let data = try Data(contentsOf: fileURL)
+            return sort(try JSONDecoder().decode([ClipboardItem].self, from: data))
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "读取剪贴板历史失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return []
+        }
     }
 
-    func save(_ items: [ClipboardItem]) {
-        guard let data = try? JSONEncoder().encode(items) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+    @discardableResult
+    func save(_ items: [ClipboardItem]) -> Bool {
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: fileURL, options: .atomic)
+            return true
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "写入剪贴板历史失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
     }
 
     func removeStoredFiles(for items: [ClipboardItem]) {
         for item in items {
             if let thumbnailPath = item.thumbnailPath {
-                try? FileManager.default.removeItem(atPath: thumbnailPath)
+                removeStoredFile(atPath: thumbnailPath)
             }
 
             let path: String?
@@ -348,7 +370,19 @@ final class ClipboardStore {
             case .text: path = nil
             }
             guard item.isStoredCopy, let path else { continue }
-            try? FileManager.default.removeItem(atPath: path)
+            removeStoredFile(atPath: path)
+        }
+    }
+
+    private func removeStoredFile(atPath path: String) {
+        do {
+            try FileManager.default.removeItem(atPath: path)
+        } catch CocoaError.fileNoSuchFile {
+            return
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "删除剪贴板本地文件失败：\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 

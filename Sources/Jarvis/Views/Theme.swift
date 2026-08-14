@@ -57,15 +57,12 @@ extension Color {
     // colors instead of a fixed dark palette so the window follows macOS.
     static let jarvisBackground = Color(nsColor: .textBackgroundColor)
     static let jarvisPanel = Color(nsColor: .controlBackgroundColor)
-    static let jarvisPanelLight = Color(nsColor: .windowBackgroundColor)
     static let jarvisCyan = Color.accentColor
-    static let jarvisPurple = Color.accentColor
     static let jarvisTextSecondary = Color.secondary
 }
 
 enum JarvisMetrics {
     static let pageInset: CGFloat = 30
-    static let windowRadius: CGFloat = 16
     static let cardRadius: CGFloat = 14
     static let controlRadius: CGFloat = 10
     static let iconTintOpacity: CGFloat = 0.22

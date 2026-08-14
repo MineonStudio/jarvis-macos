@@ -1,0 +1,8 @@
+--swiftversion 5.10
+--indent 4
+--linebreaks lf
+--wraparguments before-first
+--wrapcollections before-first
+--commas inline
+--trimwhitespace always
+--exclude .build,dist

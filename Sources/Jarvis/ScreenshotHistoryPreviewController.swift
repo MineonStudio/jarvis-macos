@@ -32,16 +32,10 @@ final class ScreenshotHistoryPreviewController {
 
         dismiss()
 
-        let screenFrame = NSScreen.main?.frame ?? CGRect(
-            origin: .zero,
-            size: CGSize(width: 1200, height: 800)
-        )
-        let visibleFrame = NSScreen.main?.visibleFrame ?? screenFrame
-        let titlebarHeight: CGFloat = 28
-        let maximumImageSize = CGSize(
-            width: screenFrame.width - 80,
-            height: screenFrame.height - 80 - titlebarHeight
-        )
+        let frames = PreviewWindowSupport.screenFrames()
+        let screenFrame = frames.screen
+        let visibleFrame = frames.visible
+        let maximumImageSize = PreviewWindowSupport.maximumContentSize(for: screenFrame)
         let imageDisplaySize = displaySize(for: image.size, maximumSize: maximumImageSize)
         let imageViewportSize = CGSize(
             width: min(imageDisplaySize.width, maximumImageSize.width),
@@ -49,11 +43,9 @@ final class ScreenshotHistoryPreviewController {
         )
         let contentWidth = max(imageViewportSize.width, ScreenshotHistoryPreviewToolbar.preferredWidth + 22)
         let contentHeight = imageViewportSize.height
-        let contentFrame = CGRect(
-            x: visibleFrame.midX - contentWidth / 2,
-            y: visibleFrame.midY - (contentHeight + titlebarHeight) / 2,
-            width: contentWidth,
-            height: contentHeight
+        let contentFrame = PreviewWindowSupport.centeredFrame(
+            contentSize: CGSize(width: contentWidth, height: contentHeight),
+            visibleFrame: visibleFrame
         )
 
         let previewPanel = ScreenshotHistoryPreviewPanel(
@@ -62,22 +54,11 @@ final class ScreenshotHistoryPreviewController {
             backing: .buffered,
             defer: false
         )
-        previewPanel.level = .screenSaver
-        previewPanel.title = item.updatedAt.formatted(date: .abbreviated, time: .shortened)
-        previewPanel.titleVisibility = .visible
-        previewPanel.titlebarAppearsTransparent = false
-        previewPanel.titlebarSeparatorStyle = .none
-        previewPanel.backgroundColor = .black
-        previewPanel.isOpaque = true
-        previewPanel.hasShadow = true
+        PreviewWindowSupport.configurePreviewPanel(
+            previewPanel,
+            title: item.updatedAt.formatted(date: .abbreviated, time: .shortened)
+        )
         previewPanel.isMovableByWindowBackground = false
-        previewPanel.hidesOnDeactivate = false
-        previewPanel.isReleasedWhenClosed = false
-        previewPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        previewPanel.standardWindowButton(.closeButton)?.isHidden = false
-        previewPanel.standardWindowButton(.miniaturizeButton)?.isHidden = false
-        previewPanel.standardWindowButton(.zoomButton)?.isHidden = false
-        previewPanel.standardWindowButton(.zoomButton)?.isEnabled = true
         let model = ScreenshotHistoryPreviewModel()
         previewPanel.onWindowClose = { [weak self] in
             self?.dismiss()
@@ -126,14 +107,7 @@ final class ScreenshotHistoryPreviewController {
             backing: .buffered,
             defer: false
         )
-        dimmingPanel.level = .screenSaver
-        dimmingPanel.backgroundColor = NSColor.black.withAlphaComponent(0.58)
-        dimmingPanel.isOpaque = false
-        dimmingPanel.hasShadow = false
-        dimmingPanel.ignoresMouseEvents = true
-        dimmingPanel.hidesOnDeactivate = false
-        dimmingPanel.isReleasedWhenClosed = false
-        dimmingPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        PreviewWindowSupport.configureDimmingPanel(dimmingPanel, screenFrame: screenFrame)
 
         self.dimmingPanel = dimmingPanel
         panel = previewPanel

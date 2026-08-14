@@ -768,6 +768,56 @@ struct ClipboardSearchField: View {
     }
 }
 
+enum ClipboardFilterLogic {
+    static func filteredItems(
+        from items: [ClipboardItem],
+        searchText: String,
+        filter: ClipboardViewFilter
+    ) -> [ClipboardItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return items.filter { item in
+            filter.matches(item)
+                && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
+        }
+    }
+
+    static func count(for filter: ClipboardViewFilter, in items: [ClipboardItem]) -> Int {
+        items.filter { filter.matches($0) }.count
+    }
+}
+
+struct ClipboardFilterBar: View {
+    @Binding var searchText: String
+    @Binding var selectedFilter: ClipboardViewFilter
+    let placeholder: String
+    let focusesOnAppear: Bool
+    let items: [ClipboardItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ClipboardSearchField(
+                text: $searchText,
+                placeholder: placeholder,
+                focusesOnAppear: focusesOnAppear
+            )
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(ClipboardViewFilter.allCases) { filter in
+                        ClipboardFilterChip(
+                            filter: filter,
+                            count: ClipboardFilterLogic.count(for: filter, in: items),
+                            isSelected: selectedFilter == filter
+                        ) {
+                            selectedFilter = filter
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct ClipboardView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
@@ -775,15 +825,11 @@ struct ClipboardView: View {
     @State private var currentPage = 1
 
     private var filteredItems: [ClipboardItem] {
-        app.clipboardItems.filter { item in
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return selectedFilter.matches(item)
-                && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
-        }
-    }
-
-    private func count(for filter: ClipboardViewFilter) -> Int {
-        app.clipboardItems.filter { filter.matches($0) }.count
+        ClipboardFilterLogic.filteredItems(
+            from: app.clipboardItems,
+            searchText: searchText,
+            filter: selectedFilter
+        )
     }
 
     private var totalPages: Int {
@@ -799,27 +845,13 @@ struct ClipboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 12) {
-                    ClipboardSearchField(
-                        text: $searchText,
-                        placeholder: "搜索文本、文件名…",
-                        focusesOnAppear: false
-                    )
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 7) {
-                            ForEach(ClipboardViewFilter.allCases) { filter in
-                                ClipboardFilterChip(
-                                    filter: filter,
-                                    count: count(for: filter),
-                                    isSelected: selectedFilter == filter
-                                ) {
-                                    selectedFilter = filter
-                                }
-                            }
-                        }
-                    }
-                }
+                ClipboardFilterBar(
+                    searchText: $searchText,
+                    selectedFilter: $selectedFilter,
+                    placeholder: "搜索文本、文件名…",
+                    focusesOnAppear: false,
+                    items: app.clipboardItems
+                )
                 if filteredItems.isEmpty {
                     ClipboardEmptyState(
                         hasQuery: !searchText.isEmpty || selectedFilter != .all
@@ -836,7 +868,7 @@ struct ClipboardView: View {
                         spacing: HistoryGridMetrics.spacing
                     ) {
                         ForEach(pageItems) { item in
-                            ClipboardRow(item: item)
+                            ClipboardCard(item: item, presentation: .main)
                         }
                     }
 
@@ -917,70 +949,111 @@ struct ClipboardEmptyState: View {
     }
 }
 
-struct ClipboardRow: View {
+enum ClipboardCardPresentation {
+    case main
+    case panel
+}
+
+struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
     let item: ClipboardItem
+    let presentation: ClipboardCardPresentation
+    let onPreview: (() -> Void)?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Button {
-                if item.kind == .image || item.kind == .video {
-                    app.showClipboardMediaPreview(item)
+    init(
+        item: ClipboardItem,
+        presentation: ClipboardCardPresentation,
+        onPreview: (() -> Void)? = nil
+    ) {
+        self.item = item
+        self.presentation = presentation
+        self.onPreview = onPreview
+    }
+
+    private var cardBackground: AnyShapeStyle {
+        switch presentation {
+        case .main:
+            return AnyShapeStyle(.thinMaterial)
+        case .panel:
+            return AnyShapeStyle(Color.primary.opacity(0.035))
+        }
+    }
+
+    private var cardBorderOpacity: Double {
+        presentation == .main ? 0.09 : 0.07
+    }
+
+    private var previewButton: some View {
+        Button {
+            if presentation == .panel {
+                onPreview?()
+            } else if item.kind == .image || item.kind == .video {
+                app.showClipboardMediaPreview(item)
+            } else {
+                app.copyClipboard(item)
+            }
+        } label: {
+            ZStack {
+                if item.kind == .text {
+                    Text(item.preview)
+                        .font(.system(size: 12, weight: .regular))
+                        .lineLimit(6)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(12)
                 } else {
-                    app.copyClipboard(item)
+                    ClipboardItemPreview(item: item, size: 78)
                 }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: HistoryGridMetrics.previewHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(presentation == .panel && item.kind != .image && item.kind != .video)
+        .help(item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
+    }
+
+    private var metadataRow: some View {
+        HStack(spacing: 6) {
+            Text(item.kind.title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+            if item.isPinned {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
+            Spacer(minLength: 0)
+            Text(item.shortTimestamp)
+                .font(.system(size: 9))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var textPreview: some View {
+        if item.kind != .image {
+            Text(item.preview)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(item.kind == .text ? 2 : 1)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 4) {
+            Button {
+                app.copyClipboard(item)
             } label: {
-                ZStack {
-                    if item.kind == .text {
-                        Text(item.preview)
-                            .font(.system(size: 12, weight: .regular))
-                            .lineLimit(6)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .padding(12)
-                    } else {
-                        ClipboardItemPreview(item: item, size: 78)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: HistoryGridMetrics.previewHeight)
-                .contentShape(Rectangle())
+                Label("一键复制", systemImage: "doc.on.doc")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
-            .help(item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .disabled(presentation == .panel && !item.hasLocalContent)
 
-            HStack(spacing: 6) {
-                Text(item.kind.title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                if item.isPinned {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
-                Spacer(minLength: 0)
-                Text(item.shortTimestamp)
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-            }
-
-            if item.kind != .image {
-                Text(item.preview)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(item.kind == .text ? 2 : 1)
-                    .textSelection(.enabled)
-            }
-            ClipboardMetadata(item: item)
-
-            HStack(spacing: 4) {
-                Button {
-                    app.copyClipboard(item)
-                } label: {
-                    Label("一键复制", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
+            if presentation == .main {
                 Button {
                     app.toggleClipboardPin(item)
                 } label: {
@@ -1003,22 +1076,34 @@ struct ClipboardRow: View {
                 .help("删除")
             }
         }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            previewButton
+            metadataRow
+            textPreview
+            ClipboardMetadata(item: item)
+            actionBar
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.75)
+                .strokeBorder(Color.primary.opacity(cardBorderOpacity), lineWidth: 0.75)
         }
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .contextMenu {
-            Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
-            Button("一键复制") { app.copyClipboard(item) }
-            if item.kind != .text {
-                Button("在 Finder 中显示") { app.revealClipboardItem(item) }
+            if presentation == .main {
+                Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
+                Button("一键复制") { app.copyClipboard(item) }
+                if item.kind != .text {
+                    Button("在 Finder 中显示") { app.revealClipboardItem(item) }
+                }
+                Divider()
+                Button("删除", role: .destructive) { app.deleteClipboardItem(item) }
             }
-            Divider()
-            Button("删除", role: .destructive) { app.deleteClipboardItem(item) }
         }
     }
 }
@@ -1120,39 +1205,22 @@ struct ClipboardPanelView: View {
     @State private var selectedFilter: ClipboardViewFilter = .all
 
     private var filteredItems: [ClipboardItem] {
-        app.clipboardItems.filter { item in
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return selectedFilter.matches(item)
-                && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
-        }
-    }
-
-    private func count(for filter: ClipboardViewFilter) -> Int {
-        app.clipboardItems.filter { filter.matches($0) }.count
+        ClipboardFilterLogic.filteredItems(
+            from: app.clipboardItems,
+            searchText: searchText,
+            filter: selectedFilter
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ClipboardSearchField(
-                text: $searchText,
+            ClipboardFilterBar(
+                searchText: $searchText,
+                selectedFilter: $selectedFilter,
                 placeholder: "搜索文本或文件名…",
-                focusesOnAppear: true
+                focusesOnAppear: true,
+                items: app.clipboardItems
             )
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(ClipboardViewFilter.allCases) { filter in
-                        ClipboardFilterChip(
-                            filter: filter,
-                            count: count(for: filter),
-                            isSelected: selectedFilter == filter
-                        ) {
-                            selectedFilter = filter
-                        }
-                    }
-                }
-            }
-            .padding(.top, 2)
 
             Divider()
                 .overlay(Color.primary.opacity(0.10))
@@ -1175,10 +1243,10 @@ struct ClipboardPanelView: View {
                         spacing: HistoryGridMetrics.spacing
                     ) {
                         ForEach(filteredItems) { item in
-                            ClipboardPanelRow(
+                            ClipboardCard(
                                 item: item,
-                                preview: { app.showClipboardMediaPreview(item) },
-                                copy: { app.copyClipboard(item) }
+                                presentation: .panel,
+                                onPreview: { app.showClipboardMediaPreview(item) }
                             )
                         }
                     }
@@ -1200,79 +1268,6 @@ struct ClipboardPanelView: View {
         .onAppear {
             selectedFilter = .all
         }
-    }
-}
-
-struct ClipboardPanelRow: View {
-    let item: ClipboardItem
-    let preview: () -> Void
-    let copy: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Button(action: preview) {
-                ZStack {
-                    if item.kind == .text {
-                        Text(item.preview)
-                            .font(.system(size: 12))
-                            .lineLimit(6)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .padding(12)
-                    } else {
-                        ClipboardItemPreview(item: item, size: 78)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: HistoryGridMetrics.previewHeight)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(item.kind != .image && item.kind != .video)
-            .help(item.kind == .image || item.kind == .video ? "查看大图" : "")
-
-            HStack(spacing: 6) {
-                Text(item.kind.title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                if item.isPinned {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
-                Spacer(minLength: 0)
-                Text(item.shortTimestamp)
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-            }
-
-            if item.kind != .image {
-                Text(item.preview)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(item.kind == .text ? 2 : 1)
-            }
-            ClipboardMetadata(item: item)
-
-            HStack(spacing: 4) {
-                Button {
-                    copy()
-                } label: {
-                    Label("一键复制", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-                .disabled(!item.hasLocalContent)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.75)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
@@ -1716,26 +1711,6 @@ struct JarvisToast: View {
             }
             .shadow(color: Color.black.opacity(0.15), radius: 14, y: 6)
             .frame(maxWidth: 520)
-    }
-}
-
-struct MetricCard: View {
-    let title: String
-    let value: String
-    let detail: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        JarvisCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: icon).foregroundStyle(color)
-                Text(value).font(.system(size: 26, weight: .bold, design: .rounded))
-                Text(title).font(.system(size: 12, weight: .medium))
-                Text(detail).font(.system(size: 10)).foregroundStyle(Color.jarvisTextSecondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 }
 

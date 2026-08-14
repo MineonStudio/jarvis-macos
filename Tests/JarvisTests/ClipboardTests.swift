@@ -52,4 +52,29 @@ final class ClipboardTests: XCTestCase {
 
         XCTAssertNil(image)
     }
+
+    func testClipboardFilterLogicKeepsSearchAndTypeFilteringConsistent() {
+        let text = ClipboardItem(kind: .text, text: "Swift quality audit")
+        let image = ClipboardItem(kind: .image, imagePath: "/tmp/a.png")
+        let video = ClipboardItem(kind: .video, filePath: "/tmp/demo.mov")
+
+        let items = [text, image, video]
+        XCTAssertEqual(
+            ClipboardFilterLogic.filteredItems(
+                from: items,
+                searchText: "quality",
+                filter: .all
+            ),
+            [text]
+        )
+        XCTAssertEqual(
+            ClipboardFilterLogic.filteredItems(
+                from: items,
+                searchText: "",
+                filter: .image
+            ),
+            [image]
+        )
+        XCTAssertEqual(ClipboardFilterLogic.count(for: .text, in: items), 1)
+    }
 }

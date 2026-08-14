@@ -167,6 +167,8 @@ final class AppModel: ObservableObject {
         toastDismissTask?.cancel()
     }
 
+    // MARK: - Shared UI state
+
     func showToast(_ message: String) {
         toastDismissTask?.cancel()
         toastMessage = message
@@ -178,16 +180,20 @@ final class AppModel: ObservableObject {
     }
 
     func saveModelSettings(apiKey: String) {
-        if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            KeychainStore.shared.setValue(apiKey, for: "jarvis.api-key")
-        }
+        do {
+            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try KeychainStore.shared.setValue(apiKey, for: "jarvis.api-key")
+            }
 
-        if let data = try? JSONEncoder().encode(modelConfiguration) {
+            let data = try JSONEncoder().encode(modelConfiguration)
             UserDefaults.standard.set(data, forKey: configurationKey)
             UserDefaults.standard.set(true, forKey: modelConfigurationSavedKey)
             isModelConfigurationSaved = true
+            showToast("模型配置已保存")
+        } catch {
+            isModelConfigurationSaved = false
+            showToast("模型配置保存失败：\(error.localizedDescription)")
         }
-        showToast("模型配置已保存")
     }
 
     func updateThemePreference(_ preference: JarvisTheme) {
@@ -210,10 +216,14 @@ final class AppModel: ObservableObject {
     }
 
     func clearAPIKey() {
-        KeychainStore.shared.deleteValue(for: "jarvis.api-key")
-        UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
-        isModelConfigurationSaved = false
-        statusMessage = "API Key 已从钥匙串删除"
+        do {
+            try KeychainStore.shared.deleteValue(for: "jarvis.api-key")
+            UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
+            isModelConfigurationSaved = false
+            statusMessage = "API Key 已从钥匙串删除"
+        } catch {
+            statusMessage = "API Key 删除失败：\(error.localizedDescription)"
+        }
     }
 
     @discardableResult
@@ -320,6 +330,8 @@ final class AppModel: ObservableObject {
             }
         }
     }
+
+    // MARK: - Screenshot workflow
 
     /// Starts a screenshot from a global/menu-bar action without changing the
     /// section currently shown in the main window. Callers that originate
@@ -529,7 +541,10 @@ final class AppModel: ObservableObject {
 
     func clearScreenshotCache() {
         cancelScreenshotTranslation()
-        screenshotCacheStore.clear()
+        guard screenshotCacheStore.clear() else {
+            statusMessage = "截图缓存清除失败"
+            return
+        }
         latestScreenshotData = nil
         latestTranslation = ""
         statusMessage = "截图缓存已清除"
@@ -579,21 +594,30 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func setLatestScreenshot(_ data: Data) {
+    @discardableResult
+    private func setLatestScreenshot(_ data: Data) -> Bool {
         latestScreenshotData = data
-        screenshotCacheStore.save(data)
+        guard screenshotCacheStore.save(data) else {
+            statusMessage = "截图缓存保存失败"
+            return false
+        }
+        return true
     }
 
     private func finalizeScreenshot(_ data: Data, historyID: UUID?) {
-        setLatestScreenshot(data)
+        let cacheSaved = setLatestScreenshot(data)
+        var historySaved = true
         if let historyID,
            let item = screenshotHistory.first(where: { $0.id == historyID }) {
-            _ = screenshotHistoryStore.update(item, data: data)
+            historySaved = screenshotHistoryStore.update(item, data: data) != nil
         } else {
-            _ = screenshotHistoryStore.add(data: data)
+            historySaved = screenshotHistoryStore.add(data: data) != nil
         }
         screenshotHistory = screenshotHistoryStore.load()
         editingHistoryID = nil
+        if !cacheSaved || !historySaved {
+            statusMessage = "截图已完成，但历史记录保存失败"
+        }
     }
 
     func screenshotHistoryData(for item: ScreenshotHistoryItem) -> Data? {
@@ -642,15 +666,22 @@ final class AppModel: ObservableObject {
             editingHistoryID = nil
         }
         let deletedData = screenshotHistoryStore.data(for: item)
-        screenshotHistoryStore.delete(item)
+        guard screenshotHistoryStore.delete(item) else {
+            statusMessage = "历史截图删除失败"
+            reloadScreenshotHistory()
+            return
+        }
         reloadScreenshotHistory()
 
         if let deletedData, latestScreenshotData == deletedData {
             if let replacement = screenshotHistory.first,
                let replacementData = screenshotHistoryStore.data(for: replacement) {
-                setLatestScreenshot(replacementData)
+                guard setLatestScreenshot(replacementData) else { return }
             } else {
-                screenshotCacheStore.clear()
+                guard screenshotCacheStore.clear() else {
+                    statusMessage = "截图缓存清除失败"
+                    return
+                }
                 latestScreenshotData = nil
                 latestTranslation = ""
                 screenshotTranslationState = .idle
@@ -827,6 +858,8 @@ final class AppModel: ObservableObject {
         screenshotTranslationProgress.isTranslating = false
     }
 
+    // MARK: - Clipboard workflow
+
     func receiveClipboardItem(_ item: ClipboardItem) {
         let matchingItems = clipboardItems.filter { $0.fingerprint == item.fingerprint }
         let wasPinned = matchingItems.contains(where: { $0.isPinned })
@@ -836,10 +869,12 @@ final class AppModel: ObservableObject {
         item.isPinned = wasPinned
         clipboardItems.removeAll { $0.fingerprint == item.fingerprint }
         clipboardItems.insert(item, at: 0)
-        let removedItems = Array(clipboardItems.dropFirst(300))
-        clipboardItems = Array(clipboardItems.prefix(300))
+        let removedItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
+        clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
         clipboardStore.removeStoredFiles(for: removedItems)
-        clipboardStore.save(clipboardItems)
+        if !clipboardStore.save(clipboardItems) {
+            statusMessage = "剪贴板历史保存失败"
+        }
     }
 
     func copyClipboard(_ item: ClipboardItem) {
@@ -878,7 +913,10 @@ final class AppModel: ObservableObject {
             if $0.isPinned != $1.isPinned { return $0.isPinned }
             return $0.createdAt > $1.createdAt
         }
-        clipboardStore.save(clipboardItems)
+        guard clipboardStore.save(clipboardItems) else {
+            statusMessage = "剪贴板收藏状态保存失败"
+            return
+        }
         statusMessage = clipboardItems.first(where: { $0.id == item.id })?.isPinned == true
             ? "已收藏剪贴板内容"
             : "已取消收藏"
@@ -924,15 +962,20 @@ final class AppModel: ObservableObject {
     func deleteClipboardItem(_ item: ClipboardItem) {
         clipboardStore.removeStoredFiles(for: [item])
         clipboardItems.removeAll { $0.id == item.id }
-        clipboardStore.save(clipboardItems)
+        if !clipboardStore.save(clipboardItems) {
+            statusMessage = "剪贴板历史保存失败"
+        }
     }
 
     func clearClipboardHistory() {
         clipboardStore.removeStoredFiles(for: clipboardItems)
         clipboardItems.removeAll()
-        clipboardStore.save(clipboardItems)
-        statusMessage = "剪贴板历史已清空"
+        statusMessage = clipboardStore.save(clipboardItems)
+            ? "剪贴板历史已清空"
+            : "剪贴板历史清空后保存失败"
     }
+
+    // MARK: - UserDefaults loading
 
     private func loadConfiguration() {
         guard let data = UserDefaults.standard.data(forKey: configurationKey),

@@ -1,0 +1,30 @@
+name: Swift quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: macos-14
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install static-analysis tools
+        run: brew install swiftlint swiftformat
+
+      - name: SwiftFormat check
+        run: swiftformat --lint --config .swiftformat Sources Tests
+
+      - name: SwiftLint check
+        run: swiftlint lint --config .swiftlint.yml
+
+      - name: Build
+        run: swift build -c release
+
+      - name: Test
+        run: swift test
+
+      - name: Check diff whitespace
+        run: git diff --check

@@ -34,6 +34,20 @@ open dist/Jarvis.app
 JARVIS_VERSION="0.1.2" JARVIS_BUILD="3" ./build_app.sh
 ```
 
+## 质量检查
+
+本地提交前运行与 CI 相同的基础检查：
+
+```bash
+swiftformat --lint --config .swiftformat Sources Tests
+swiftlint lint --config .swiftlint.yml
+swift test
+swift build -c release
+git diff --check
+```
+
+项目使用 SwiftFormat 统一格式、SwiftLint 检查复杂度与规范，并在 GitHub Actions 中执行静态检查、测试和 Release 构建。持久化失败必须通过日志和用户可见状态反馈，不应静默忽略。
+
 版本号会显示在设置页的“版本与更新”区域。发布新版本时使用 `v主版本.次版本.修订版本` 标签，并在 GitHub Releases 创建正式版本；设置页可检查 GitHub Releases 是否有新版本。点击“下载更新”后，Jarvis 会先在当前进程中清除旧的屏幕录制权限，再继续下载和安装。
 
 截图快捷键触发后，Jarvis 会先用 ScreenCaptureKit 冻结所有显示器画面，再显示自己的暗幕。悬停窗口会高亮，单击即可截取整个应用窗口；拖动则可以自定义框选区域，不会打开 macOS 的“共享整个屏幕”选择器。如果 macOS 要求授权，请在“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”中允许贾维斯访问屏幕。Jarvis 当前只请求屏幕画面，不启用系统音频或麦克风捕获。

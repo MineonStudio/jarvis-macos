@@ -40,17 +40,33 @@ final class ScreenshotHistoryStore {
     }
 
     func load() -> [ScreenshotHistoryItem] {
-        guard let data = try? Data(contentsOf: metadataURL),
-              let items = try? JSONDecoder().decode([ScreenshotHistoryItem].self, from: data) else {
+        guard fileManager.fileExists(atPath: metadataURL.path) else {
             return []
         }
-        return items
-            .filter { fileManager.fileExists(atPath: directoryURL.appendingPathComponent($0.fileName).path) }
-            .sorted { $0.updatedAt > $1.updatedAt }
+
+        do {
+            let data = try Data(contentsOf: metadataURL)
+            let items = try JSONDecoder().decode([ScreenshotHistoryItem].self, from: data)
+            return items
+                .filter { fileManager.fileExists(atPath: directoryURL.appendingPathComponent($0.fileName).path) }
+                .sorted { $0.updatedAt > $1.updatedAt }
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "读取截图历史索引失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return []
+        }
     }
 
     func data(for item: ScreenshotHistoryItem) -> Data? {
-        try? Data(contentsOf: directoryURL.appendingPathComponent(item.fileName))
+        do {
+            return try Data(contentsOf: directoryURL.appendingPathComponent(item.fileName))
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "读取历史截图失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     @discardableResult
@@ -68,7 +84,7 @@ final class ScreenshotHistoryStore {
         var items = load()
         items.removeAll { $0.id == item.id }
         items.insert(item, at: 0)
-        save(trimmed(items))
+        guard save(trimmed(items)) else { return nil }
         return item
     }
 
@@ -82,15 +98,26 @@ final class ScreenshotHistoryStore {
         var updated = items[index]
         updated.updatedAt = date
         items[index] = updated
-        save(items.sorted { $0.updatedAt > $1.updatedAt })
+        guard save(items.sorted { $0.updatedAt > $1.updatedAt }) else { return nil }
         return updated
     }
 
-    func delete(_ item: ScreenshotHistoryItem) {
-        try? fileManager.removeItem(at: directoryURL.appendingPathComponent(item.fileName))
+    @discardableResult
+    func delete(_ item: ScreenshotHistoryItem) -> Bool {
+        do {
+            try fileManager.removeItem(at: directoryURL.appendingPathComponent(item.fileName))
+        } catch CocoaError.fileNoSuchFile {
+            // The metadata index still needs to be cleaned when the PNG was
+            // already removed by an earlier failed cleanup.
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "删除历史截图文件失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
         var items = load()
         items.removeAll { $0.id == item.id }
-        save(items)
+        return save(items)
     }
 
     private func write(_ data: Data, for item: ScreenshotHistoryItem) -> Bool {
@@ -101,13 +128,25 @@ final class ScreenshotHistoryStore {
             )
             return true
         } catch {
+            JarvisPersistenceLog.logger.error(
+                "写入历史截图失败：\(error.localizedDescription, privacy: .public)"
+            )
             return false
         }
     }
 
-    private func save(_ items: [ScreenshotHistoryItem]) {
-        guard let data = try? JSONEncoder().encode(items) else { return }
-        try? data.write(to: metadataURL, options: .atomic)
+    @discardableResult
+    private func save(_ items: [ScreenshotHistoryItem]) -> Bool {
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: metadataURL, options: .atomic)
+            return true
+        } catch {
+            JarvisPersistenceLog.logger.error(
+                "写入截图历史索引失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
     }
 
     private func trimmed(_ items: [ScreenshotHistoryItem]) -> [ScreenshotHistoryItem] {
@@ -117,7 +156,15 @@ final class ScreenshotHistoryStore {
         let kept = Array(sorted.prefix(maximumCount))
         let keptIDs = Set(kept.map(\.id))
         for removed in sorted where !keptIDs.contains(removed.id) {
-            try? fileManager.removeItem(at: directoryURL.appendingPathComponent(removed.fileName))
+            do {
+                try fileManager.removeItem(at: directoryURL.appendingPathComponent(removed.fileName))
+            } catch CocoaError.fileNoSuchFile {
+                continue
+            } catch {
+                JarvisPersistenceLog.logger.error(
+                    "清理超量历史截图失败：\(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
         return kept
     }

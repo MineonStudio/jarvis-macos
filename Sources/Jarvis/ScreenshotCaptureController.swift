@@ -62,6 +62,15 @@ final class ScreenshotTranslationProgress: ObservableObject {
     @Published var isTranslating = false
 }
 
+private enum ScreenshotToolbarMetrics {
+    static let baseWidth: CGFloat = 440
+    static let compactHeight: CGFloat = 70
+    static let expandedHeight: CGFloat = 111
+    static let gap: CGFloat = 16
+    static let screenHorizontalInset: CGFloat = 12
+    static let availableWidthInset: CGFloat = screenHorizontalInset * 2
+}
+
 @MainActor
 final class ScreenshotCaptureController {
     private let screenshotService = ScreenshotService()
@@ -80,6 +89,8 @@ final class ScreenshotCaptureController {
     private var previousFrontmostApplication: NSRunningApplication?
     private(set) var sessionPhase: ScreenshotSessionPhase = .idle
     private var activeSessionID: UUID?
+
+    // MARK: - Capture and selection lifecycle
 
     func requestScreenCaptureAccess() -> Bool {
         screenshotService.requestScreenCaptureAccess()
@@ -328,7 +339,11 @@ final class ScreenshotCaptureController {
         imagePanel.contentView = canvasHostingView
         imagePanel.makeFirstResponder(canvasHostingView)
 
-        let toolbarFrame = toolbarFrame(for: session.selectionFrame, height: 70, width: ScreenshotToolbar.preferredWidth(for: nil))
+        let toolbarFrame = toolbarFrame(
+            for: session.selectionFrame,
+            height: ScreenshotToolbarMetrics.compactHeight,
+            width: ScreenshotToolbar.preferredWidth(for: nil)
+        )
         let toolbarLayout = ScreenshotToolbarLayoutModel(width: toolbarFrame.width)
         let toolbarPanel = NSPanel(
             contentRect: toolbarFrame,
@@ -490,11 +505,6 @@ final class ScreenshotCaptureController {
             canvasSize: activeEditor.canvasSize
         ) ?? translatedSelectionData
         return activeEditor.replaceBaseImage(with: fullCanvasData)
-    }
-
-    func translationAnchorFrame() -> CGRect? {
-        guard let activeEditor, let activeCaptureScreenFrame else { return nil }
-        return activeEditor.selectionFrame(on: activeCaptureScreenFrame) ?? activeCaptureScreenFrame
     }
 
     private func pinScreenshot(
@@ -684,7 +694,7 @@ final class ScreenshotCaptureController {
 
         let frame = toolbarFrame(
             for: item.imageFrame,
-            height: 70,
+            height: ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbar.preferredWidth(for: nil)
         )
         let layout = ScreenshotToolbarLayoutModel(width: frame.width)
@@ -745,7 +755,9 @@ final class ScreenshotCaptureController {
         guard let toolbarWindow = item.toolbarWindow else { return }
         let frame = toolbarFrame(
             for: item.imageFrame,
-            height: item.editor.secondaryBarVisible ? 111 : 70,
+            height: item.editor.secondaryBarVisible
+                ? ScreenshotToolbarMetrics.expandedHeight
+                : ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbar.preferredWidth(
                 for: item.editor.selectedTool,
                 mosaicMode: item.editor.mosaicMode
@@ -822,18 +834,20 @@ final class ScreenshotCaptureController {
     }
 
     private func toolbarFrame(for imageFrame: CGRect, height toolbarHeight: CGFloat, width requestedWidth: CGFloat) -> NSRect {
-        let toolbarGap: CGFloat = 16
         let screen = NSScreen.screens.first { $0.frame.intersects(imageFrame) }
         let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let availableWidth = max(1, visibleFrame.width - 24)
+        let availableWidth = max(1, visibleFrame.width - ScreenshotToolbarMetrics.availableWidthInset)
         let toolbarWidth = min(requestedWidth, availableWidth)
-        let fitsBelow = imageFrame.minY - toolbarHeight - toolbarGap >= visibleFrame.minY
+        let fitsBelow = imageFrame.minY - toolbarHeight - ScreenshotToolbarMetrics.gap >= visibleFrame.minY
         let y = fitsBelow
-            ? imageFrame.minY - toolbarHeight - toolbarGap
-            : imageFrame.maxY + toolbarGap
+            ? imageFrame.minY - toolbarHeight - ScreenshotToolbarMetrics.gap
+            : imageFrame.maxY + ScreenshotToolbarMetrics.gap
         let x = min(
-            max(imageFrame.midX - toolbarWidth / 2, visibleFrame.minX + 12),
-            visibleFrame.maxX - toolbarWidth - 12
+            max(
+                imageFrame.midX - toolbarWidth / 2,
+                visibleFrame.minX + ScreenshotToolbarMetrics.screenHorizontalInset
+            ),
+            visibleFrame.maxX - toolbarWidth - ScreenshotToolbarMetrics.screenHorizontalInset
         )
 
         return NSRect(
@@ -849,7 +863,9 @@ final class ScreenshotCaptureController {
         let imageFrame = editor.selectionFrame(on: screenFrame) ?? screenFrame
         let frame = toolbarFrame(
             for: imageFrame,
-            height: editor.secondaryBarVisible ? 111 : 70,
+            height: editor.secondaryBarVisible
+                ? ScreenshotToolbarMetrics.expandedHeight
+                : ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbar.preferredWidth(for: editor.selectedTool, mosaicMode: editor.mosaicMode)
         )
         toolbarWindow.setFrame(frame, display: true, animate: false)
@@ -936,6 +952,8 @@ final class ScreenshotCaptureController {
         previousApplication.activate(options: [])
     }
 }
+
+// MARK: - Selection windows
 
 final class SelectionOverlayWindow: NSPanel {
     var onDoubleClick: (() -> Void)?
@@ -1468,6 +1486,8 @@ final class PinnedScreenshotItem {
         window.isMovableByWindowBackground = false
     }
 }
+
+// MARK: - Screenshot canvas window
 
 private final class PinnedScreenshotContextMenuTarget: NSObject {
     private let onToggleToolbar: () -> Void
@@ -2093,8 +2113,10 @@ final class SelectionOverlayView: NSView {
     }
 }
 
+// MARK: - Screenshot editing toolbar
+
 struct ScreenshotToolbar: View {
-    static let baseWidth: CGFloat = 440
+    static let baseWidth = ScreenshotToolbarMetrics.baseWidth
 
     static func preferredWidth(
         for tool: ScreenshotTool?,
@@ -2165,7 +2187,9 @@ struct ScreenshotToolbar: View {
         .padding(.bottom, 6)
         .frame(
             width: layout.width,
-            height: editor.secondaryBarVisible ? 111 : 70
+            height: editor.secondaryBarVisible
+                ? ScreenshotToolbarMetrics.expandedHeight
+                : ScreenshotToolbarMetrics.compactHeight
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .jarvisGlass(cornerRadius: 16)
@@ -2455,7 +2479,6 @@ struct ScreenshotToolbar: View {
                     cornerRadius: 6,
                     interactive: false
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)

@@ -34,16 +34,10 @@ final class ClipboardMediaPreviewController {
 
         dismiss()
 
-        let screenFrame = NSScreen.main?.frame ?? CGRect(
-            origin: .zero,
-            size: CGSize(width: 1200, height: 800)
-        )
-        let visibleFrame = NSScreen.main?.visibleFrame ?? screenFrame
-        let titlebarHeight: CGFloat = 28
-        let maximumSize = CGSize(
-            width: screenFrame.width - 80,
-            height: screenFrame.height - 80 - titlebarHeight
-        )
+        let frames = PreviewWindowSupport.screenFrames()
+        let screenFrame = frames.screen
+        let visibleFrame = frames.visible
+        let maximumSize = PreviewWindowSupport.maximumContentSize(for: screenFrame)
         let displaySize: CGSize
         let image: NSImage?
         let mediaPlayer: AVPlayer?
@@ -61,11 +55,9 @@ final class ClipboardMediaPreviewController {
 
         let contentWidth = max(displaySize.width, ClipboardMediaPreviewToolbar.preferredWidth + 22)
         let contentHeight = displaySize.height
-        let contentFrame = CGRect(
-            x: visibleFrame.midX - contentWidth / 2,
-            y: visibleFrame.midY - (contentHeight + titlebarHeight) / 2,
-            width: contentWidth,
-            height: contentHeight
+        let contentFrame = PreviewWindowSupport.centeredFrame(
+            contentSize: CGSize(width: contentWidth, height: contentHeight),
+            visibleFrame: visibleFrame
         )
 
         let previewPanel = ClipboardMediaPreviewPanel(
@@ -74,21 +66,10 @@ final class ClipboardMediaPreviewController {
             backing: .buffered,
             defer: false
         )
-        previewPanel.level = .screenSaver
-        previewPanel.title = item.createdAt.formatted(date: .abbreviated, time: .shortened)
-        previewPanel.titleVisibility = .visible
-        previewPanel.titlebarAppearsTransparent = false
-        previewPanel.titlebarSeparatorStyle = .none
-        previewPanel.backgroundColor = .black
-        previewPanel.isOpaque = true
-        previewPanel.hasShadow = true
-        previewPanel.hidesOnDeactivate = false
-        previewPanel.isReleasedWhenClosed = false
-        previewPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        previewPanel.standardWindowButton(.closeButton)?.isHidden = false
-        previewPanel.standardWindowButton(.miniaturizeButton)?.isHidden = false
-        previewPanel.standardWindowButton(.zoomButton)?.isHidden = false
-        previewPanel.standardWindowButton(.zoomButton)?.isEnabled = true
+        PreviewWindowSupport.configurePreviewPanel(
+            previewPanel,
+            title: item.createdAt.formatted(date: .abbreviated, time: .shortened)
+        )
 
         let model = ClipboardMediaPreviewModel()
         previewPanel.onWindowClose = { [weak self] in
@@ -126,14 +107,7 @@ final class ClipboardMediaPreviewController {
             backing: .buffered,
             defer: false
         )
-        dimmingPanel.level = .screenSaver
-        dimmingPanel.backgroundColor = NSColor.black.withAlphaComponent(0.58)
-        dimmingPanel.isOpaque = false
-        dimmingPanel.hasShadow = false
-        dimmingPanel.ignoresMouseEvents = true
-        dimmingPanel.hidesOnDeactivate = false
-        dimmingPanel.isReleasedWhenClosed = false
-        dimmingPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        PreviewWindowSupport.configureDimmingPanel(dimmingPanel, screenFrame: screenFrame)
 
         self.dimmingPanel = dimmingPanel
         self.panel = previewPanel

@@ -31,19 +31,6 @@ final class ModelGateway {
         )
     }
 
-    func translateText(
-        _ sourceText: String,
-        targetLanguage: String,
-        configuration: ModelConfiguration,
-        apiKey: String
-    ) async throws -> String {
-        try await request(
-            prompt: Self.translationPrompt(sourceText: sourceText, targetLanguage: targetLanguage),
-            configuration: configuration,
-            apiKey: apiKey
-        )
-    }
-
     func translateBlocks(
         _ sourceBlocks: [String],
         targetLanguage: String,
@@ -69,10 +56,6 @@ final class ModelGateway {
             throw ModelGatewayError.invalidResponse
         }
         return translatedBlocks
-    }
-
-    static func translationPrompt(targetLanguage: String) -> String {
-        translationPrompt(sourceText: "", targetLanguage: targetLanguage)
     }
 
     static func translationPrompt(sourceText: String, targetLanguage: String) -> String {

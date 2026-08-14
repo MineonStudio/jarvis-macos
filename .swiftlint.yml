@@ -1,0 +1,39 @@
+included:
+  - Sources
+  - Tests
+excluded:
+  - .build
+  - dist
+
+opt_in_rules:
+  - empty_count
+  - force_unwrapping
+  - function_body_length
+  - type_body_length
+  - file_length
+  - cyclomatic_complexity
+  - nesting
+  - redundant_nil_coalescing
+
+disabled_rules:
+  - identifier_name
+  - line_length
+
+function_body_length:
+  warning: 80
+  error: 160
+
+type_body_length:
+  warning: 300
+  error: 1200
+
+file_length:
+  warning: 600
+  error: 1600
+
+cyclomatic_complexity:
+  warning: 10
+  error: 20
+
+nesting:
+  type_level: 2

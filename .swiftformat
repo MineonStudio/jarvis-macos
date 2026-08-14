@@ -6,4 +6,5 @@
 --commas inline
 --trimwhitespace always
 --disable redundantSelf
+--disable redundantSendable
 --exclude .build,dist

@@ -26,12 +26,16 @@ final class ScreenshotTranslationTests: XCTestCase {
     }
 
     func testTranslationAppearanceFollowsThemeContrast() throws {
-        let lightText = try XCTUnwrap(ScreenshotTranslationRenderer
-            .translationTextColor(isDarkMode: false)
-            .usingColorSpace(.deviceRGB))
-        let darkText = try XCTUnwrap(ScreenshotTranslationRenderer
-            .translationTextColor(isDarkMode: true)
-            .usingColorSpace(.deviceRGB))
+        let lightText = try XCTUnwrap(
+            ScreenshotTranslationRenderer
+                .translationTextColor(isDarkMode: false)
+                .usingColorSpace(.deviceRGB)
+        )
+        let darkText = try XCTUnwrap(
+            ScreenshotTranslationRenderer
+                .translationTextColor(isDarkMode: true)
+                .usingColorSpace(.deviceRGB)
+        )
 
         XCTAssertEqual(lightText.redComponent, 1, accuracy: 0.001)
         XCTAssertEqual(lightText.greenComponent, 1, accuracy: 0.001)

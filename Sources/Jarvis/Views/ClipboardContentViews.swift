@@ -142,7 +142,6 @@ struct ClipboardView: View {
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
-    @AppStorage("jarvis.clipboardGridThumbnailMode") private var thumbnailModeRawValue = GridThumbnailDisplayMode.square.rawValue
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -172,7 +171,6 @@ struct ClipboardView: View {
                     Text("\(app.clipboardItems.count) 条")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.jarvisTextSecondary)
-                    GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
                 }
 
                 ClipboardFilterBar(
@@ -200,8 +198,7 @@ struct ClipboardView: View {
                         ForEach(pageItems) { item in
                             ClipboardCard(
                                 item: item,
-                                presentation: .main,
-                                thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square
+                                presentation: .main
                             )
                         }
                     }
@@ -292,18 +289,15 @@ struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
     let item: ClipboardItem
     let presentation: ClipboardCardPresentation
-    let thumbnailDisplayMode: GridThumbnailDisplayMode
     let onPreview: (() -> Void)?
 
     init(
         item: ClipboardItem,
         presentation: ClipboardCardPresentation,
-        thumbnailDisplayMode: GridThumbnailDisplayMode = .square,
         onPreview: (() -> Void)? = nil
     ) {
         self.item = item
         self.presentation = presentation
-        self.thumbnailDisplayMode = thumbnailDisplayMode
         self.onPreview = onPreview
     }
 
@@ -338,7 +332,7 @@ struct ClipboardCard: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ClipboardItemPreview(item: item, displayMode: thumbnailDisplayMode)
+                    ClipboardItemPreview(item: item)
                 }
             }
             .frame(
@@ -438,7 +432,6 @@ struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
-    @AppStorage("jarvis.clipboardGridThumbnailMode") private var thumbnailModeRawValue = GridThumbnailDisplayMode.square.rawValue
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -454,7 +447,6 @@ struct ClipboardPanelView: View {
                 Label("剪贴板", systemImage: "clipboard")
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
             }
 
             ClipboardFilterBar(
@@ -489,7 +481,6 @@ struct ClipboardPanelView: View {
                             ClipboardCard(
                                 item: item,
                                 presentation: .panel,
-                                thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square,
                                 onPreview: { app.showClipboardMediaPreview(item) }
                             )
                         }

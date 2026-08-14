@@ -5,7 +5,6 @@ struct ClipboardItemPreview: View {
     private static let videoThumbnailCache = NSCache<NSString, NSImage>()
 
     let item: ClipboardItem
-    let displayMode: GridThumbnailDisplayMode
     @State private var videoThumbnail: NSImage?
 
     var body: some View {
@@ -64,24 +63,11 @@ struct ClipboardItemPreview: View {
         }
     }
 
-    @ViewBuilder
     private func mediaImage(_ image: NSImage) -> some View {
-        switch displayMode {
-        case .square:
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(
-                    width: HistoryGridMetrics.previewHeight,
-                    height: HistoryGridMetrics.previewHeight
-                )
-                .clipped()
-        case .aspectRatio:
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(8)
-        }
+        Image(nsImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(8)
     }
 }

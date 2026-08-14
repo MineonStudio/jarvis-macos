@@ -2088,21 +2088,16 @@ struct ScreenshotToolbar: View {
                         .font(.system(size: 24, weight: .regular, design: .serif))
                 } else if tool == .mosaic {
                     MosaicToolIcon(
-                        color: editor.selectedTool == tool ? Color.primary : Color.secondary
+                        color: editor.selectedTool == tool ? Color.accentColor : Color.secondary
                     )
                 } else {
                     Image(systemName: tool.icon)
                         .font(.system(size: 21, weight: .medium))
                 }
             }
-            .foregroundStyle(editor.selectedTool == tool ? Color.primary : Color.secondary)
+            .foregroundStyle(editor.selectedTool == tool ? Color.accentColor : Color.secondary)
             .frame(width: 24, height: 24)
             .frame(width: 42, height: 42)
-            .jarvisGlass(
-                tint: editor.selectedTool == tool ? .accentColor : nil,
-                cornerRadius: 8,
-                interactive: false
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2409,14 +2404,9 @@ struct ScreenshotToolbar: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 21, weight: .medium))
-                .foregroundStyle(enabled ? (selected ? Color.primary : Color.secondary) : Color.secondary.opacity(0.35))
+                .foregroundStyle(enabled ? (selected ? Color.accentColor : Color.secondary) : Color.secondary.opacity(0.35))
                 .frame(width: 24, height: 24)
                 .frame(width: 42, height: 42)
-                .jarvisGlass(
-                    tint: selected ? .accentColor : nil,
-                    cornerRadius: 8,
-                    interactive: false
-                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

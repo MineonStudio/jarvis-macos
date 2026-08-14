@@ -568,6 +568,10 @@ final class ScreenshotCaptureController {
             onActivate: { [weak self, weak item] in
                 guard let self, let item else { return }
                 self.selectPinnedScreenshot(item)
+            },
+            makeContextMenu: { [weak self, weak item] in
+                guard let self, let item else { return nil }
+                return self.makePinnedContextMenu(for: item)
             }
         )
         hostingView.frame = NSRect(
@@ -594,7 +598,11 @@ final class ScreenshotCaptureController {
         selectedPinnedID = item.id
         setPinnedSelectionAppearance(item, selected: true)
         item.window.makeKeyAndOrderFront(nil)
-        showPinnedToolbar(for: item)
+        if item.showsToolbar {
+            showPinnedToolbar(for: item)
+        } else {
+            hidePinnedToolbar(for: item)
+        }
     }
 
     private func deselectPinnedScreenshot(_ item: PinnedScreenshotItem) {
@@ -610,9 +618,62 @@ final class ScreenshotCaptureController {
         selected: Bool
     ) {
         item.containerView?.isSelected = selected
-        // The Snipaste-style shadow is rendered by the transparent inset
-        // container so it follows the image's rounded outline.
+        item.containerView?.showsShadow = item.showsShadow
+        // The visible halo is rendered by the transparent inset container;
+        // keep AppKit from adding a second window-level shadow.
         item.window.hasShadow = false
+    }
+
+    private func makePinnedContextMenu(for item: PinnedScreenshotItem) -> NSMenu {
+        let target = PinnedScreenshotContextMenuTarget(
+            onToggleToolbar: { [weak self, weak item] in
+                guard let self, let item else { return }
+                self.togglePinnedToolbar(for: item)
+            },
+            onToggleShadow: { [weak self, weak item] in
+                guard let self, let item else { return }
+                self.togglePinnedShadow(for: item)
+            }
+        )
+        item.contextMenuTarget = target
+
+        let menu = NSMenu()
+        let toolbarItem = NSMenuItem(
+            title: "显示操作栏",
+            action: #selector(PinnedScreenshotContextMenuTarget.toggleToolbar(_:)),
+            keyEquivalent: ""
+        )
+        toolbarItem.target = target
+        toolbarItem.state = item.showsToolbar ? .on : .off
+        menu.addItem(toolbarItem)
+
+        let shadowItem = NSMenuItem(
+            title: "显示阴影",
+            action: #selector(PinnedScreenshotContextMenuTarget.toggleShadow(_:)),
+            keyEquivalent: ""
+        )
+        shadowItem.target = target
+        shadowItem.state = item.showsShadow ? .on : .off
+        menu.addItem(shadowItem)
+        return menu
+    }
+
+    private func togglePinnedToolbar(for item: PinnedScreenshotItem) {
+        guard pinnedItems[item.id] != nil else { return }
+        item.showsToolbar.toggle()
+        if selectedPinnedID != item.id {
+            selectPinnedScreenshot(item)
+        } else if item.showsToolbar {
+            showPinnedToolbar(for: item)
+        } else {
+            hidePinnedToolbar(for: item)
+        }
+    }
+
+    private func togglePinnedShadow(for item: PinnedScreenshotItem) {
+        guard pinnedItems[item.id] != nil else { return }
+        item.showsShadow.toggle()
+        item.containerView?.showsShadow = item.showsShadow
     }
 
     private func showPinnedToolbar(for item: PinnedScreenshotItem) {
@@ -1183,11 +1244,14 @@ final class PinnedScreenshotContainerView: NSView {
     private let contentInset: CGFloat
     private let editor: ScreenshotEditorModel
     private let onActivate: (() -> Void)?
+    private let makeContextMenu: (() -> NSMenu?)?
     var isSelected = false {
         didSet {
             needsDisplay = true
-            updateShadowAppearance()
         }
+    }
+    var showsShadow = true {
+        didSet { needsDisplay = true }
     }
 
     private var initialWindowOrigin: NSPoint?
@@ -1198,12 +1262,14 @@ final class PinnedScreenshotContainerView: NSView {
         imageSize: CGSize,
         contentInset: CGFloat,
         editor: ScreenshotEditorModel,
-        onActivate: (() -> Void)?
+        onActivate: (() -> Void)?,
+        makeContextMenu: (() -> NSMenu?)?
     ) {
         self.imageSize = imageSize
         self.contentInset = contentInset
         self.editor = editor
         self.onActivate = onActivate
+        self.makeContextMenu = makeContextMenu
         super.init(frame: frameRect)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -1265,6 +1331,12 @@ final class PinnedScreenshotContainerView: NSView {
         }
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        onActivate?()
+        guard let menu = makeContextMenu?() else { return }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -1283,9 +1355,9 @@ final class PinnedScreenshotContainerView: NSView {
         )
 
         NSColor.white.setFill()
-        if isSelected {
+        if showsShadow {
             // Use an even, zero-offset halo rather than a heavy downward drop
-            // shadow. Inactive pins intentionally have no shadow at all.
+            // shadow. The user can toggle this appearance from the context menu.
             context.saveGState()
             context.setShadow(
                 offset: .zero,
@@ -1298,7 +1370,7 @@ final class PinnedScreenshotContainerView: NSView {
             path.fill()
         }
 
-        if isSelected {
+        if isSelected && showsShadow {
             NSColor.systemBlue.withAlphaComponent(0.92).setStroke()
             path.lineWidth = 2
             path.stroke()
@@ -1345,6 +1417,9 @@ final class PinnedScreenshotItem {
     var toolbarLayout: ScreenshotToolbarLayoutModel?
     var editorObservation: AnyCancellable?
     var onAction: ((ScreenshotAction) -> Void)?
+    fileprivate var contextMenuTarget: PinnedScreenshotContextMenuTarget?
+    var showsToolbar = false
+    var showsShadow = true
 
     var imageFrame: CGRect {
         CGRect(
@@ -1379,6 +1454,28 @@ final class PinnedScreenshotItem {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = false
+    }
+}
+
+private final class PinnedScreenshotContextMenuTarget: NSObject {
+    private let onToggleToolbar: () -> Void
+    private let onToggleShadow: () -> Void
+
+    init(
+        onToggleToolbar: @escaping () -> Void,
+        onToggleShadow: @escaping () -> Void
+    ) {
+        self.onToggleToolbar = onToggleToolbar
+        self.onToggleShadow = onToggleShadow
+        super.init()
+    }
+
+    @objc func toggleToolbar(_ sender: NSMenuItem) {
+        onToggleToolbar()
+    }
+
+    @objc func toggleShadow(_ sender: NSMenuItem) {
+        onToggleShadow()
     }
 }
 

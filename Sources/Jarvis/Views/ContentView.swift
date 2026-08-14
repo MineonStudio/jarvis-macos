@@ -1442,38 +1442,34 @@ struct SettingsView: View {
 
     private var themeSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 14) {
                 Label("主题", systemImage: "circle.lefthalf.filled")
-                    .font(.system(size: 15, weight: .semibold))
-
-                LabeledSetting(title: "外观") {
-                    JarvisThemePicker(selection: Binding(
-                        get: { app.themePreference },
-                        set: { app.updateThemePreference($0) }
-                    ))
-                }
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                JarvisThemePicker(selection: Binding(
+                    get: { app.themePreference },
+                    set: { app.updateThemePreference($0) }
+                ))
             }
         }
     }
 
     private var screenshotTranslationSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 14) {
                 Label("截图翻译", systemImage: "character.bubble")
-                    .font(.system(size: 15, weight: .semibold))
-
-                LabeledSetting(title: "翻译为") {
-                    Picker("翻译为", selection: Binding(
-                        get: { app.targetLanguage },
-                        set: { app.updateTranslationLanguage($0) }
-                    )) {
-                        ForEach(ScreenshotTranslationLanguage.allCases) { language in
-                            Text(language.rawValue).tag(language)
-                        }
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Picker("翻译为", selection: Binding(
+                    get: { app.targetLanguage },
+                    set: { app.updateTranslationLanguage($0) }
+                )) {
+                    ForEach(ScreenshotTranslationLanguage.allCases) { language in
+                        Text(language.rawValue).tag(language)
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 180, alignment: .leading)
                 }
+                .pickerStyle(.menu)
+                .frame(width: 180, alignment: .trailing)
             }
         }
     }
@@ -1481,30 +1477,53 @@ struct SettingsView: View {
     private var versionAndUpdateCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
-                Label("版本与更新", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 14, weight: .semibold))
+                HStack(spacing: 6) {
+                    Label("版本与更新", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("(v\(JarvisAppVersion.shortVersion))")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text("当前版本 \(JarvisAppVersion.displayName)")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    updateStatusLabel
+                updateControls
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var updateControls: some View {
+        switch app.updateState {
+        case .available(let release):
+            HStack(spacing: 10) {
+                Text(release.version)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.accentColor)
+                    .lineLimit(1)
+                Button("下载最新版") {
+                    app.downloadAndInstallUpdate()
                 }
-                switch app.updateState {
-                case .available:
-                    Button("下载最新版") {
-                        app.downloadAndInstallUpdate()
-                    }
-                    .buttonStyle(JarvisPrimaryButtonStyle())
-                case .checking, .downloading, .installing:
-                    ProgressView()
-                        .controlSize(.small)
-                default:
-                    Button(updateActionTitle) {
-                        app.checkForUpdates()
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(isUpdating)
+                .buttonStyle(JarvisPrimaryButtonStyle())
+            }
+        case .checking:
+            HStack(spacing: 8) {
+                updateStatusLabel
+                ProgressView()
+                    .controlSize(.small)
+            }
+        case .downloading, .installing:
+            HStack(spacing: 8) {
+                updateStatusLabel
+                ProgressView()
+                    .controlSize(.small)
+            }
+        default:
+            HStack(spacing: 10) {
+                updateStatusLabel
+                Button(updateActionTitle) {
+                    app.checkForUpdates()
                 }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .disabled(isUpdating)
             }
         }
     }

@@ -1,5 +1,5 @@
-import XCTest
 @testable import Jarvis
+import XCTest
 
 final class ClipboardTests: XCTestCase {
     func testClipboardItemRoundTripsVideoMetadataAndPin() throws {

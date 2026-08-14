@@ -23,7 +23,9 @@ struct ScreenshotEditingSession: Sendable {
     let selectionRect: CGRect
     let initialCapture: ScreenshotCapture
 
-    var selectionFrame: CGRect { initialCapture.screenFrame }
+    var selectionFrame: CGRect {
+        initialCapture.screenFrame
+    }
 }
 
 enum ScreenshotTool: CaseIterable {
@@ -33,17 +35,17 @@ enum ScreenshotTool: CaseIterable {
 
     var icon: String {
         switch self {
-        case .arrow: return "arrow.up.right"
-        case .mosaic: return "checkerboard.rectangle"
-        case .text: return "textformat"
+        case .arrow: "arrow.up.right"
+        case .mosaic: "checkerboard.rectangle"
+        case .text: "textformat"
         }
     }
 
     var title: String {
         switch self {
-        case .arrow: return "箭头"
-        case .mosaic: return "马赛克"
-        case .text: return "文字"
+        case .arrow: "箭头"
+        case .mosaic: "马赛克"
+        case .text: "文字"
         }
     }
 }
@@ -116,7 +118,7 @@ final class ScreenshotCaptureController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let frozenScreens = try await self.screenshotService.captureFullScreens(
+                let frozenScreens = try await screenshotService.captureFullScreens(
                     screenFrames: NSScreen.screens.map(\.frame)
                 )
                 presentSelection(
@@ -125,9 +127,9 @@ final class ScreenshotCaptureController {
                     completion: completion
                 )
             } catch {
-                guard self.activeSessionID == sessionID else { return }
-                self.activeSessionID = nil
-                self.sessionPhase = .idle
+                guard activeSessionID == sessionID else { return }
+                activeSessionID = nil
+                sessionPhase = .idle
                 completion(.failure(error))
             }
         }
@@ -167,7 +169,8 @@ final class ScreenshotCaptureController {
 
         for frozenScreen in frozenScreens {
             guard let screen = NSScreen.screens.first(where: { $0.frame == frozenScreen.screenFrame }),
-                  let frozenImage = NSImage(data: frozenScreen.data) else {
+                  let frozenImage = NSImage(data: frozenScreen.data)
+            else {
                 continue
             }
 
@@ -262,8 +265,8 @@ final class ScreenshotCaptureController {
         let imagePanel: NSPanel
         let cancelEditing: () -> Void = { [weak self] in
             guard let self else { return }
-            self.dismissResult()
-            self.restorePreviousApplication()
+            dismissResult()
+            restorePreviousApplication()
             onAction(.cancel)
         }
         let quickCopyAndClose: () -> Void = { [weak self, weak editor] in
@@ -271,7 +274,7 @@ final class ScreenshotCaptureController {
             // Close the floating editor immediately, then render the current
             // annotated image on the next main-actor turn just like the
             // toolbar's confirm action.
-            self.dismissResult()
+            dismissResult()
             Task { @MainActor in
                 let data = editor.finalPNGData()
                 onAction(.confirm(data))
@@ -280,7 +283,7 @@ final class ScreenshotCaptureController {
         let pasteToScreen: () -> Void = { [weak self, weak editor] in
             guard let self, let editor else { return }
             let frame = editor.selectionFrame(on: capture.screenFrame) ?? capture.screenFrame
-            self.pinScreenshot(
+            pinScreenshot(
                 editor: editor,
                 frame: frame,
                 onAction: onAction
@@ -326,8 +329,8 @@ final class ScreenshotCaptureController {
         let canvasHostingView = ScreenshotCanvasHostingView(
             rootView: ScreenshotCanvasView(
                 image: image,
-            editor: editor,
-            interactive: true
+                editor: editor,
+                interactive: true
             ),
             editor: editor,
             onDoubleClick: quickCopyAndClose,
@@ -363,47 +366,48 @@ final class ScreenshotCaptureController {
                 layout: toolbarLayout,
                 translationProgress: translationProgress,
                 onAction: { [weak self] action in
-                switch action {
-                case .saveRequested:
-                    Task { @MainActor in
-                        let data = editor.finalPNGData()
+                    switch action {
+                    case .saveRequested:
+                        Task { @MainActor in
+                            let data = editor.finalPNGData()
+                            onAction(.save(data))
+                        }
+                    case .confirmRequested:
+                        self?.dismissResult()
+                        Task { @MainActor in
+                            let data = editor.finalPNGData()
+                            onAction(.confirm(data))
+                        }
+                    case let .save(data):
                         onAction(.save(data))
-                    }
-                case .confirmRequested:
-                    self?.dismissResult()
-                    Task { @MainActor in
-                        let data = editor.finalPNGData()
+                    case let .confirm(data):
                         onAction(.confirm(data))
+                    case .pin:
+                        break
+                    case .cancel:
+                        self?.dismissResult()
+                        self?.restorePreviousApplication()
+                        onAction(.cancel)
+                    case let .tool(tool):
+                        self?.resizeToolbar(for: editor, on: capture.screenFrame)
+                        onAction(.tool(tool))
+                    case .undo:
+                        editor.undo()
+                        onAction(.undo)
+                    case .redo:
+                        editor.redo()
+                        onAction(.redo)
+                    case .delete:
+                        editor.deleteSelectedAnnotation()
+                        onAction(.delete)
+                    case .duplicate:
+                        editor.duplicateSelectedAnnotation()
+                        onAction(.duplicate)
+                    case .translateRequested:
+                        onAction(action)
                     }
-                case .save(let data):
-                    onAction(.save(data))
-                case .confirm(let data):
-                    onAction(.confirm(data))
-                case .pin:
-                    break
-                case .cancel:
-                    self?.dismissResult()
-                    self?.restorePreviousApplication()
-                    onAction(.cancel)
-                case .tool(let tool):
-                    self?.resizeToolbar(for: editor, on: capture.screenFrame)
-                    onAction(.tool(tool))
-                case .undo:
-                    editor.undo()
-                    onAction(.undo)
-                case .redo:
-                    editor.redo()
-                    onAction(.redo)
-                case .delete:
-                    editor.deleteSelectedAnnotation()
-                    onAction(.delete)
-                case .duplicate:
-                    editor.duplicateSelectedAnnotation()
-                    onAction(.duplicate)
-                case .translateRequested:
-                    onAction(action)
                 }
-            })
+            )
         )
         toolbarHostingView.autoresizingMask = NSView.AutoresizingMask(arrayLiteral: .width, .height)
         toolbarPanel.contentView = toolbarHostingView
@@ -427,7 +431,7 @@ final class ScreenshotCaptureController {
             let frame = editor.selectionFrame(on: capture.screenFrame) ?? capture.screenFrame
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.pinScreenshot(editor: editor, frame: frame, onAction: onAction)
+                pinScreenshot(editor: editor, frame: frame, onAction: onAction)
             }
         }
     }
@@ -520,9 +524,9 @@ final class ScreenshotCaptureController {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let data = editor.finalPNGData()
-            self.createPinnedScreenshot(data: data, frame: frame, onAction: onAction)
-            self.sessionPhase = .idle
-            self.activeSessionID = nil
+            createPinnedScreenshot(data: data, frame: frame, onAction: onAction)
+            sessionPhase = .idle
+            activeSessionID = nil
             onAction(.pin(data))
         }
     }
@@ -541,15 +545,15 @@ final class ScreenshotCaptureController {
         item.window.delegate = item.window
         item.window.onEscape = { [weak self, weak item] in
             guard let self, let item else { return }
-            self.destroyPinnedScreenshot(item)
+            destroyPinnedScreenshot(item)
         }
         item.window.onDidResignKey = { [weak self, weak item] in
             guard let self, let item,
-                  self.selectedPinnedID == item.id else { return }
+                  selectedPinnedID == item.id else { return }
             // The toolbar is a child window. Clicking a toolbar control can
             // briefly move key-window status to it, so keep the pin selected.
             guard item.toolbarWindow?.isKeyWindow != true else { return }
-            self.deselectPinnedScreenshot(item)
+            deselectPinnedScreenshot(item)
         }
 
         let hostingView = ScreenshotCanvasHostingView(
@@ -563,11 +567,11 @@ final class ScreenshotCaptureController {
             allowsSelectionTransform: false,
             onActivate: { [weak self, weak item] in
                 guard let self, let item else { return }
-                self.selectPinnedScreenshot(item)
+                selectPinnedScreenshot(item)
             },
             onEscape: { [weak self, weak item] in
                 guard let self, let item else { return }
-                self.destroyPinnedScreenshot(item)
+                destroyPinnedScreenshot(item)
             }
         )
         let containerView = PinnedScreenshotContainerView(
@@ -577,11 +581,11 @@ final class ScreenshotCaptureController {
             editor: item.editor,
             onActivate: { [weak self, weak item] in
                 guard let self, let item else { return }
-                self.selectPinnedScreenshot(item)
+                selectPinnedScreenshot(item)
             },
             makeContextMenu: { [weak self, weak item] in
                 guard let self, let item else { return nil }
-                return self.makePinnedContextMenu(for: item)
+                return makePinnedContextMenu(for: item)
             }
         )
         hostingView.frame = NSRect(
@@ -638,11 +642,11 @@ final class ScreenshotCaptureController {
         let target = PinnedScreenshotContextMenuTarget(
             onToggleToolbar: { [weak self, weak item] in
                 guard let self, let item else { return }
-                self.togglePinnedToolbar(for: item)
+                togglePinnedToolbar(for: item)
             },
             onToggleShadow: { [weak self, weak item] in
                 guard let self, let item else { return }
-                self.togglePinnedShadow(for: item)
+                togglePinnedShadow(for: item)
             }
         )
         item.contextMenuTarget = target
@@ -718,7 +722,7 @@ final class ScreenshotCaptureController {
                 translationProgress: translationProgress,
                 onAction: { [weak self, weak item] action in
                     guard let self, let item else { return }
-                    self.handlePinnedToolbarAction(action, for: item)
+                    handlePinnedToolbarAction(action, for: item)
                 }
             )
         )
@@ -789,17 +793,17 @@ final class ScreenshotCaptureController {
                 let data = editor.finalPNGData()
                 onAction?(.confirm(data))
             }
-        case .save(let data):
+        case let .save(data):
             let onAction = item.onAction
             destroyPinnedScreenshot(item)
             onAction?(.save(data))
-        case .confirm(let data):
+        case let .confirm(data):
             let onAction = item.onAction
             destroyPinnedScreenshot(item)
             onAction?(.confirm(data))
         case .cancel:
             destroyPinnedScreenshot(item)
-        case .tool(let tool):
+        case let .tool(tool):
             resizePinnedToolbar(for: item)
             item.onAction?(.tool(tool))
         case .undo:
@@ -814,7 +818,7 @@ final class ScreenshotCaptureController {
         case .duplicate:
             item.editor.duplicateSelectedAnnotation()
             item.onAction?(.duplicate)
-        case .translateRequested(let data):
+        case let .translateRequested(data):
             item.onAction?(.translateRequested(data))
         case .pin:
             break
@@ -960,8 +964,13 @@ final class SelectionOverlayWindow: NSPanel {
     var onMiddleClick: (() -> Void)?
     var onEscape: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53 {
@@ -970,13 +979,15 @@ final class SelectionOverlayWindow: NSPanel {
         }
         if event.type == .leftMouseDown,
            event.clickCount == 2,
-           let onDoubleClick {
+           let onDoubleClick
+        {
             onDoubleClick()
             return
         }
         if event.type == .otherMouseDown,
            event.buttonNumber == 2,
-           let onMiddleClick {
+           let onMiddleClick
+        {
             onMiddleClick()
             return
         }
@@ -984,7 +995,7 @@ final class SelectionOverlayWindow: NSPanel {
     }
 }
 
-fileprivate struct WindowSelectionCandidate {
+private struct WindowSelectionCandidate {
     let localRect: CGRect
     let ownerName: String
     let title: String
@@ -1004,7 +1015,7 @@ private enum WindowSelectionDetector {
             return []
         }
 
-        let desktopTop = NSScreen.screens.map { $0.frame.maxY }.max() ?? screenFrame.maxY
+        let desktopTop = NSScreen.screens.map(\.frame.maxY).max() ?? screenFrame.maxY
         let screenBounds = CGRect(origin: .zero, size: screenFrame.size)
         let dockGlobalRect = dockRegion(for: screenFrame)
         var candidates: [WindowSelectionCandidate] = []
@@ -1018,7 +1029,7 @@ private enum WindowSelectionDetector {
             // Desktop, wallpaper and the cursor use very large negative or
             // positive layers. Menubar, Dock and menu-extra windows are in the
             // small positive range and must remain eligible.
-            guard layer >= 0, layer < 1_000 else { continue }
+            guard layer >= 0, layer < 1000 else { continue }
 
             let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
             guard alpha > 0.01 else { continue }
@@ -1039,7 +1050,8 @@ private enum WindowSelectionDetector {
             let isMenubar = normalizedTitle == "menubar"
 
             guard let boundsValue = info[kCGWindowBounds as String] as? NSDictionary,
-                  let quartzBounds = CGRect(dictionaryRepresentation: boundsValue) else {
+                  let quartzBounds = CGRect(dictionaryRepresentation: boundsValue)
+            else {
                 continue
             }
 
@@ -1174,8 +1186,12 @@ private enum WindowSelectionDetector {
         let bottom = visibleFrame.minY - screenFrame.minY
         let left = visibleFrame.minX - screenFrame.minX
         let right = screenFrame.maxX - visibleFrame.maxX
-        if left > bottom, left >= right { return "left" }
-        if right > bottom, right > left { return "right" }
+        if left > bottom, left >= right {
+            return "left"
+        }
+        if right > bottom, right > left {
+            return "right"
+        }
         return "bottom"
     }
 
@@ -1207,7 +1223,7 @@ private enum WindowSelectionDetector {
             let x = orientation == "left"
                 ? dockRect.maxX - tileSize - 8
                 : dockRect.minX + 8
-            for index in 0..<iconCount {
+            for index in 0 ..< iconCount {
                 result.append(
                     WindowSelectionCandidate(
                         localRect: CGRect(
@@ -1227,7 +1243,7 @@ private enum WindowSelectionDetector {
             let totalWidth = CGFloat(iconCount) * slotSize
             let startX = dockRect.midX - totalWidth / 2
             let y = dockRect.minY + 8
-            for index in 0..<iconCount {
+            for index in 0 ..< iconCount {
                 result.append(
                     WindowSelectionCandidate(
                         localRect: CGRect(
@@ -1253,8 +1269,13 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     var onEscape: (() -> Void)?
     var onDidResignKey: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53 {
@@ -1264,7 +1285,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
         super.sendEvent(event)
     }
 
-    func windowDidResignKey(_ notification: Notification) {
+    func windowDidResignKey(_: Notification) {
         onDidResignKey?()
     }
 }
@@ -1280,6 +1301,7 @@ final class PinnedScreenshotContainerView: NSView {
             needsDisplay = true
         }
     }
+
     var showsShadow = true {
         didSet { needsDisplay = true }
     }
@@ -1307,13 +1329,15 @@ final class PinnedScreenshotContainerView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // A pin can float above an inactive app. Accept the first click so the
-    // entire pin activates immediately instead of requiring a second click.
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// A pin can float above an inactive app. Accept the first click so the
+    /// entire pin activates immediately instead of requiring a second click.
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+        true
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         // With no annotation tool selected, the whole image is a draggable
@@ -1339,7 +1363,8 @@ final class PinnedScreenshotContainerView: NSView {
         guard editor.selectedTool == nil,
               let window,
               let initialWindowOrigin,
-              let initialMouseLocation else {
+              let initialMouseLocation
+        else {
             super.mouseDragged(with: event)
             return
         }
@@ -1400,7 +1425,7 @@ final class PinnedScreenshotContainerView: NSView {
             path.fill()
         }
 
-        if isSelected && showsShadow {
+        if isSelected, showsShadow {
             NSColor.systemBlue.withAlphaComponent(0.92).setStroke()
             path.lineWidth = 2
             path.stroke()
@@ -1462,15 +1487,15 @@ final class PinnedScreenshotItem {
 
     init(data: Data, image: NSImage, frame: CGRect) {
         self.data = data
-        self.imageSize = image.size
-        self.editor = ScreenshotEditorModel(
+        imageSize = image.size
+        editor = ScreenshotEditorModel(
             image: image,
             data: data,
             outputData: data,
             canvasSize: image.size,
             outputRect: CGRect(origin: .zero, size: image.size)
         )
-        self.window = PinnedScreenshotWindow(
+        window = PinnedScreenshotWindow(
             contentRect: frame.insetBy(dx: -contentInset, dy: -contentInset),
             styleMask: [.borderless],
             backing: .buffered,
@@ -1502,11 +1527,11 @@ private final class PinnedScreenshotContextMenuTarget: NSObject {
         super.init()
     }
 
-    @objc func toggleToolbar(_ sender: NSMenuItem) {
+    @objc func toggleToolbar(_: NSMenuItem) {
         onToggleToolbar()
     }
 
-    @objc func toggleShadow(_ sender: NSMenuItem) {
+    @objc func toggleShadow(_: NSMenuItem) {
         onToggleShadow()
     }
 }
@@ -1516,8 +1541,13 @@ final class ScreenshotImagePanel: NSPanel {
     var onMiddleClick: (() -> Void)?
     var onEscape: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53 {
@@ -1526,13 +1556,15 @@ final class ScreenshotImagePanel: NSPanel {
         }
         if event.type == .leftMouseDown,
            event.clickCount == 2,
-           let onDoubleClick {
+           let onDoubleClick
+        {
             onDoubleClick()
             return
         }
         if event.type == .otherMouseDown,
            event.buttonNumber == 2,
-           let onMiddleClick {
+           let onMiddleClick
+        {
             onMiddleClick()
             return
         }
@@ -1589,23 +1621,27 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
 
     @MainActor
     required init(rootView: ScreenshotCanvasView) {
-        self.editor = rootView.editor
-        self.allowsSelectionTransform = true
-        self.onActivate = nil
-        self.onDoubleClick = nil
-        self.onMiddleClick = nil
-        self.onEscape = nil
+        editor = rootView.editor
+        allowsSelectionTransform = true
+        onActivate = nil
+        onDoubleClick = nil
+        onMiddleClick = nil
+        onEscape = nil
         super.init(rootView: rootView)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+        true
+    }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, let onEscape {
@@ -1618,7 +1654,8 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         let characters = event.charactersIgnoringModifiers?.lowercased()
 
         if editor.selectedAnnotationID != nil,
-           event.keyCode == 51 || event.keyCode == 117 {
+           event.keyCode == 51 || event.keyCode == 117
+        {
             editor.deleteSelectedAnnotation()
             return
         }
@@ -1655,7 +1692,8 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
 
         if allowsSelectionTransform,
            editor.selectedTool == nil,
-           let selectionRect = editor.selectionRect {
+           let selectionRect = editor.selectionRect
+        {
             let canvasPoint = canvasPoint(for: event)
             if let interaction = selectionInteraction(at: canvasPoint, in: selectionRect) {
                 selectionInteraction = interaction
@@ -1666,8 +1704,9 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         }
 
         guard editor.selectedTool == nil,
-              (allowsSelectionTransform ? editor.editingRect == nil : true),
-              let window else {
+              allowsSelectionTransform ? editor.editingRect == nil : true,
+              let window
+        else {
             super.mouseDown(with: event)
             return
         }
@@ -1686,18 +1725,18 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     override func mouseDragged(with event: NSEvent) {
         if let selectionInteraction,
            let selectionStartRect,
-           let selectionStartPoint {
+           let selectionStartPoint
+        {
             let currentPoint = canvasPoint(for: event)
             let delta = CGSize(
                 width: currentPoint.x - selectionStartPoint.x,
                 height: currentPoint.y - selectionStartPoint.y
             )
-            let updatedRect: CGRect
-            switch selectionInteraction {
+            let updatedRect: CGRect = switch selectionInteraction {
             case .move:
-                updatedRect = movedRect(selectionStartRect, by: delta)
-            case .resize(let handle):
-                updatedRect = resizedRect(selectionStartRect, handle: handle, by: delta)
+                movedRect(selectionStartRect, by: delta)
+            case let .resize(handle):
+                resizedRect(selectionStartRect, handle: handle, by: delta)
             }
             editor.updateSelectionRect(updatedRect)
             return
@@ -1707,7 +1746,8 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
               editor.editingRect == nil,
               let window,
               let initialWindowOrigin,
-              let initialMouseLocation else {
+              let initialMouseLocation
+        else {
             super.mouseDragged(with: event)
             return
         }
@@ -1756,20 +1796,38 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         let nearTop = abs(point.y - rect.minY) <= radius
         let nearBottom = abs(point.y - rect.maxY) <= radius
 
-        if nearLeft, nearTop { return .resize(.topLeading) }
-        if nearTop, nearRight { return .resize(.topTrailing) }
-        if nearLeft, nearBottom { return .resize(.bottomLeading) }
-        if nearRight, nearBottom { return .resize(.bottomTrailing) }
-        if nearTop, point.x >= rect.minX, point.x <= rect.maxX { return .resize(.top) }
-        if nearRight, point.y >= rect.minY, point.y <= rect.maxY { return .resize(.trailing) }
-        if nearBottom, point.x >= rect.minX, point.x <= rect.maxX { return .resize(.bottom) }
-        if nearLeft, point.y >= rect.minY, point.y <= rect.maxY { return .resize(.leading) }
-        if rect.contains(point) { return .move }
+        if nearLeft, nearTop {
+            return .resize(.topLeading)
+        }
+        if nearTop, nearRight {
+            return .resize(.topTrailing)
+        }
+        if nearLeft, nearBottom {
+            return .resize(.bottomLeading)
+        }
+        if nearRight, nearBottom {
+            return .resize(.bottomTrailing)
+        }
+        if nearTop, point.x >= rect.minX, point.x <= rect.maxX {
+            return .resize(.top)
+        }
+        if nearRight, point.y >= rect.minY, point.y <= rect.maxY {
+            return .resize(.trailing)
+        }
+        if nearBottom, point.x >= rect.minX, point.x <= rect.maxX {
+            return .resize(.bottom)
+        }
+        if nearLeft, point.y >= rect.minY, point.y <= rect.maxY {
+            return .resize(.leading)
+        }
+        if rect.contains(point) {
+            return .move
+        }
         return nil
     }
 
     private func movedRect(_ rect: CGRect, by delta: CGSize) -> CGRect {
-        let bounds = CGRect(origin: .zero, size: self.bounds.size)
+        let bounds = CGRect(origin: .zero, size: bounds.size)
         let x = min(max(rect.minX + delta.width, bounds.minX), bounds.maxX - rect.width)
         let y = min(max(rect.minY + delta.height, bounds.minY), bounds.maxY - rect.height)
         return CGRect(x: x, y: y, width: rect.width, height: rect.height)
@@ -1781,7 +1839,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         by delta: CGSize
     ) -> CGRect {
         let minimum: CGFloat = 24
-        let bounds = CGRect(origin: .zero, size: self.bounds.size)
+        let bounds = CGRect(origin: .zero, size: bounds.size)
         var minX = rect.minX
         var minY = rect.minY
         var maxX = rect.maxX
@@ -1842,7 +1900,7 @@ final class SelectionOverlayView: NSView {
     ) {
         self.frozenImage = frozenImage
         var proposedRect = NSRect(origin: .zero, size: frozenImage.size)
-        self.frozenCGImage = frozenImage.cgImage(
+        frozenCGImage = frozenImage.cgImage(
             forProposedRect: &proposedRect,
             context: nil,
             hints: nil
@@ -1853,11 +1911,13 @@ final class SelectionOverlayView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
     private var selectionTrackingArea: NSTrackingArea?
 
@@ -1934,7 +1994,8 @@ final class SelectionOverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if let startPoint,
-           hypot(point.x - startPoint.x, point.y - startPoint.y) > 4 {
+           hypot(point.x - startPoint.x, point.y - startPoint.y) > 4
+        {
             didDragSelection = true
             hoveredWindowCandidate = nil
         }
@@ -1958,7 +2019,8 @@ final class SelectionOverlayView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if !didDragSelection,
            !spacePressed,
-           let windowCandidateAtMouseDown {
+           let windowCandidateAtMouseDown
+        {
             resetPointerState()
             onFinish?(windowCandidateAtMouseDown.localRect)
             return
@@ -2073,7 +2135,7 @@ final class SelectionOverlayView: NSView {
         didDragSelection = false
     }
 
-    private func drawHint(in bounds: CGRect, context: CGContext) {
+    private func drawHint(in bounds: CGRect, context _: CGContext) {
         guard selectionRect == nil else { return }
         let text = hoveredWindowCandidate == nil
             ? "悬停窗口后单击自动选中  ·  拖动自定义框选  ·  ESC 取消"
@@ -2094,7 +2156,7 @@ final class SelectionOverlayView: NSView {
         text.draw(at: CGPoint(x: rect.minX + 14, y: rect.minY + 7), withAttributes: attributes)
     }
 
-    private func drawDimensionLabel(in rect: CGRect, context: CGContext) {
+    private func drawDimensionLabel(in rect: CGRect, context _: CGContext) {
         let text = "\(Int(rect.width)) × \(Int(rect.height))"
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
@@ -2123,10 +2185,10 @@ struct ScreenshotToolbar: View {
         mosaicMode: ScreenshotMosaicMode = .rectangle
     ) -> CGFloat {
         switch tool {
-        case .mosaic: return mosaicMode == .brush ? 520 : baseWidth
-        case .text: return 520
-        case .arrow: return 520
-        default: return baseWidth
+        case .mosaic: mosaicMode == .brush ? 520 : baseWidth
+        case .text: 520
+        case .arrow: 520
+        default: baseWidth
         }
     }
 
@@ -2228,9 +2290,9 @@ struct ScreenshotToolbar: View {
         var body: some View {
             ZStack {
                 VStack(spacing: 2) {
-                    ForEach(0..<2, id: \.self) { row in
+                    ForEach(0 ..< 2, id: \.self) { row in
                         HStack(spacing: 2) {
-                            ForEach(0..<2, id: \.self) { column in
+                            ForEach(0 ..< 2, id: \.self) { column in
                                 Rectangle()
                                     .fill((row + column).isMultiple(of: 2) ? color : .clear)
                                     .frame(width: 9, height: 9)
@@ -2275,7 +2337,7 @@ struct ScreenshotToolbar: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.secondary)
 
-            Slider(value: $editor.arrowLineWidth, in: 2...12, step: 1)
+            Slider(value: $editor.arrowLineWidth, in: 2 ... 12, step: 1)
                 .frame(width: 82)
 
             Text("\(Int(editor.arrowLineWidth))")
@@ -2366,7 +2428,7 @@ struct ScreenshotToolbar: View {
                 .font(.system(size: 7))
                 .foregroundStyle(Color.secondary)
 
-            Slider(value: $editor.mosaicBrushSize, in: 8...72, step: 2)
+            Slider(value: $editor.mosaicBrushSize, in: 8 ... 72, step: 2)
                 .frame(width: 76)
 
             Image(systemName: "circle.fill")
@@ -2407,7 +2469,7 @@ struct ScreenshotToolbar: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.secondary)
 
-            Slider(value: $editor.textFontSize, in: 12...48, step: 1)
+            Slider(value: $editor.textFontSize, in: 12 ... 48, step: 1)
                 .frame(width: 86)
 
             Text("\(Int(editor.textFontSize))")
@@ -2500,7 +2562,7 @@ struct ScreenshotToolbar: View {
                         .overlay {
                             Circle()
                                 .stroke(
-                                        selected == color ? Color.accentColor : Color.primary.opacity(0.2),
+                                    selected == color ? Color.accentColor : Color.primary.opacity(0.2),
                                     lineWidth: selected == color ? 2 : 1
                                 )
                         }

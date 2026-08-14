@@ -11,17 +11,19 @@ enum ScreenshotTextColor: String, CaseIterable, Identifiable, Equatable {
     case blue
     case green
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var color: Color {
         switch self {
-        case .red: return Color(red: 1, green: 0.12, blue: 0.12)
-        case .yellow: return .yellow
-        case .white: return .white
-        case .black: return .black
-        case .cyan: return .cyan
-        case .blue: return Color(red: 0.1, green: 0.38, blue: 0.95)
-        case .green: return Color(red: 0.12, green: 0.62, blue: 0.25)
+        case .red: Color(red: 1, green: 0.12, blue: 0.12)
+        case .yellow: .yellow
+        case .white: .white
+        case .black: .black
+        case .cyan: .cyan
+        case .blue: Color(red: 0.1, green: 0.38, blue: 0.95)
+        case .green: Color(red: 0.12, green: 0.62, blue: 0.25)
         }
     }
 }
@@ -30,19 +32,21 @@ enum ScreenshotMosaicMode: String, CaseIterable, Identifiable, Equatable {
     case brush
     case rectangle
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .brush: return "涂抹"
-        case .rectangle: return "框选"
+        case .brush: "涂抹"
+        case .rectangle: "框选"
         }
     }
 
     var icon: String {
         switch self {
-        case .brush: return "scribble.variable"
-        case .rectangle: return "rectangle.dashed"
+        case .brush: "scribble.variable"
+        case .rectangle: "rectangle.dashed"
         }
     }
 }
@@ -51,19 +55,21 @@ enum ScreenshotMosaicStyle: String, CaseIterable, Identifiable, Equatable {
     case pixelate
     case blur
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .pixelate: return "像素化"
-        case .blur: return "模糊"
+        case .pixelate: "像素化"
+        case .blur: "模糊"
         }
     }
 
     var icon: String {
         switch self {
-        case .pixelate: return "checkerboard.rectangle"
-        case .blur: return "drop"
+        case .pixelate: "checkerboard.rectangle"
+        case .blur: "drop"
         }
     }
 }
@@ -72,12 +78,14 @@ enum ScreenshotArrowHeadStyle: String, CaseIterable, Identifiable, Equatable {
     case filled
     case none
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .filled: return "箭头"
-        case .none: return "直线"
+        case .filled: "箭头"
+        case .none: "直线"
         }
     }
 }
@@ -106,8 +114,13 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
     var mosaicMode: ScreenshotMosaicMode = .rectangle
     var mosaicStyle: ScreenshotMosaicStyle = .blur
 
-    var start: CGPoint { points.first ?? .zero }
-    var end: CGPoint { points.last ?? start }
+    var start: CGPoint {
+        points.first ?? .zero
+    }
+
+    var end: CGPoint {
+        points.last ?? start
+    }
 
     var rect: CGRect {
         CGRect(
@@ -191,29 +204,28 @@ final class ScreenshotEditorModel: ObservableObject {
         canvasSize: CGSize,
         outputRect: CGRect? = nil
     ) {
-        self.originalImage = image
-        self.originalData = data
+        originalImage = image
+        originalData = data
         self.canvasSize = canvasSize
-        self.originalOutputData = outputData
-        self.coordinateSpace = ScreenshotCoordinateSpace(
+        originalOutputData = outputData
+        coordinateSpace = ScreenshotCoordinateSpace(
             screenFrame: CGRect(origin: .zero, size: canvasSize),
             canvasSize: canvasSize
         )
-        let canvasSelectionRect: CGRect?
-        if let outputRect {
-            canvasSelectionRect = self.coordinateSpace.canvasRect(fromOutputRect: outputRect)
+        let canvasSelectionRect: CGRect? = if let outputRect {
+            coordinateSpace.canvasRect(fromOutputRect: outputRect)
         } else {
-            canvasSelectionRect = nil
+            nil
         }
-        self.selectionRect = canvasSelectionRect
-        self.initialSelectionRect = canvasSelectionRect
-        self.blurredImageCache = nil
-        self.pixelatedImageCache = nil
+        selectionRect = canvasSelectionRect
+        initialSelectionRect = canvasSelectionRect
+        blurredImageCache = nil
+        pixelatedImageCache = nil
     }
 
-    // AppKit's screen coordinates use a bottom-left origin while SwiftUI's
-    // canvas uses a top-left origin. Keep the export rect in AppKit space and
-    // expose a canvas-space rect for the editing overlay and gestures.
+    /// AppKit's screen coordinates use a bottom-left origin while SwiftUI's
+    /// canvas uses a top-left origin. Keep the export rect in AppKit space and
+    /// expose a canvas-space rect for the editing overlay and gestures.
     var editingRect: CGRect? {
         selectionRect
     }
@@ -237,8 +249,14 @@ final class ScreenshotEditorModel: ObservableObject {
         ).screenRect(fromOutputRect: outputRect)
     }
 
-    var canUndo: Bool { !undoStack.isEmpty }
-    var canRedo: Bool { !redoStack.isEmpty }
+    var canUndo: Bool {
+        !undoStack.isEmpty
+    }
+
+    var canRedo: Bool {
+        !redoStack.isEmpty
+    }
+
     var secondaryBarVisible: Bool {
         selectedTool == .arrow || selectedTool == .mosaic || selectedTool == .text
     }
@@ -531,7 +549,8 @@ final class ScreenshotEditorModel: ObservableObject {
             filter.setValue(value, forKey: kCIInputRadiusKey)
         }
         guard let output = filter.outputImage,
-              let rendered = CIContext(options: nil).createCGImage(output.cropped(to: input.extent), from: input.extent) else {
+              let rendered = CIContext(options: nil).createCGImage(output.cropped(to: input.extent), from: input.extent)
+        else {
             return nil
         }
         return NSImage(cgImage: rendered, size: image.size)
@@ -645,7 +664,8 @@ struct ScreenshotCanvasView: View {
                 let currentPoint = editablePoint(value.location) ?? dragStart
                 if let activeAnnotationID,
                    editor.selectedTool == .text,
-                   let lastDragLocation {
+                   let lastDragLocation
+                {
                     editor.moveAnnotation(
                         id: activeAnnotationID,
                         by: CGPoint(
@@ -656,7 +676,8 @@ struct ScreenshotCanvasView: View {
                     )
                     self.lastDragLocation = currentPoint
                 } else if editor.selectedTool == .mosaic,
-                          editor.mosaicMode == .brush {
+                          editor.mosaicMode == .brush
+                {
                     if mosaicPoints.last.map({ distance(from: $0, to: currentPoint) > 2 }) ?? true {
                         mosaicPoints.append(currentPoint)
                     }
@@ -992,8 +1013,6 @@ private struct ScreenshotSelectionOverlay: View {
                 }
             }
             .frame(width: editor.canvasSize.width, height: editor.canvasSize.height)
-        } else {
-            EmptyView()
         }
     }
 
@@ -1078,14 +1097,14 @@ private struct ScreenshotSelectionOverlay: View {
 
     private func handlePoint(_ handle: SelectionHandle, in rect: CGRect) -> CGPoint {
         switch handle {
-        case .topLeading: return CGPoint(x: rect.minX, y: rect.minY)
-        case .top: return CGPoint(x: rect.midX, y: rect.minY)
-        case .topTrailing: return CGPoint(x: rect.maxX, y: rect.minY)
-        case .trailing: return CGPoint(x: rect.maxX, y: rect.midY)
-        case .bottomTrailing: return CGPoint(x: rect.maxX, y: rect.maxY)
-        case .bottom: return CGPoint(x: rect.midX, y: rect.maxY)
-        case .bottomLeading: return CGPoint(x: rect.minX, y: rect.maxY)
-        case .leading: return CGPoint(x: rect.minX, y: rect.midY)
+        case .topLeading: CGPoint(x: rect.minX, y: rect.minY)
+        case .top: CGPoint(x: rect.midX, y: rect.minY)
+        case .topTrailing: CGPoint(x: rect.maxX, y: rect.minY)
+        case .trailing: CGPoint(x: rect.maxX, y: rect.midY)
+        case .bottomTrailing: CGPoint(x: rect.maxX, y: rect.maxY)
+        case .bottom: CGPoint(x: rect.midX, y: rect.maxY)
+        case .bottomLeading: CGPoint(x: rect.minX, y: rect.maxY)
+        case .leading: CGPoint(x: rect.minX, y: rect.midY)
         }
     }
 
@@ -1253,7 +1272,7 @@ struct MosaicRectangleShape: Shape {
     let start: CGPoint
     let end: CGPoint
 
-    func path(in rect: CGRect) -> Path {
+    func path(in _: CGRect) -> Path {
         Path(
             CGRect(
                 x: min(start.x, end.x),
@@ -1268,7 +1287,7 @@ struct MosaicRectangleShape: Shape {
 struct FreehandStroke: Shape {
     let points: [CGPoint]
 
-    func path(in rect: CGRect) -> Path {
+    func path(in _: CGRect) -> Path {
         var path = Path()
         guard let first = points.first else { return path }
         path.move(to: first)

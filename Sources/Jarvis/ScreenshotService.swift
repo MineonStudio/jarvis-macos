@@ -19,7 +19,7 @@ final class ScreenshotService {
         captures.reserveCapacity(screenFrames.count)
 
         for screenFrame in screenFrames {
-            captures.append(try await capture(screenRect: screenFrame))
+            try await captures.append(capture(screenRect: screenFrame))
         }
 
         return captures
@@ -35,11 +35,10 @@ final class ScreenshotService {
         }
 
         do {
-            let image: CGImage
-            if #available(macOS 15.2, *) {
-                image = try await SCScreenshotManager.captureImage(in: screenRect)
+            let image: CGImage = if #available(macOS 15.2, *) {
+                try await SCScreenshotManager.captureImage(in: screenRect)
             } else {
-                image = try await captureDisplayFilter(for: screenRect)
+                try await captureDisplayFilter(for: screenRect)
             }
             guard let data = Self.pngData(from: image, logicalSize: screenRect.size) else {
                 throw ScreenshotError.captureFailed("无法将屏幕图像编码为 PNG")
@@ -49,7 +48,8 @@ final class ScreenshotService {
             throw error
         } catch let error as NSError {
             if error.domain == SCStreamErrorDomain,
-               error.code == SCStreamError.userDeclined.rawValue {
+               error.code == SCStreamError.userDeclined.rawValue
+            {
                 throw ScreenshotError.permissionDenied
             }
             throw ScreenshotError.captureFailed(
@@ -94,7 +94,8 @@ final class ScreenshotService {
     private func displayID(for screenFrame: CGRect) -> CGDirectDisplayID? {
         let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
         guard let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }),
-              let number = screen.deviceDescription[screenNumberKey] as? NSNumber else {
+              let number = screen.deviceDescription[screenNumberKey] as? NSNumber
+        else {
             return nil
         }
         return CGDirectDisplayID(number.uint32Value)
@@ -114,7 +115,8 @@ final class ScreenshotService {
         let screenBounds = CGRect(origin: .zero, size: screenFrame.size)
         let clippedRect = localRect.intersection(screenBounds)
         guard clippedRect.width > 0, clippedRect.height > 0,
-              let sourceImage = NSImage(data: capture.data) else {
+              let sourceImage = NSImage(data: capture.data)
+        else {
             throw ScreenshotError.invalidSelection
         }
 
@@ -200,10 +202,10 @@ enum ScreenshotError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .cancelled: return "截图已取消"
-        case .invalidSelection: return "截图区域太小，请重新框选"
-        case .permissionDenied: return "macOS 屏幕录制权限未开启，请在系统设置中允许贾维斯读取屏幕"
-        case .captureFailed(let reason): return "截图失败：\(reason)"
+        case .cancelled: "截图已取消"
+        case .invalidSelection: "截图区域太小，请重新框选"
+        case .permissionDenied: "macOS 屏幕录制权限未开启，请在系统设置中允许贾维斯读取屏幕"
+        case let .captureFailed(reason): "截图失败：\(reason)"
         }
     }
 }

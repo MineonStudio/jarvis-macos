@@ -1,5 +1,5 @@
-import AVKit
 import AppKit
+import AVKit
 import SwiftUI
 
 @MainActor
@@ -28,7 +28,8 @@ final class ClipboardMediaPreviewController {
     func show(item: ClipboardItem, app: AppModel) {
         guard item.kind == .image || item.kind == .video,
               let path = item.kind == .image ? item.imagePath : item.filePath,
-              FileManager.default.fileExists(atPath: path) else {
+              FileManager.default.fileExists(atPath: path)
+        else {
             return
         }
 
@@ -43,7 +44,8 @@ final class ClipboardMediaPreviewController {
         let mediaPlayer: AVPlayer?
 
         if item.kind == .image,
-           let loadedImage = NSImage(contentsOfFile: path) {
+           let loadedImage = NSImage(contentsOfFile: path)
+        {
             image = loadedImage
             displaySize = Self.displaySize(for: loadedImage.size, maximumSize: maximumSize)
             mediaPlayer = nil
@@ -110,20 +112,20 @@ final class ClipboardMediaPreviewController {
         PreviewWindowSupport.configureDimmingPanel(dimmingPanel, screenFrame: screenFrame)
 
         self.dimmingPanel = dimmingPanel
-        self.panel = previewPanel
-        self.player = mediaPlayer
+        panel = previewPanel
+        player = mediaPlayer
         dimmingPanel.orderFrontRegardless()
         previewPanel.makeKeyAndOrderFront(nil)
     }
 
     func dismiss() {
         let previewPanel = panel
-        let dimmingPanel = self.dimmingPanel
+        let dimmingPanel = dimmingPanel
         player?.pause()
         previewPanel?.onWindowClose = nil
         previewPanel?.onEscape = nil
         self.dimmingPanel = nil
-        self.panel = nil
+        panel = nil
         player = nil
         previewPanel?.orderOut(nil)
         previewPanel?.close()
@@ -276,7 +278,7 @@ private struct ClipboardAVPlayerView: NSViewRepresentable {
     let player: AVPlayer
     let zoom: CGFloat
 
-    func makeNSView(context: Context) -> AVPlayerView {
+    func makeNSView(context _: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .floating
@@ -292,7 +294,7 @@ private struct ClipboardAVPlayerView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ view: AVPlayerView, context: Context) {
+    func updateNSView(_ view: AVPlayerView, context _: Context) {
         if view.player !== player {
             view.player?.pause()
             view.player = player
@@ -300,7 +302,7 @@ private struct ClipboardAVPlayerView: NSViewRepresentable {
         view.magnification = max(1, zoom)
     }
 
-    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+    static func dismantleNSView(_ view: AVPlayerView, coordinator _: ()) {
         view.player?.pause()
         view.player = nil
     }
@@ -379,10 +381,15 @@ private final class ClipboardMediaPreviewPanel: NSPanel {
     var onScrollZoom: ((CGFloat) -> Void)?
     var onWindowClose: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
 
-    override func performClose(_ sender: Any?) {
+    override var canBecomeMain: Bool {
+        false
+    }
+
+    override func performClose(_: Any?) {
         onWindowClose?()
     }
 

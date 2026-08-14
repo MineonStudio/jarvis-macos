@@ -9,12 +9,12 @@ enum KeychainStoreError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .updateFailed(let status):
-            return "更新钥匙串项目失败（状态码 \(status)）"
-        case .addFailed(let status):
-            return "写入钥匙串项目失败（状态码 \(status)）"
-        case .deleteFailed(let status):
-            return "删除钥匙串项目失败（状态码 \(status)）"
+        case let .updateFailed(status):
+            "更新钥匙串项目失败（状态码 \(status)）"
+        case let .addFailed(status):
+            "写入钥匙串项目失败（状态码 \(status)）"
+        case let .deleteFailed(status):
+            "删除钥匙串项目失败（状态码 \(status)）"
         }
     }
 }

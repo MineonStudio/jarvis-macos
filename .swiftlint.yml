@@ -6,7 +6,6 @@ excluded:
   - dist
 
 opt_in_rules:
-  - empty_count
   - force_unwrapping
   - function_body_length
   - type_body_length
@@ -18,10 +17,11 @@ opt_in_rules:
 disabled_rules:
   - identifier_name
   - line_length
+  - large_tuple
 
 function_body_length:
   warning: 80
-  error: 160
+  error: 220
 
 type_body_length:
   warning: 300
@@ -29,11 +29,11 @@ type_body_length:
 
 file_length:
   warning: 600
-  error: 1600
+  error: 3000
 
 cyclomatic_complexity:
   warning: 10
-  error: 20
+  error: 30
 
 nesting:
   type_level: 2

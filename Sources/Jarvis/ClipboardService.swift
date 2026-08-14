@@ -17,19 +17,19 @@ enum ClipboardKind: String, Codable, CaseIterable {
 
     var title: String {
         switch self {
-        case .text: return "文本"
-        case .image: return "图片"
-        case .file: return "文件"
-        case .video: return "视频"
+        case .text: "文本"
+        case .image: "图片"
+        case .file: "文件"
+        case .video: "视频"
         }
     }
 
     var icon: String {
         switch self {
-        case .text: return "doc.text"
-        case .image: return "photo"
-        case .file: return "doc"
-        case .video: return "video"
+        case .text: "doc.text"
+        case .image: "photo"
+        case .file: "doc"
+        case .video: "video"
         }
     }
 }
@@ -103,23 +103,31 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     }
 
     var fingerprint: String {
-        if let fingerprintValue { return "\(kind.rawValue):\(fingerprintValue)" }
-        if let text { return "text:\(text)" }
-        if let imagePath { return "image:\(imagePath)" }
-        if let filePath { return "\(kind.rawValue):\(filePath)" }
+        if let fingerprintValue {
+            return "\(kind.rawValue):\(fingerprintValue)"
+        }
+        if let text {
+            return "text:\(text)"
+        }
+        if let imagePath {
+            return "image:\(imagePath)"
+        }
+        if let filePath {
+            return "\(kind.rawValue):\(filePath)"
+        }
         return id.uuidString
     }
 
     var preview: String {
         switch kind {
         case .text:
-            return text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 ? text ?? "文本"
                 : "空文本"
         case .image:
-            return "图片"
+            "图片"
         case .file, .video:
-            return fileName ?? URL(fileURLWithPath: filePath ?? "").lastPathComponent
+            fileName ?? URL(fileURLWithPath: filePath ?? "").lastPathComponent
         }
     }
 
@@ -148,7 +156,6 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     var shortTimestamp: String {
         createdAt.formatted(.dateTime.year().month().day().hour().minute())
     }
-
 }
 
 final class ClipboardService {
@@ -188,7 +195,8 @@ final class ClipboardService {
         }
 
         if let imageData = imageData(from: pasteboard),
-           let path = saveData(imageData, fileExtension: "png") {
+           let path = saveData(imageData, fileExtension: "png")
+        {
             onChange?(ClipboardItem(
                 kind: .image,
                 imagePath: path,
@@ -205,7 +213,7 @@ final class ClipboardService {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         )?.compactMap({ $0 as? URL }).first,
-        url.isFileURL else { return }
+            url.isFileURL else { return }
 
         captureFile(url)
     }
@@ -215,7 +223,8 @@ final class ClipboardService {
             return data
         }
         guard let tiffData = pasteboard.data(forType: .tiff),
-              let bitmap = NSBitmapImageRep(data: tiffData) else {
+              let bitmap = NSBitmapImageRep(data: tiffData)
+        else {
             return nil
         }
         return bitmap.representation(using: .png, properties: [:])
@@ -225,17 +234,18 @@ final class ClipboardService {
         let callback = onChange
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self,
-                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .contentModificationDateKey]) else {
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .contentModificationDateKey])
+            else {
                 return
             }
 
             let fileSize = Int64(values.fileSize ?? 0)
             let contentType = values.contentType
             let kind = Self.kind(for: url, contentType: contentType)
-            let storedPath = self.storeFile(url, fileSize: fileSize)
+            let storedPath = storeFile(url, fileSize: fileSize)
             let path = storedPath ?? url.path
             let thumbnailPath = kind == .video
-                ? self.saveVideoThumbnail(for: URL(fileURLWithPath: path))
+                ? saveVideoThumbnail(for: URL(fileURLWithPath: path))
                 : nil
             let fingerprint = "\(url.path)|\(fileSize)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
             let item = ClipboardItem(
@@ -334,7 +344,7 @@ final class ClipboardStore {
 
         do {
             let data = try Data(contentsOf: fileURL)
-            return sort(try JSONDecoder().decode([ClipboardItem].self, from: data))
+            return try sort(JSONDecoder().decode([ClipboardItem].self, from: data))
         } catch {
             JarvisPersistenceLog.logger.error(
                 "读取剪贴板历史失败：\(error.localizedDescription, privacy: .public)"
@@ -363,11 +373,10 @@ final class ClipboardStore {
                 removeStoredFile(atPath: thumbnailPath)
             }
 
-            let path: String?
-            switch item.kind {
-            case .image: path = item.imagePath
-            case .file, .video: path = item.filePath
-            case .text: path = nil
+            let path: String? = switch item.kind {
+            case .image: item.imagePath
+            case .file, .video: item.filePath
+            case .text: nil
             }
             guard item.isStoredCopy, let path else { continue }
             removeStoredFile(atPath: path)
@@ -388,7 +397,9 @@ final class ClipboardStore {
 
     private func sort(_ items: [ClipboardItem]) -> [ClipboardItem] {
         items.sorted {
-            if $0.isPinned != $1.isPinned { return $0.isPinned }
+            if $0.isPinned != $1.isPinned {
+                return $0.isPinned
+            }
             return $0.createdAt > $1.createdAt
         }
     }

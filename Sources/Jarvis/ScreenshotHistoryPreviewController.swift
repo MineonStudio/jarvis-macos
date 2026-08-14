@@ -26,7 +26,8 @@ final class ScreenshotHistoryPreviewController {
     func show(item: ScreenshotHistoryItem, data: Data, app: AppModel) {
         guard let image = NSImage(data: data),
               image.size.width > 0,
-              image.size.height > 0 else {
+              image.size.height > 0
+        else {
             return
         }
 
@@ -117,11 +118,11 @@ final class ScreenshotHistoryPreviewController {
 
     func dismiss() {
         let previewPanel = panel
-        let dimmingPanel = self.dimmingPanel
+        let dimmingPanel = dimmingPanel
         previewPanel?.onWindowClose = nil
         previewPanel?.onEscape = nil
         self.dimmingPanel = nil
-        self.panel = nil
+        panel = nil
         previewPanel?.orderOut(nil)
         previewPanel?.close()
         dimmingPanel?.orderOut(nil)
@@ -150,7 +151,6 @@ final class ScreenshotHistoryPreviewController {
             height: imageSize.height * scale
         )
     }
-
 }
 
 private final class ScreenshotHistoryDimmingPanel: NSPanel {}
@@ -160,10 +160,15 @@ private final class ScreenshotHistoryPreviewPanel: NSPanel {
     var onScrollZoom: ((CGFloat) -> Void)?
     var onWindowClose: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
 
-    override func performClose(_ sender: Any?) {
+    override var canBecomeMain: Bool {
+        false
+    }
+
+    override func performClose(_: Any?) {
         onWindowClose?()
     }
 

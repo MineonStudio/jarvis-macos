@@ -5,4 +5,5 @@
 --wrapcollections before-first
 --commas inline
 --trimwhitespace always
+--disable redundantSelf
 --exclude .build,dist

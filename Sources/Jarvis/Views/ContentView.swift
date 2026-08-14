@@ -397,7 +397,8 @@ struct ScreenshotHistoryCard: View {
         VStack(alignment: .leading, spacing: 9) {
             ZStack {
                 if let data = app.screenshotHistoryData(for: item),
-                   let image = NSImage(data: data) {
+                   let image = NSImage(data: data)
+                {
                     Button {
                         app.showScreenshotHistoryPreview(item)
                     } label: {
@@ -562,22 +563,22 @@ struct ScreenshotHistoryPreview: View {
             minimumDistance: 6,
             coordinateSpace: .named("screenshotPreview")
         )
-            .onChanged { value in
-                if toolbarDragStartOffset == nil {
-                    toolbarDragStartOffset = toolbarOffset
-                }
-                let start = toolbarDragStartOffset ?? .zero
-                toolbarOffset = clampedToolbarOffset(
-                    CGSize(
-                        width: start.width + value.translation.width,
-                        height: start.height + value.translation.height
-                    ),
-                    in: containerSize
-                )
+        .onChanged { value in
+            if toolbarDragStartOffset == nil {
+                toolbarDragStartOffset = toolbarOffset
             }
-            .onEnded { _ in
-                toolbarDragStartOffset = nil
-            }
+            let start = toolbarDragStartOffset ?? .zero
+            toolbarOffset = clampedToolbarOffset(
+                CGSize(
+                    width: start.width + value.translation.width,
+                    height: start.height + value.translation.height
+                ),
+                in: containerSize
+            )
+        }
+        .onEnded { _ in
+            toolbarDragStartOffset = nil
+        }
     }
 
     private func clampedToolbarOffset(_ offset: CGSize, in containerSize: CGSize) -> CGSize {
@@ -692,38 +693,40 @@ enum ClipboardViewFilter: String, CaseIterable, Identifiable {
     case file
     case video
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .all: return "全部"
-        case .favorites: return "收藏"
-        case .text: return "文本"
-        case .image: return "图片"
-        case .file: return "文件"
-        case .video: return "视频"
+        case .all: "全部"
+        case .favorites: "收藏"
+        case .text: "文本"
+        case .image: "图片"
+        case .file: "文件"
+        case .video: "视频"
         }
     }
 
     var icon: String? {
         switch self {
-        case .all: return "square.grid.2x2"
-        case .favorites: return "star.fill"
-        case .text: return ClipboardKind.text.icon
-        case .image: return ClipboardKind.image.icon
-        case .file: return ClipboardKind.file.icon
-        case .video: return ClipboardKind.video.icon
+        case .all: "square.grid.2x2"
+        case .favorites: "star.fill"
+        case .text: ClipboardKind.text.icon
+        case .image: ClipboardKind.image.icon
+        case .file: ClipboardKind.file.icon
+        case .video: ClipboardKind.video.icon
         }
     }
 
     func matches(_ item: ClipboardItem) -> Bool {
         switch self {
-        case .all: return true
-        case .favorites: return item.isPinned
-        case .text: return item.kind == .text
-        case .image: return item.kind == .image
-        case .file: return item.kind == .file
-        case .video: return item.kind == .video
+        case .all: true
+        case .favorites: item.isPinned
+        case .text: item.kind == .text
+        case .image: item.kind == .image
+        case .file: item.kind == .file
+        case .video: item.kind == .video
         }
     }
 }
@@ -973,9 +976,9 @@ struct ClipboardCard: View {
     private var cardBackground: AnyShapeStyle {
         switch presentation {
         case .main:
-            return AnyShapeStyle(.thinMaterial)
+            AnyShapeStyle(.thinMaterial)
         case .panel:
-            return AnyShapeStyle(Color.primary.opacity(0.035))
+            AnyShapeStyle(Color.primary.opacity(0.035))
         }
     }
 
@@ -1140,10 +1143,12 @@ struct ClipboardItemPreview: View {
         ZStack {
             if item.kind == .image,
                let path = item.imagePath,
-               let image = NSImage(contentsOfFile: path) {
+               let image = NSImage(contentsOfFile: path)
+            {
                 mediaImage(image)
             } else if item.kind == .video,
-                      let image = videoThumbnail {
+                      let image = videoThumbnail
+            {
                 mediaImage(image)
                     .overlay(alignment: .bottomLeading) {
                         Image(systemName: "play.fill")
@@ -1172,7 +1177,8 @@ struct ClipboardItemPreview: View {
             }
 
             if let thumbnailPath = item.thumbnailPath,
-               let thumbnail = NSImage(contentsOfFile: thumbnailPath) {
+               let thumbnail = NSImage(contentsOfFile: thumbnailPath)
+            {
                 Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
                 videoThumbnail = thumbnail
                 return
@@ -1322,12 +1328,14 @@ struct ShortcutSettingsCard: View {
             _ = app.validateClipboardShortcut(clipboardShortcut)
         }
         .onChange(of: screenshotShortcut) { _, newValue in
+            guard isRecordingScreenshotShortcut else { return }
             if app.validateScreenshotShortcut(newValue) {
                 guard newValue != app.screenshotShortcut else { return }
                 _ = app.updateScreenshotShortcut(newValue)
             }
         }
         .onChange(of: clipboardShortcut) { _, newValue in
+            guard isRecordingClipboardShortcut else { return }
             if app.validateClipboardShortcut(newValue) {
                 guard newValue != app.clipboardShortcut else { return }
                 _ = app.updateClipboardShortcut(newValue)
@@ -1411,9 +1419,9 @@ struct SettingsView: View {
                                 apiKey = ""
                                 showingStoredAPIKey = false
                             }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(.red.opacity(0.8))
-                                .disabled(!app.hasAPIKey)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red.opacity(0.8))
+                            .disabled(!app.hasAPIKey)
                         }
 
                         Divider().overlay(Color.primary.opacity(0.12))
@@ -1525,7 +1533,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var updateControls: some View {
         switch app.updateState {
-        case .available(let release):
+        case let .available(release):
             HStack(spacing: 10) {
                 Text(release.version)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -1560,7 +1568,6 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
     private var updateStatusLabel: some View {
         Group {
             switch app.updateState {
@@ -1570,14 +1577,14 @@ struct SettingsView: View {
                 Text("正在检查更新…")
             case .upToDate:
                 Text("已是最新版本")
-            case .available(let release):
+            case let .available(release):
                 Text("发现新版本 \(release.version)")
                     .foregroundStyle(Color.accentColor)
-            case .downloading(let version):
+            case let .downloading(version):
                 Text("正在下载 \(version)…")
-            case .installing(let version):
+            case let .installing(version):
                 Text("正在安装 \(version)…")
-            case .failed(let message):
+            case let .failed(message):
                 Text(message)
             }
         }
@@ -1594,8 +1601,8 @@ struct SettingsView: View {
 
     private var isUpdating: Bool {
         switch app.updateState {
-        case .checking, .downloading, .installing: return true
-        default: return false
+        case .checking, .downloading, .installing: true
+        default: false
         }
     }
 }
@@ -1727,7 +1734,6 @@ struct StatusPill: View {
             .padding(.vertical, 7)
     }
 
-    @ViewBuilder
     var body: some View {
         if usesTint {
             label.jarvisGlass(tint: color.opacity(0.18), in: Capsule(), interactive: false)
@@ -1741,12 +1747,7 @@ struct StatusPill: View {
 
 struct LabeledSetting<Content: View>: View {
     let title: String
-    let content: Content
-
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
+    @ViewBuilder let content: Content
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {

@@ -42,7 +42,7 @@ struct JarvisApp: App {
 /// Makes the main window's native titlebar share the same visual plane as the
 /// SwiftUI content while keeping the standard macOS window controls.
 private struct JarvisMainWindowChrome: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context _: Context) -> NSView {
         let view = NSView(frame: .zero)
         DispatchQueue.main.async {
             configure(window: view.window)
@@ -50,7 +50,7 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: NSView, context _: Context) {
         DispatchQueue.main.async {
             configure(window: nsView.window)
         }
@@ -66,7 +66,8 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
 
         if let close = window.standardWindowButton(.closeButton),
            let miniaturize = window.standardWindowButton(.miniaturizeButton),
-           let zoom = window.standardWindowButton(.zoomButton) {
+           let zoom = window.standardWindowButton(.zoomButton)
+        {
             // The native traffic lights belong to the sidebar in the reference
             // layout, so move the standard button group into that column.
             let titlebarY = close.frame.minY
@@ -80,6 +81,5 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
             miniaturize.translatesAutoresizingMaskIntoConstraints = true
             zoom.translatesAutoresizingMaskIntoConstraints = true
         }
-
     }
 }

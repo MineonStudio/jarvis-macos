@@ -8,7 +8,9 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable 
     case french = "Français"
     case spanish = "Español"
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 }
 
 enum ScreenshotTranslationState: Equatable {

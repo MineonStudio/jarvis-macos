@@ -1,7 +1,31 @@
-import XCTest
+import AppKit
 @testable import Jarvis
+import XCTest
 
 final class ShortcutTests: XCTestCase {
+    func testShortcutRecorderIgnoresKeyEventsUntilEditingStarts() throws {
+        let event = try XCTUnwrap(
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [.command, .shift],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: "j",
+                charactersIgnoringModifiers: "j",
+                isARepeat: false,
+                keyCode: 38
+            )
+        )
+
+        XCTAssertNil(ShortcutRecorderEventHandling.shortcut(for: event, isRecording: false))
+        XCTAssertEqual(
+            ShortcutRecorderEventHandling.shortcut(for: event, isRecording: true),
+            ScreenshotShortcut(keyCode: 38, modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue)
+        )
+    }
+
     func testMediaKeyEventsMapToPhysicalFunctionKeys() {
         XCTAssertEqual(
             ScreenshotShortcut.functionKeyCode(

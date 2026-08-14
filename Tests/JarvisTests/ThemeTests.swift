@@ -1,6 +1,6 @@
+@testable import Jarvis
 import SwiftUI
 import XCTest
-@testable import Jarvis
 
 final class ThemeTests: XCTestCase {
     func testThemePreferencesExposeAllDisplayModes() {

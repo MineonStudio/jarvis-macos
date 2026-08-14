@@ -7,11 +7,6 @@ struct ScreenshotCoordinateSpace: Equatable, Sendable {
     let screenFrame: CGRect
     let canvasSize: CGSize
 
-    init(screenFrame: CGRect, canvasSize: CGSize) {
-        self.screenFrame = screenFrame
-        self.canvasSize = canvasSize
-    }
-
     func canvasRect(fromOutputRect outputRect: CGRect) -> CGRect {
         CGRect(
             x: outputRect.minX,
@@ -56,13 +51,13 @@ struct ScreenshotPixelGeometry: Equatable, Sendable {
     let canvasSize: CGSize
     let pixelSize: CGSize
 
-    init(canvasSize: CGSize, pixelSize: CGSize) {
-        self.canvasSize = canvasSize
-        self.pixelSize = pixelSize
+    var scaleX: CGFloat {
+        pixelSize.width / max(canvasSize.width, 1)
     }
 
-    var scaleX: CGFloat { pixelSize.width / max(canvasSize.width, 1) }
-    var scaleY: CGFloat { pixelSize.height / max(canvasSize.height, 1) }
+    var scaleY: CGFloat {
+        pixelSize.height / max(canvasSize.height, 1)
+    }
 
     func pixelRect(fromCanvasRect rect: CGRect) -> CGRect {
         CGRect(

@@ -1,5 +1,5 @@
-import XCTest
 @testable import Jarvis
+import XCTest
 
 final class AppVersionTests: XCTestCase {
     private let service = JarvisUpdateService()

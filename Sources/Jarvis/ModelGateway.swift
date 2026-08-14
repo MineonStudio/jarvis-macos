@@ -14,10 +14,10 @@ enum ModelGatewayError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidBaseURL: return "API Base URL 无效"
-        case .missingResponse: return "模型没有返回有效内容"
-        case .server(let message): return message
-        case .invalidResponse: return "模型返回格式无法解析"
+        case .invalidBaseURL: "API Base URL 无效"
+        case .missingResponse: "模型没有返回有效内容"
+        case let .server(message): message
+        case .invalidResponse: "模型返回格式无法解析"
         }
     }
 }
@@ -90,17 +90,17 @@ final class ModelGateway {
         var translatedBlocks: [String] = []
         var searchStart = normalized.startIndex
 
-        for index in 1...count {
+        for index in 1 ... count {
             let opening = "<<<JARVIS_TRANSLATION_\(index)>>>"
             let closing = "<<<END_JARVIS_TRANSLATION_\(index)>>>"
-            guard let openingRange = normalized.range(of: opening, range: searchStart..<normalized.endIndex) else {
+            guard let openingRange = normalized.range(of: opening, range: searchStart ..< normalized.endIndex) else {
                 return nil
             }
             let contentStart = openingRange.upperBound
-            guard let closingRange = normalized.range(of: closing, range: contentStart..<normalized.endIndex) else {
+            guard let closingRange = normalized.range(of: closing, range: contentStart ..< normalized.endIndex) else {
                 return nil
             }
-            let block = normalized[contentStart..<closingRange.lowerBound]
+            let block = normalized[contentStart ..< closingRange.lowerBound]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !block.isEmpty else { return nil }
             translatedBlocks.append(block)
@@ -119,11 +119,10 @@ final class ModelGateway {
             throw ModelGatewayError.invalidBaseURL
         }
 
-        let endpoint: URL
-        if baseURL.absoluteString.hasSuffix("/chat/completions") {
-            endpoint = baseURL
+        let endpoint: URL = if baseURL.absoluteString.hasSuffix("/chat/completions") {
+            baseURL
         } else {
-            endpoint = baseURL.appendingPathComponent("chat/completions")
+            baseURL.appendingPathComponent("chat/completions")
         }
 
         var request = URLRequest(url: endpoint)
@@ -147,7 +146,7 @@ final class ModelGateway {
             throw ModelGatewayError.invalidResponse
         }
 
-        guard (200..<300).contains(httpResponse.statusCode) else {
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "未知错误"
             throw ModelGatewayError.server("API \(httpResponse.statusCode)：\(body.prefix(220))")
         }
@@ -155,7 +154,8 @@ final class ModelGateway {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let first = choices.first,
-              let message = first["message"] as? [String: Any] else {
+              let message = first["message"] as? [String: Any]
+        else {
             throw ModelGatewayError.invalidResponse
         }
 
@@ -165,7 +165,9 @@ final class ModelGateway {
 
         if let parts = message["content"] as? [[String: Any]] {
             let text = parts.compactMap { $0["text"] as? String }.joined()
-            if !text.isEmpty { return text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if !text.isEmpty {
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
         }
 
         throw ModelGatewayError.missingResponse

@@ -7,14 +7,14 @@ struct ScreenshotShortcut: Codable, Equatable {
     let keyCode: UInt16
     let modifiers: UInt
 
-    // F1 is the default global shortcut for screenshot capture.
+    /// F1 is the default global shortcut for screenshot capture.
     static let `default` = ScreenshotShortcut(
         keyCode: 122, // F1
         modifiers: 0
     )
 
-    // Previous builds used F2 and then ⌘⇧J for screenshot capture while the
-    // clipboard panel was being introduced. Both built-in values migrate to F1.
+    /// Previous builds used F2 and then ⌘⇧J for screenshot capture while the
+    /// clipboard panel was being introduced. Both built-in values migrate to F1.
     static let legacyDefault = ScreenshotShortcut(
         keyCode: 120, // F2
         modifiers: 0
@@ -95,20 +95,36 @@ struct ScreenshotShortcut: Codable, Equatable {
     var displayString: String {
         let flags = modifierFlags
         var value = ""
-        if flags.contains(.control) { value += "⌃" }
-        if flags.contains(.option) { value += "⌥" }
-        if flags.contains(.shift) { value += "⇧" }
-        if flags.contains(.command) { value += "⌘" }
+        if flags.contains(.control) {
+            value += "⌃"
+        }
+        if flags.contains(.option) {
+            value += "⌥"
+        }
+        if flags.contains(.shift) {
+            value += "⇧"
+        }
+        if flags.contains(.command) {
+            value += "⌘"
+        }
         return value + Self.keyNames[keyCode, default: "键\(keyCode)"]
     }
 
     fileprivate var carbonModifiers: UInt32 {
         var value: UInt32 = 0
         let flags = modifierFlags
-        if flags.contains(.command) { value |= UInt32(cmdKey) }
-        if flags.contains(.option) { value |= UInt32(optionKey) }
-        if flags.contains(.control) { value |= UInt32(controlKey) }
-        if flags.contains(.shift) { value |= UInt32(shiftKey) }
+        if flags.contains(.command) {
+            value |= UInt32(cmdKey)
+        }
+        if flags.contains(.option) {
+            value |= UInt32(optionKey)
+        }
+        if flags.contains(.control) {
+            value |= UInt32(controlKey)
+        }
+        if flags.contains(.shift) {
+            value |= UInt32(shiftKey)
+        }
         return value
     }
 
@@ -134,11 +150,11 @@ enum ScreenshotShortcutValidation: Equatable {
     var message: String {
         switch self {
         case .available:
-            return ""
+            ""
         case .conflict:
-            return "快捷键与其他应用或系统快捷键冲突"
+            "快捷键与其他应用或系统快捷键冲突"
         case .unavailable:
-            return "当前快捷键无法注册，请换一个组合键"
+            "当前快捷键无法注册，请换一个组合键"
         }
     }
 }
@@ -192,8 +208,12 @@ final class ScreenshotShortcutManager {
         binding = current
         _ = registerHotKey()
 
-        if status == noErr { return .available }
-        if status == eventHotKeyExistsErr { return .conflict }
+        if status == noErr {
+            return .available
+        }
+        if status == eventHotKeyExistsErr {
+            return .conflict
+        }
         return .unavailable
     }
 
@@ -255,7 +275,7 @@ final class ScreenshotShortcutManager {
 
     @discardableResult
     private func registerHotKey(for binding: ScreenshotShortcut) -> OSStatus {
-        let hotKeyID = EventHotKeyID(signature: 0x4A415256, id: self.hotKeyID)
+        let hotKeyID = EventHotKeyID(signature: 0x4A41_5256, id: hotKeyID)
         return RegisterEventHotKey(
             UInt32(binding.keyCode),
             binding.carbonModifiers,
@@ -275,12 +295,12 @@ final class ScreenshotShortcutManager {
 
     private func installFallbackKeyMonitors() {
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.binding.matches(event) else { return }
-            self.triggerOnce()
+            guard let self, binding.matches(event) else { return }
+            triggerOnce()
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.binding.matches(event) else { return event }
-            self.triggerOnce()
+            guard let self, binding.matches(event) else { return event }
+            triggerOnce()
             return event
         }
 
@@ -288,12 +308,12 @@ final class ScreenshotShortcutManager {
         // disabled emits brightness media events for the physical F1/F2 keys.
         // Carbon registration and `.keyDown` monitors cannot see those events.
         globalSystemDefinedMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] event in
-            guard let self, self.binding.matches(event) else { return }
-            self.triggerOnce()
+            guard let self, binding.matches(event) else { return }
+            triggerOnce()
         }
         localSystemDefinedMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] event in
-            guard let self, self.binding.matches(event) else { return event }
-            self.triggerOnce()
+            guard let self, binding.matches(event) else { return event }
+            triggerOnce()
             return event
         }
     }
@@ -341,7 +361,6 @@ struct ShortcutRecorderControl: NSViewRepresentable {
         view.isRecording = isRecording
         view.onShortcut = { value in
             context.coordinator.shortcut.wrappedValue = value
-            context.coordinator.isRecording.wrappedValue = false
         }
         view.onRecordingChanged = { value in
             context.coordinator.isRecording.wrappedValue = value
@@ -349,7 +368,7 @@ struct ShortcutRecorderControl: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: ShortcutRecorderNSView, context: Context) {
+    func updateNSView(_ nsView: ShortcutRecorderNSView, context _: Context) {
         nsView.shortcut = shortcut
         nsView.isRecording = isRecording
         nsView.needsDisplay = true
@@ -371,15 +390,24 @@ struct ShortcutRecorderControl: NSViewRepresentable {
     }
 }
 
+enum ShortcutRecorderEventHandling {
+    static func shortcut(for event: NSEvent, isRecording: Bool) -> ScreenshotShortcut? {
+        guard isRecording else { return nil }
+        return ScreenshotShortcut(event: event)
+    }
+}
+
 final class ShortcutRecorderNSView: NSView {
     var shortcut = ScreenshotShortcut.default
     var isRecording = false
     var onShortcut: ((ScreenshotShortcut) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
-    override func draw(_ dirtyRect: NSRect) {
+    override func draw(_: NSRect) {
         let background = isRecording
             ? NSColor.controlAccentColor.withAlphaComponent(0.22)
             : NSColor.controlBackgroundColor
@@ -398,7 +426,7 @@ final class ShortcutRecorderNSView: NSView {
         )
     }
 
-    override func mouseDown(with event: NSEvent) {
+    override func mouseDown(with _: NSEvent) {
         isRecording = true
         onRecordingChanged?(true)
         window?.makeFirstResponder(self)
@@ -406,6 +434,8 @@ final class ShortcutRecorderNSView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        guard isRecording else { return }
+
         if event.keyCode == 53 {
             isRecording = false
             onRecordingChanged?(false)
@@ -413,15 +443,28 @@ final class ShortcutRecorderNSView: NSView {
             return
         }
 
-        guard let shortcut = ScreenshotShortcut(event: event) else {
+        guard let shortcut = ShortcutRecorderEventHandling.shortcut(
+            for: event,
+            isRecording: isRecording
+        ) else {
             NSSound.beep()
             return
         }
         onShortcut?(shortcut)
         needsDisplay = true
+        // Keep the binding update and the recording-state update in separate
+        // run-loop turns so the settings view can persist the newly recorded
+        // value while its edit session is still active.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, isRecording else { return }
+            isRecording = false
+            onRecordingChanged?(false)
+            needsDisplay = true
+        }
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard isRecording else { return false }
         keyDown(with: event)
         return true
     }

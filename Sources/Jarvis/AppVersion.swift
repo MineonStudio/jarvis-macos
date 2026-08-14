@@ -1,13 +1,13 @@
 import AppKit
-import CryptoKit
 import CoreServices
+import CryptoKit
 import Foundation
 
 enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")!
 
-    private static let fallbackShortVersion = "0.5.51"
-    private static let fallbackBuild = "125"
+    private static let fallbackShortVersion = "0.5.52"
+    private static let fallbackBuild = "126"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -81,19 +81,19 @@ enum JarvisUpdateError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .downloadUnavailable:
-            return "该版本没有可用的应用安装包"
+            "该版本没有可用的应用安装包"
         case .invalidArchive:
-            return "更新包格式无效"
+            "更新包格式无效"
         case .invalidApplication:
-            return "更新包中的贾维斯应用无效"
+            "更新包中的贾维斯应用无效"
         case .unsupportedInstallLocation:
-            return "当前应用位于只读磁盘映像或临时转移路径，无法自动更新。请先将贾维斯复制到“应用程序”文件夹后重试"
-        case .toolFailed(let message):
-            return "解压更新包失败：\(message)"
+            "当前应用位于只读磁盘映像或临时转移路径，无法自动更新。请先将贾维斯复制到“应用程序”文件夹后重试"
+        case let .toolFailed(message):
+            "解压更新包失败：\(message)"
         case .checksumMismatch:
-            return "更新包校验失败，未进行安装"
-        case .screenRecordingPermissionResetFailed(let message):
-            return "清除旧的屏幕录制权限失败：\(message)"
+            "更新包校验失败，未进行安装"
+        case let .screenRecordingPermissionResetFailed(message):
+            "清除旧的屏幕录制权限失败：\(message)"
         }
     }
 }
@@ -114,7 +114,8 @@ struct JarvisUpdateService {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
+              (200 ..< 300).contains(httpResponse.statusCode)
+        else {
             throw URLError(.badServerResponse)
         }
 
@@ -140,10 +141,12 @@ struct JarvisUpdateService {
         let localParts = versionParts(local)
         guard !remoteParts.isEmpty, !localParts.isEmpty else { return remote != local }
 
-        for index in 0..<max(remoteParts.count, localParts.count) {
+        for index in 0 ..< max(remoteParts.count, localParts.count) {
             let remotePart = index < remoteParts.count ? remoteParts[index] : 0
             let localPart = index < localParts.count ? localParts[index] : 0
-            if remotePart != localPart { return remotePart > localPart }
+            if remotePart != localPart {
+                return remotePart > localPart
+            }
         }
         return false
     }
@@ -177,7 +180,8 @@ struct JarvisUpdateService {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         let (downloadedURL, response) = try await URLSession.shared.download(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
+              (200 ..< 300).contains(httpResponse.statusCode)
+        else {
             throw URLError(.badServerResponse)
         }
 
@@ -193,13 +197,15 @@ struct JarvisUpdateService {
         )
 
         guard let newAppURL = findApplication(in: extractionDirectory),
-              isValidApplicationBundle(newAppURL) else {
+              isValidApplicationBundle(newAppURL)
+        else {
             throw JarvisUpdateError.invalidApplication
         }
 
         let launchedAppURL = Bundle.main.bundleURL.standardizedFileURL
         guard launchedAppURL.pathExtension.lowercased() == "app",
-              launchedAppURL.lastPathComponent == "Jarvis.app" else {
+              launchedAppURL.lastPathComponent == "Jarvis.app"
+        else {
             throw JarvisUpdateError.unsupportedInstallLocation
         }
         let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
@@ -287,13 +293,14 @@ struct JarvisUpdateService {
               let unmanagedURLs = LSCopyApplicationURLsForBundleIdentifier(
                   bundleIdentifier as CFString,
                   nil
-              ) else {
+              )
+        else {
             throw JarvisUpdateError.unsupportedInstallLocation
         }
 
         let registeredURLs = unmanagedURLs.takeRetainedValue() as NSArray
         let candidates = registeredURLs.compactMap { $0 as? URL }
-            .map { $0.standardizedFileURL }
+            .map(\.standardizedFileURL)
             .filter { candidate in
                 candidate.pathExtension.lowercased() == "app"
                     && candidate.lastPathComponent == "Jarvis.app"
@@ -326,7 +333,7 @@ struct JarvisUpdateService {
         ) else { return nil }
 
         for case let url as URL in enumerator {
-            if url.pathExtension.lowercased() == "app" && url.lastPathComponent == "Jarvis.app" {
+            if url.pathExtension.lowercased() == "app", url.lastPathComponent == "Jarvis.app" {
                 return url
             }
         }
@@ -340,7 +347,8 @@ struct JarvisUpdateService {
               FileManager.default.isReadableFile(atPath: infoURL.path),
               let data = try? Data(contentsOf: infoURL),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let bundleIdentifier = plist["CFBundleIdentifier"] as? String else {
+              let bundleIdentifier = plist["CFBundleIdentifier"] as? String
+        else {
             return false
         }
         return bundleIdentifier == Bundle.main.bundleIdentifier

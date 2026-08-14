@@ -8,9 +8,9 @@ enum ScreenshotTextRecognitionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidImage:
-            return "截图无法读取，无法识别文字"
+            "截图无法读取，无法识别文字"
         case .noText:
-            return "截图中未识别到文字"
+            "截图中未识别到文字"
         }
     }
 }
@@ -80,7 +80,8 @@ enum ScreenshotTextRecognizer {
         }
 
         guard let result = recognitionResult,
-              !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             throw ScreenshotTextRecognitionError.noText
         }
         return result
@@ -131,8 +132,16 @@ enum ScreenshotTextRecognizer {
         let text: String
         let boundingBox: CGRect
 
-        var centerY: CGFloat { boundingBox.midY }
-        var minX: CGFloat { boundingBox.minX }
-        var height: CGFloat { boundingBox.height }
+        var centerY: CGFloat {
+            boundingBox.midY
+        }
+
+        var minX: CGFloat {
+            boundingBox.minX
+        }
+
+        var height: CGFloat {
+            boundingBox.height
+        }
     }
 }

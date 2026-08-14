@@ -55,15 +55,15 @@ private struct SourcePixelSampler {
         context.interpolationQuality = .none
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         let byteCount = context.bytesPerRow * image.height
-        self.bytes = Array(
+        bytes = Array(
             UnsafeBufferPointer(
                 start: rawData.assumingMemoryBound(to: UInt8.self),
                 count: byteCount
             )
         )
-        self.width = image.width
-        self.height = image.height
-        self.bytesPerRow = context.bytesPerRow
+        width = image.width
+        height = image.height
+        bytesPerRow = context.bytesPerRow
     }
 
     func foregroundColor(in rect: CGRect) -> NSColor {
@@ -105,7 +105,8 @@ private struct SourcePixelSampler {
             }?.value.average
 
         guard let candidate,
-              colorDistance(candidate, background) > 0.035 else {
+              colorDistance(candidate, background) > 0.035
+        else {
             return .black
         }
         return NSColor(
@@ -353,7 +354,8 @@ enum ScreenshotTranslationRenderer {
         boundingBox: CGRect
     ) -> NSColor {
         guard let sourceImage = image(from: sourceData),
-              let sampler = SourcePixelSampler(image: sourceImage) else {
+              let sampler = SourcePixelSampler(image: sourceImage)
+        else {
             return .black
         }
         let sourceRect = pixelRect(
@@ -389,7 +391,7 @@ enum ScreenshotTranslationRenderer {
         var size = startingSize
         while size > 6 {
             let measured = measuredTextSize(text, fontSize: size, width: rect.width)
-            if measured.width <= rect.width + 1 && measured.height <= rect.height + 1 {
+            if measured.width <= rect.width + 1, measured.height <= rect.height + 1 {
                 return size
             }
             size -= 0.5
@@ -434,7 +436,8 @@ enum ScreenshotTranslationRenderer {
         filter.setValue(input, forKey: kCIInputImageKey)
         filter.setValue(radius, forKey: kCIInputRadiusKey)
         guard let blurredOutput = filter.outputImage?.cropped(to: input.extent),
-              let colorFilter = CIFilter(name: "CIColorControls") else {
+              let colorFilter = CIFilter(name: "CIColorControls")
+        else {
             return nil
         }
         colorFilter.setValue(blurredOutput, forKey: kCIInputImageKey)

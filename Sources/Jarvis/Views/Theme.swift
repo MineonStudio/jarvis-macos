@@ -8,29 +8,31 @@ enum JarvisTheme: String, CaseIterable, Identifiable {
     case light
     case dark
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .system: return "跟随系统"
-        case .light: return "浅色"
-        case .dark: return "深色"
+        case .system: "跟随系统"
+        case .light: "浅色"
+        case .dark: "深色"
         }
     }
 
     var icon: String {
         switch self {
-        case .system: return "circle.lefthalf.filled"
-        case .light: return "sun.max"
-        case .dark: return "moon"
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
         }
     }
 
     var preferredColorScheme: ColorScheme? {
         switch self {
-        case .system: return nil
-        case .light: return .light
-        case .dark: return .dark
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
         }
     }
 
@@ -69,11 +71,7 @@ enum JarvisMetrics {
 }
 
 struct JarvisCard<Content: View>: View {
-    let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
+    @ViewBuilder let content: Content
 
     var body: some View {
         content
@@ -166,9 +164,9 @@ extension View {
         modifier(JarvisGlassModifier(tint: tint, cornerRadius: cornerRadius, interactive: interactive))
     }
 
-    func jarvisGlass<GlassShape: Shape>(
+    func jarvisGlass(
         tint: Color? = nil,
-        in shape: GlassShape,
+        in shape: some Shape,
         interactive: Bool = true
     ) -> some View {
         modifier(JarvisGlassShapeModifier(tint: tint, shape: shape, interactive: interactive))
@@ -177,9 +175,9 @@ extension View {
     /// A lighter Liquid Glass treatment for the small icon containers used
     /// throughout the pages. Full-strength accent tint makes these bubbles
     /// read as solid dark badges instead of translucent glass.
-    func jarvisIconGlass<GlassShape: Shape>(
+    func jarvisIconGlass(
         tint: Color = .accentColor,
-        in shape: GlassShape,
+        in shape: some Shape,
         interactive: Bool = false
     ) -> some View {
         jarvisGlass(

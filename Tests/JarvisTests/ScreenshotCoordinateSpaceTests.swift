@@ -1,6 +1,6 @@
 import AppKit
-import XCTest
 @testable import Jarvis
+import XCTest
 
 final class ScreenshotCoordinateSpaceTests: XCTestCase {
     func testScreenshotCacheRoundTrip() {
@@ -31,7 +31,8 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
         let secondDate = Date(timeIntervalSince1970: 200)
 
         guard let first = history.add(data: firstData, date: firstDate),
-              let second = history.add(data: secondData, date: secondDate) else {
+              let second = history.add(data: secondData, date: secondDate)
+        else {
             XCTFail("Unable to create screenshot history")
             return
         }
@@ -252,7 +253,8 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
 
         guard let representation = NSBitmapImageRep(data: cropped.data),
               let color = representation.colorAt(x: representation.pixelsWide / 2, y: representation.pixelsHigh / 2),
-              let rgb = color.usingColorSpace(.deviceRGB) else {
+              let rgb = color.usingColorSpace(.deviceRGB)
+        else {
             XCTFail("Unable to inspect Retina crop")
             return
         }
@@ -326,7 +328,8 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
         )
         guard let representation = NSBitmapImageRep(data: cropped.data),
               let color = representation.colorAt(x: representation.pixelsWide / 2, y: representation.pixelsHigh / 2),
-              let rgb = color.usingColorSpace(.deviceRGB) else {
+              let rgb = color.usingColorSpace(.deviceRGB)
+        else {
             XCTFail("Unable to inspect edited Retina crop")
             return
         }
@@ -338,7 +341,8 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
 
     private func colorAtPNGData(_ data: Data, x: Int, y: Int) -> NSColor? {
         guard let representation = NSBitmapImageRep(data: data),
-              let color = representation.colorAt(x: x, y: y) else {
+              let color = representation.colorAt(x: x, y: y)
+        else {
             return nil
         }
         return color.usingColorSpace(.deviceRGB)

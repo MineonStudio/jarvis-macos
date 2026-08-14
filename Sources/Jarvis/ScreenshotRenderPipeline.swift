@@ -16,7 +16,8 @@ final class ScreenshotRenderPipeline {
     ) -> Data? {
         guard let baseImage = cgImage(from: image),
               canvasSize.width > 0,
-              canvasSize.height > 0 else {
+              canvasSize.height > 0
+        else {
             return nil
         }
 
@@ -131,10 +132,9 @@ final class ScreenshotRenderPipeline {
         blurredImage: NSImage?,
         pixelatedImage: NSImage?
     ) {
-        let image: NSImage?
-        switch annotation.mosaicStyle {
-        case .blur: image = blurredImage
-        case .pixelate: image = pixelatedImage
+        let image: NSImage? = switch annotation.mosaicStyle {
+        case .blur: blurredImage
+        case .pixelate: pixelatedImage
         }
         guard let image, let filteredImage = cgImage(from: image) else { return }
 
@@ -245,13 +245,13 @@ final class ScreenshotRenderPipeline {
 private extension ScreenshotTextColor {
     var nsColor: NSColor {
         switch self {
-        case .red: return NSColor(red: 1, green: 0.12, blue: 0.12, alpha: 1)
-        case .yellow: return .systemYellow
-        case .white: return .white
-        case .black: return .black
-        case .cyan: return .cyan
-        case .blue: return NSColor(red: 0.1, green: 0.38, blue: 0.95, alpha: 1)
-        case .green: return NSColor(red: 0.12, green: 0.62, blue: 0.25, alpha: 1)
+        case .red: NSColor(red: 1, green: 0.12, blue: 0.12, alpha: 1)
+        case .yellow: .systemYellow
+        case .white: .white
+        case .black: .black
+        case .cyan: .cyan
+        case .blue: NSColor(red: 0.1, green: 0.38, blue: 0.95, alpha: 1)
+        case .green: NSColor(red: 0.12, green: 0.62, blue: 0.25, alpha: 1)
         }
     }
 }

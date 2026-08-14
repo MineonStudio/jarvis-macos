@@ -1,6 +1,6 @@
 import AppKit
-import XCTest
 @testable import Jarvis
+import XCTest
 
 final class ScreenshotTranslationTests: XCTestCase {
     func testTranslationLanguagesExposeStablePersistedValues() {
@@ -25,13 +25,13 @@ final class ScreenshotTranslationTests: XCTestCase {
         )
     }
 
-    func testTranslationAppearanceFollowsThemeContrast() {
-        let lightText = ScreenshotTranslationRenderer
+    func testTranslationAppearanceFollowsThemeContrast() throws {
+        let lightText = try XCTUnwrap(ScreenshotTranslationRenderer
             .translationTextColor(isDarkMode: false)
-            .usingColorSpace(.deviceRGB)!
-        let darkText = ScreenshotTranslationRenderer
+            .usingColorSpace(.deviceRGB))
+        let darkText = try XCTUnwrap(ScreenshotTranslationRenderer
             .translationTextColor(isDarkMode: true)
-            .usingColorSpace(.deviceRGB)!
+            .usingColorSpace(.deviceRGB))
 
         XCTAssertEqual(lightText.redComponent, 1, accuracy: 0.001)
         XCTAssertEqual(lightText.greenComponent, 1, accuracy: 0.001)
@@ -107,15 +107,15 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertGreaterThan(shortText, longText)
     }
 
-    func testTranslationRendererCreatesPNGForAlignedBlocks() {
+    func testTranslationRendererCreatesPNGForAlignedBlocks() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
         NSColor.white.setFill()
         NSRect(x: 0, y: 0, width: 120, height: 80).fill()
         image.unlockFocus()
 
-        let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
-        let sourceData = bitmap.representation(using: .png, properties: [:])!
+        let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
+        let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         let ocrResult = ScreenshotOCRResult(
             text: "原文",
             blocks: [ScreenshotOCRBlock(text: "原文", boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.3, height: 0.2))]
@@ -133,15 +133,15 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertGreaterThan(outputBitmap?.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 0.99)
     }
 
-    func testTranslationRendererRejectsMismatchedBlockCount() {
+    func testTranslationRendererRejectsMismatchedBlockCount() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
         NSColor.white.setFill()
         NSRect(x: 0, y: 0, width: 120, height: 80).fill()
         image.unlockFocus()
 
-        let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
-        let sourceData = bitmap.representation(using: .png, properties: [:])!
+        let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
+        let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         let ocrResult = ScreenshotOCRResult(
             text: "第一行\n第二行",
             blocks: [
@@ -159,7 +159,7 @@ final class ScreenshotTranslationTests: XCTestCase {
         )
     }
 
-    func testTranslationTextColorMatchesSourceForegroundColor() {
+    func testTranslationTextColorMatchesSourceForegroundColor() throws {
         let image = NSImage(size: NSSize(width: 300, height: 120))
         image.lockFocus()
         NSColor.white.setFill()
@@ -175,13 +175,13 @@ final class ScreenshotTranslationTests: XCTestCase {
         )
         image.unlockFocus()
 
-        let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
-        let sourceData = bitmap.representation(using: .png, properties: [:])!
+        let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
+        let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         let color = ScreenshotTranslationRenderer.estimatedSourceTextColor(
             for: sourceData,
             boundingBox: CGRect(x: 0.08, y: 0.25, width: 0.5, height: 0.5)
         )
-        let rgb = color.usingColorSpace(.deviceRGB)!
+        let rgb = try XCTUnwrap(color.usingColorSpace(.deviceRGB))
 
         XCTAssertGreaterThan(rgb.blueComponent, rgb.redComponent)
         XCTAssertGreaterThan(rgb.blueComponent, rgb.greenComponent)

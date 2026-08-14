@@ -27,15 +27,15 @@ final class ScreenshotHistoryStore {
         let directory = supportDirectory
             .appendingPathComponent("Jarvis", isDirectory: true)
             .appendingPathComponent("ScreenshotHistory", isDirectory: true)
-        self.directoryURL = directory
-        self.metadataURL = directory.appendingPathComponent("metadata.json")
+        directoryURL = directory
+        metadataURL = directory.appendingPathComponent("metadata.json")
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL
-        self.metadataURL = directoryURL.appendingPathComponent("metadata.json")
+        metadataURL = directoryURL.appendingPathComponent("metadata.json")
         try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     }
 

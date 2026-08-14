@@ -11,39 +11,41 @@ enum AppSection: Hashable, Identifiable {
 
     var id: String {
         switch self {
-        case .overview: return "overview"
-        case .skill(let skill): return "skill.\(skill.id)"
-        case .settings: return "settings"
+        case .overview: "overview"
+        case let .skill(skill): "skill.\(skill.id)"
+        case .settings: "settings"
         }
     }
 
     var title: String {
         switch self {
-        case .overview: return "总览"
-        case .skill(let skill): return skill.title
-        case .settings: return "设置"
+        case .overview: "总览"
+        case let .skill(skill): skill.title
+        case .settings: "设置"
         }
     }
 
     var navigationTitle: String {
         switch self {
-        case .overview: return "总览"
-        case .skill(.screenshot): return "截图"
-        case .skill(.clipboard): return "剪贴板"
-        case .settings: return "设置"
+        case .overview: "总览"
+        case .skill(.screenshot): "截图"
+        case .skill(.clipboard): "剪贴板"
+        case .settings: "设置"
         }
     }
 
     var icon: String {
         switch self {
-        case .overview: return "square.grid.2x2"
-        case .skill(let skill): return skill.icon
-        case .settings: return "gearshape"
+        case .overview: "square.grid.2x2"
+        case let .skill(skill): skill.icon
+        case .settings: "gearshape"
         }
     }
 
     var skill: SkillID? {
-        if case .skill(let skill) = self { return skill }
+        if case let .skill(skill) = self {
+            return skill
+        }
         return nil
     }
 }
@@ -111,7 +113,8 @@ final class AppModel: ObservableObject {
         // when upgrading to the persistent history format.
         if screenshotHistory.isEmpty,
            let latestScreenshotData,
-           let migratedItem = screenshotHistoryStore.add(data: latestScreenshotData) {
+           let migratedItem = screenshotHistoryStore.add(data: latestScreenshotData)
+        {
             screenshotHistory = [migratedItem]
         }
         loadConfiguration()
@@ -119,8 +122,8 @@ final class AppModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.isModelConfigurationSaved = false
-                UserDefaults.standard.set(false, forKey: self.modelConfigurationSavedKey)
+                isModelConfigurationSaved = false
+                UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
             }
         loadScreenshotShortcut()
         loadClipboardShortcut()
@@ -209,7 +212,8 @@ final class AppModel: ObservableObject {
 
     private func loadThemePreference() {
         guard let rawValue = UserDefaults.standard.string(forKey: themePreferenceKey),
-              let preference = JarvisTheme(rawValue: rawValue) else {
+              let preference = JarvisTheme(rawValue: rawValue)
+        else {
             return
         }
         themePreference = preference
@@ -323,10 +327,10 @@ final class AppModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await self.modelGateway.testConnection(configuration: configuration, apiKey: key)
-                self.showToast("连接成功 · \(configuration.modelName)")
+                try await modelGateway.testConnection(configuration: configuration, apiKey: key)
+                showToast("连接成功 · \(configuration.modelName)")
             } catch {
-                self.showToast("连接失败：\(error.localizedDescription)")
+                showToast("连接失败：\(error.localizedDescription)")
             }
         }
     }
@@ -366,7 +370,7 @@ final class AppModel: ObservableObject {
             isCapturing = false
 
             switch result {
-            case .success(let session):
+            case let .success(session):
                 statusMessage = "截图已保留在冻结画面上，可以直接编辑"
                 screenshotController.showResult(
                     session,
@@ -374,7 +378,7 @@ final class AppModel: ObservableObject {
                 ) { [weak self] action in
                     self?.handleScreenshotAction(action)
                 }
-            case .failure(let error):
+            case let .failure(error):
                 statusMessage = error.localizedDescription
                 switch error {
                 case ScreenshotError.cancelled, ScreenshotError.permissionDenied:
@@ -394,20 +398,20 @@ final class AppModel: ObservableObject {
             // The capture controller consumes these requests and renders the
             // final image before sending the completed action back here.
             break
-        case .save(let data):
+        case let .save(data):
             let presentingWindow = screenshotController.saveWindow()
             saveScreenshot(
                 data,
                 historyID: editingHistoryID,
                 presentingWindow: presentingWindow
             )
-        case .confirm(let data):
+        case let .confirm(data):
             finalizeScreenshot(data, historyID: editingHistoryID)
             cancelScreenshotTranslation()
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setData(data, forType: .png)
             statusMessage = "截图已确认并复制到剪贴板"
-        case .pin(let data):
+        case let .pin(data):
             finalizeScreenshot(data, historyID: editingHistoryID)
             cancelScreenshotTranslation()
             statusMessage = "截图已贴在屏幕上"
@@ -415,9 +419,9 @@ final class AppModel: ObservableObject {
             cancelScreenshotTranslation()
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
-        case .translateRequested(let data):
+        case let .translateRequested(data):
             translateScreenshot(data: translationSourceData ?? data)
-        case .tool(let tool):
+        case let .tool(tool):
             statusMessage = "已选择\(tool.title)，在截图上拖动即可使用"
         case .undo:
             statusMessage = "已撤销上一步标注"
@@ -568,7 +572,7 @@ final class AppModel: ObservableObject {
     }
 
     func downloadAndInstallUpdate() {
-        guard case .available(let release) = updateState else { return }
+        guard case let .available(release) = updateState else { return }
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -587,7 +591,7 @@ final class AppModel: ObservableObject {
     }
 
     func openLatestRelease() {
-        if case .available(let release) = updateState {
+        if case let .available(release) = updateState {
             NSWorkspace.shared.open(release.releaseURL)
         } else {
             NSWorkspace.shared.open(JarvisAppVersion.releasesURL)
@@ -608,7 +612,8 @@ final class AppModel: ObservableObject {
         let cacheSaved = setLatestScreenshot(data)
         var historySaved = true
         if let historyID,
-           let item = screenshotHistory.first(where: { $0.id == historyID }) {
+           let item = screenshotHistory.first(where: { $0.id == historyID })
+        {
             historySaved = screenshotHistoryStore.update(item, data: data) != nil
         } else {
             historySaved = screenshotHistoryStore.add(data: data) != nil
@@ -675,7 +680,8 @@ final class AppModel: ObservableObject {
 
         if let deletedData, latestScreenshotData == deletedData {
             if let replacement = screenshotHistory.first,
-               let replacementData = screenshotHistoryStore.data(for: replacement) {
+               let replacementData = screenshotHistoryStore.data(for: replacement)
+            {
                 guard setLatestScreenshot(replacementData) else { return }
             } else {
                 guard screenshotCacheStore.clear() else {
@@ -761,7 +767,8 @@ final class AppModel: ObservableObject {
         }
         guard sourceBlocks.count == ocrResult.blocks.count,
               !sourceBlocks.isEmpty,
-              sourceBlocks.allSatisfy({ !$0.isEmpty }) else {
+              sourceBlocks.allSatisfy({ !$0.isEmpty })
+        else {
             screenshotTranslationState = .failed("截图中未识别到文字")
             screenshotTranslationProgress.isTranslating = false
             statusMessage = "截图中未识别到文字"
@@ -803,7 +810,8 @@ final class AppModel: ObservableObject {
                           translatedBlocks: translatedBlocks,
                           isDarkMode: themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
                       ),
-                      screenshotController.applyTranslatedScreenshot(translatedData) else {
+                      screenshotController.applyTranslatedScreenshot(translatedData)
+                else {
                     screenshotTranslationState = .failed("无法生成翻译后的截图")
                     screenshotTranslationProgress.isTranslating = false
                     statusMessage = "无法生成翻译后的截图"
@@ -841,7 +849,8 @@ final class AppModel: ObservableObject {
 
     private func loadTranslationLanguage() {
         guard let rawValue = UserDefaults.standard.string(forKey: translationLanguageKey),
-              let language = ScreenshotTranslationLanguage(rawValue: rawValue) else {
+              let language = ScreenshotTranslationLanguage(rawValue: rawValue)
+        else {
             return
         }
         targetLanguage = language
@@ -862,7 +871,7 @@ final class AppModel: ObservableObject {
 
     func receiveClipboardItem(_ item: ClipboardItem) {
         let matchingItems = clipboardItems.filter { $0.fingerprint == item.fingerprint }
-        let wasPinned = matchingItems.contains(where: { $0.isPinned })
+        let wasPinned = matchingItems.contains(where: \.isPinned)
         clipboardStore.removeStoredFiles(for: matchingItems)
 
         var item = item
@@ -910,7 +919,9 @@ final class AppModel: ObservableObject {
         guard let index = clipboardItems.firstIndex(where: { $0.id == item.id }) else { return }
         clipboardItems[index].isPinned.toggle()
         clipboardItems.sort {
-            if $0.isPinned != $1.isPinned { return $0.isPinned }
+            if $0.isPinned != $1.isPinned {
+                return $0.isPinned
+            }
             return $0.createdAt > $1.createdAt
         }
         guard clipboardStore.save(clipboardItems) else {
@@ -979,7 +990,8 @@ final class AppModel: ObservableObject {
 
     private func loadConfiguration() {
         guard let data = UserDefaults.standard.data(forKey: configurationKey),
-              let configuration = try? JSONDecoder().decode(ModelConfiguration.self, from: data) else {
+              let configuration = try? JSONDecoder().decode(ModelConfiguration.self, from: data)
+        else {
             return
         }
         modelConfiguration = configuration
@@ -988,7 +1000,8 @@ final class AppModel: ObservableObject {
 
     private func loadScreenshotShortcut() {
         guard let data = UserDefaults.standard.data(forKey: screenshotShortcutKey),
-              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data) else {
+              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data)
+        else {
             UserDefaults.standard.set(true, forKey: screenshotShortcutDefaultMigrationKey)
             return
         }
@@ -998,7 +1011,8 @@ final class AppModel: ObservableObject {
         // shortcut selected after this build is preserved on future launches.
         if !UserDefaults.standard.bool(forKey: screenshotShortcutDefaultMigrationKey)
             || shortcut == .legacyDefault
-            || shortcut == .previousDefault {
+            || shortcut == .previousDefault
+        {
             screenshotShortcut = .default
             if let migratedData = try? JSONEncoder().encode(ScreenshotShortcut.default) {
                 UserDefaults.standard.set(migratedData, forKey: screenshotShortcutKey)
@@ -1012,7 +1026,8 @@ final class AppModel: ObservableObject {
 
     private func loadClipboardShortcut() {
         guard let data = UserDefaults.standard.data(forKey: clipboardShortcutKey),
-              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data) else {
+              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data)
+        else {
             return
         }
         clipboardShortcut = shortcut

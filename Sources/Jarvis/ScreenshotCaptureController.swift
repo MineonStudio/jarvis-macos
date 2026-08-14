@@ -1980,15 +1980,11 @@ final class SelectionOverlayView: NSView {
             drawDimensionLabel(in: selectionRect, context: context)
         } else if let hoveredWindowCandidate {
             context.saveGState()
-            context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.08).cgColor)
-            context.fill(hoveredWindowCandidate.localRect)
             context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.95).cgColor)
             context.setLineWidth(2)
             context.setLineDash(phase: 0, lengths: [7, 4])
             context.stroke(hoveredWindowCandidate.localRect)
             context.restoreGState()
-
-            drawWindowHint(for: hoveredWindowCandidate, context: context)
         }
 
         drawHint(in: bounds, context: context)
@@ -2027,33 +2023,6 @@ final class SelectionOverlayView: NSView {
         moveAnchor = nil
         windowCandidateAtMouseDown = nil
         didDragSelection = false
-    }
-
-    private func drawWindowHint(
-        for candidate: WindowSelectionCandidate,
-        context: CGContext
-    ) {
-        let text = "窗口 · 单击自动选中"
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: NSColor.white
-        ]
-        let size = text.size(withAttributes: attributes)
-        let labelRect = CGRect(
-            x: candidate.localRect.minX,
-            y: min(
-                bounds.maxY - size.height - 16,
-                candidate.localRect.maxY + 8
-            ),
-            width: size.width + 16,
-            height: size.height + 8
-        )
-        NSColor.systemBlue.withAlphaComponent(0.92).setFill()
-        NSBezierPath(roundedRect: labelRect, xRadius: 5, yRadius: 5).fill()
-        text.draw(
-            at: CGPoint(x: labelRect.minX + 8, y: labelRect.minY + 4),
-            withAttributes: attributes
-        )
     }
 
     private func drawHint(in bounds: CGRect, context: CGContext) {

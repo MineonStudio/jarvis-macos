@@ -1370,9 +1370,13 @@ struct ShortcutSettingsCard: View {
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @State private var apiKey = ""
+    @State private var showingStoredAPIKey = false
+
+    private let maskedAPIKey = "••••••••••••••••"
 
     private var modelConfigurationSaved: Bool {
-        app.isModelConfigurationSaved && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        app.isModelConfigurationSaved
+            && (showingStoredAPIKey || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     var body: some View {
@@ -1402,13 +1406,16 @@ struct SettingsView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
                         LabeledSetting(title: "API Key") {
-                            SecureField("sk-…", text: $apiKey)
-                                .textFieldStyle(.roundedBorder)
+                            apiKeyField
                         }
 
                         HStack {
                             Spacer()
-                            Button("删除 Key") { app.clearAPIKey() }
+                            Button("删除 Key") {
+                                app.clearAPIKey()
+                                apiKey = ""
+                                showingStoredAPIKey = false
+                            }
                                 .buttonStyle(.borderless)
                                 .foregroundStyle(.red.opacity(0.8))
                                 .disabled(!app.hasAPIKey)
@@ -1418,13 +1425,14 @@ struct SettingsView: View {
 
                         HStack(spacing: 10) {
                             Button(modelConfigurationSaved ? "已保存" : "保存配置") {
-                                app.saveModelSettings(apiKey: apiKey)
+                                app.saveModelSettings(apiKey: showingStoredAPIKey ? "" : apiKey)
                                 apiKey = ""
+                                showingStoredAPIKey = app.hasAPIKey
                             }
                             .buttonStyle(JarvisPrimaryButtonStyle())
                             .disabled(modelConfigurationSaved)
                             Button("测试连接") {
-                                app.testConnection(apiKeyOverride: apiKey)
+                                app.testConnection(apiKeyOverride: showingStoredAPIKey ? "" : apiKey)
                             }
                             .buttonStyle(JarvisSecondaryButtonStyle())
                         }
@@ -1437,6 +1445,35 @@ struct SettingsView: View {
         }
         .onAppear {
             apiKey = ""
+            showingStoredAPIKey = app.hasAPIKey
+        }
+    }
+
+    @ViewBuilder
+    private var apiKeyField: some View {
+        if showingStoredAPIKey {
+            HStack(spacing: 8) {
+                Text(maskedAPIKey)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("更换") {
+                    showingStoredAPIKey = false
+                    apiKey = ""
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
+            .overlay {
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
+            }
+        } else {
+            SecureField(app.hasAPIKey ? "输入新的 API Key" : "sk-…", text: $apiKey)
+                .textFieldStyle(.roundedBorder)
         }
     }
 

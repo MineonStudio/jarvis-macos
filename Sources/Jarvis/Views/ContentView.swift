@@ -31,10 +31,18 @@ struct ContentView: View {
                         Image(systemName: "gearshape")
                             .font(.system(size: 17, weight: .medium))
                             .frame(width: 36, height: 36)
+                            .foregroundStyle(
+                                navigationSelection == .settings ? Color.white : Color.secondary
+                            )
+                            .background(
+                                navigationSelection == .settings
+                                    ? Color.accentColor.opacity(0.82)
+                                    : .clear,
+                                in: Circle()
+                            )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
                     .help("设置")
                 }

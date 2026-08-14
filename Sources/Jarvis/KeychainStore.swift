@@ -5,7 +5,6 @@ import Security
 enum KeychainStoreError: LocalizedError {
     case updateFailed(OSStatus)
     case addFailed(OSStatus)
-    case deleteFailed(OSStatus)
 
     var errorDescription: String? {
         switch self {
@@ -13,8 +12,6 @@ enum KeychainStoreError: LocalizedError {
             "更新钥匙串项目失败（状态码 \(status)）"
         case let .addFailed(status):
             "写入钥匙串项目失败（状态码 \(status)）"
-        case let .deleteFailed(status):
-            "删除钥匙串项目失败（状态码 \(status)）"
         }
     }
 }
@@ -67,16 +64,4 @@ final class KeychainStore {
         }
     }
 
-    func deleteValue(for account: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            logger.error("SecItemDelete failed: \(status, privacy: .public)")
-            throw KeychainStoreError.deleteFailed(status)
-        }
-    }
 }

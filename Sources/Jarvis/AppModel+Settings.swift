@@ -31,6 +31,11 @@ extension AppModel {
         }
     }
 
+    func editModelSettings() {
+        isModelConfigurationSaved = false
+        UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
+    }
+
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
@@ -49,17 +54,6 @@ extension AppModel {
             return
         }
         themePreference = preference
-    }
-
-    func clearAPIKey() {
-        do {
-            try KeychainStore.shared.deleteValue(for: "jarvis.api-key")
-            UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
-            isModelConfigurationSaved = false
-            statusMessage = "API Key 已从钥匙串删除"
-        } catch {
-            statusMessage = "API Key 删除失败：\(error.localizedDescription)"
-        }
     }
 
     @discardableResult

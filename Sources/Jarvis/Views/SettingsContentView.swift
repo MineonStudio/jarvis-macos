@@ -97,13 +97,11 @@ struct ShortcutSettingsCard: View {
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @State private var apiKey = ""
-    @State private var showingStoredAPIKey = false
 
     private let maskedAPIKey = "••••••••••••••••"
 
     private var modelConfigurationSaved: Bool {
         app.isModelConfigurationSaved
-            && (showingStoredAPIKey || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     var body: some View {
@@ -124,42 +122,40 @@ struct SettingsView: View {
                             TextField("OpenAI Compatible", text: $app.modelConfiguration.providerName)
                                 .textFieldStyle(.roundedBorder)
                         }
+                        .disabled(modelConfigurationSaved)
+                        .opacity(modelConfigurationSaved ? 0.58 : 1)
                         LabeledSetting(title: "API Base URL") {
                             TextField("https://api.openai.com/v1", text: $app.modelConfiguration.baseURL)
                                 .textFieldStyle(.roundedBorder)
                         }
+                        .disabled(modelConfigurationSaved)
+                        .opacity(modelConfigurationSaved ? 0.58 : 1)
                         LabeledSetting(title: "模型名称") {
                             TextField("gpt-4o-mini", text: $app.modelConfiguration.modelName)
                                 .textFieldStyle(.roundedBorder)
                         }
+                        .disabled(modelConfigurationSaved)
+                        .opacity(modelConfigurationSaved ? 0.58 : 1)
                         LabeledSetting(title: "API Key") {
                             apiKeyField
                         }
-
-                        HStack {
-                            Spacer()
-                            Button("删除 Key") {
-                                app.clearAPIKey()
-                                apiKey = ""
-                                showingStoredAPIKey = false
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(.red.opacity(0.8))
-                            .disabled(!app.hasAPIKey)
-                        }
-
-                        Divider().overlay(Color.primary.opacity(0.12))
+                        .opacity(modelConfigurationSaved ? 0.58 : 1)
 
                         HStack(spacing: 10) {
-                            Button(modelConfigurationSaved ? "已保存" : "保存配置") {
-                                app.saveModelSettings(apiKey: showingStoredAPIKey ? "" : apiKey)
+                            Spacer()
+                            Button("保存配置") {
+                                app.saveModelSettings(apiKey: apiKey)
                                 apiKey = ""
-                                showingStoredAPIKey = app.hasAPIKey
                             }
                             .buttonStyle(JarvisPrimaryButtonStyle())
                             .disabled(modelConfigurationSaved)
+                            Button("编辑配置") {
+                                app.editModelSettings()
+                            }
+                            .buttonStyle(JarvisSecondaryButtonStyle())
+                            .disabled(!modelConfigurationSaved)
                             Button("测试连接") {
-                                app.testConnection(apiKeyOverride: showingStoredAPIKey ? "" : apiKey)
+                                app.testConnection(apiKeyOverride: apiKey)
                             }
                             .buttonStyle(JarvisSecondaryButtonStyle())
                         }
@@ -172,35 +168,26 @@ struct SettingsView: View {
         }
         .onAppear {
             apiKey = ""
-            showingStoredAPIKey = app.hasAPIKey
         }
     }
 
     @ViewBuilder
     private var apiKeyField: some View {
-        if showingStoredAPIKey {
-            HStack(spacing: 8) {
-                Text(maskedAPIKey)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("更换") {
-                    showingStoredAPIKey = false
-                    apiKey = ""
+        if app.hasAPIKey {
+            Text(maskedAPIKey)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                .padding(.horizontal, 8)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11, weight: .medium))
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
-            .overlay {
-                RoundedRectangle(cornerRadius: 5)
-                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
-            }
         } else {
-            SecureField(app.hasAPIKey ? "输入新的 API Key" : "sk-…", text: $apiKey)
+            SecureField("sk-…", text: $apiKey)
                 .textFieldStyle(.roundedBorder)
+                .disabled(modelConfigurationSaved)
         }
     }
 
@@ -251,45 +238,49 @@ struct SettingsView: View {
                 Spacer()
                 updateControls
             }
+            .frame(height: 34)
         }
     }
 
     @ViewBuilder
     private var updateControls: some View {
-        switch app.updateState {
-        case let .available(release):
-            HStack(spacing: 10) {
-                Text(release.version)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
-                    .lineLimit(1)
-                Button("下载最新版") {
-                    app.downloadAndInstallUpdate()
+        Group {
+            switch app.updateState {
+            case let .available(release):
+                HStack(spacing: 10) {
+                    Text(release.version)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.accentColor)
+                        .lineLimit(1)
+                    Button("下载最新版") {
+                        app.downloadAndInstallUpdate()
+                    }
+                    .buttonStyle(JarvisPrimaryButtonStyle())
                 }
-                .buttonStyle(JarvisPrimaryButtonStyle())
-            }
-        case .checking:
-            HStack(spacing: 8) {
-                updateStatusLabel
-                ProgressView()
-                    .controlSize(.small)
-            }
-        case .downloading, .installing:
-            HStack(spacing: 8) {
-                updateStatusLabel
-                ProgressView()
-                    .controlSize(.small)
-            }
-        default:
-            HStack(spacing: 10) {
-                updateStatusLabel
-                Button(updateActionTitle) {
-                    app.checkForUpdates()
+            case .checking:
+                HStack(spacing: 8) {
+                    updateStatusLabel
+                    ProgressView()
+                        .controlSize(.small)
                 }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-                .disabled(isUpdating)
+            case .downloading, .installing:
+                HStack(spacing: 8) {
+                    updateStatusLabel
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            default:
+                HStack(spacing: 10) {
+                    updateStatusLabel
+                    Button(updateActionTitle) {
+                        app.checkForUpdates()
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(isUpdating)
+                }
             }
         }
+        .frame(height: 34, alignment: .center)
     }
 
     private var updateStatusLabel: some View {
@@ -314,6 +305,7 @@ struct SettingsView: View {
         }
         .font(.system(size: 10))
         .foregroundStyle(Color.jarvisTextSecondary)
+        .lineLimit(1)
     }
 
     private var updateActionTitle: String {

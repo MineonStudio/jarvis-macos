@@ -1848,6 +1848,14 @@ final class SelectionOverlayView: NSView {
         updateTrackingArea()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        let screenPoint = NSEvent.mouseLocation
+        let windowPoint = window.convertPoint(fromScreen: screenPoint)
+        updateHoveredWindowCandidate(at: convert(windowPoint, from: nil))
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             onCancel?()
@@ -1872,7 +1880,7 @@ final class SelectionOverlayView: NSView {
         movedSelectionRect = nil
         moveAnchor = nil
         didDragSelection = false
-        windowCandidateAtMouseDown = windowCandidate(at: startPoint)
+        windowCandidateAtMouseDown = updateHoveredWindowCandidate(at: startPoint)
         needsDisplay = true
     }
 
@@ -1943,11 +1951,19 @@ final class SelectionOverlayView: NSView {
     override func mouseMoved(with event: NSEvent) {
         guard startPoint == nil, movedSelectionRect == nil, moveAnchor == nil else { return }
         let point = convert(event.locationInWindow, from: nil)
+        _ = updateHoveredWindowCandidate(at: point)
+    }
+
+    @discardableResult
+    private func updateHoveredWindowCandidate(at point: CGPoint?) -> WindowSelectionCandidate? {
         let candidate = windowCandidate(at: point)
-        if candidate?.windowID != hoveredWindowCandidate?.windowID {
+        let changed = candidate?.windowID != hoveredWindowCandidate?.windowID
+            || candidate?.localRect != hoveredWindowCandidate?.localRect
+        if changed {
             hoveredWindowCandidate = candidate
             needsDisplay = true
         }
+        return candidate
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1981,9 +1997,9 @@ final class SelectionOverlayView: NSView {
         } else if let hoveredWindowCandidate {
             context.saveGState()
             context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.95).cgColor)
-            context.setLineWidth(2)
-            context.setLineDash(phase: 0, lengths: [7, 4])
-            context.stroke(hoveredWindowCandidate.localRect)
+            context.setLineWidth(3)
+            context.setLineDash(phase: 0, lengths: [])
+            context.stroke(hoveredWindowCandidate.localRect.insetBy(dx: 1.5, dy: 1.5))
             context.restoreGState()
         }
 

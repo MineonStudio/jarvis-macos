@@ -143,12 +143,13 @@ struct SettingsView: View {
 
                         HStack(spacing: 10) {
                             Spacer()
-                            Button("保存配置") {
-                                app.saveModelSettings(apiKey: apiKey)
-                                apiKey = ""
+                            if !modelConfigurationSaved {
+                                Button("保存配置") {
+                                    app.saveModelSettings(apiKey: apiKey)
+                                    apiKey = ""
+                                }
+                                .buttonStyle(JarvisPrimaryButtonStyle())
                             }
-                            .buttonStyle(JarvisPrimaryButtonStyle())
-                            .disabled(modelConfigurationSaved)
                             Button("编辑配置") {
                                 app.editModelSettings()
                             }

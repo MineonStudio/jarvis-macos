@@ -24,7 +24,7 @@ extension AppModel {
             UserDefaults.standard.set(data, forKey: configurationKey)
             UserDefaults.standard.set(true, forKey: modelConfigurationSavedKey)
             isModelConfigurationSaved = true
-            showToast("模型配置已保存")
+            showToast("模型配置保存成功")
         } catch {
             isModelConfigurationSaved = false
             showToast("模型配置保存失败：\(error.localizedDescription)")

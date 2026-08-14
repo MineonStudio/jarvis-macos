@@ -130,11 +130,11 @@ private struct TopNavigationBar: View {
                     selection = section
                 } label: {
                     Text(section.navigationTitle)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(selection == section ? Color.white : Color.secondary)
-                        .frame(minWidth: 64, minHeight: 34)
+                        .frame(minWidth: 70, minHeight: 38)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 7)
                         .contentShape(Capsule())
                         .background(
                             selection == section ? Color.accentColor.opacity(0.82) : .clear,

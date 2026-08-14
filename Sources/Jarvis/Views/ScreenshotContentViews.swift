@@ -39,17 +39,6 @@ struct ScreenshotHistorySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("截图历史", systemImage: "clock.arrow.circlepath")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                Spacer()
-                Text("\(app.screenshotHistory.count) 张")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-
             if app.screenshotHistory.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "photo.on.rectangle")
@@ -217,6 +206,7 @@ struct ScreenshotHistoryCard: View {
             height: HistoryGridMetrics.cardHeight,
             alignment: .topLeading
         )
+        .jarvisGlass(cornerRadius: 13, interactive: false)
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .confirmationDialog(
             "删除这张截图？",

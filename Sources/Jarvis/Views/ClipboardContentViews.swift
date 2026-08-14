@@ -164,15 +164,6 @@ struct ClipboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Label("剪贴板", systemImage: "clipboard")
-                        .font(.system(size: 15, weight: .semibold))
-                    Spacer()
-                    Text("\(app.clipboardItems.count) 条")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-
                 ClipboardFilterBar(
                     searchText: $searchText,
                     selectedFilter: $selectedFilter,
@@ -413,6 +404,7 @@ struct ClipboardCard: View {
             height: HistoryGridMetrics.cardHeight,
             alignment: .topLeading
         )
+        .jarvisGlass(cornerRadius: 13, interactive: false)
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .contextMenu {
             if presentation == .main {
@@ -443,12 +435,6 @@ struct ClipboardPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("剪贴板", systemImage: "clipboard")
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-
             ClipboardFilterBar(
                 searchText: $searchText,
                 selectedFilter: $selectedFilter,

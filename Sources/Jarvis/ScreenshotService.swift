@@ -25,21 +25,16 @@ final class ScreenshotService {
         return captures
     }
 
-    /// Captures one display-sized rectangle with ScreenCaptureKit's single
-    /// frame API. macOS 15.2 and later can capture the rectangle directly;
-    /// macOS 14 uses the equivalent display filter without showing a picker.
-    /// Both paths keep the original coordinate space used by the overlay.
+    /// Captures one display-sized rectangle with ScreenCaptureKit's display
+    /// filter API. This path is available across the full macOS 14 deployment
+    /// target and keeps the original coordinate space used by the overlay.
     func capture(screenRect: CGRect) async throws -> ScreenshotCapture {
         guard !screenRect.isEmpty else {
             throw ScreenshotError.captureFailed("无法识别要截图的显示器")
         }
 
         do {
-            let image: CGImage = if #available(macOS 15.2, *) {
-                try await SCScreenshotManager.captureImage(in: screenRect)
-            } else {
-                try await captureDisplayFilter(for: screenRect)
-            }
+            let image = try await captureDisplayFilter(for: screenRect)
             guard let data = Self.pngData(from: image, logicalSize: screenRect.size) else {
                 throw ScreenshotError.captureFailed("无法将屏幕图像编码为 PNG")
             }

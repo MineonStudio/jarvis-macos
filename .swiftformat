@@ -7,4 +7,4 @@
 --trimwhitespace always
 --disable redundantSelf
 --disable redundantSendable
---exclude .build,dist
+--exclude .build,dist,Sources/Jarvis/Views/ThemeGlassEffect.swift

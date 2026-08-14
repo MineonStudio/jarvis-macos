@@ -123,12 +123,13 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
     }
 
     var rect: CGRect {
-        CGRect(
-            x: points.map(\.x).min() ?? 0,
-            y: points.map(\.y).min() ?? 0,
-            width: (points.map(\.x).max() ?? 0) - (points.map(\.x).min() ?? 0),
-            height: (points.map(\.y).max() ?? 0) - (points.map(\.y).min() ?? 0)
-        )
+        let xValues = points.map(\.x)
+        let yValues = points.map(\.y)
+        let minX = xValues.min() ?? 0
+        let minY = yValues.min() ?? 0
+        let maxX = xValues.max() ?? minX
+        let maxY = yValues.max() ?? minY
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     var textSize: CGSize {

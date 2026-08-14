@@ -100,26 +100,12 @@ struct JarvisGlassModifier: ViewModifier {
     let interactive: Bool
 
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            if let tint {
-                content.glassEffect(
-                    .regular.tint(tint).interactive(interactive),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-            } else {
-                content.glassEffect(
-                    .regular.interactive(interactive),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-            }
-        } else {
-            content
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
-                }
-        }
+        JarvisGlassRenderer.render(
+            content,
+            tint: tint,
+            cornerRadius: cornerRadius,
+            interactive: interactive
+        )
     }
 }
 
@@ -129,25 +115,12 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
     let interactive: Bool
 
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            if let tint {
-                content.glassEffect(
-                    .regular.tint(tint).interactive(interactive),
-                    in: shape
-                )
-            } else {
-                content.glassEffect(
-                    .regular.interactive(interactive),
-                    in: shape
-                )
-            }
-        } else {
-            content
-                .background(.thinMaterial, in: shape)
-                .overlay {
-                    shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.75)
-                }
-        }
+        JarvisGlassRenderer.render(
+            content,
+            tint: tint,
+            shape: shape,
+            interactive: interactive
+        )
     }
 }
 

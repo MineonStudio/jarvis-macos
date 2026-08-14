@@ -95,55 +95,53 @@ struct ScreenshotHistorySection: View {
     }
 
     var body: some View {
-        JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("截图历史", systemImage: "clock.arrow.circlepath")
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                    Spacer()
-                    Text("\(app.screenshotHistory.count) 张")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("截图历史", systemImage: "clock.arrow.circlepath")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                Spacer()
+                Text("\(app.screenshotHistory.count) 张")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
+            }
+
+            if app.screenshotHistory.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.system(size: 26, weight: .medium))
                         .foregroundStyle(Color.jarvisTextSecondary)
-                    GridThumbnailModeMenu(rawValue: $thumbnailModeRawValue)
+                    Text("完成一张截图后会显示在这里")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                LazyVGrid(
+                    columns: [GridItem(
+                        .adaptive(
+                            minimum: HistoryGridMetrics.minimumCardWidth,
+                            maximum: HistoryGridMetrics.maximumCardWidth
+                        ),
+                        spacing: HistoryGridMetrics.spacing
+                    )],
+                    spacing: HistoryGridMetrics.spacing
+                ) {
+                    ForEach(pageItems) { item in
+                        ScreenshotHistoryCard(
+                            item: item,
+                            thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square
+                        )
+                    }
                 }
 
-                if app.screenshotHistory.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 26, weight: .medium))
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                        Text("完成一张截图后会显示在这里")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
-                } else {
-                    LazyVGrid(
-                        columns: [GridItem(
-                            .adaptive(
-                                minimum: HistoryGridMetrics.minimumCardWidth,
-                                maximum: HistoryGridMetrics.maximumCardWidth
-                            ),
-                            spacing: HistoryGridMetrics.spacing
-                        )],
-                        spacing: HistoryGridMetrics.spacing
-                    ) {
-                        ForEach(pageItems) { item in
-                            ScreenshotHistoryCard(
-                                item: item,
-                                thumbnailDisplayMode: GridThumbnailDisplayMode(rawValue: thumbnailModeRawValue) ?? .square
-                            )
-                        }
-                    }
-
-                    if totalPages > 1 {
-                        PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
-                            currentPage = max(1, currentPage - 1)
-                        } onNext: {
-                            currentPage = min(totalPages, currentPage + 1)
-                        }
+                if totalPages > 1 {
+                    PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
+                        currentPage = max(1, currentPage - 1)
+                    } onNext: {
+                        currentPage = min(totalPages, currentPage + 1)
                     }
                 }
             }
@@ -210,7 +208,6 @@ struct ScreenshotHistoryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                Color.primary.opacity(0.035)
                 if let data,
                    let image = NSImage(data: data)
                 {

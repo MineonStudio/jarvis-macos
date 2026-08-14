@@ -307,19 +307,6 @@ struct ClipboardCard: View {
         self.onPreview = onPreview
     }
 
-    private var cardBackground: AnyShapeStyle {
-        switch presentation {
-        case .main:
-            AnyShapeStyle(.thinMaterial)
-        case .panel:
-            AnyShapeStyle(Color.primary.opacity(0.035))
-        }
-    }
-
-    private var cardBorderOpacity: Double {
-        presentation == .main ? 0.09 : 0.07
-    }
-
     private var previewButton: some View {
         Button {
             if presentation == .panel {
@@ -358,7 +345,6 @@ struct ClipboardCard: View {
                 width: HistoryGridMetrics.cardWidth - (HistoryGridMetrics.cardPadding * 2),
                 height: HistoryGridMetrics.previewHeight
             )
-            .background(Color.primary.opacity(0.035))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
@@ -433,11 +419,6 @@ struct ClipboardCard: View {
             height: HistoryGridMetrics.cardHeight,
             alignment: .topLeading
         )
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color.primary.opacity(cardBorderOpacity), lineWidth: 0.75)
-        }
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .contextMenu {
             if presentation == .main {

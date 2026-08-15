@@ -292,8 +292,9 @@ struct ClipboardCard: View {
         self.onPreview = onPreview
     }
 
+    @ViewBuilder
     private var previewButton: some View {
-        Button {
+        let button = Button {
             if presentation == .panel {
                 onPreview?()
             } else if item.kind == .image || item.kind == .video {
@@ -336,6 +337,16 @@ struct ClipboardCard: View {
         .buttonStyle(.plain)
         .disabled(presentation == .panel && item.kind != .image && item.kind != .video)
         .help(item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
+
+        if ClipboardSharing.itemProvider(for: item) != nil {
+            button
+                .onDrag {
+                    ClipboardSharing.itemProvider(for: item) ?? NSItemProvider()
+                }
+                .help("拖到 Finder 或其他应用导出内容")
+        } else {
+            button
+        }
     }
 
     private var metadataRow: some View {
@@ -365,6 +376,11 @@ struct ClipboardCard: View {
             }
             .buttonStyle(JarvisSecondaryButtonStyle())
             .disabled(presentation == .panel && !item.hasLocalContent)
+
+            if ClipboardSharing.shareItems(for: item) != nil {
+                ClipboardShareButton(item: item)
+                    .frame(width: 30, height: 30)
+            }
 
             if presentation == .main {
                 Button {

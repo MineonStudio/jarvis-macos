@@ -33,4 +33,22 @@ final class ScreenshotSharingTests: XCTestCase {
 
         XCTAssertEqual(provider.suggestedName, "capture.png")
     }
+
+    func testClipboardTextProviderPublishesPlainText() {
+        let item = ClipboardItem(kind: .text, text: "拖拽文本")
+        let provider = ClipboardSharing.itemProvider(for: item)
+
+        XCTAssertNotNil(provider)
+        XCTAssertTrue(
+            provider?.registeredTypeIdentifiers.contains(UTType.utf8PlainText.identifier) == true
+        )
+    }
+
+    func testClipboardShareItemsPreserveTextPayload() {
+        let item = ClipboardItem(kind: .text, text: "分享文本")
+        let items = ClipboardSharing.shareItems(for: item)
+
+        XCTAssertEqual(items?.count, 1)
+        XCTAssertEqual(items?.first as? NSString, "分享文本")
+    }
 }

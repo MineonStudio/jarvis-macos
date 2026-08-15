@@ -41,14 +41,77 @@ enum ScreenshotSharing {
     }
 }
 
+enum ClipboardSharing {
+    static func itemProvider(for item: ClipboardItem) -> NSItemProvider? {
+        switch item.kind {
+        case .text:
+            guard let text = item.text else { return nil }
+            let provider = NSItemProvider(object: NSString(string: text))
+            provider.suggestedName = item.fileName
+            return provider
+        case .image:
+            guard let path = item.imagePath,
+                  let data = try? Data(contentsOf: URL(fileURLWithPath: path))
+            else {
+                return nil
+            }
+            return ScreenshotSharing.itemProvider(
+                data: data,
+                suggestedName: item.fileName ?? "图片.png"
+            )
+        case .file, .video:
+            guard let path = item.filePath,
+                  FileManager.default.fileExists(atPath: path)
+            else {
+                return nil
+            }
+            let provider = NSItemProvider(contentsOf: URL(fileURLWithPath: path))
+            provider?.suggestedName = item.fileName
+            return provider
+        }
+    }
+
+    static func shareItems(for item: ClipboardItem) -> [Any]? {
+        switch item.kind {
+        case .text:
+            guard let text = item.text else { return nil }
+            return [NSString(string: text)]
+        case .image:
+            guard let path = item.imagePath,
+                  let image = NSImage(contentsOfFile: path)
+            else {
+                return nil
+            }
+            return [image]
+        case .file, .video:
+            guard let path = item.filePath,
+                  FileManager.default.fileExists(atPath: path)
+            else {
+                return nil
+            }
+            return [URL(fileURLWithPath: path) as NSURL]
+        }
+    }
+}
+
 /// Bridges the native macOS sharing picker into SwiftUI while keeping the
 /// picker anchored to the button that opened it.
 struct ScreenshotShareButton: NSViewRepresentable {
-    let data: Data
+    private let items: [Any]
     let accessibilityLabel: String
 
+    init(data: Data, accessibilityLabel: String) {
+        self.items = NSImage(data: data).map { [$0] } ?? []
+        self.accessibilityLabel = accessibilityLabel
+    }
+
+    init(items: [Any], accessibilityLabel: String) {
+        self.items = items
+        self.accessibilityLabel = accessibilityLabel
+    }
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(data: data, accessibilityLabel: accessibilityLabel)
+        Coordinator(items: items, accessibilityLabel: accessibilityLabel)
     }
 
     func makeNSView(context: Context) -> NSButton {
@@ -65,7 +128,7 @@ struct ScreenshotShareButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSButton, context: Context) {
-        context.coordinator.data = data
+        context.coordinator.items = items
         context.coordinator.accessibilityLabel = accessibilityLabel
         update(nsView, coordinator: context.coordinator)
     }
@@ -81,22 +144,35 @@ struct ScreenshotShareButton: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject {
-        var data: Data
+        var items: [Any]
         var accessibilityLabel: String
         private var sharingPicker: NSSharingServicePicker?
 
-        init(data: Data, accessibilityLabel: String) {
-            self.data = data
+        init(items: [Any], accessibilityLabel: String) {
+            self.items = items
             self.accessibilityLabel = accessibilityLabel
         }
 
         @objc func share(_ sender: NSButton) {
-            guard let image = NSImage(data: data) else { return }
-            sharingPicker = NSSharingServicePicker(items: [image])
+            guard !items.isEmpty else { return }
+            sharingPicker = NSSharingServicePicker(items: items)
             sharingPicker?.show(
                 relativeTo: sender.bounds,
                 of: sender,
                 preferredEdge: .minY
+            )
+        }
+    }
+}
+
+struct ClipboardShareButton: View {
+    let item: ClipboardItem
+
+    var body: some View {
+        if let items = ClipboardSharing.shareItems(for: item) {
+            ScreenshotShareButton(
+                items: items,
+                accessibilityLabel: "分享剪贴板内容"
             )
         }
     }

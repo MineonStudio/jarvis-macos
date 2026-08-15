@@ -20,6 +20,7 @@ final class ScreenshotHistoryPreviewModel: ObservableObject {
 
 private struct ScreenshotHistoryPreviewPresentation {
     let item: ScreenshotHistoryItem
+    let data: Data
     let image: NSImage
     let imageDisplaySize: CGSize
     let imageViewportSize: CGSize
@@ -83,6 +84,7 @@ final class ScreenshotHistoryPreviewController {
         let imageHostingView = makeHostingView(
             ScreenshotHistoryPreviewPresentation(
                 item: item,
+                data: data,
                 image: image,
                 imageDisplaySize: imageDisplaySize,
                 imageViewportSize: imageViewportSize,
@@ -115,6 +117,7 @@ final class ScreenshotHistoryPreviewController {
     ) -> NSHostingView<ScreenshotHistoryPreview> {
         NSHostingView(
             rootView: ScreenshotHistoryPreview(
+                data: presentation.data,
                 image: presentation.image,
                 imageDisplaySize: presentation.imageDisplaySize,
                 imageViewportSize: presentation.imageViewportSize,

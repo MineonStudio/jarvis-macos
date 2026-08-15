@@ -149,7 +149,18 @@ struct ScreenshotHistoryCard: View {
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .help("查看原图")
+                    .help("查看原图；拖到 Finder 或其他应用导出 PNG")
+                    .onDrag {
+                        ScreenshotSharing.itemProvider(
+                            data: data,
+                            suggestedName: item.fileName
+                        )
+                    } preview: {
+                        thumbnailImage(image)
+                            .frame(width: 180, height: 160)
+                            .background(Color.black.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
                 } else {
                     Image(systemName: "photo")
                         .font(.system(size: 28))
@@ -187,6 +198,13 @@ struct ScreenshotHistoryCard: View {
                 }
                 .buttonStyle(.borderless)
                 .help("二次编辑")
+                if let data {
+                    ScreenshotShareButton(
+                        data: data,
+                        accessibilityLabel: "分享截图"
+                    )
+                    .frame(width: 28, height: 28)
+                }
                 Button {
                     showingDeleteConfirmation = true
                 } label: {
@@ -232,6 +250,7 @@ struct ScreenshotHistoryCard: View {
 }
 
 struct ScreenshotHistoryPreview: View {
+    let data: Data
     let image: NSImage
     let imageDisplaySize: CGSize
     let imageViewportSize: CGSize
@@ -268,6 +287,7 @@ struct ScreenshotHistoryPreview: View {
             .clipped()
             .overlay(alignment: .bottom) {
                 ScreenshotHistoryPreviewToolbar(
+                    data: data,
                     onEdit: onEdit,
                     onCopy: onCopy,
                     onSave: onSave,
@@ -357,9 +377,10 @@ struct ScreenshotHistoryPreview: View {
 }
 
 struct ScreenshotHistoryPreviewToolbar: View {
-    static let preferredWidth: CGFloat = 420
+    static let preferredWidth: CGFloat = 462
     static let preferredHeight: CGFloat = 70
 
+    let data: Data
     let onEdit: () -> Void
     let onCopy: () -> Void
     let onSave: () -> Void
@@ -391,6 +412,8 @@ struct ScreenshotHistoryPreviewToolbar: View {
             }
             toolbarDivider
             actionButton(icon: "doc.on.doc", help: "复制到剪贴板", action: onCopy)
+            ScreenshotShareButton(data: data, accessibilityLabel: "系统分享")
+                .frame(width: 42, height: 42)
             actionButton(icon: "square.and.arrow.down", help: "保存", action: onSave)
             toolbarDivider
             actionButton(icon: "trash", help: "删除", destructive: true, action: onDelete)

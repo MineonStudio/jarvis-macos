@@ -335,8 +335,11 @@ struct ClipboardCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(presentation == .panel && item.kind != .image && item.kind != .video)
-        .help(item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
+        .help(
+            presentation == .panel
+                ? "点击复制或预览；拖动卡片主体导出内容"
+                : (item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
+        )
 
         if ClipboardSharing.itemProvider(for: item) != nil {
             button
@@ -492,7 +495,7 @@ struct ClipboardPanelView: View {
 
             HStack(spacing: 7) {
                 Image(systemName: "info.circle")
-                Text("手动点击一键复制")
+                Text("拖动卡片主体导出内容 · 拖动空白处移动窗口")
                 Spacer()
             }
             .font(.system(size: 10))

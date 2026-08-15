@@ -51,4 +51,47 @@ final class ScreenshotSharingTests: XCTestCase {
         XCTAssertEqual(items?.count, 1)
         XCTAssertEqual(items?.first as? NSString, "分享文本")
     }
+
+    func testClipboardImageProviderPublishesPNG() throws {
+        let image = NSImage(size: NSSize(width: 2, height: 2))
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 2, height: 2).fill()
+        image.unlockFocus()
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-image-\(UUID().uuidString).png")
+        try data.write(to: path)
+        defer { try? FileManager.default.removeItem(at: path) }
+
+        let item = ClipboardItem(
+            kind: .image,
+            imagePath: path.path,
+            fileName: "图片.png"
+        )
+        let provider = ClipboardSharing.itemProvider(for: item)
+
+        XCTAssertTrue(provider?.registeredTypeIdentifiers.contains(UTType.png.identifier) == true)
+    }
+
+    func testClipboardFileAndVideoProvidersUseStoredFile() throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-file-\(UUID().uuidString).dat")
+        try Data([1, 2, 3]).write(to: path)
+        defer { try? FileManager.default.removeItem(at: path) }
+
+        for kind in [ClipboardKind.file, .video] {
+            let item = ClipboardItem(
+                kind: kind,
+                filePath: path.path,
+                fileName: path.lastPathComponent
+            )
+            XCTAssertNotNil(ClipboardSharing.itemProvider(for: item))
+            XCTAssertEqual(
+                ClipboardSharing.shareItems(for: item)?.first as? NSURL,
+                NSURL(fileURLWithPath: path.path)
+            )
+        }
+    }
 }

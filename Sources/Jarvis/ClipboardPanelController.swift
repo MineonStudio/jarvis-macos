@@ -25,14 +25,14 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
     private func makePanel(app: AppModel) {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         panel.title = "剪贴板"
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = true
+        // Keep the native titlebar as the only window drag surface. Content
+        // owns all body gestures, including clipboard card export drags.
+        panel.isMovableByWindowBackground = false
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false

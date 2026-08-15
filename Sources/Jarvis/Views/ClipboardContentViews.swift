@@ -495,7 +495,7 @@ struct ClipboardPanelView: View {
 
             HStack(spacing: 7) {
                 Image(systemName: "info.circle")
-                Text("拖动卡片主体导出内容 · 拖动空白处移动窗口")
+                Text("拖动卡片主体导出内容 · 拖动标题栏移动窗口")
                 Spacer()
             }
             .font(.system(size: 10))

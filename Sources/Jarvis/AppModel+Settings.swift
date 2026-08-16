@@ -41,6 +41,13 @@ extension AppModel {
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
     }
 
+    func updateAppIconColor(_ color: JarvisAppIconColor) {
+        appIconColor = color
+        UserDefaults.standard.set(color.rawValue, forKey: appIconColorKey)
+        JarvisAppIconController.apply(color)
+        showToast("应用图标已切换为\(color.title)")
+    }
+
     func refreshSystemColorScheme() {
         let appearance = NSApp.effectiveAppearance
         let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
@@ -54,6 +61,15 @@ extension AppModel {
             return
         }
         themePreference = preference
+    }
+
+    func loadAppIconColor() {
+        if let rawValue = UserDefaults.standard.string(forKey: appIconColorKey),
+           let color = JarvisAppIconColor(rawValue: rawValue)
+        {
+            appIconColor = color
+        }
+        JarvisAppIconController.apply(appIconColor)
     }
 
     @discardableResult

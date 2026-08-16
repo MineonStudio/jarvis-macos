@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.74}"
-JARVIS_BUILD="${JARVIS_BUILD:-148}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.75}"
+JARVIS_BUILD="${JARVIS_BUILD:-149}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -25,14 +25,28 @@ rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleDark.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png"
 
-if [[ -f "$ROOT_DIR/Resources/Jarvis.icns" ]]; then
-  cp "$ROOT_DIR/Resources/Jarvis.icns" "$APP_DIR/Contents/Resources/Jarvis.icns"
-fi
+# Compile the standard macOS Asset Catalog. AppIcon.icns is generated from
+# AppIcon.appiconset for Finder/Dock fallback, while Assets.car contains the
+# named light/dark images used when the app applies the current theme.
+ASSET_CATALOG_DIR="$ROOT_DIR/Resources/Assets.xcassets"
+ASSET_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
+rm -f "$APP_DIR/Contents/Resources/Jarvis.icns" \
+      "$APP_DIR/Contents/Resources/Assets.car" \
+      "$APP_DIR/Contents/Resources/AppIcon.icns" \
+      "$ASSET_PARTIAL_INFO"
 
-# Use the same single standard ICNS resource as the known-good 0.5 release.
-# Do not add custom menu icons or a second Asset Catalog source of truth.
-rm -f "$APP_DIR/Contents/Resources/Assets.car" \
-      "$APP_DIR/Contents/Resources/AppIcon.icns"
+if [[ -d "$ASSET_CATALOG_DIR" ]]; then
+  xcrun actool \
+    --compile "$APP_DIR/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 26.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$ASSET_PARTIAL_INFO" \
+    --notices \
+    --warnings \
+    "$ASSET_CATALOG_DIR" >/dev/null
+  rm -f "$ASSET_PARTIAL_INFO"
+fi
 
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --deep --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null
@@ -44,7 +58,7 @@ else
 fi
 
 # Refresh the local LaunchServices registration so System Settings and Finder
-# resolve the standalone ICNS immediately after a local production build.
+# resolve the Asset Catalog icon immediately after a local production build.
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -u "$APP_DIR" >/dev/null 2>&1 || true

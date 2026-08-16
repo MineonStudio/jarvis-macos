@@ -39,19 +39,20 @@ extension AppModel {
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
-    }
-
-    func updateAppIconColor(_ color: JarvisAppIconColor) {
-        appIconColor = color
-        UserDefaults.standard.set(color.rawValue, forKey: appIconColorKey)
-        JarvisAppIconController.apply(color)
-        showToast("应用图标已切换为\(color.title)")
+        applyAppIconForCurrentTheme()
     }
 
     func refreshSystemColorScheme() {
         let appearance = NSApp.effectiveAppearance
         let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
         systemColorScheme = bestMatch == .darkAqua ? .dark : .light
+        applyAppIconForCurrentTheme()
+    }
+
+    func applyAppIconForCurrentTheme() {
+        let colorScheme = themePreference.resolvedColorScheme(system: systemColorScheme)
+        let appearance: JarvisAppIconAppearance = colorScheme == .dark ? .dark : .light
+        JarvisAppIconController.apply(appearance)
     }
 
     func loadThemePreference() {
@@ -61,15 +62,6 @@ extension AppModel {
             return
         }
         themePreference = preference
-    }
-
-    func loadAppIconColor() {
-        if let rawValue = UserDefaults.standard.string(forKey: appIconColorKey),
-           let color = JarvisAppIconColor(rawValue: rawValue)
-        {
-            appIconColor = color
-        }
-        JarvisAppIconController.apply(appIconColor)
     }
 
     @discardableResult

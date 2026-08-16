@@ -111,8 +111,6 @@ struct SettingsView: View {
 
                 themeSettingsCard
 
-                appIconSettingsCard
-
                 screenshotTranslationSettingsCard
 
                 JarvisCard {
@@ -228,58 +226,6 @@ struct SettingsView: View {
         }
     }
 
-    private var appIconSettingsCard: some View {
-        JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Label("应用图标", systemImage: "app.fill")
-                    .font(.system(size: 14, weight: .semibold))
-
-                Text("选择圆球小人的颜色")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-
-                HStack(spacing: 8) {
-                    ForEach(JarvisAppIconColor.allCases) { color in
-                        Button {
-                            app.updateAppIconColor(color)
-                        } label: {
-                            VStack(spacing: 6) {
-                                JarvisAppIconPreview(color: color)
-                                Text(color.title)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(
-                                        app.appIconColor == color
-                                            ? color.swiftUIColor
-                                            : Color.jarvisTextSecondary
-                                    )
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .contentShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                        .buttonStyle(.plain)
-                        .background(
-                            app.appIconColor == color
-                                ? color.swiftUIColor.opacity(0.14)
-                                : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(
-                                    app.appIconColor == color
-                                        ? color.swiftUIColor.opacity(0.7)
-                                        : Color.primary.opacity(0.1),
-                                    lineWidth: app.appIconColor == color ? 1.25 : 0.75
-                                )
-                        }
-                        .help("切换为\(color.title)图标")
-                    }
-                }
-            }
-        }
-    }
-
     private var versionAndUpdateCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
@@ -374,29 +320,6 @@ struct SettingsView: View {
         case .checking, .downloading, .installing: true
         default: false
         }
-    }
-}
-
-private struct JarvisAppIconPreview: View {
-    let color: JarvisAppIconColor
-
-    var body: some View {
-        Group {
-            if let image = JarvisAppIconRenderer.image(for: color) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-            } else {
-                Image(systemName: "app.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(color.swiftUIColor)
-                    .padding(4)
-            }
-        }
-        .frame(width: 46, height: 46)
-        .accessibilityLabel("\(color.title)应用图标")
     }
 }
 

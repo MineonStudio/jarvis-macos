@@ -52,9 +52,15 @@ enum JarvisAppIconRenderer {
 
             let bytes = buffer.bindMemory(to: UInt8.self)
             for offset in stride(from: 0, to: bytes.count, by: 4) {
-                bytes[offset] = 255 - bytes[offset]
-                bytes[offset + 1] = 255 - bytes[offset + 1]
-                bytes[offset + 2] = 255 - bytes[offset + 2]
+                let alpha = Double(bytes[offset + 3]) / 255
+                guard alpha > 0 else { continue }
+
+                let red = min(Double(bytes[offset]) / 255 / alpha, 1)
+                let green = min(Double(bytes[offset + 1]) / 255 / alpha, 1)
+                let blue = min(Double(bytes[offset + 2]) / 255 / alpha, 1)
+                bytes[offset] = UInt8(((1 - red) * alpha * 255).rounded())
+                bytes[offset + 1] = UInt8(((1 - green) * alpha * 255).rounded())
+                bytes[offset + 2] = UInt8(((1 - blue) * alpha * 255).rounded())
             }
 
             output = context.makeImage()

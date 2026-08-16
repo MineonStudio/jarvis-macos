@@ -7,16 +7,16 @@ enum JarvisAppIconAppearance: String, CaseIterable {
     var assetName: String {
         switch self {
         case .light:
-            return "JarvisIconLight"
+            "JarvisIconLight"
         case .dark:
-            return "JarvisIconDark"
+            "JarvisIconDark"
         }
     }
 }
 
 enum JarvisAppIconRenderer {
     static func image(for appearance: JarvisAppIconAppearance) -> NSImage? {
-        return NSImage(named: appearance.assetName) ?? NSApp.applicationIconImage
+        NSImage(named: appearance.assetName) ?? NSApp.applicationIconImage
     }
 }
 

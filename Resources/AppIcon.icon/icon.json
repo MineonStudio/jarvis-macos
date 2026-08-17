@@ -1,7 +1,5 @@
 {
-  "fill" : {
-    "solid" : "extended-gray:1.00000,1.00000"
-  },
+  "fill" : "system-light",
   "groups" : [
     {
       "layers" : [
@@ -10,42 +8,14 @@
           "glass" : false,
           "image-name-specializations" : [
             {
-              "value" : "eyes.svg"
+              "value" : "light.svg"
             },
             {
               "appearance" : "dark",
-              "value" : "eyes-dark.svg"
+              "value" : "dark.svg"
             }
           ],
-          "name" : "eyes"
-        },
-        {
-          "fill" : "none",
-          "glass" : false,
-          "image-name-specializations" : [
-            {
-              "value" : "body.svg"
-            },
-            {
-              "appearance" : "dark",
-              "value" : "body-dark.svg"
-            }
-          ],
-          "name" : "body"
-        },
-        {
-          "fill" : "none",
-          "glass" : false,
-          "image-name-specializations" : [
-            {
-              "value" : "background.svg"
-            },
-            {
-              "appearance" : "dark",
-              "value" : "background-dark.svg"
-            }
-          ],
-          "name" : "background"
+          "name" : "Jarvis"
         }
       ]
     }

@@ -213,34 +213,44 @@ struct AIConversationView: View {
 
     private func browserControls(controller: AIConversationWebController) -> some View {
         HStack(spacing: 8) {
-            Button {
-                controller.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .frame(width: 26, height: 30)
-            }
-            .disabled(!controller.canGoBack)
-            .help("后退")
-
-            Button {
-                controller.goForward()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .frame(width: 26, height: 30)
-            }
-            .disabled(!controller.canGoForward)
-            .help("前进")
-
-            Button {
-                controller.reloadOrStop()
-            } label: {
-                Image(systemName: controller.isLoading ? "xmark" : "arrow.clockwise")
-                    .frame(width: 26, height: 30)
-            }
-            .help(controller.isLoading ? "停止加载" : "刷新")
+            browserControlButton(
+                systemName: "chevron.left",
+                action: controller.goBack,
+                isDisabled: !controller.canGoBack,
+                help: "后退"
+            )
+            browserControlButton(
+                systemName: "chevron.right",
+                action: controller.goForward,
+                isDisabled: !controller.canGoForward,
+                help: "前进"
+            )
+            browserControlButton(
+                systemName: controller.isLoading ? "xmark" : "arrow.clockwise",
+                action: controller.reloadOrStop,
+                help: controller.isLoading ? "停止加载" : "刷新"
+            )
         }
-        .foregroundStyle(Color.secondary)
+    }
+
+    private func browserControlButton(
+        systemName: String,
+        action: @escaping () -> Void,
+        isDisabled: Bool = false,
+        help: String
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
+        }
         .buttonStyle(.plain)
+        .foregroundStyle(Color.secondary)
+        .opacity(isDisabled ? 0.38 : 1)
+        .disabled(isDisabled)
+        .jarvisGlass(in: Circle(), interactive: true)
+        .help(help)
     }
 }
 

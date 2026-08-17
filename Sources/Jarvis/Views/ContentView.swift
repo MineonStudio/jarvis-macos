@@ -140,7 +140,7 @@ private struct TopNavigationBar: View {
                             maxHeight: JarvisMetrics.segmentedItemHeight
                         )
                         .padding(.horizontal, 10)
-                        .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
+                        .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
                         .contentShape(Capsule())
                         .background(
                             selection == section ? Color.accentColor.opacity(0.82) : .clear,

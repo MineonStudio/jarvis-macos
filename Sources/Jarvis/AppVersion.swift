@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.5.80"
-    private static let fallbackBuild = "154"
+    private static let fallbackShortVersion = "0.5.81"
+    private static let fallbackBuild = "155"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -456,6 +456,10 @@ extension JarvisUpdateService {
                 "$lsregister" -u "$target" >/dev/null 2>&1 || true
                 "$lsregister" -f "$target" >/dev/null 2>&1 || log "刷新 LaunchServices 图标注册失败"
             fi
+            # Dock keeps its own icon snapshot. Restarting only Dock is enough
+            # to make it reread the replaced AppIcon asset without touching
+            # the user's other application data.
+            /usr/bin/killall Dock >/dev/null 2>&1 || log "刷新 Dock 图标缓存失败"
         }
 
         cleanup_user_owned() {

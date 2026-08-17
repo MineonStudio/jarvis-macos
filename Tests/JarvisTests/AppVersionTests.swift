@@ -46,5 +46,6 @@ final class AppVersionTests: XCTestCase {
         XCTAssertFalse(script.contains("reset_screen_recording_permission"))
         XCTAssertTrue(script.contains("refresh_launch_services"))
         XCTAssertTrue(script.contains("lsregister"))
+        XCTAssertTrue(script.contains("killall Dock"))
     }
 }

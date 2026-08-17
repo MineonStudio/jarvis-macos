@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.80}"
-JARVIS_BUILD="${JARVIS_BUILD:-154}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.81}"
+JARVIS_BUILD="${JARVIS_BUILD:-155}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -66,4 +66,6 @@ if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -u "$APP_DIR" >/dev/null 2>&1 || true
   "$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1 || true
 fi
+# Dock maintains a separate icon snapshot; make it reread the rebuilt bundle.
+/usr/bin/killall Dock >/dev/null 2>&1 || true
 echo "Built: $APP_DIR"

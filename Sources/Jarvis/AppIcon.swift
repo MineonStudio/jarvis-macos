@@ -15,8 +15,16 @@ enum JarvisAppIconAppearance: String, CaseIterable {
 }
 
 enum JarvisAppIconRenderer {
+    static let standardDockIconSize = NSSize(width: 128, height: 128)
+
     static func image(for appearance: JarvisAppIconAppearance) -> NSImage? {
-        NSImage(named: appearance.assetName) ?? NSApp.applicationIconImage
+        guard let sourceImage = NSImage(named: appearance.assetName) ?? NSApp.applicationIconImage else {
+            return nil
+        }
+
+        let image = sourceImage.copy() as? NSImage ?? sourceImage
+        image.size = standardDockIconSize
+        return image
     }
 }
 

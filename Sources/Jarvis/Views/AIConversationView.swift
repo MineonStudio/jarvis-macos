@@ -14,7 +14,7 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .deepSeek: "DeepSeek"
-        case .gpt: "GPT"
+        case .gpt: "ChatGPT"
         case .doubao: "豆包"
         }
     }
@@ -151,13 +151,28 @@ struct AIConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            providerNavigation
-            Divider()
+            aiToolbar
             AIConversationBrowserPage(
-                controller: app.aiConversationController(for: app.selectedAIProvider)
+                controller: currentController
             )
+            .id(app.selectedAIProvider)
         }
         .background(Color.jarvisBackground)
+    }
+
+    private var aiToolbar: some View {
+        HStack {
+            providerNavigation
+
+            Spacer(minLength: 0)
+            browserControls(controller: currentController)
+        }
+        .padding(.horizontal, 28)
+        .frame(height: 54)
+        .background(Color.jarvisBackground.opacity(0.96))
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
     }
 
     private var providerNavigation: some View {
@@ -190,7 +205,42 @@ struct AIConversationView: View {
         .padding(3)
         .jarvisGlass(in: Capsule(), interactive: false)
         .shadow(color: Color.black.opacity(0.10), radius: 14, y: 6)
-        .padding(.vertical, 8)
+    }
+
+    private var currentController: AIConversationWebController {
+        app.aiConversationController(for: app.selectedAIProvider)
+    }
+
+    private func browserControls(controller: AIConversationWebController) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                controller.goBack()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 26, height: 30)
+            }
+            .disabled(!controller.canGoBack)
+            .help("后退")
+
+            Button {
+                controller.goForward()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 26, height: 30)
+            }
+            .disabled(!controller.canGoForward)
+            .help("前进")
+
+            Button {
+                controller.reloadOrStop()
+            } label: {
+                Image(systemName: controller.isLoading ? "xmark" : "arrow.clockwise")
+                    .frame(width: 26, height: 30)
+            }
+            .help(controller.isLoading ? "停止加载" : "刷新")
+        }
+        .foregroundStyle(Color.secondary)
+        .buttonStyle(.plain)
     }
 }
 
@@ -199,9 +249,6 @@ private struct AIConversationBrowserPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            browserToolbar
-            Divider()
-
             ZStack {
                 AIConversationWebView(controller: controller)
 
@@ -228,42 +275,6 @@ private struct AIConversationBrowserPage: View {
                 }
             }
         }
-    }
-
-    private var browserToolbar: some View {
-        HStack(spacing: 8) {
-            Button {
-                controller.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-            }
-            .buttonStyle(.plain)
-            .disabled(!controller.canGoBack)
-            .help("后退")
-
-            Button {
-                controller.goForward()
-            } label: {
-                Image(systemName: "chevron.right")
-            }
-            .buttonStyle(.plain)
-            .disabled(!controller.canGoForward)
-            .help("前进")
-
-            Button {
-                controller.reloadOrStop()
-            } label: {
-                Image(systemName: controller.isLoading ? "xmark" : "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .help(controller.isLoading ? "停止加载" : "刷新")
-
-            Spacer()
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 9)
-        .frame(height: 46)
-        .background(Color.jarvisBackground.opacity(0.96))
     }
 }
 

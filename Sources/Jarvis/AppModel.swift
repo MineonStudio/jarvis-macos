@@ -77,6 +77,7 @@ final class AppModel: ObservableObject {
     @Published var clipboardShortcutConflictMessage = ""
     @Published var themePreference: JarvisTheme = .system
     @Published var systemColorScheme: ColorScheme = .light
+    @Published var appIcon: JarvisAppIcon = .standard
     @Published var updateState: JarvisUpdateState = .idle
 
     let modelGateway = ModelGateway()
@@ -101,6 +102,7 @@ final class AppModel: ObservableObject {
     let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     let clipboardShortcutKey = "jarvis.clipboard.shortcut"
     let themePreferenceKey = "jarvis.theme.preference"
+    let appIconKey = "jarvis.app.icon"
     let translationLanguageKey = "jarvis.screenshot.translation.language"
     var translationTask: Task<Void, Never>?
     var translationRequestID = UUID()
@@ -135,6 +137,7 @@ final class AppModel: ObservableObject {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
+        loadAppIconPreference()
         loadTranslationLanguage()
         refreshSystemColorScheme()
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in

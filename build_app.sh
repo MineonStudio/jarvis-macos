@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.81}"
-JARVIS_BUILD="${JARVIS_BUILD:-155}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.82}"
+JARVIS_BUILD="${JARVIS_BUILD:-156}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -25,9 +25,11 @@ rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleDark.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png"
 
-# Compile the official macOS 26 Icon Composer document. The system renders
-# its Default/Dark/Mono appearances and owns the Dock container and sizing.
+# Compile the two official macOS 26 Icon Composer documents. The primary
+# asset remains the static default icon, while the inverted asset is included
+# as a named alternate for AppKit to load when the user selects it.
 ICON_BUNDLE="$ROOT_DIR/Resources/AppIcon.icon"
+INVERTED_ICON_BUNDLE="$ROOT_DIR/Resources/AppIconInverted.icon"
 ICON_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
 rm -f "$APP_DIR/Contents/Resources/Jarvis.icns" \
       "$APP_DIR/Contents/Resources/Assets.car" \
@@ -35,14 +37,16 @@ rm -f "$APP_DIR/Contents/Resources/Jarvis.icns" \
       "$APP_DIR/Contents/Resources/AppIconDark.icns" \
       "$ICON_PARTIAL_INFO"
 
-if [[ -d "$ICON_BUNDLE" ]]; then
+if [[ -d "$ICON_BUNDLE" && -d "$INVERTED_ICON_BUNDLE" ]]; then
   xcrun actool \
     "$ICON_BUNDLE" \
+    "$INVERTED_ICON_BUNDLE" \
     --compile "$APP_DIR/Contents/Resources" \
     --platform macosx \
     --target-device mac \
     --minimum-deployment-target 26.0 \
     --app-icon AppIcon \
+    --alternate-app-icon AppIconInverted \
     --bundle-identifier com.jarvis.mac \
     --output-partial-info-plist "$ICON_PARTIAL_INFO" \
     --notices \

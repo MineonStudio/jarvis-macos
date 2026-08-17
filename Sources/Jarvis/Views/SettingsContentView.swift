@@ -111,6 +111,8 @@ struct SettingsView: View {
 
                 themeSettingsCard
 
+                appIconSettingsCard
+
                 screenshotTranslationSettingsCard
 
                 JarvisCard {
@@ -218,6 +220,26 @@ struct SettingsView: View {
                 )) {
                     ForEach(ScreenshotTranslationLanguage.allCases) { language in
                         Text(language.rawValue).tag(language)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 180, alignment: .trailing)
+            }
+        }
+    }
+
+    private var appIconSettingsCard: some View {
+        JarvisCard {
+            HStack(spacing: 14) {
+                Label("应用图标", systemImage: "app.badge")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Picker("默认图标", selection: Binding(
+                    get: { app.appIcon },
+                    set: { app.updateAppIcon($0) }
+                )) {
+                    ForEach(JarvisAppIcon.allCases) { icon in
+                        Text(icon.title).tag(icon)
                     }
                 }
                 .pickerStyle(.menu)

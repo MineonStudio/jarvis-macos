@@ -6,44 +6,46 @@
     {
       "layers" : [
         {
-          "fill-specializations" : [
+          "fill" : "none",
+          "glass" : false,
+          "image-name-specializations" : [
+            {
+              "value" : "eyes.svg"
+            },
             {
               "appearance" : "dark",
-              "value" : {
-                "solid" : "extended-gray:0.00000,1.00000"
-              }
+              "value" : "eyes-dark.svg"
             }
           ],
-          "image-name" : "background.svg",
-          "name" : "background"
-        }
-      ]
-    },
-    {
-      "layers" : [
-        {
-          "fill-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "extended-gray:0.00000,1.00000"
-              }
-            }
-          ],
-          "image-name" : "eyes.svg",
           "name" : "eyes"
         },
         {
-          "fill-specializations" : [
+          "fill" : "none",
+          "glass" : false,
+          "image-name-specializations" : [
+            {
+              "value" : "body.svg"
+            },
             {
               "appearance" : "dark",
-              "value" : {
-                "solid" : "extended-gray:1.00000,1.00000"
-              }
+              "value" : "body-dark.svg"
             }
           ],
-          "image-name" : "body.svg",
           "name" : "body"
+        },
+        {
+          "fill" : "none",
+          "glass" : false,
+          "image-name-specializations" : [
+            {
+              "value" : "background.svg"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "background-dark.svg"
+            }
+          ],
+          "name" : "background"
         }
       ]
     }

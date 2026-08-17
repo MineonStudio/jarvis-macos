@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.5.77}"
-JARVIS_BUILD="${JARVIS_BUILD:-151}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.5.78}"
+JARVIS_BUILD="${JARVIS_BUILD:-152}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -25,44 +25,30 @@ rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleDark.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png"
 
-# Compile the standard macOS Asset Catalog. AppIcon.icns is generated from
-# AppIcon.appiconset for Finder/Dock fallback, while the AppIconDark set is
-# compiled separately into an equivalent multi-resolution dark ICNS resource.
-ASSET_CATALOG_DIR="$ROOT_DIR/Resources/Assets.xcassets"
-ASSET_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
-DARK_ICON_OUTPUT="$(mktemp -d)"
-DARK_ASSET_PARTIAL_INFO="$DARK_ICON_OUTPUT/assetcatalog-info.plist"
+# Compile the official macOS 26 Icon Composer document. The system renders
+# its Default/Dark/Mono appearances and owns the Dock container and sizing.
+ICON_BUNDLE="$ROOT_DIR/Resources/AppIcon.icon"
+ICON_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
 rm -f "$APP_DIR/Contents/Resources/Jarvis.icns" \
       "$APP_DIR/Contents/Resources/Assets.car" \
       "$APP_DIR/Contents/Resources/AppIcon.icns" \
       "$APP_DIR/Contents/Resources/AppIconDark.icns" \
-      "$ASSET_PARTIAL_INFO"
+      "$ICON_PARTIAL_INFO"
 
-if [[ -d "$ASSET_CATALOG_DIR" ]]; then
+if [[ -d "$ICON_BUNDLE" ]]; then
   xcrun actool \
+    "$ICON_BUNDLE" \
     --compile "$APP_DIR/Contents/Resources" \
     --platform macosx \
+    --target-device mac \
     --minimum-deployment-target 26.0 \
     --app-icon AppIcon \
-    --output-partial-info-plist "$ASSET_PARTIAL_INFO" \
+    --bundle-identifier com.jarvis.mac \
+    --output-partial-info-plist "$ICON_PARTIAL_INFO" \
     --notices \
-    --warnings \
-    "$ASSET_CATALOG_DIR" >/dev/null
-  rm -f "$ASSET_PARTIAL_INFO"
-
-  xcrun actool \
-    --compile "$DARK_ICON_OUTPUT" \
-    --platform macosx \
-    --minimum-deployment-target 26.0 \
-    --app-icon AppIconDark \
-    --output-partial-info-plist "$DARK_ASSET_PARTIAL_INFO" \
-    --notices \
-    --warnings \
-    "$ASSET_CATALOG_DIR" >/dev/null
-  cp "$DARK_ICON_OUTPUT/AppIconDark.icns" "$APP_DIR/Contents/Resources/AppIconDark.icns"
+    --warnings >/dev/null
+  rm -f "$ICON_PARTIAL_INFO"
 fi
-
-rm -rf "$DARK_ICON_OUTPUT"
 
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --deep --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null

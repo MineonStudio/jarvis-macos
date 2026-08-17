@@ -6,12 +6,14 @@ import UniformTypeIdentifiers
 
 enum AppSection: Hashable, Identifiable {
     case overview
+    case aiConversation
     case skill(SkillID)
     case settings
 
     var id: String {
         switch self {
         case .overview: "overview"
+        case .aiConversation: "ai-conversation"
         case let .skill(skill): "skill.\(skill.id)"
         case .settings: "settings"
         }
@@ -20,6 +22,7 @@ enum AppSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "总览"
+        case .aiConversation: "AI对话"
         case let .skill(skill): skill.title
         case .settings: "设置"
         }
@@ -28,6 +31,7 @@ enum AppSection: Hashable, Identifiable {
     var navigationTitle: String {
         switch self {
         case .overview: "总览"
+        case .aiConversation: "AI对话"
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
         case .settings: "设置"
@@ -37,6 +41,7 @@ enum AppSection: Hashable, Identifiable {
     var icon: String {
         switch self {
         case .overview: "square.grid.2x2"
+        case .aiConversation: "bubble.left.and.bubble.right"
         case let .skill(skill): skill.icon
         case .settings: "gearshape"
         }
@@ -78,6 +83,7 @@ final class AppModel: ObservableObject {
     @Published var themePreference: JarvisTheme = .system
     @Published var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
+    @Published var selectedAIProvider: AIConversationProvider = .deepSeek
 
     let modelGateway = ModelGateway()
     let clipboardService = ClipboardService()
@@ -89,6 +95,7 @@ final class AppModel: ObservableObject {
     let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
     let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     let updateService = JarvisUpdateService()
+    private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
     var systemAppearanceObservation: NSKeyValueObservation?
@@ -110,6 +117,16 @@ final class AppModel: ObservableObject {
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {
         screenshotController.translationProgress
+    }
+
+    func aiConversationController(for provider: AIConversationProvider) -> AIConversationWebController {
+        if let controller = aiConversationControllers[provider] {
+            return controller
+        }
+
+        let controller = AIConversationWebController(provider: provider)
+        aiConversationControllers[provider] = controller
+        return controller
     }
 
     init() {

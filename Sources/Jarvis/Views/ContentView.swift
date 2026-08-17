@@ -107,6 +107,7 @@ struct ContentView: View {
     private var detailView: some View {
         switch loadedSection {
         case .overview: DashboardView()
+        case .aiConversation: AIConversationView()
         case .skill(.screenshot): ScreenshotView()
         case .skill(.clipboard): ClipboardView()
         case .settings: SettingsView()
@@ -119,6 +120,7 @@ private struct TopNavigationBar: View {
 
     private let sections: [AppSection] = [
         .overview,
+        .aiConversation,
         .skill(.screenshot),
         .skill(.clipboard)
     ]

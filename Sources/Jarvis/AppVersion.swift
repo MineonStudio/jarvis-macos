@@ -7,7 +7,7 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.5.67"
+    private static let fallbackShortVersion = "0.5.83"
     private static let fallbackBuild = "141"
 
     static var shortVersion: String {

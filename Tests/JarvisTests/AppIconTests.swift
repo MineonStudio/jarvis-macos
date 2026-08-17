@@ -8,11 +8,7 @@ final class AppIconTests: XCTestCase {
     }
 
     func testAppIconAppearancesUseThemeSpecificAssetNames() {
-        XCTAssertEqual(JarvisAppIconAppearance.light.assetName, "JarvisIconLight")
-        XCTAssertEqual(JarvisAppIconAppearance.dark.assetName, "JarvisIconDark")
-    }
-
-    func testAppIconUsesStandardDockPointSize() {
-        XCTAssertEqual(JarvisAppIconRenderer.standardDockIconSize, NSSize(width: 128, height: 128))
+        XCTAssertEqual(JarvisAppIconAppearance.light.iconResourceName, "AppIcon")
+        XCTAssertEqual(JarvisAppIconAppearance.dark.iconResourceName, "AppIconDark")
     }
 }

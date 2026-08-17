@@ -4,26 +4,28 @@ enum JarvisAppIconAppearance: String, CaseIterable {
     case light
     case dark
 
-    var assetName: String {
+    var iconResourceName: String {
         switch self {
         case .light:
-            "JarvisIconLight"
+            "AppIcon"
         case .dark:
-            "JarvisIconDark"
+            "AppIconDark"
         }
     }
 }
 
 enum JarvisAppIconRenderer {
-    static let standardDockIconSize = NSSize(width: 128, height: 128)
-
     static func image(for appearance: JarvisAppIconAppearance) -> NSImage? {
-        guard let sourceImage = NSImage(named: appearance.assetName) ?? NSApp.applicationIconImage else {
-            return nil
+        guard let url = Bundle.main.url(
+            forResource: appearance.iconResourceName,
+            withExtension: "icns"
+        ) else {
+            return NSApp.applicationIconImage
         }
 
-        let image = sourceImage.copy() as? NSImage ?? sourceImage
-        image.size = standardDockIconSize
+        guard let image = NSImage(contentsOf: url) else {
+            return nil
+        }
         return image
     }
 }

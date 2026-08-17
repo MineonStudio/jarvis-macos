@@ -134,9 +134,13 @@ private struct TopNavigationBar: View {
                     Text(section.navigationTitle)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(selection == section ? Color.white : Color.secondary)
-                        .frame(minWidth: 70, minHeight: 38)
+                        .frame(
+                            minWidth: 70,
+                            minHeight: JarvisMetrics.segmentedItemHeight,
+                            maxHeight: JarvisMetrics.segmentedItemHeight
+                        )
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
+                        .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
                         .contentShape(Capsule())
                         .background(
                             selection == section ? Color.accentColor.opacity(0.82) : .clear,
@@ -149,7 +153,7 @@ private struct TopNavigationBar: View {
                 .help(section.navigationTitle)
             }
         }
-        .padding(3)
+        .padding(JarvisMetrics.segmentedControlPadding)
         .jarvisGlass(in: Capsule(), interactive: false)
         .shadow(color: Color.black.opacity(0.10), radius: 20, y: 9)
     }

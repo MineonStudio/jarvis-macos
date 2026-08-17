@@ -42,6 +42,8 @@ struct JarvisApp: App {
 /// Makes the main window's native titlebar share the same visual plane as the
 /// SwiftUI content while keeping the standard macOS window controls.
 private struct JarvisMainWindowChrome: NSViewRepresentable {
+    private static let frameAutosaveName = "Jarvis.MainWindow"
+
     func makeNSView(context _: Context) -> NSView {
         let view = NSView(frame: .zero)
         DispatchQueue.main.async {
@@ -58,6 +60,9 @@ private struct JarvisMainWindowChrome: NSViewRepresentable {
 
     private func configure(window: NSWindow?) {
         guard let window else { return }
+        if window.frameAutosaveName != Self.frameAutosaveName {
+            window.setFrameAutosaveName(Self.frameAutosaveName)
+        }
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none

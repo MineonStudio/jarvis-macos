@@ -335,9 +335,13 @@ struct JarvisThemePicker: View {
                     Text(theme.title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(selection == theme ? Color.white : Color.secondary)
-                        .frame(minWidth: 54, minHeight: 28)
+                        .frame(
+                            minWidth: 54,
+                            minHeight: JarvisMetrics.segmentedItemHeight,
+                            maxHeight: JarvisMetrics.segmentedItemHeight
+                        )
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
                         .contentShape(Capsule())
                         .background(
                             selection == theme ? Color.accentColor.opacity(0.82) : .clear,
@@ -348,7 +352,7 @@ struct JarvisThemePicker: View {
                 .contentShape(Capsule())
             }
         }
-        .padding(2)
+        .padding(JarvisMetrics.segmentedControlPadding)
         .jarvisGlass(in: Capsule(), interactive: false)
     }
 }

@@ -68,6 +68,9 @@ enum JarvisMetrics {
     static let cardRadius: CGFloat = 14
     static let controlRadius: CGFloat = 10
     static let iconTintOpacity: CGFloat = 0.22
+    static let segmentedItemHeight: CGFloat = 28
+    static let segmentedControlPadding: CGFloat = 2
+    static let segmentedItemVerticalPadding: CGFloat = 4
 }
 
 struct JarvisCard<Content: View>: View {

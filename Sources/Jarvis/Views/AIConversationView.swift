@@ -41,6 +41,9 @@ final class AIConversationWebController: NSObject, ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
 
+    private var canGoBackObservation: NSKeyValueObservation?
+    private var canGoForwardObservation: NSKeyValueObservation?
+
     init(provider: AIConversationProvider) {
         self.provider = provider
 
@@ -53,6 +56,16 @@ final class AIConversationWebController: NSObject, ObservableObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        canGoBackObservation = webView.observe(\WKWebView.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.updateNavigationState()
+            }
+        }
+        canGoForwardObservation = webView.observe(\WKWebView.canGoForward, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.updateNavigationState()
+            }
+        }
         webView.load(URLRequest(url: provider.url))
     }
 
@@ -165,7 +178,7 @@ struct AIConversationView: View {
             providerNavigation
 
             Spacer(minLength: 0)
-            browserControls(controller: currentController)
+            AIConversationBrowserControls(controller: currentController)
         }
         .padding(.horizontal, 28)
         .frame(height: 54)
@@ -186,9 +199,13 @@ struct AIConversationView: View {
                         .foregroundStyle(
                             app.selectedAIProvider == provider ? Color.white : Color.secondary
                         )
-                        .frame(minWidth: 72, minHeight: 30)
+                        .frame(
+                            minWidth: 72,
+                            minHeight: JarvisMetrics.segmentedItemHeight,
+                            maxHeight: JarvisMetrics.segmentedItemHeight
+                        )
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
                         .contentShape(Capsule())
                         .background(
                             app.selectedAIProvider == provider
@@ -202,7 +219,7 @@ struct AIConversationView: View {
                 .help(provider.title)
             }
         }
-        .padding(3)
+        .padding(JarvisMetrics.segmentedControlPadding)
         .jarvisGlass(in: Capsule(), interactive: false)
         .shadow(color: Color.black.opacity(0.10), radius: 14, y: 6)
     }
@@ -210,8 +227,12 @@ struct AIConversationView: View {
     private var currentController: AIConversationWebController {
         app.aiConversationController(for: app.selectedAIProvider)
     }
+}
 
-    private func browserControls(controller: AIConversationWebController) -> some View {
+private struct AIConversationBrowserControls: View {
+    @ObservedObject var controller: AIConversationWebController
+
+    var body: some View {
         HStack(spacing: 8) {
             browserControlButton(
                 systemName: "chevron.left",

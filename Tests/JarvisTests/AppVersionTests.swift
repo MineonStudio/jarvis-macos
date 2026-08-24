@@ -105,7 +105,9 @@ final class AppVersionTests: XCTestCase {
             ),
             [
                 URL(fileURLWithPath: "/Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app"),
-                URL(fileURLWithPath: "/tmp/JarvisStatusBarProbe.app").resolvingSymlinksInPath()
+                URL(fileURLWithPath: "/tmp")
+                    .resolvingSymlinksInPath()
+                    .appendingPathComponent("JarvisStatusBarProbe.app")
             ]
         )
     }

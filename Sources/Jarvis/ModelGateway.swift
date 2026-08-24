@@ -34,24 +34,25 @@ final class ModelGateway {
     }
 
     func translateScreenshot(
-        imageData: Data,
+        input: ScreenshotTranslationInput,
         targetLanguage: String,
         configuration: ModelConfiguration,
         apiKey: String
     ) async throws -> ScreenshotTranslationResult {
-        guard !imageData.isEmpty else {
-            throw ModelGatewayError.invalidResponse
-        }
-
         let response = try await request(
             prompt: Self.screenshotTranslationPrompt(targetLanguage: targetLanguage),
-            imageData: imageData,
+            imageData: input.data,
+            imageDetail: input.detail,
             configuration: configuration,
             apiKey: apiKey
         )
+        let parseStart = ScreenshotTranslationTiming.now()
         guard let result = Self.parseScreenshotTranslation(response) else {
             throw ModelGatewayError.invalidResponse
         }
+        ScreenshotTranslationLog.logger.debug(
+            "vision response parsed durationMs=\(ScreenshotTranslationTiming.milliseconds(since: parseStart), privacy: .public) blockCount=\(result.blocks.count, privacy: .public)"
+        )
         guard !result.blocks.isEmpty else {
             throw ModelGatewayError.noText
         }
@@ -75,7 +76,7 @@ final class ModelGateway {
 
         规则：
         1. 按截图中的视觉阅读顺序返回 blocks；同一个文本区域的多行文字放在同一个 block 中，保留原文中的换行。
-        2. box 是原文文字区域的紧致外接框，所有数值都必须是 0 到 1 之间的归一化小数。坐标原点在截图左上角，x 向右、y 向下；不要使用像素坐标，也不要使用左下角坐标。
+        2. box 是客户端需要覆盖的原文文本行区域，必须完整包含字形上下缘；单行文字请包含完整行高和少量上下留白，不要只返回紧贴字形的最小像素框。所有数值都必须是 0 到 1 之间的归一化小数。坐标原点在截图左上角，x 向右、y 向下；不要使用像素坐标，也不要使用左下角坐标。
         3. 翻译可能比原文长，但必须原样复用该 block 的 box，不得为了适配译文而改变 x、y、width 或 height。客户端会把译文覆盖绘制在这个原文框内。
         4. 不要合并相距明显的文字区域，不要拆分同一个连续文本区域，不要遗漏可读文字。source 和 translation 都不能为空。
         5. 如果没有可翻译文字，返回 {"blocks": []}。
@@ -141,6 +142,7 @@ final class ModelGateway {
     private func request(
         prompt: String,
         imageData: Data? = nil,
+        imageDetail: ScreenshotTranslationImageDetail = .high,
         configuration: ModelConfiguration,
         apiKey: String
     ) async throws -> String {
@@ -170,7 +172,7 @@ final class ModelGateway {
                     "type": "image_url",
                     "image_url": [
                         "url": "data:image/png;base64,\(imageData.base64EncodedString())",
-                        "detail": "high"
+                        "detail": imageDetail.rawValue
                     ]
                 ]
             ]
@@ -187,7 +189,11 @@ final class ModelGateway {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
+        let requestStart = ScreenshotTranslationTiming.now()
         let (data, response) = try await URLSession.shared.data(for: request)
+        ScreenshotTranslationLog.logger.debug(
+            "vision request completed durationMs=\(ScreenshotTranslationTiming.milliseconds(since: requestStart), privacy: .public) responseBytes=\(data.count, privacy: .public) detail=\(imageDetail.rawValue, privacy: .public)"
+        )
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ModelGatewayError.invalidResponse
         }

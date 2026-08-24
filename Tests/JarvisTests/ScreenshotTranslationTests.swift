@@ -59,8 +59,56 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(prompt.contains("识别和翻译"))
         XCTAssertTrue(prompt.contains("English"))
         XCTAssertTrue(prompt.contains("左上角"))
+        XCTAssertTrue(prompt.contains("完整行高"))
         XCTAssertTrue(prompt.contains("改变 x、y、width 或 height"))
         XCTAssertTrue(prompt.contains("\"blocks\""))
+    }
+
+    func testScreenshotTranslationInputUsesAdaptiveModelDetail() {
+        XCTAssertEqual(
+            ScreenshotTranslationInput.imageDetail(
+                for: Data(repeating: 0, count: 1_999_999),
+                maxDimension: 2399
+            ),
+            .high
+        )
+        XCTAssertEqual(
+            ScreenshotTranslationInput.imageDetail(
+                for: Data(repeating: 0, count: 2_000_000),
+                maxDimension: 2399
+            ),
+            .low
+        )
+        XCTAssertEqual(
+            ScreenshotTranslationInput.imageDetail(
+                for: Data(),
+                maxDimension: 2400
+            ),
+            .low
+        )
+    }
+
+    func testScreenshotTranslationInputDownsamplesOnlyTheModelCopy() throws {
+        let image = NSImage(size: NSSize(width: 2400, height: 1200))
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: 2400, height: 1200).fill()
+        image.unlockFocus()
+
+        let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
+        let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        let input = try XCTUnwrap(ScreenshotTranslationInput.prepare(from: sourceData))
+        let modelBitmap = try XCTUnwrap(NSBitmapImageRep(data: input.data))
+
+        XCTAssertTrue(input.wasDownsampled)
+        XCTAssertEqual(input.originalByteCount, sourceData.count)
+        XCTAssertEqual(input.modelByteCount, input.data.count)
+        XCTAssertLessThanOrEqual(max(modelBitmap.pixelsWide, modelBitmap.pixelsHigh), 2048)
+        XCTAssertEqual(
+            input.detail,
+            ScreenshotTranslationInput.imageDetail(for: sourceData, maxDimension: 2400)
+        )
+        XCTAssertNotEqual(input.data, sourceData)
     }
 
     func testScreenshotTranslationParserPreservesSourceAndTranslationBoxes() throws {
@@ -138,6 +186,22 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(pixelRect.height, 40, accuracy: 0.001)
     }
 
+    func testReplacementRectAddsCoveragePaddingWithoutChangingTheSourceAnchor() {
+        let sourceRect = ScreenshotTranslationRenderer.pixelRect(
+            forTopLeftNormalizedRect: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.08),
+            imageSize: CGSize(width: 1000, height: 500)
+        )
+        let replacementRect = ScreenshotTranslationRenderer.replacementRect(
+            forTopLeftNormalizedRect: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.08),
+            imageSize: CGSize(width: 1000, height: 500)
+        )
+
+        XCTAssertEqual(replacementRect.minX, sourceRect.minX - 6, accuracy: 0.001)
+        XCTAssertEqual(replacementRect.minY, sourceRect.minY - 4, accuracy: 0.001)
+        XCTAssertEqual(replacementRect.midX, sourceRect.midX, accuracy: 0.001)
+        XCTAssertEqual(replacementRect.midY, sourceRect.midY, accuracy: 0.001)
+    }
+
     func testTranslationRendererCreatesPNGForAlignedBlocks() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
@@ -162,6 +226,33 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertNotNil(output.flatMap(NSImage.init(data:)))
         let outputBitmap = output.flatMap(NSBitmapImageRep.init(data:))
         XCTAssertGreaterThan(outputBitmap?.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 0.99)
+    }
+
+    func testTranslationRendererUsesOnlyTheBlurredBackgroundLayer() throws {
+        let image = NSImage(size: NSSize(width: 120, height: 80))
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: 120, height: 80).fill()
+        image.unlockFocus()
+
+        let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
+        let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        let output = try XCTUnwrap(
+            ScreenshotTranslationRenderer.render(
+                sourceData: sourceData,
+                blocks: [ScreenshotTranslationBlock(
+                    sourceText: "原文",
+                    translatedText: "译",
+                    boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.3, height: 0.2)
+                )]
+            )
+        )
+        let outputBitmap = try XCTUnwrap(NSBitmapImageRep(data: output))
+        let background = try XCTUnwrap(outputBitmap.colorAt(x: 8, y: 30)?.usingColorSpace(.deviceRGB))
+
+        XCTAssertGreaterThan(background.redComponent, 0.7)
+        XCTAssertGreaterThan(background.greenComponent, 0.7)
+        XCTAssertGreaterThan(background.blueComponent, 0.7)
     }
 
     func testTranslationRendererRejectsEmptyTranslationBlocks() throws {

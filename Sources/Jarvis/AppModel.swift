@@ -113,7 +113,6 @@ final class AppModel: ObservableObject {
     var translationTask: Task<Void, Never>?
     var translationRequestID = UUID()
     var translationSourceData: Data?
-    var translationOCRResult: ScreenshotOCRResult?
     var toastDismissTask: Task<Void, Never>?
 
     var screenshotTranslationProgress: ScreenshotTranslationProgress {

@@ -244,7 +244,7 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("本机优先")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("剪贴板历史保存在本机；截图文字先由 macOS 在本地识别，只有识别出的文字会在你主动翻译时发送给配置的 API 服务商。")
+                        Text("剪贴板历史保存在本机；只有主动点击截图翻译时，截图才会发送给配置的 API 服务商，由大模型识别并翻译。")
                             .font(.system(size: 12))
                             .foregroundStyle(Color.jarvisTextSecondary)
                             .lineSpacing(2)

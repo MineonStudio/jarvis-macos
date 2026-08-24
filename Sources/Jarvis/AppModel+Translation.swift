@@ -29,89 +29,30 @@ extension AppModel {
         let requestID = UUID()
         translationRequestID = requestID
         translationSourceData = data
-        translationOCRResult = nil
         latestTranslation = ""
         screenshotTranslationState = .translating
         screenshotTranslationProgress.isTranslating = true
-        statusMessage = "正在本地识别截图文字…"
+        statusMessage = "正在让大模型识别并翻译截图…"
 
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let ocrResult = try await Task.detached(priority: .userInitiated) {
-                    try ScreenshotTextRecognizer.recognize(in: data)
-                }.value
-                try Task.checkCancellation()
-                guard translationRequestID == requestID else { return }
-
-                translationTask = nil
-                translationOCRResult = ocrResult
-                translateRecognizedText(ocrResult, requestID: requestID)
-            } catch is CancellationError {
-                return
-            } catch {
-                guard translationRequestID == requestID else { return }
-                let message = error.localizedDescription
-                screenshotTranslationState = .failed(message)
-                screenshotTranslationProgress.isTranslating = false
-                showToast("翻译失败：\(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func translateRecognizedText(
-        _ ocrResult: ScreenshotOCRResult,
-        requestID: UUID
-    ) {
-        let sourceBlocks = ocrResult.blocks.map {
-            $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard sourceBlocks.count == ocrResult.blocks.count,
-              !sourceBlocks.isEmpty,
-              sourceBlocks.allSatisfy({ !$0.isEmpty })
-        else {
-            screenshotTranslationState = .failed("截图中未识别到文字")
-            screenshotTranslationProgress.isTranslating = false
-            showToast("截图中未识别到文字")
-            return
-        }
-
-        let key = KeychainStore.shared.value(for: "jarvis.api-key") ?? ""
-        guard !key.isEmpty else {
-            selectedSection = .settings
-            screenshotTranslationState = .failed("请先在设置中配置 API Key")
-            screenshotTranslationProgress.isTranslating = false
-            showToast("请先在设置中配置 API Key")
-            return
-        }
-
-        translationTask?.cancel()
-        screenshotTranslationState = .translating
-        screenshotTranslationProgress.isTranslating = true
-        statusMessage = "正在翻译识别出的文字…"
-
-        translationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let translatedBlocks = try await modelGateway.translateBlocks(
-                    sourceBlocks,
+                let result = try await modelGateway.translateScreenshot(
+                    imageData: data,
                     targetLanguage: targetLanguage.rawValue,
                     configuration: modelConfiguration,
                     apiKey: key
                 )
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }
+
                 translationTask = nil
-                latestTranslation = translatedBlocks.joined(separator: "\n")
-                guard let ocrResult = translationOCRResult,
-                      let sourceData = translationSourceData,
-                      let translatedData = ScreenshotTranslationRenderer.render(
-                          sourceData: sourceData,
-                          ocrResult: ocrResult,
-                          translatedBlocks: translatedBlocks,
-                          isDarkMode: themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
-                      ),
-                      screenshotController.applyTranslatedScreenshot(translatedData)
+                latestTranslation = result.translatedText
+                guard let translatedData = ScreenshotTranslationRenderer.render(
+                    sourceData: data,
+                    blocks: result.blocks,
+                    isDarkMode: themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
+                ), screenshotController.applyTranslatedScreenshot(translatedData)
                 else {
                     screenshotTranslationState = .failed("无法生成翻译后的截图")
                     screenshotTranslationProgress.isTranslating = false
@@ -125,7 +66,6 @@ extension AppModel {
                 return
             } catch {
                 guard translationRequestID == requestID else { return }
-                translationTask = nil
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false
@@ -164,7 +104,6 @@ extension AppModel {
         translationTask?.cancel()
         translationTask = nil
         translationSourceData = nil
-        translationOCRResult = nil
         latestTranslation = ""
         screenshotTranslationState = .idle
         screenshotTranslationProgress.isTranslating = false

@@ -9,6 +9,7 @@ struct ModelConfiguration: Codable, Equatable {
 enum ModelGatewayError: LocalizedError {
     case invalidBaseURL
     case missingResponse
+    case noText
     case server(String)
     case invalidResponse
 
@@ -16,6 +17,7 @@ enum ModelGatewayError: LocalizedError {
         switch self {
         case .invalidBaseURL: "API Base URL 无效"
         case .missingResponse: "模型没有返回有效内容"
+        case .noText: "截图中未识别到可翻译文字"
         case let .server(message): message
         case .invalidResponse: "模型返回格式无法解析"
         }
@@ -31,87 +33,114 @@ final class ModelGateway {
         )
     }
 
-    func translateBlocks(
-        _ sourceBlocks: [String],
+    func translateScreenshot(
+        imageData: Data,
         targetLanguage: String,
         configuration: ModelConfiguration,
         apiKey: String
-    ) async throws -> [String] {
-        guard !sourceBlocks.isEmpty else {
+    ) async throws -> ScreenshotTranslationResult {
+        guard !imageData.isEmpty else {
             throw ModelGatewayError.invalidResponse
         }
 
         let response = try await request(
-            prompt: Self.translationBlocksPrompt(
-                sourceBlocks: sourceBlocks,
-                targetLanguage: targetLanguage
-            ),
+            prompt: Self.screenshotTranslationPrompt(targetLanguage: targetLanguage),
+            imageData: imageData,
             configuration: configuration,
             apiKey: apiKey
         )
-        guard let translatedBlocks = Self.parseTranslatedBlocks(
-            response,
-            count: sourceBlocks.count
-        ) else {
+        guard let result = Self.parseScreenshotTranslation(response) else {
             throw ModelGatewayError.invalidResponse
         }
-        return translatedBlocks
+        guard !result.blocks.isEmpty else {
+            throw ModelGatewayError.noText
+        }
+        return result
     }
 
-    static func translationPrompt(sourceText: String, targetLanguage: String) -> String {
-        "下面是由 macOS 本地 OCR 识别出的原文。请自动判断源语言，并将原文翻译成\(targetLanguage)。保留原文的段落、列表和换行结构，只返回完整译文，不要解释过程。若原文为空，只返回：未识别到文字。\n\n原文：\n---\n\(sourceText)\n---"
-    }
+    static func screenshotTranslationPrompt(targetLanguage: String) -> String {
+        """
+        你要直接理解这张截图中的视觉文字，并在一次操作中完成文字识别和翻译。不要依赖本地 OCR，也不要假设截图中只有一种语言。请识别所有清晰可读、应该被翻译的文字，忽略纯装饰图形、图标和无法辨认的内容。
 
-    static func translationBlocksPrompt(sourceBlocks: [String], targetLanguage: String) -> String {
-        let blocks = sourceBlocks.enumerated()
-            .map { index, block in
-                "<<<JARVIS_SOURCE_\(index + 1)>>>\n\(block)\n<<<END_JARVIS_SOURCE_\(index + 1)>>>"
+        请严格只返回一个 JSON 对象，不要 Markdown 代码围栏、解释或额外文字，格式如下：
+        {
+          "blocks": [
+            {
+              "source": "截图中的完整原文",
+              "translation": "翻译成\(targetLanguage)的完整译文",
+              "box": { "x": 0.1, "y": 0.2, "width": 0.3, "height": 0.08 }
             }
-            .joined(separator: "\n\n")
-        return """
-        下面是由 macOS 本地 OCR 识别出的 \(sourceBlocks.count) 个独立原文块。请自动判断源语言，并将每个原文块翻译成\(targetLanguage)。
-        每个原文块必须分别翻译，严禁合并、拆分、调换顺序或遗漏。请严格使用与输入对应的输出标记，只返回译文标记块，不要解释过程：
-        <<<JARVIS_TRANSLATION_1>>>
-        第 1 个原文块的译文
-        <<<END_JARVIS_TRANSLATION_1>>>
-        ...
-        <<<JARVIS_TRANSLATION_\(sourceBlocks.count)>>>
-        第 \(sourceBlocks.count) 个原文块的译文
-        <<<END_JARVIS_TRANSLATION_\(sourceBlocks.count)>>>
+          ]
+        }
 
-        原文块：
-        \(blocks)
+        规则：
+        1. 按截图中的视觉阅读顺序返回 blocks；同一个文本区域的多行文字放在同一个 block 中，保留原文中的换行。
+        2. box 是原文文字区域的紧致外接框，所有数值都必须是 0 到 1 之间的归一化小数。坐标原点在截图左上角，x 向右、y 向下；不要使用像素坐标，也不要使用左下角坐标。
+        3. 翻译可能比原文长，但必须原样复用该 block 的 box，不得为了适配译文而改变 x、y、width 或 height。客户端会把译文覆盖绘制在这个原文框内。
+        4. 不要合并相距明显的文字区域，不要拆分同一个连续文本区域，不要遗漏可读文字。source 和 translation 都不能为空。
+        5. 如果没有可翻译文字，返回 {"blocks": []}。
         """
     }
 
-    static func parseTranslatedBlocks(_ response: String, count: Int) -> [String]? {
-        guard count > 0 else { return [] }
-        let normalized = response.replacingOccurrences(of: "\r\n", with: "\n")
-        var translatedBlocks: [String] = []
-        var searchStart = normalized.startIndex
-
-        for index in 1 ... count {
-            let opening = "<<<JARVIS_TRANSLATION_\(index)>>>"
-            let closing = "<<<END_JARVIS_TRANSLATION_\(index)>>>"
-            guard let openingRange = normalized.range(of: opening, range: searchStart ..< normalized.endIndex) else {
-                return nil
-            }
-            let contentStart = openingRange.upperBound
-            guard let closingRange = normalized.range(of: closing, range: contentStart ..< normalized.endIndex) else {
-                return nil
-            }
-            let block = normalized[contentStart ..< closingRange.lowerBound]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !block.isEmpty else { return nil }
-            translatedBlocks.append(block)
-            searchStart = closingRange.upperBound
+    static func parseScreenshotTranslation(_ response: String) -> ScreenshotTranslationResult? {
+        guard let start = response.firstIndex(of: "{"),
+              let end = response.lastIndex(of: "}"),
+              start <= end
+        else {
+            return nil
         }
 
-        return translatedBlocks.count == count ? translatedBlocks : nil
+        let jsonText = String(response[start ... end])
+        guard let data = jsonText.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawBlocks = object["blocks"] as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        let blocks = rawBlocks.compactMap(parseBlock)
+        guard blocks.count == rawBlocks.count else { return nil }
+        return ScreenshotTranslationResult(blocks: blocks)
+    }
+
+    private static func parseBlock(_ rawBlock: [String: Any]) -> ScreenshotTranslationBlock? {
+        guard let sourceText = rawBlock["source"] as? String,
+              let translatedText = rawBlock["translation"] as? String,
+              let rawBox = rawBlock["box"] as? [String: Any]
+        else {
+            return nil
+        }
+
+        let source = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !translation.isEmpty,
+              let x = normalizedNumber(rawBox["x"]),
+              let y = normalizedNumber(rawBox["y"]),
+              let width = normalizedNumber(rawBox["width"]),
+              let height = normalizedNumber(rawBox["height"]),
+              x >= 0, y >= 0, width > 0, height > 0,
+              x + width <= 1, y + height <= 1
+        else {
+            return nil
+        }
+
+        return ScreenshotTranslationBlock(
+            sourceText: source,
+            translatedText: translation,
+            boundingBox: CGRect(x: x, y: y, width: width, height: height)
+        )
+    }
+
+    private static func normalizedNumber(_ value: Any?) -> CGFloat? {
+        guard let number = value as? NSNumber else { return nil }
+        let doubleValue = number.doubleValue
+        guard doubleValue.isFinite else { return nil }
+        return CGFloat(doubleValue)
     }
 
     private func request(
         prompt: String,
+        imageData: Data? = nil,
         configuration: ModelConfiguration,
         apiKey: String
     ) async throws -> String {
@@ -131,12 +160,29 @@ final class ModelGateway {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let messageContent: Any = if let imageData {
+            [
+                [
+                    "type": "text",
+                    "text": prompt
+                ],
+                [
+                    "type": "image_url",
+                    "image_url": [
+                        "url": "data:image/png;base64,\(imageData.base64EncodedString())",
+                        "detail": "high"
+                    ]
+                ]
+            ]
+        } else {
+            prompt
+        }
         let payload: [String: Any] = [
             "model": configuration.modelName,
             "temperature": 0.2,
             "messages": [[
                 "role": "user",
-                "content": prompt
+                "content": messageContent
             ]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)

@@ -53,40 +53,55 @@ final class ScreenshotTranslationTests: XCTestCase {
         )
     }
 
-    func testTranslationPromptPreservesFormattingRequirements() {
-        let prompt = ModelGateway.translationPrompt(sourceText: "Hello\nWorld", targetLanguage: "English")
+    func testScreenshotTranslationPromptRequiresVisionBoxes() {
+        let prompt = ModelGateway.screenshotTranslationPrompt(targetLanguage: "English")
 
+        XCTAssertTrue(prompt.contains("识别和翻译"))
         XCTAssertTrue(prompt.contains("English"))
-        XCTAssertTrue(prompt.contains("段落、列表和换行"))
-        XCTAssertTrue(prompt.contains("只返回完整译文"))
-        XCTAssertTrue(prompt.contains("Hello\nWorld"))
-        XCTAssertFalse(prompt.contains("image_url"))
+        XCTAssertTrue(prompt.contains("左上角"))
+        XCTAssertTrue(prompt.contains("改变 x、y、width 或 height"))
+        XCTAssertTrue(prompt.contains("\"blocks\""))
     }
 
-    func testTranslationBlocksPromptAndParserPreserveOneToOneMapping() {
-        let prompt = ModelGateway.translationBlocksPrompt(
-            sourceBlocks: ["Small red text", "Large blue text"],
-            targetLanguage: "中文"
-        )
-        XCTAssertTrue(prompt.contains("2 个独立原文块"))
-        XCTAssertTrue(prompt.contains("<<<JARVIS_SOURCE_1>>>"))
-        XCTAssertTrue(prompt.contains("<<<JARVIS_SOURCE_2>>>"))
-        XCTAssertTrue(prompt.contains("<<<JARVIS_TRANSLATION_2>>>"))
-
+    func testScreenshotTranslationParserPreservesSourceAndTranslationBoxes() throws {
         let response = """
-        <<<JARVIS_TRANSLATION_1>>>
-        小号红色文字
-        <<<END_JARVIS_TRANSLATION_1>>>
-        <<<JARVIS_TRANSLATION_2>>>
-        大号蓝色文字
-        第二行
-        <<<END_JARVIS_TRANSLATION_2>>>
+        ```json
+        {
+          "blocks": [
+            {
+              "source": "Small red text",
+              "translation": "小号红色文字",
+              "box": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.08}
+            },
+            {
+              "source": "Large blue text",
+              "translation": "大号蓝色文字\\n第二行",
+              "box": {"x": 0.2, "y": 0.65, "width": 0.5, "height": 0.2}
+            }
+          ]
+        }
+        ```
         """
+
+        let result = try XCTUnwrap(ModelGateway.parseScreenshotTranslation(response))
         XCTAssertEqual(
-            ModelGateway.parseTranslatedBlocks(response, count: 2),
+            result.blocks.map(\.translatedText),
             ["小号红色文字", "大号蓝色文字\n第二行"]
         )
-        XCTAssertNil(ModelGateway.parseTranslatedBlocks("统一译文", count: 2))
+        XCTAssertEqual(result.blocks[0].sourceText, "Small red text")
+        XCTAssertEqual(
+            result.blocks[0].boundingBox,
+            CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.08)
+        )
+    }
+
+    func testScreenshotTranslationParserRejectsInvalidNormalizedBoxes() {
+        let response = """
+        {"blocks":[{"source":"原文","translation":"译文","box":{"x":0.8,"y":0.2,"width":0.4,"height":0.1}}]}
+        """
+
+        XCTAssertNil(ModelGateway.parseScreenshotTranslation(response))
+        XCTAssertNil(ModelGateway.parseScreenshotTranslation("统一译文"))
     }
 
     func testTranslationFontSizeFollowsSourceLineHeight() {
@@ -111,6 +126,18 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertGreaterThan(shortText, longText)
     }
 
+    func testVisionBoxCoordinatesMapFromTopLeftWithoutVerticalOffset() {
+        let pixelRect = ScreenshotTranslationRenderer.pixelRect(
+            forTopLeftNormalizedRect: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.08),
+            imageSize: CGSize(width: 1000, height: 500)
+        )
+
+        XCTAssertEqual(pixelRect.minX, 100, accuracy: 0.001)
+        XCTAssertEqual(pixelRect.minY, 360, accuracy: 0.001)
+        XCTAssertEqual(pixelRect.width, 300, accuracy: 0.001)
+        XCTAssertEqual(pixelRect.height, 40, accuracy: 0.001)
+    }
+
     func testTranslationRendererCreatesPNGForAlignedBlocks() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
@@ -120,15 +147,15 @@ final class ScreenshotTranslationTests: XCTestCase {
 
         let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
         let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-        let ocrResult = ScreenshotOCRResult(
-            text: "原文",
-            blocks: [ScreenshotOCRBlock(text: "原文", boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.3, height: 0.2))]
+        let block = ScreenshotTranslationBlock(
+            sourceText: "原文",
+            translatedText: "Translation",
+            boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.3, height: 0.2)
         )
 
         let output = ScreenshotTranslationRenderer.render(
             sourceData: sourceData,
-            ocrResult: ocrResult,
-            translatedText: "Translation"
+            blocks: [block]
         )
 
         XCTAssertNotNil(output)
@@ -137,7 +164,7 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertGreaterThan(outputBitmap?.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 0.99)
     }
 
-    func testTranslationRendererRejectsMismatchedBlockCount() throws {
+    func testTranslationRendererRejectsEmptyTranslationBlocks() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
         NSColor.white.setFill()
@@ -146,19 +173,10 @@ final class ScreenshotTranslationTests: XCTestCase {
 
         let bitmap = try XCTUnwrap(try NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
         let sourceData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-        let ocrResult = ScreenshotOCRResult(
-            text: "第一行\n第二行",
-            blocks: [
-                ScreenshotOCRBlock(text: "第一行", boundingBox: CGRect(x: 0.1, y: 0.55, width: 0.3, height: 0.2)),
-                ScreenshotOCRBlock(text: "第二行", boundingBox: CGRect(x: 0.1, y: 0.25, width: 0.3, height: 0.2))
-            ]
-        )
-
         XCTAssertNil(
             ScreenshotTranslationRenderer.render(
                 sourceData: sourceData,
-                ocrResult: ocrResult,
-                translatedBlocks: ["只有一块译文"]
+                blocks: []
             )
         )
     }

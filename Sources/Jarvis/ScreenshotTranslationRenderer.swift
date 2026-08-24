@@ -120,8 +120,8 @@ private struct SourcePixelSampler {
     private func pixel(x: Int, y: Int) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8) {
         let clampedX = min(max(x, 0), width - 1)
         let clampedY = min(max(y, 0), height - 1)
-        // Bitmap context rows are top-down while Vision bounding boxes use a
-        // bottom-left origin. Convert back before sampling the source color.
+        // Bitmap context rows are top-down. Convert from the renderer's
+        // bottom-left pixel coordinate to the bitmap row before sampling.
         let row = height - 1 - clampedY
         let offset = row * bytesPerRow + clampedX * 4
         return (
@@ -155,26 +155,19 @@ private struct SourcePixelSampler {
 enum ScreenshotTranslationRenderer {
     static func render(
         sourceData: Data,
-        ocrResult: ScreenshotOCRResult,
-        translatedText: String,
+        result: ScreenshotTranslationResult,
         isDarkMode: Bool = false
     ) -> Data? {
-        let translatedBlocks = translatedText
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return render(
+        render(
             sourceData: sourceData,
-            ocrResult: ocrResult,
-            translatedBlocks: translatedBlocks,
+            blocks: result.blocks,
             isDarkMode: isDarkMode
         )
     }
 
     static func render(
         sourceData: Data,
-        ocrResult: ScreenshotOCRResult,
-        translatedBlocks: [String],
+        blocks: [ScreenshotTranslationBlock],
         isDarkMode: Bool = false
     ) -> Data? {
         guard let sourceImage = image(from: sourceData),
@@ -197,11 +190,13 @@ enum ScreenshotTranslationRenderer {
         context.interpolationQuality = .high
         context.draw(sourceImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        guard translatedBlocks.count == ocrResult.blocks.count,
-              !translatedBlocks.isEmpty else { return nil }
+        guard !blocks.isEmpty else { return nil }
 
-        let blurRects = ocrResult.blocks.map {
-            pixelRect(for: $0.boundingBox, width: width, height: height)
+        let blurRects = blocks.map {
+            pixelRect(
+                forTopLeftNormalizedRect: $0.boundingBox,
+                imageSize: CGSize(width: width, height: height)
+            )
         }
         if let blurredImage = blurredImage(
             sourceImage,
@@ -215,16 +210,19 @@ enum ScreenshotTranslationRenderer {
             context.restoreGState()
         }
 
-        for (block, translation) in zip(ocrResult.blocks, translatedBlocks) {
-            let sourceRect = pixelRect(for: block.boundingBox, width: width, height: height)
+        for block in blocks {
+            let sourceRect = pixelRect(
+                forTopLeftNormalizedRect: block.boundingBox,
+                imageSize: CGSize(width: width, height: height)
+            )
             let rect = sourceRect
                 .insetBy(dx: -6, dy: -4)
             let style = sourceStyle(
-                for: block.text,
+                for: block.sourceText,
                 in: sourceRect
             )
             drawReplacement(
-                translation,
+                block.translatedText,
                 in: rect,
                 sourceFontSize: style.fontSize,
                 isDarkMode: isDarkMode,
@@ -292,12 +290,15 @@ enum ScreenshotTranslationRenderer {
         return outputData as Data
     }
 
-    private static func pixelRect(for normalizedRect: CGRect, width: Int, height: Int) -> CGRect {
+    static func pixelRect(
+        forTopLeftNormalizedRect normalizedRect: CGRect,
+        imageSize: CGSize
+    ) -> CGRect {
         CGRect(
-            x: normalizedRect.minX * CGFloat(width),
-            y: normalizedRect.minY * CGFloat(height),
-            width: normalizedRect.width * CGFloat(width),
-            height: normalizedRect.height * CGFloat(height)
+            x: normalizedRect.minX * imageSize.width,
+            y: (1 - normalizedRect.maxY) * imageSize.height,
+            width: normalizedRect.width * imageSize.width,
+            height: normalizedRect.height * imageSize.height
         )
     }
 
@@ -359,9 +360,8 @@ enum ScreenshotTranslationRenderer {
             return .black
         }
         let sourceRect = pixelRect(
-            for: boundingBox,
-            width: sourceImage.width,
-            height: sourceImage.height
+            forTopLeftNormalizedRect: boundingBox,
+            imageSize: CGSize(width: sourceImage.width, height: sourceImage.height)
         )
         return sampler.foregroundColor(in: sourceRect)
     }

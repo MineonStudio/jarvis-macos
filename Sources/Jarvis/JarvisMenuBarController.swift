@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let shared = JarvisMenuBarController()
-    static let menuBarTitle = "JIAVIS"
+    static let menuBarTitle = "JARVIS"
 
     private weak var app: AppModel?
     private var statusItem: NSStatusItem?
@@ -31,11 +31,25 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     func install() {
         guard statusItem == nil else { return }
 
-        let statusItem = NSStatusBar.system.statusItem(withLength: 96)
+        guard NSApp.isRunning else {
+            DispatchQueue.main.async { [weak self] in
+                self?.install()
+            }
+            return
+        }
+
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.title = Self.menuBarTitle
-            button.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            button.contentTintColor = .labelColor
+            let menuBarFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
+            button.attributedTitle = NSAttributedString(
+                string: Self.menuBarTitle,
+                attributes: [
+                    .font: menuBarFont,
+                    .foregroundColor: NSColor.white
+                ]
+            )
+            button.font = menuBarFont
+            button.contentTintColor = .white
             button.setAccessibilityLabel(Self.menuBarTitle)
             button.toolTip = Self.menuBarTitle
         }
@@ -52,6 +66,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
                 keyEquivalent: ""
             )
         )
+        menu.items.last?.target = self
         menu.addItem(
             NSMenuItem(
                 title: "打开贾维斯",
@@ -59,6 +74,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
                 keyEquivalent: ""
             )
         )
+        menu.items.last?.target = self
+        clipboardMenuItem.target = self
         menu.addItem(clipboardMenuItem)
         let windowLayoutMenu = NSMenu()
         for layout in WindowLayout.allCases {
@@ -84,6 +101,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
                 keyEquivalent: "q"
             )
         )
+        menu.items.last?.target = self
     }
 
     func menuWillOpen(_: NSMenu) {

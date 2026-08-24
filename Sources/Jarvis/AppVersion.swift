@@ -77,7 +77,7 @@ enum JarvisUpdateError: LocalizedError {
     case unsupportedInstallLocation
     case toolFailed(String)
     case checksumMismatch
-    case screenRecordingPermissionResetFailed(String)
+    case privacyPermissionResetFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -93,8 +93,8 @@ enum JarvisUpdateError: LocalizedError {
             "解压更新包失败：\(message)"
         case .checksumMismatch:
             "更新包校验失败，未进行安装"
-        case let .screenRecordingPermissionResetFailed(message):
-            "清除旧的屏幕录制权限失败：\(message)"
+        case let .privacyPermissionResetFailed(message):
+            "清除旧的屏幕录制和辅助功能权限失败：\(message)"
         }
     }
 }
@@ -103,8 +103,11 @@ struct JarvisUpdateService {
     static let updateLogURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/Jarvis/update.log")
 
-    static func screenRecordingPermissionResetArguments(bundleIdentifier: String) -> [String] {
-        ["reset", "ScreenCapture", bundleIdentifier]
+    static func privacyPermissionResetArguments(bundleIdentifier: String) -> [[String]] {
+        [
+            ["reset", "ScreenCapture", bundleIdentifier],
+            ["reset", "Accessibility", bundleIdentifier]
+        ]
     }
 
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
@@ -158,10 +161,13 @@ struct JarvisUpdateService {
         guard let downloadURL = release.downloadURL else {
             throw JarvisUpdateError.downloadUnavailable
         }
+        // Remove stale Jarvis/agent registrations before the replacement is
+        // staged. ChatGPT and other apps are excluded by bundle identifier.
+        cleanupStaleLaunchServices()
         // Reset while the current app is still running and the user has just
         // confirmed the update. The replacement process is deliberately not
         // responsible for TCC state.
-        try resetScreenRecordingPermission()
+        try resetPrivacyPermissions()
 
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
@@ -233,38 +239,40 @@ struct JarvisUpdateService {
         handedOffToInstaller = true
     }
 
-    private func resetScreenRecordingPermission() throws {
+    private func resetPrivacyPermissions() throws {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
-            throw JarvisUpdateError.screenRecordingPermissionResetFailed("无法读取应用 Bundle ID")
+            throw JarvisUpdateError.privacyPermissionResetFailed("无法读取应用 Bundle ID")
         }
 
-        let process = Process()
-        let errorPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        process.arguments = Self.screenRecordingPermissionResetArguments(
-            bundleIdentifier: bundleIdentifier
-        )
-        process.standardError = errorPipe
+        for arguments in Self.privacyPermissionResetArguments(bundleIdentifier: bundleIdentifier) {
+            let service = arguments.dropFirst().first ?? "未知服务"
+            let process = Process()
+            let errorPipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = arguments
+            process.standardError = errorPipe
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            throw JarvisUpdateError.screenRecordingPermissionResetFailed(
-                error.localizedDescription
-            )
-        }
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                throw JarvisUpdateError.privacyPermissionResetFailed(
+                    "\(service)：\(error.localizedDescription)"
+                )
+            }
 
-        guard process.terminationStatus == 0 else {
-            let message = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            )?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw JarvisUpdateError.screenRecordingPermissionResetFailed(
-                message?.isEmpty == false
+            guard process.terminationStatus == 0 else {
+                let message = String(
+                    data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+                    encoding: .utf8
+                )?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let failureMessage = message?.isEmpty == false
                     ? message ?? ""
                     : "tccutil 返回状态码 \(process.terminationStatus)"
-            )
+                throw JarvisUpdateError.privacyPermissionResetFailed(
+                    "\(service)：\(failureMessage)"
+                )
+            }
         }
     }
 

@@ -45,13 +45,34 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
 
     var shortcutDisplay: String {
         switch self {
-        case .halfLeft: "⇧←"
-        case .halfRight: "⇧→"
-        case .upperLeft: "⇧←↑"
-        case .upperRight: "⇧→↑"
-        case .lowerLeft: "⇧←↓"
-        case .lowerRight: "⇧→↓"
+        case .halfLeft: "⌥⌘←"
+        case .halfRight: "⌥⌘→"
+        case .upperLeft: "⌥⌘U"
+        case .upperRight: "⌥⌘I"
+        case .lowerLeft: "⌥⌘J"
+        case .lowerRight: "⌥⌘K"
         }
+    }
+
+    var shortcutKeyCode: UInt16 {
+        switch self {
+        case .halfLeft: 123
+        case .halfRight: 124
+        case .upperLeft: 32
+        case .upperRight: 34
+        case .lowerLeft: 38
+        case .lowerRight: 40
+        }
+    }
+
+    static let shortcutModifierFlags: NSEvent.ModifierFlags = [.command, .option]
+
+    static func layout(for keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> WindowLayout? {
+        let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
+        guard relevantModifiers == shortcutModifierFlags else {
+            return nil
+        }
+        return allCases.first { $0.shortcutKeyCode == keyCode }
     }
 
     static func layout(for directions: Set<WindowLayoutDirection>) -> WindowLayout? {
@@ -136,18 +157,11 @@ enum WindowLayoutDirection: Hashable {
 
 @MainActor
 final class WindowLayoutController {
-    private static let shiftKeyCodes: Set<UInt16> = [56, 60]
-    private static let halfLayoutDelay: TimeInterval = 0.18
-
     private let statusHandler: (String) -> Void
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var activationObserver: NSObjectProtocol?
     private var lastExternalApplication: NSRunningApplication?
-    private var pressedDirections = Set<WindowLayoutDirection>()
-    private var shiftIsDown = false
-    private var didApplyCurrentChord = false
-    private var halfLayoutWorkItem: DispatchWorkItem?
 
     init(statusHandler: @escaping (String) -> Void) {
         self.statusHandler = statusHandler
@@ -174,7 +188,6 @@ final class WindowLayoutController {
     }
 
     deinit {
-        halfLayoutWorkItem?.cancel()
         if let globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
         }
@@ -228,7 +241,7 @@ final class WindowLayoutController {
     }
 
     private func installMonitors() {
-        let eventMask: NSEvent.EventTypeMask = [.keyDown, .keyUp]
+        let eventMask: NSEvent.EventTypeMask = [.keyDown]
         if globalMonitor == nil {
             globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] event in
                 self?.handle(event)
@@ -243,77 +256,16 @@ final class WindowLayoutController {
     }
 
     private func handle(_ event: NSEvent) {
-        if Self.shiftKeyCodes.contains(event.keyCode) {
-            if event.type == .keyDown {
-                if !shiftIsDown {
-                    pressedDirections.removeAll()
-                    didApplyCurrentChord = false
-                    halfLayoutWorkItem?.cancel()
-                    halfLayoutWorkItem = nil
-                }
-                shiftIsDown = true
-            } else {
-                shiftIsDown = false
-                if !didApplyCurrentChord,
-                   let layout = WindowLayout.layout(for: pressedDirections),
-                   pressedDirections.count == 1
-                {
-                    halfLayoutWorkItem?.cancel()
-                    halfLayoutWorkItem = nil
-                    apply(layout)
-                }
-                resetChord()
-            }
+        guard event.type == .keyDown,
+              !event.isARepeat,
+              let layout = WindowLayout.layout(
+                  for: event.keyCode,
+                  modifiers: event.modifierFlags
+              )
+        else {
             return
         }
-
-        guard let direction = WindowLayoutDirection(keyCode: event.keyCode) else {
-            if event.type == .keyUp, !event.modifierFlags.contains(.shift) {
-                resetChord()
-            }
-            return
-        }
-
-        if event.type == .keyDown {
-            shiftIsDown = shiftIsDown || event.modifierFlags.contains(.shift)
-            guard shiftIsDown, !event.isARepeat else { return }
-            pressedDirections.insert(direction)
-            handlePressedDirections()
-        }
-    }
-
-    private func handlePressedDirections() {
-        guard let layout = WindowLayout.layout(for: pressedDirections) else {
-            halfLayoutWorkItem?.cancel()
-            halfLayoutWorkItem = nil
-            return
-        }
-
-        if pressedDirections.count == 2 {
-            halfLayoutWorkItem?.cancel()
-            halfLayoutWorkItem = nil
-            apply(layout)
-            didApplyCurrentChord = true
-            return
-        }
-
-        halfLayoutWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self, pressedDirections.count == 1 else { return }
-            apply(layout)
-            didApplyCurrentChord = true
-            halfLayoutWorkItem = nil
-        }
-        halfLayoutWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.halfLayoutDelay, execute: workItem)
-    }
-
-    private func resetChord() {
-        halfLayoutWorkItem?.cancel()
-        halfLayoutWorkItem = nil
-        pressedDirections.removeAll()
-        shiftIsDown = false
-        didApplyCurrentChord = false
+        apply(layout)
     }
 
     private struct FocusedWindow {

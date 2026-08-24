@@ -20,12 +20,47 @@ final class AppVersionTests: XCTestCase {
         XCTAssertTrue(JarvisUpdateService.updateLogURL.path.hasSuffix("Library/Logs/Jarvis/update.log"))
     }
 
-    func testScreenRecordingPermissionResetCommandUsesBundleIdentity() {
+    func testPrivacyPermissionResetCommandsUseBundleIdentity() {
         XCTAssertEqual(
-            JarvisUpdateService.screenRecordingPermissionResetArguments(
+            JarvisUpdateService.privacyPermissionResetArguments(
                 bundleIdentifier: "com.jarvis.mac"
             ),
-            ["reset", "ScreenCapture", "com.jarvis.mac"]
+            [
+                ["reset", "ScreenCapture", "com.jarvis.mac"],
+                ["reset", "Accessibility", "com.jarvis.mac"]
+            ]
+        )
+    }
+
+    func testLaunchServicesCleanupKeepsCurrentAppAndTargetsJarvisResidueOnly() {
+        let dump = """
+        bundle id:                  Jarvis (0x1)
+        path:                       /Users/wesley/Downloads/Jarvis.app (0x2)
+        identifier:                 com.jarvis.mac
+        --------------------------------------------------------------------------------
+        bundle id:                  Jarvis Dev (0x3)
+        path:                       /Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app (0x4)
+        identifier:                 com.jarvis.mac.dev
+        --------------------------------------------------------------------------------
+        bundle id:                  JarvisStatusBarProbe (0x5)
+        path:                       /private/tmp/JarvisStatusBarProbe.app (0x6)
+        identifier:                 com.example.jarvis-status-probe
+        --------------------------------------------------------------------------------
+        bundle id:                  ChatGPT (0x7)
+        path:                       /Applications/ChatGPT.app (0x8)
+        identifier:                 com.openai.codex
+        """
+
+        XCTAssertEqual(
+            JarvisUpdateService.launchServicesCleanupPaths(
+                from: dump,
+                preserving: URL(fileURLWithPath: "/Users/wesley/Downloads/Jarvis.app"),
+                bundleIdentifier: "com.jarvis.mac"
+            ),
+            [
+                URL(fileURLWithPath: "/Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app"),
+                URL(fileURLWithPath: "/tmp/JarvisStatusBarProbe.app")
+            ]
         )
     }
 

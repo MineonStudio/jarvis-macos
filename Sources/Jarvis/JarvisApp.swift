@@ -3,11 +3,8 @@ import SwiftUI
 
 @main
 struct JarvisApp: App {
+    @NSApplicationDelegateAdaptor(JarvisApplicationDelegate.self) private var applicationDelegate
     private let menuBarController = JarvisMenuBarController.shared
-
-    init() {
-        menuBarController.install()
-    }
 
     var body: some Scene {
         WindowGroup("贾维斯") {
@@ -40,5 +37,15 @@ private struct JarvisRootView: View {
             .onAppear {
                 menuBarController.bind(app: appModel)
             }
+    }
+}
+
+@MainActor
+private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
+    private let menuBarController = JarvisMenuBarController.shared
+
+    func applicationDidFinishLaunching(_: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        menuBarController.install()
     }
 }

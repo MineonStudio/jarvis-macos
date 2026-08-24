@@ -14,6 +14,19 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertNil(WindowLayout.layout(for: [.up]))
     }
 
+    func testShortcutsMatchTilesDefaults() {
+        let modifiers = WindowLayout.shortcutModifierFlags
+
+        XCTAssertEqual(WindowLayout.layout(for: 123, modifiers: modifiers), .halfLeft)
+        XCTAssertEqual(WindowLayout.layout(for: 124, modifiers: modifiers), .halfRight)
+        XCTAssertEqual(WindowLayout.layout(for: 32, modifiers: modifiers), .upperLeft)
+        XCTAssertEqual(WindowLayout.layout(for: 34, modifiers: modifiers), .upperRight)
+        XCTAssertEqual(WindowLayout.layout(for: 38, modifiers: modifiers), .lowerLeft)
+        XCTAssertEqual(WindowLayout.layout(for: 40, modifiers: modifiers), .lowerRight)
+        XCTAssertNil(WindowLayout.layout(for: 123, modifiers: .shift))
+        XCTAssertNil(WindowLayout.layout(for: 126, modifiers: modifiers))
+    }
+
     func testHalfFramesUseTheCompleteVisibleArea() {
         let visibleFrame = NSRect(x: 12, y: 24, width: 1001, height: 777)
         let left = WindowLayout.frame(for: .halfLeft, in: visibleFrame)

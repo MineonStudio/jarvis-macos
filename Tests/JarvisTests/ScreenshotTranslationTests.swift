@@ -121,6 +121,7 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(input.wasDownsampled)
         XCTAssertEqual(input.originalByteCount, sourceData.count)
         XCTAssertEqual(input.modelByteCount, input.data.count)
+        XCTAssertEqual(input.sourcePixelSize, ScreenshotTranslationImageSize(width: 2400, height: 1200))
         XCTAssertLessThanOrEqual(max(modelBitmap.pixelsWide, modelBitmap.pixelsHigh), 2048)
         XCTAssertEqual(input.modelPixelSize.width, 2048)
         XCTAssertEqual(input.modelPixelSize.height, 1024)

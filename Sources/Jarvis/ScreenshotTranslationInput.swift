@@ -19,6 +19,7 @@ struct ScreenshotTranslationInput: Sendable {
 
     let data: Data
     let detail: ScreenshotTranslationImageDetail
+    let sourcePixelSize: ScreenshotTranslationImageSize
     let modelPixelSize: ScreenshotTranslationImageSize
     let originalByteCount: Int
     let modelByteCount: Int
@@ -40,6 +41,10 @@ struct ScreenshotTranslationInput: Sendable {
             return ScreenshotTranslationInput(
                 data: imageData,
                 detail: detail,
+                sourcePixelSize: ScreenshotTranslationImageSize(
+                    width: image.width,
+                    height: image.height
+                ),
                 modelPixelSize: ScreenshotTranslationImageSize(
                     width: image.width,
                     height: image.height
@@ -67,6 +72,10 @@ struct ScreenshotTranslationInput: Sendable {
         return ScreenshotTranslationInput(
             data: modelData,
             detail: detail,
+            sourcePixelSize: ScreenshotTranslationImageSize(
+                width: image.width,
+                height: image.height
+            ),
             modelPixelSize: ScreenshotTranslationImageSize(
                 width: thumbnail.width,
                 height: thumbnail.height

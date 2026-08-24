@@ -139,6 +139,8 @@ struct ScreenshotCanvasView: View {
                 switch selectedTool {
                 case .arrow:
                     editor.addArrow(from: start, to: end)
+                case .rectangle:
+                    editor.addRectangle(from: start, to: end)
                 case .mosaic:
                     let points = editor.mosaicMode == .brush
                         ? (mosaicPoints.count > 1 ? mosaicPoints : [start, end])
@@ -186,6 +188,16 @@ struct ScreenshotCanvasView: View {
                 lineWidth: editor.arrowLineWidth,
                 arrowHeadSize: editor.arrowHeadSize,
                 arrowHeadStyle: editor.arrowHeadStyle
+            )
+        case .rectangle:
+            return .init(
+                kind: .rectangle,
+                points: [start, end],
+                text: nil,
+                brushSize: editor.rectangleLineWidth,
+                color: editor.rectangleColor,
+                lineWidth: editor.rectangleLineWidth,
+                lineStyle: editor.rectangleLineStyle
             )
         case .mosaic:
             let points = editor.mosaicMode == .brush ? mosaicPoints : [start, end]

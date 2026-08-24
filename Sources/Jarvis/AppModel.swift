@@ -295,7 +295,7 @@ extension AppModel {
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
         case let .translateRequested(data):
-            translateScreenshot(data: translationSourceData ?? data)
+            translateScreenshot(data: data)
         default:
             handleEditorStatusAction(action)
         }

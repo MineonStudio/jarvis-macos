@@ -13,6 +13,7 @@ struct ScreenshotToolbar: View {
         case .mosaic: mosaicMode == .brush ? 520 : baseWidth
         case .text: 520
         case .arrow: 520
+        case .rectangle: 520
         default: baseWidth
         }
     }
@@ -28,6 +29,7 @@ extension ScreenshotToolbar {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 toolButton(.arrow)
+                toolButton(.rectangle)
                 toolButton(.mosaic)
                 toolButton(.text)
 
@@ -139,6 +141,8 @@ extension ScreenshotToolbar {
     private var secondaryControl: some View {
         if editor.selectedTool == .arrow {
             arrowStyleControl
+        } else if editor.selectedTool == .rectangle {
+            rectangleStyleControl
         } else if editor.selectedTool == .mosaic {
             mosaicStyleControl
         } else if editor.selectedTool == .text {
@@ -188,6 +192,52 @@ extension ScreenshotToolbar {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("箭头样式")
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private var rectangleStyleControl: some View {
+        HStack(spacing: 9) {
+            Text("颜色")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.secondary)
+
+            colorButtons(selected: editor.rectangleColor) { color in
+                editor.rectangleColor = color
+            }
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.16))
+                .frame(width: 1, height: 22)
+
+            Text("粗细")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.secondary)
+
+            Slider(value: $editor.rectangleLineWidth, in: 1 ... 12, step: 1)
+                .frame(width: 82)
+
+            Text("\(Int(editor.rectangleLineWidth))")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 18, alignment: .leading)
+
+            Menu {
+                ForEach(ScreenshotLineStyle.allCases) { style in
+                    Button {
+                        editor.rectangleLineStyle = style
+                    } label: {
+                        Label(style.title, systemImage: style.icon)
+                    }
+                }
+            } label: {
+                Label(editor.rectangleLineStyle.title, systemImage: editor.rectangleLineStyle.icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.primary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("框线样式")
         }
         .padding(.horizontal, 6)
     }

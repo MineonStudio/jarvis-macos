@@ -90,9 +90,40 @@ enum ScreenshotArrowHeadStyle: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
+enum ScreenshotLineStyle: String, CaseIterable, Identifiable, Equatable {
+    case solid
+    case dashed
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .solid: "实线"
+        case .dashed: "虚线"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .solid: "rectangle"
+        case .dashed: "rectangle.dashed"
+        }
+    }
+
+    var dashPattern: [CGFloat] {
+        switch self {
+        case .solid: []
+        case .dashed: [10, 6]
+        }
+    }
+}
+
 struct ScreenshotAnnotation: Identifiable, Equatable {
     enum Kind: Equatable {
         case arrow
+        case rectangle
         case mosaic
         case text
     }
@@ -104,6 +135,7 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
     var brushSize: CGFloat
     var color: ScreenshotTextColor = .red
     var lineWidth: CGFloat = 5
+    var lineStyle: ScreenshotLineStyle = .solid
     var arrowHeadSize: CGFloat = 20
     var arrowHeadStyle: ScreenshotArrowHeadStyle = .filled
     var fontSize: CGFloat = 22
@@ -151,6 +183,8 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
         case .arrow:
             let padding = max(lineWidth, arrowHeadSize * 0.22) + 8
             return rect.insetBy(dx: -padding, dy: -padding)
+        case .rectangle:
+            return rect.insetBy(dx: -(lineWidth / 2 + 4), dy: -(lineWidth / 2 + 4))
         case .mosaic:
             let padding = mosaicMode == .brush ? brushSize / 2 + 4 : 4
             return rect.insetBy(dx: -padding, dy: -padding)
@@ -185,6 +219,9 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published var arrowLineWidth: CGFloat = 5
     @Published var arrowHeadSize: CGFloat = 20
     @Published var arrowHeadStyle: ScreenshotArrowHeadStyle = .filled
+    @Published var rectangleColor: ScreenshotTextColor = .red
+    @Published var rectangleLineWidth: CGFloat = 5
+    @Published var rectangleLineStyle: ScreenshotLineStyle = .solid
     @Published var textFontSize: CGFloat = 22
     @Published var textColor: ScreenshotTextColor = .red
     @Published var textBold = true
@@ -261,7 +298,7 @@ extension ScreenshotEditorModel {
     }
 
     var secondaryBarVisible: Bool {
-        selectedTool == .arrow || selectedTool == .mosaic || selectedTool == .text
+        selectedTool == .arrow || selectedTool == .rectangle || selectedTool == .mosaic || selectedTool == .text
     }
 
     var selectedAnnotation: ScreenshotAnnotation? {
@@ -287,6 +324,19 @@ extension ScreenshotEditorModel {
             lineWidth: arrowLineWidth,
             arrowHeadSize: arrowHeadSize,
             arrowHeadStyle: arrowHeadStyle
+        ))
+    }
+
+    func addRectangle(from start: CGPoint, to end: CGPoint) {
+        guard distance(from: start, to: end) > 8 else { return }
+        append(.init(
+            kind: .rectangle,
+            points: [start, end],
+            text: nil,
+            brushSize: rectangleLineWidth,
+            color: rectangleColor,
+            lineWidth: rectangleLineWidth,
+            lineStyle: rectangleLineStyle
         ))
     }
 
@@ -453,6 +503,13 @@ extension ScreenshotEditorModel {
     func finalPNGData() -> Data {
         guard hasVisualEdits else { return originalOutputData }
         return renderedPNGData() ?? originalOutputData
+    }
+
+    func translationPNGData() -> Data {
+        // originalOutputData is created by ScreenshotService.crop from the
+        // user's selection, even though originalData remains the full frozen
+        // canvas used to display and edit the screenshot.
+        finalPNGData()
     }
 
     @discardableResult

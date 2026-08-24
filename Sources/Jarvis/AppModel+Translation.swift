@@ -40,10 +40,11 @@ extension AppModel {
             do {
                 let input = try await prepareScreenshotTranslationInput(from: data)
                 try Task.checkCancellation()
+                statusMessage = "正在翻译选区 \(input.sourcePixelSize.width)×\(input.sourcePixelSize.height)"
 
                 let isDarkMode = themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
                 var streamedBlocks: [ScreenshotTranslationBlock] = []
-                var lastRenderedBlockCount = 0
+                var didRenderPreview = false
                 let result: ScreenshotTranslationResult
 
                 do {
@@ -58,8 +59,7 @@ extension AppModel {
 
                         streamedBlocks.append(block)
                         latestTranslation = ScreenshotTranslationResult(blocks: streamedBlocks).translatedText
-                        let shouldRenderPreview = streamedBlocks.count == 1
-                            || streamedBlocks.count - lastRenderedBlockCount >= 3
+                        let shouldRenderPreview = !didRenderPreview
                         guard shouldRenderPreview else { continue }
 
                         let previewData = await renderScreenshotTranslation(
@@ -72,7 +72,7 @@ extension AppModel {
                         if let previewData {
                             _ = screenshotController.applyTranslatedScreenshot(previewData)
                         }
-                        lastRenderedBlockCount = streamedBlocks.count
+                        didRenderPreview = true
                     }
                     guard !streamedBlocks.isEmpty else {
                         throw ModelGatewayError.noText
@@ -137,7 +137,7 @@ extension AppModel {
             throw ModelGatewayError.invalidResponse
         }
         ScreenshotTranslationLog.logger.debug(
-            "vision input prepared durationMs=\(ScreenshotTranslationTiming.milliseconds(since: prepareStart), privacy: .public) originalBytes=\(input.originalByteCount, privacy: .public) modelBytes=\(input.modelByteCount, privacy: .public) downsampled=\(input.wasDownsampled, privacy: .public) detail=\(input.detail.rawValue, privacy: .public)"
+            "vision input prepared durationMs=\(ScreenshotTranslationTiming.milliseconds(since: prepareStart), privacy: .public) sourcePixels=\(input.sourcePixelSize.width)x\(input.sourcePixelSize.height, privacy: .public) modelPixels=\(input.modelPixelSize.width)x\(input.modelPixelSize.height, privacy: .public) originalBytes=\(input.originalByteCount, privacy: .public) modelBytes=\(input.modelByteCount, privacy: .public) downsampled=\(input.wasDownsampled, privacy: .public) detail=\(input.detail.rawValue, privacy: .public)"
         )
         return input
     }
@@ -163,14 +163,14 @@ extension AppModel {
     }
 
     func translateCurrentScreenshot() {
-        let data = screenshotController.currentEditingPNGData()
+        let data = screenshotController.currentEditingTranslationPNGData()
             ?? translationSourceData
             ?? loadLatestScreenshotIfNeeded()
         guard let data else {
             showToast("请先截取一块屏幕区域")
             return
         }
-        translateScreenshot(data: translationSourceData ?? data)
+        translateScreenshot(data: data)
     }
 
     func updateTranslationLanguage(_ language: ScreenshotTranslationLanguage) {

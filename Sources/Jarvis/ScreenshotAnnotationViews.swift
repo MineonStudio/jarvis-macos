@@ -20,6 +20,17 @@ struct ScreenshotAnnotationView: View {
             )
             .frame(width: canvasSize.width, height: canvasSize.height)
             .allowsHitTesting(false)
+        case .rectangle:
+            RectangleAnnotationView(
+                start: annotation.start,
+                end: annotation.end,
+                color: annotation.color.color,
+                lineWidth: annotation.lineWidth,
+                lineStyle: annotation.lineStyle,
+                isDraft: isDraft
+            )
+            .frame(width: canvasSize.width, height: canvasSize.height)
+            .allowsHitTesting(false)
         case .mosaic:
             MosaicAnnotationView(
                 points: annotation.points,
@@ -35,6 +46,37 @@ struct ScreenshotAnnotationView: View {
             TextAnnotationView(annotation: annotation, isDraft: isDraft)
                 .frame(width: canvasSize.width, height: canvasSize.height)
                 .allowsHitTesting(false)
+        }
+    }
+}
+
+struct RectangleAnnotationView: View {
+    let start: CGPoint
+    let end: CGPoint
+    let color: Color
+    let lineWidth: CGFloat
+    let lineStyle: ScreenshotLineStyle
+    let isDraft: Bool
+
+    var body: some View {
+        Canvas { context, _ in
+            let rect = CGRect(
+                x: min(start.x, end.x),
+                y: min(start.y, end.y),
+                width: abs(end.x - start.x),
+                height: abs(end.y - start.y)
+            )
+            guard rect.width > 0, rect.height > 0 else { return }
+            context.stroke(
+                Path(rect),
+                with: .color(color.opacity(isDraft ? 0.58 : 0.96)),
+                style: StrokeStyle(
+                    lineWidth: lineWidth,
+                    lineCap: .butt,
+                    lineJoin: .miter,
+                    dash: lineStyle.dashPattern
+                )
+            )
         }
     }
 }

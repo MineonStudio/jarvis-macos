@@ -34,7 +34,10 @@ enum ModelGatewayError: LocalizedError {
 }
 
 final class ModelGateway {
-    private static let screenshotTranslationMaxTokens = 2048
+    /// The compact JSONL protocol needs far fewer output tokens than the old
+    /// source/translation/normalized-box payload. Keep a ceiling so the model
+    /// cannot spend time generating explanations or an oversized report.
+    private static let screenshotTranslationMaxTokens = 1536
 
     func testConnection(configuration: ModelConfiguration, apiKey: String) async throws {
         _ = try await request(
@@ -320,6 +323,7 @@ final class ModelGateway {
         }
 
         var parser = CompactJSONLParser()
+        var responseText = ""
         var blockCount = 0
         for try await line in bytes.lines {
             try Task.checkCancellation()
@@ -343,6 +347,7 @@ final class ModelGateway {
                 continue
             }
 
+            responseText.append(content)
             parser.append(content, imageSize: input.modelPixelSize) { block in
                 blockCount += 1
                 if blockCount == 1 {
@@ -356,6 +361,16 @@ final class ModelGateway {
         parser.finish(imageSize: input.modelPixelSize) { block in
             blockCount += 1
             continuation.yield(block)
+        }
+        if blockCount == 0 {
+            let parsedResult = Self.parseCompactScreenshotTranslation(
+                responseText,
+                imageSize: input.modelPixelSize
+            ) ?? Self.parseScreenshotTranslation(responseText)
+            parsedResult?.blocks.forEach { block in
+                blockCount += 1
+                continuation.yield(block)
+            }
         }
         guard blockCount > 0 else {
             throw ModelGatewayError.noText

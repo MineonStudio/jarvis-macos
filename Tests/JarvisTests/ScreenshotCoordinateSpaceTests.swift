@@ -146,6 +146,39 @@ extension ScreenshotCoordinateSpaceTests {
         XCTAssertEqual(data?.prefix(8), Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
     }
 
+    func testRectangleAnnotationSupportsDefaultAndDashedStyles() {
+        XCTAssertEqual(ScreenshotLineStyle.solid.dashPattern, [])
+        XCTAssertEqual(ScreenshotLineStyle.dashed.dashPattern, [10, 6])
+
+        let annotation = ScreenshotAnnotation(
+            kind: .rectangle,
+            points: [CGPoint(x: 20, y: 20), CGPoint(x: 130, y: 90)],
+            text: nil,
+            brushSize: 5,
+            color: .red,
+            lineWidth: 5,
+            lineStyle: .dashed
+        )
+        XCTAssertEqual(annotation.lineWidth, 5)
+        XCTAssertEqual(annotation.color, .red)
+        XCTAssertEqual(annotation.lineStyle, .dashed)
+
+        let image = NSImage(size: CGSize(width: 160, height: 120))
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: 160, height: 120).fill()
+        image.unlockFocus()
+        let data = ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: image,
+            canvasSize: image.size,
+            pixelScale: 1,
+            annotations: [annotation],
+            blurredImage: nil,
+            pixelatedImage: nil
+        ))
+        XCTAssertNotNil(data)
+    }
+
     func testRenderedCanvasAndDirectCropUseTheSameSelectionCoordinates() throws {
         let canvasSize = CGSize(width: 100, height: 80)
         guard let bitmap = NSBitmapImageRep(

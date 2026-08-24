@@ -479,6 +479,13 @@ extension ScreenshotCaptureController {
         activeEditor?.finalPNGData()
     }
 
+    /// Returns the current selection-sized image used by the translation API.
+    /// The editor itself renders the full frozen canvas for display, then crops
+    /// back to the user's selection before this method returns.
+    func currentEditingTranslationPNGData() -> Data? {
+        activeEditor?.translationPNGData()
+    }
+
     @discardableResult
     func applyTranslatedScreenshot(_ translatedSelectionData: Data) -> Bool {
         guard let activeEditor else { return false }

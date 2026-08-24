@@ -61,6 +61,8 @@ final class ScreenshotRenderPipeline {
             switch annotation.kind {
             case .arrow:
                 drawArrow(annotation, in: context)
+            case .rectangle:
+                drawRectangle(annotation, in: context)
             case .mosaic:
                 drawMosaic(
                     annotation,
@@ -124,6 +126,25 @@ final class ScreenshotRenderPipeline {
             context.closePath()
             context.fillPath()
         }
+        context.restoreGState()
+    }
+
+    private func drawRectangle(_ annotation: ScreenshotAnnotation, in context: CGContext) {
+        let rect = CGRect(
+            x: min(annotation.start.x, annotation.end.x),
+            y: min(annotation.start.y, annotation.end.y),
+            width: abs(annotation.end.x - annotation.start.x),
+            height: abs(annotation.end.y - annotation.start.y)
+        )
+        guard rect.width > 0, rect.height > 0 else { return }
+
+        context.saveGState()
+        context.setStrokeColor(annotation.color.nsColor.withAlphaComponent(0.96).cgColor)
+        context.setLineWidth(annotation.lineWidth)
+        context.setLineCap(.butt)
+        context.setLineJoin(.miter)
+        context.setLineDash(phase: 0, lengths: annotation.lineStyle.dashPattern)
+        context.stroke(rect)
         context.restoreGState()
     }
 

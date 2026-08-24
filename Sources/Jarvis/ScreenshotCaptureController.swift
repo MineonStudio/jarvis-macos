@@ -45,12 +45,14 @@ struct ScreenshotPresentationPanels {
 
 enum ScreenshotTool: CaseIterable {
     case arrow
+    case rectangle
     case mosaic
     case text
 
     var icon: String {
         switch self {
         case .arrow: "arrow.up.right"
+        case .rectangle: "rectangle"
         case .mosaic: "checkerboard.rectangle"
         case .text: "textformat"
         }
@@ -59,6 +61,7 @@ enum ScreenshotTool: CaseIterable {
     var title: String {
         switch self {
         case .arrow: "箭头"
+        case .rectangle: "框选"
         case .mosaic: "马赛克"
         case .text: "文字"
         }

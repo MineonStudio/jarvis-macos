@@ -37,6 +37,15 @@ final class AppVersionTests: XCTestCase {
         XCTAssertEqual(JarvisPrivacyPermission.accessibility.settingsAnchor, "Privacy_Accessibility")
     }
 
+    func testPrivacyPermissionResetTreatsMissingBundleAsAlreadyClean() {
+        XCTAssertTrue(
+            JarvisPrivacyPermissionReset.isMissingBundleFailure(
+                "tccutil: No such bundle identifier \"com.example.app\": OSStatus error -10814"
+            )
+        )
+        XCTAssertFalse(JarvisPrivacyPermissionReset.isMissingBundleFailure("权限服务不可用"))
+    }
+
     func testFreshInstallPermissionCleanupRunsOncePerInstallationFingerprint() throws {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-fresh-install-test-\(UUID().uuidString)", isDirectory: true)
@@ -96,7 +105,7 @@ final class AppVersionTests: XCTestCase {
             ),
             [
                 URL(fileURLWithPath: "/Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app"),
-                URL(fileURLWithPath: "/tmp/JarvisStatusBarProbe.app")
+                URL(fileURLWithPath: "/tmp/JarvisStatusBarProbe.app").standardizedFileURL
             ]
         )
     }

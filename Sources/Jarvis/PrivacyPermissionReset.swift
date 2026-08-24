@@ -8,6 +8,11 @@ enum JarvisPrivacyPermissionReset {
         ]
     }
 
+    static func isMissingBundleFailure(_ message: String) -> Bool {
+        message.localizedCaseInsensitiveContains("No such bundle identifier")
+            || message.contains("OSStatus error -10814")
+    }
+
     static func reset(bundleIdentifier: String) throws {
         for arguments in arguments(bundleIdentifier: bundleIdentifier) {
             let service = arguments.dropFirst().first ?? "未知服务"
@@ -34,6 +39,12 @@ enum JarvisPrivacyPermissionReset {
                 let failureMessage = message?.isEmpty == false
                     ? message ?? ""
                     : "tccutil 返回状态码 \(process.terminationStatus)"
+                // A permission service may not have an entry for a fresh
+                // installation. That already means there is no stale grant
+                // to remove, so keep the update flow moving.
+                if Self.isMissingBundleFailure(failureMessage) {
+                    continue
+                }
                 throw JarvisUpdateError.privacyPermissionResetFailed(
                     "\(service)：\(failureMessage)"
                 )

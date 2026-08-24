@@ -8,6 +8,14 @@ extension ScreenshotCaptureController {
         screenshotService.requestScreenCaptureAccess()
     }
 
+    var hasScreenCaptureAccess: Bool {
+        screenshotService.hasScreenCaptureAccess
+    }
+
+    func openScreenCaptureSettings() {
+        screenshotService.openScreenCaptureSettings()
+    }
+
     func beginCapture(completion: @escaping (Result<ScreenshotEditingSession, Error>) -> Void) {
         guard sessionPhase == .idle else { return }
         dismissSelectionWindows()

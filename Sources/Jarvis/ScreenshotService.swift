@@ -4,11 +4,19 @@ import Foundation
 import ScreenCaptureKit
 
 final class ScreenshotService {
+    var hasScreenCaptureAccess: Bool {
+        JarvisPrivacyPermissionAccess.isScreenCaptureTrusted()
+    }
+
     func requestScreenCaptureAccess() -> Bool {
-        if CGPreflightScreenCaptureAccess() {
+        if hasScreenCaptureAccess {
             return true
         }
         return CGRequestScreenCaptureAccess()
+    }
+
+    func openScreenCaptureSettings() {
+        JarvisPrivacyPermissionAccess.openSettings(for: .screenCapture)
     }
 
     /// Freezes every connected display before Jarvis presents its own overlay.

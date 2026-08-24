@@ -323,7 +323,7 @@ struct ClipboardCard: View {
                         .lineLimit(6)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(12)
+                        .padding(HistoryGridMetrics.cardPadding)
                 } else if item.kind == .file {
                     VStack(spacing: 10) {
                         Image(systemName: item.kind.icon)
@@ -333,7 +333,7 @@ struct ClipboardCard: View {
                             .font(.system(size: 12, weight: .medium))
                             .lineLimit(3)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, HistoryGridMetrics.cardPadding)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {

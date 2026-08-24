@@ -3,6 +3,19 @@ import AppKit
 import XCTest
 
 final class WindowLayoutTests: XCTestCase {
+    func testUserFacingTitlesAndMenuIconsUseSquareRegionDiagrams() {
+        XCTAssertEqual(WindowLayout.halfLeft.title, "左半屏")
+        XCTAssertEqual(WindowLayout.halfRight.title, "右半屏")
+        XCTAssertEqual(WindowLayout.upperLeft.title, "左上角")
+        XCTAssertEqual(WindowLayout.upperRight.title, "右上角")
+        XCTAssertEqual(WindowLayout.lowerLeft.title, "左下角")
+        XCTAssertEqual(WindowLayout.lowerRight.title, "右下角")
+
+        for layout in WindowLayout.allCases {
+            XCTAssertEqual(layout.menuIcon.size, NSSize(width: 18, height: 18))
+        }
+    }
+
     func testDirectionsMapToHalvesAndCornersRegardlessOfOrder() {
         XCTAssertEqual(WindowLayout.layout(for: [.left]), .halfLeft)
         XCTAssertEqual(WindowLayout.layout(for: [.right]), .halfRight)

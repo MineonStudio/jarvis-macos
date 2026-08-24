@@ -232,6 +232,8 @@ struct DashboardView: View {
                 Divider()
                     .overlay(Color.primary.opacity(0.10))
 
+                permissionCard
+
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "lock.shield")
                         .font(.system(size: 16, weight: .medium))
@@ -256,6 +258,44 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(JarvisMetrics.pageInset)
         }
+        .onAppear {
+            app.refreshPermissionStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            app.refreshPermissionStatus()
+        }
+    }
+
+    private var permissionCard: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("权限状态", systemImage: "lock.shield")
+                        .font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                    Text(app.screenCapturePermissionGranted && app.accessibilityPermissionGranted ? "已就绪" : "需要授权")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(
+                            app.screenCapturePermissionGranted && app.accessibilityPermissionGranted
+                                ? Color.green
+                                : Color.orange
+                        )
+                }
+
+                DashboardPermissionRow(
+                    title: "屏幕录制",
+                    message: "用于冻结屏幕画面并完成框选截图。",
+                    isGranted: app.screenCapturePermissionGranted,
+                    action: { _ = app.requestScreenCapturePermission() }
+                )
+                DashboardPermissionRow(
+                    title: "辅助功能",
+                    message: "用于读取并调整其他应用的窗口位置和大小。",
+                    isGranted: app.accessibilityPermissionGranted,
+                    action: app.requestAccessibilityPermission
+                )
+            }
+        }
     }
 
     private var dashboardDivider: some View {
@@ -263,6 +303,39 @@ struct DashboardView: View {
             .fill(Color.primary.opacity(0.10))
             .frame(width: 1, height: 44)
             .padding(.horizontal, 22)
+    }
+}
+
+private struct DashboardPermissionRow: View {
+    let title: String
+    let message: String
+    let isGranted: Bool
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isGranted ? Color.green : Color.orange)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            }
+
+            Spacer(minLength: 8)
+
+            if !isGranted {
+                Button(action: action) {
+                    Label("获取权限", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+            }
+        }
     }
 }
 

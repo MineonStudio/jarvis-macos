@@ -80,7 +80,8 @@ final class AppModel: ObservableObject {
     @Published var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
-    @Published var windowLayoutAccessibilityTrusted = false
+    @Published var screenCapturePermissionGranted = false
+    @Published var accessibilityPermissionGranted = false
 
     let clipboardService = ClipboardService()
     let clipboardStore = ClipboardStore()
@@ -162,7 +163,7 @@ final class AppModel: ObservableObject {
         windowLayoutController = WindowLayoutController { [weak self] message in
             self?.showToast(message)
         }
-        windowLayoutAccessibilityTrusted = windowLayoutController?.isAccessibilityTrusted ?? false
+        refreshPermissionStatus()
 
         clipboardService.start { [weak self] item in
             Task { @MainActor [weak self] in
@@ -200,11 +201,8 @@ extension AppModel {
         }
 
         editingHistoryID = nil
-        guard screenshotController.requestScreenCaptureAccess() else {
+        guard requestScreenCapturePermission() else {
             isCapturing = false
-            // CGRequestScreenCaptureAccess() presents macOS's native Screen
-            // Recording permission flow. Do not add a Jarvis-owned alert or
-            // activate the host window on top of that system UI.
             statusMessage = "等待 macOS 屏幕录制权限"
             return
         }

@@ -32,6 +32,11 @@ final class AppVersionTests: XCTestCase {
         )
     }
 
+    func testPrivacyPermissionSettingsUseDirectSystemSettingsAnchors() {
+        XCTAssertEqual(JarvisPrivacyPermission.screenCapture.settingsAnchor, "Privacy_ScreenCapture")
+        XCTAssertEqual(JarvisPrivacyPermission.accessibility.settingsAnchor, "Privacy_Accessibility")
+    }
+
     func testFreshInstallPermissionCleanupRunsOncePerInstallationFingerprint() throws {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-fresh-install-test-\(UUID().uuidString)", isDirectory: true)

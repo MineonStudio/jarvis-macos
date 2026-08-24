@@ -15,35 +15,82 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .halfLeft: "左侧二分之一"
-        case .halfRight: "右侧二分之一"
-        case .upperLeft: "左上四分之一"
-        case .upperRight: "右上四分之一"
-        case .lowerLeft: "左下四分之一"
-        case .lowerRight: "右下四分之一"
+        case .halfLeft: "左半屏"
+        case .halfRight: "右半屏"
+        case .upperLeft: "左上角"
+        case .upperRight: "右上角"
+        case .lowerLeft: "左下角"
+        case .lowerRight: "右下角"
         }
     }
 
     var shortTitle: String {
-        switch self {
-        case .halfLeft: "左半"
-        case .halfRight: "右半"
-        case .upperLeft: "左上"
-        case .upperRight: "右上"
-        case .lowerLeft: "左下"
-        case .lowerRight: "右下"
-        }
+        title
     }
 
-    var icon: String {
-        switch self {
-        case .halfLeft: "rectangle.lefthalf.filled"
-        case .halfRight: "rectangle.righthalf.filled"
-        case .upperLeft: "rectangle.inset.topleft.filled"
-        case .upperRight: "rectangle.inset.topright.filled"
-        case .lowerLeft: "rectangle.inset.bottomleft.filled"
-        case .lowerRight: "rectangle.inset.bottomright.filled"
+    var menuIcon: NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18))
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        let bounds = NSRect(x: 2, y: 2, width: 14, height: 14)
+        NSColor.quaternaryLabelColor.setFill()
+        bounds.fill()
+
+        let halfWidth = bounds.width / 2
+        let halfHeight = bounds.height / 2
+        let selectedRect = switch self {
+        case .halfLeft:
+            NSRect(
+                x: bounds.minX,
+                y: bounds.minY,
+                width: halfWidth,
+                height: bounds.height
+            )
+        case .halfRight:
+            NSRect(
+                x: bounds.midX,
+                y: bounds.minY,
+                width: halfWidth,
+                height: bounds.height
+            )
+        case .upperLeft:
+            NSRect(
+                x: bounds.minX,
+                y: bounds.midY,
+                width: halfWidth,
+                height: halfHeight
+            )
+        case .upperRight:
+            NSRect(
+                x: bounds.midX,
+                y: bounds.midY,
+                width: halfWidth,
+                height: halfHeight
+            )
+        case .lowerLeft:
+            NSRect(
+                x: bounds.minX,
+                y: bounds.minY,
+                width: halfWidth,
+                height: halfHeight
+            )
+        case .lowerRight:
+            NSRect(
+                x: bounds.midX,
+                y: bounds.minY,
+                width: halfWidth,
+                height: halfHeight
+            )
         }
+        NSColor.controlAccentColor.setFill()
+        selectedRect.fill()
+
+        NSColor.separatorColor.setStroke()
+        let border = NSBezierPath(rect: bounds)
+        border.lineWidth = 0.75
+        border.stroke()
+        return image
     }
 
     var shortcutDisplay: String {
@@ -205,24 +252,14 @@ final class WindowLayoutController {
     }
 
     var isAccessibilityTrusted: Bool {
-        AXIsProcessTrusted()
+        JarvisPrivacyPermissionAccess.isAccessibilityTrusted()
     }
 
-    func refreshAccessibilityStatus() -> Bool {
+    @discardableResult
+    func requestAccessibilityAccess() -> Bool {
+        let trusted = JarvisPrivacyPermissionAccess.requestAccessibilityAccess()
         installMonitors()
-        return isAccessibilityTrusted
-    }
-
-    func openAccessibilitySettings() {
-        let settingsURLs = [
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ].compactMap(URL.init(string:))
-
-        for url in settingsURLs where NSWorkspace.shared.open(url) {
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
+        return trusted
     }
 
     func apply(_ layout: WindowLayout) {

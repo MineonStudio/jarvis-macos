@@ -7,6 +7,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     private weak var app: AppModel?
     private var statusItem: NSStatusItem?
+    private var appearanceObservation: NSKeyValueObservation?
     private let menu = NSMenu()
     private let screenshotMenuItem = NSMenuItem(
         title: "框选截图",
@@ -29,6 +30,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         keyEquivalent: ""
     )
 
+    deinit {
+        appearanceObservation?.invalidate()
+    }
+
     func bind(app: AppModel) {
         self.app = app
     }
@@ -45,28 +50,21 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            let menuBarFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
-            let title = NSAttributedString(
-                string: Self.menuBarTitle,
-                attributes: [
-                    .font: menuBarFont,
-                    .foregroundColor: NSColor.white
-                ]
-            )
-            // A status-bar button otherwise inherits the current menu-bar
-            // appearance and can ignore contentTintColor for text.
-            button.appearance = NSAppearance(named: .darkAqua)
-            button.title = Self.menuBarTitle
-            button.attributedTitle = title
-            button.font = menuBarFont
-            button.contentTintColor = .white
-            button.cell?.font = menuBarFont
-            button.setAccessibilityLabel(Self.menuBarTitle)
-            button.toolTip = Self.menuBarTitle
+            styleStatusItemButton(button)
         }
         statusItem.menu = menu
         statusItem.isVisible = true
         self.statusItem = statusItem
+
+        appearanceObservation = NSApp.observe(
+            \.effectiveAppearance,
+            options: [.initial, .new]
+        ) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, let button = self.statusItem?.button else { return }
+                self.styleStatusItemButton(button)
+            }
+        }
 
         menu.delegate = self
         menu.autoenablesItems = false
@@ -91,10 +89,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             )
             item.target = self
             item.representedObject = layout.rawValue
-            item.image = NSImage(
-                systemSymbolName: layout.icon,
-                accessibilityDescription: layout.title
-            )
+            item.image = layout.menuIcon
             windowLayoutMenu.addItem(item)
         }
         windowLayoutMenuItem.submenu = windowLayoutMenu
@@ -115,9 +110,35 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_: NSMenu) {
         guard let app else { return }
+        if let button = statusItem?.button {
+            styleStatusItemButton(button)
+        }
         screenshotMenuItem.title = "框选截图（\(app.screenshotShortcut.displayString)）"
         clipboardMenuItem.title = "打开剪贴板（\(app.clipboardShortcut.displayString)）"
         statusMessageMenuItem.title = app.statusMessage
+    }
+
+    private func styleStatusItemButton(_ button: NSStatusBarButton) {
+        let menuBarFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let title = NSAttributedString(
+            string: Self.menuBarTitle,
+            attributes: [
+                .font: menuBarFont,
+                .foregroundColor: NSColor.white
+            ]
+        )
+
+        // Set both the button and its cell. The status-bar cell can redraw
+        // from its own attributed title after an appearance change.
+        button.appearance = NSAppearance(named: .darkAqua)
+        button.title = Self.menuBarTitle
+        button.attributedTitle = title
+        button.font = menuBarFont
+        button.contentTintColor = .white
+        button.cell?.font = menuBarFont
+        button.cell?.backgroundStyle = .emphasized
+        button.setAccessibilityLabel(Self.menuBarTitle)
+        button.toolTip = Self.menuBarTitle
     }
 
     @objc private func captureScreenshot() {

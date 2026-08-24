@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct WindowLayoutView: View {
@@ -20,17 +19,10 @@ struct WindowLayoutView: View {
 
                 introductionCard
                 layoutGrid
-                permissionCard
             }
             .frame(maxWidth: 980, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(JarvisMetrics.pageInset)
-        }
-        .onAppear {
-            app.refreshWindowLayoutAccessibility()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            app.refreshWindowLayoutAccessibility()
         }
     }
 
@@ -64,33 +56,6 @@ struct WindowLayoutView: View {
             ForEach(layouts) { layout in
                 WindowLayoutActionCard(layout: layout) {
                     app.applyWindowLayout(layout)
-                }
-            }
-        }
-    }
-
-    private var permissionCard: some View {
-        JarvisCard {
-            HStack(spacing: 12) {
-                Image(systemName: app.windowLayoutAccessibilityTrusted ? "checkmark.shield.fill" : "lock.shield")
-                    .foregroundStyle(app.windowLayoutAccessibilityTrusted ? Color.green : Color.orange)
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(app.windowLayoutAccessibilityTrusted ? "辅助功能权限已开启" : "需要辅助功能权限")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("只有获得权限后，贾维斯才能调整其他应用的窗口位置和大小。")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                Spacer(minLength: 8)
-                if !app.windowLayoutAccessibilityTrusted {
-                    Button {
-                        app.openWindowLayoutAccessibilitySettings()
-                    } label: {
-                        Label("打开辅助功能设置", systemImage: "arrow.up.forward.app")
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
                 }
             }
         }
@@ -159,19 +124,19 @@ private struct WindowLayoutDiagram: View {
             let height = max(0, geometry.size.height - inset * 2)
 
             ZStack(alignment: fillAlignment) {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                Rectangle()
                     .fill(Color.primary.opacity(0.05))
                 Rectangle()
                     .fill(Color.accentColor.opacity(0.9))
                     .frame(width: width / 2, height: height * fillHeightRatio)
             }
             .padding(inset)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(Rectangle())
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                Rectangle()
                     .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1)
             }
-            .jarvisIconGlass(in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .jarvisIconGlass(in: Rectangle())
         }
         .frame(width: 34, height: 34)
     }

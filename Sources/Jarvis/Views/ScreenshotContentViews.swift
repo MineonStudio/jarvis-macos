@@ -241,7 +241,7 @@ struct ScreenshotHistoryThumbnail: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .padding(8)
+                    .padding(HistoryGridMetrics.cardPadding)
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 28))

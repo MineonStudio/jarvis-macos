@@ -135,14 +135,14 @@ final class AppModel: ObservableObject {
 
     init() {
         clipboardItems = clipboardStore.load()
-        latestScreenshotData = screenshotCacheStore.load()
         screenshotHistory = screenshotHistoryStore.load()
         // Preserve the cache created by older builds as the first history item
         // when upgrading to the persistent history format.
         if screenshotHistory.isEmpty,
-           let latestScreenshotData,
-           let migratedItem = screenshotHistoryStore.add(data: latestScreenshotData)
+           let cachedScreenshot = screenshotCacheStore.load(),
+           let migratedItem = screenshotHistoryStore.add(data: cachedScreenshot)
         {
+            latestScreenshotData = cachedScreenshot
             screenshotHistory = [migratedItem]
         }
         loadConfiguration()
@@ -194,6 +194,16 @@ final class AppModel: ObservableObject {
         KeychainStore.shared.value(for: "jarvis.api-key") != nil
     }
 
+    func loadLatestScreenshotIfNeeded() -> Data? {
+        if let latestScreenshotData {
+            return latestScreenshotData
+        }
+        guard let data = screenshotCacheStore.load() else { return nil }
+        latestScreenshotData = data
+        statusMessage = "已恢复上次缓存的截图"
+        return data
+    }
+
     deinit {
         toastDismissTask?.cancel()
     }
@@ -208,7 +218,7 @@ extension AppModel {
     /// invoking this method.
     func captureScreenshot() {
         guard screenshotController.sessionPhase == .idle else {
-            statusMessage = "请先完成当前截图操作"
+            showToast("请先完成当前截图操作")
             return
         }
 
@@ -251,6 +261,7 @@ extension AppModel {
                     // from pulling the Jarvis host window in front of the user.
                     break
                 default:
+                    showToast(error.localizedDescription)
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
@@ -275,11 +286,11 @@ extension AppModel {
             cancelScreenshotTranslation()
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setData(data, forType: .png)
-            statusMessage = "截图已确认并复制到剪贴板"
+            showToast("截图已确认并复制到剪贴板")
         case let .pin(data):
             finalizeScreenshot(data, historyID: editingHistoryID)
             cancelScreenshotTranslation()
-            statusMessage = "截图已贴在屏幕上"
+            showToast("截图已贴在屏幕上")
         case .cancel:
             cancelScreenshotTranslation()
             editingHistoryID = nil
@@ -327,7 +338,7 @@ extension AppModel {
         presentingWindow: NSWindow? = nil
     ) {
         guard let data = screenshotHistoryStore.data(for: item) else {
-            statusMessage = "历史截图文件不存在"
+            showToast("历史截图文件不存在")
             reloadScreenshotHistory()
             return
         }
@@ -342,13 +353,13 @@ extension AppModel {
 
     func copyScreenshotHistory(_ item: ScreenshotHistoryItem) {
         guard let data = screenshotHistoryStore.data(for: item) else {
-            statusMessage = "历史截图文件不存在"
+            showToast("历史截图文件不存在")
             reloadScreenshotHistory()
             return
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(data, forType: .png)
-        statusMessage = "截图已复制到剪贴板"
+        showToast("截图已复制到剪贴板")
     }
 
     private func presentSavePanel(
@@ -404,7 +415,6 @@ extension AppModel {
         request: ScreenshotSaveRequest
     ) {
         guard response == .OK, let url = savePanel.url else {
-            statusMessage = "已取消保存"
             return
         }
         do {
@@ -412,21 +422,21 @@ extension AppModel {
             if request.finalizesHistory {
                 finalizeScreenshot(request.data, historyID: request.historyID)
             }
-            statusMessage = request.successMessage
+            showToast(request.successMessage)
         } catch {
-            statusMessage = "保存失败：\(error.localizedDescription)"
+            showToast("保存失败：\(error.localizedDescription)")
         }
     }
 
     func clearScreenshotCache() {
         cancelScreenshotTranslation()
         guard screenshotCacheStore.clear() else {
-            statusMessage = "截图缓存清除失败"
+            showToast("截图缓存清除失败")
             return
         }
         latestScreenshotData = nil
         latestTranslation = ""
-        statusMessage = "截图缓存已清除"
+        showToast("截图缓存已清除")
     }
 
     func checkForUpdates() {
@@ -436,10 +446,14 @@ extension AppModel {
             guard let self else { return }
             do {
                 let release = try await updateService.checkForLatestRelease()
-                updateState = updateService.isNewer(
+                let hasNewVersion = updateService.isNewer(
                     release.version,
                     than: JarvisAppVersion.shortVersion
-                ) ? .available(release) : .upToDate
+                )
+                updateState = hasNewVersion ? .available(release) : .upToDate
+                if !hasNewVersion {
+                    showToast("当前已是最新版本")
+                }
             } catch {
                 updateState = .failed(message: error.localizedDescription)
             }
@@ -477,7 +491,7 @@ extension AppModel {
     private func setLatestScreenshot(_ data: Data) -> Bool {
         latestScreenshotData = data
         guard screenshotCacheStore.save(data) else {
-            statusMessage = "截图缓存保存失败"
+            showToast("截图缓存保存失败")
             return false
         }
         return true
@@ -496,7 +510,7 @@ extension AppModel {
         screenshotHistory = screenshotHistoryStore.load()
         editingHistoryID = nil
         if !cacheSaved || !historySaved {
-            statusMessage = "截图已完成，但历史记录保存失败"
+            showToast("截图已完成，但历史记录保存失败")
         }
     }
 
@@ -504,13 +518,21 @@ extension AppModel {
         screenshotHistoryStore.data(for: item)
     }
 
+    func screenshotHistoryFileURL(for item: ScreenshotHistoryItem) -> URL {
+        screenshotHistoryStore.fileURL(for: item)
+    }
+
+    func screenshotHistoryFileSize(for item: ScreenshotHistoryItem) -> Int64? {
+        screenshotHistoryStore.fileSize(for: item)
+    }
+
     func showScreenshotHistoryPreview(_ item: ScreenshotHistoryItem) {
         guard screenshotController.sessionPhase == .idle else {
-            statusMessage = "请先完成当前截图操作"
+            showToast("请先完成当前截图操作")
             return
         }
         guard let data = screenshotHistoryStore.data(for: item) else {
-            statusMessage = "历史截图文件不存在"
+            showToast("历史截图文件不存在")
             reloadScreenshotHistory()
             return
         }
@@ -519,12 +541,12 @@ extension AppModel {
 
     func editScreenshotHistory(_ item: ScreenshotHistoryItem) {
         guard screenshotController.sessionPhase == .idle else {
-            statusMessage = "请先完成当前截图操作"
+            showToast("请先完成当前截图操作")
             return
         }
         cancelScreenshotTranslation()
         guard let data = screenshotHistoryStore.data(for: item) else {
-            statusMessage = "历史截图文件不存在"
+            showToast("历史截图文件不存在")
             reloadScreenshotHistory()
             return
         }
@@ -547,7 +569,7 @@ extension AppModel {
         }
         let deletedData = screenshotHistoryStore.data(for: item)
         guard screenshotHistoryStore.delete(item) else {
-            statusMessage = "历史截图删除失败"
+            showToast("历史截图删除失败")
             reloadScreenshotHistory()
             return
         }
@@ -560,7 +582,7 @@ extension AppModel {
                 guard setLatestScreenshot(replacementData) else { return }
             } else {
                 guard screenshotCacheStore.clear() else {
-                    statusMessage = "截图缓存清除失败"
+                    showToast("截图缓存清除失败")
                     return
                 }
                 latestScreenshotData = nil
@@ -568,7 +590,7 @@ extension AppModel {
                 screenshotTranslationState = .idle
             }
         }
-        statusMessage = "已删除历史截图"
+        showToast("已删除历史截图")
     }
 
     private func reloadScreenshotHistory() {

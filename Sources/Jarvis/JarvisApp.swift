@@ -3,42 +3,42 @@ import SwiftUI
 
 @main
 struct JarvisApp: App {
-    @StateObject private var appModel = AppModel()
-    @StateObject private var mainWindowController = JarvisMainWindowController()
+    private let menuBarController = JarvisMenuBarController.shared
+
+    init() {
+        menuBarController.install()
+    }
 
     var body: some Scene {
         WindowGroup("贾维斯") {
-            ContentView()
-                .environmentObject(appModel)
-                .tint(.accentColor)
-                .jarvisTheme(
-                    appModel.themePreference,
-                    systemColorScheme: appModel.systemColorScheme
-                )
-                .frame(minWidth: 980, minHeight: 680)
-                .background(JarvisMainWindowAccessor(controller: mainWindowController))
+            JarvisRootView(menuBarController: menuBarController)
         }
         .defaultSize(
             width: JarvisMainWindowController.launchWindowSize.width,
             height: JarvisMainWindowController.launchWindowSize.height
         )
         .windowStyle(.hiddenTitleBar)
+    }
+}
 
-        MenuBarExtra {
-            MenuBarView()
-                .environmentObject(appModel)
-                .jarvisTheme(
-                    appModel.themePreference,
-                    systemColorScheme: appModel.systemColorScheme
-                )
-        } label: {
-            Text("JARVIS")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .tracking(0.8)
-                .foregroundStyle(.primary)
-                .fixedSize()
-                .accessibilityLabel("贾维斯")
-                .help("贾维斯")
-        }
+private struct JarvisRootView: View {
+    let menuBarController: JarvisMenuBarController
+
+    @StateObject private var appModel = AppModel()
+    @StateObject private var mainWindowController = JarvisMainWindowController()
+
+    var body: some View {
+        ContentView()
+            .environmentObject(appModel)
+            .tint(.accentColor)
+            .jarvisTheme(
+                appModel.themePreference,
+                systemColorScheme: appModel.systemColorScheme
+            )
+            .frame(minWidth: 980, minHeight: 680)
+            .background(JarvisMainWindowAccessor(controller: mainWindowController))
+            .onAppear {
+                menuBarController.bind(app: appModel)
+            }
     }
 }

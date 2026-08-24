@@ -9,6 +9,12 @@ enum ClipboardLimits {
     static let maximumStoredFileSize: Int64 = 1024 * 1024 * 1024
 }
 
+enum ClipboardOrdering {
+    static func newestFirst(_ items: [ClipboardItem]) -> [ClipboardItem] {
+        items.sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
 enum ClipboardKind: String, Codable, CaseIterable {
     case text
     case image
@@ -191,6 +197,12 @@ final class ClipboardService {
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
 
+        let fileURLs = Self.fileURLs(from: pasteboard)
+        if !fileURLs.isEmpty {
+            fileURLs.forEach(captureFile)
+            return
+        }
+
         if let text = pasteboard.string(forType: .string), !text.isEmpty {
             let fingerprint = digest(Data(text.utf8))
             onChange?(ClipboardItem(
@@ -215,14 +227,14 @@ final class ClipboardService {
             ))
             return
         }
+    }
 
-        guard let url = pasteboard.readObjects(
+    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        )?.compactMap({ $0 as? URL }).first,
-            url.isFileURL else { return }
-
-        captureFile(url)
+        )?.compactMap { $0 as? URL }
+            .filter(\.isFileURL) ?? []
     }
 
     private func imageData(from pasteboard: NSPasteboard) -> Data? {
@@ -359,7 +371,8 @@ final class ClipboardStore {
 
         do {
             let data = try Data(contentsOf: fileURL)
-            return try sort(JSONDecoder().decode([ClipboardItem].self, from: data))
+            let items = try JSONDecoder().decode([ClipboardItem].self, from: data)
+            return ClipboardOrdering.newestFirst(items)
         } catch {
             JarvisPersistenceLog.logger.error(
                 "读取剪贴板历史失败：\(error.localizedDescription, privacy: .public)"
@@ -407,15 +420,6 @@ final class ClipboardStore {
             JarvisPersistenceLog.logger.error(
                 "删除剪贴板本地文件失败：\(error.localizedDescription, privacy: .public)"
             )
-        }
-    }
-
-    private func sort(_ items: [ClipboardItem]) -> [ClipboardItem] {
-        items.sorted {
-            if $0.isPinned != $1.isPinned {
-                return $0.isPinned
-            }
-            return $0.createdAt > $1.createdAt
         }
     }
 }

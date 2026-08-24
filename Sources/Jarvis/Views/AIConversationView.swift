@@ -254,38 +254,22 @@ struct AIConversationView: View {
     }
 
     private var providerNavigation: some View {
-        HStack(spacing: 2) {
-            ForEach(AIConversationProvider.allCases) { provider in
-                Button {
-                    app.selectedAIProvider = provider
-                } label: {
-                    Text(provider.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(
-                            app.selectedAIProvider == provider ? Color.white : Color.secondary
-                        )
-                        .frame(
-                            minWidth: 72,
-                            minHeight: JarvisMetrics.segmentedItemHeight,
-                            maxHeight: JarvisMetrics.segmentedItemHeight
-                        )
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
-                        .contentShape(Capsule())
-                        .background(
-                            app.selectedAIProvider == provider
-                                ? Color.accentColor.opacity(0.82)
-                                : .clear,
-                            in: Capsule()
-                        )
-                }
-                .buttonStyle(.plain)
-                .contentShape(Capsule())
+        JarvisSegmentedControl(
+            items: Array(AIConversationProvider.allCases),
+            selection: $app.selectedAIProvider
+        ) { provider, isSelected in
+            Text(provider.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .frame(
+                    minWidth: 72,
+                    minHeight: JarvisMetrics.segmentedItemHeight,
+                    maxHeight: JarvisMetrics.segmentedItemHeight
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
                 .help(provider.title)
-            }
         }
-        .padding(JarvisMetrics.segmentedControlPadding)
-        .jarvisGlass(in: Capsule(), interactive: false)
         .shadow(color: Color.black.opacity(0.10), radius: 14, y: 6)
     }
 
@@ -341,9 +325,10 @@ private struct AIConversationBrowserControls: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .foregroundStyle(Color.secondary)
         .jarvisGlass(in: Circle(), interactive: true)
+        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help("下载管理")
         .popover(isPresented: $showsDownloadManager, arrowEdge: .top) {
             AIConversationDownloadManagerView(manager: controller.downloadManager)
@@ -363,11 +348,12 @@ private struct AIConversationBrowserControls: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .foregroundStyle(Color.secondary)
         .opacity(isDisabled ? 0.38 : 1)
         .disabled(isDisabled)
         .jarvisGlass(in: Circle(), interactive: true)
+        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help(help)
     }
 }
@@ -387,7 +373,7 @@ private struct AIConversationDownloadManagerView: View {
                     Button("清理已完成") {
                         manager.clearFinished()
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
                     .foregroundStyle(Color.accentColor)
                     .font(.system(size: 11, weight: .medium))
                 }
@@ -428,7 +414,7 @@ private struct AIConversationDownloadManagerView: View {
                 Label("打开下载文件夹", systemImage: "folder")
                     .font(.system(size: 12, weight: .medium))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
             .foregroundStyle(Color.accentColor)
             .padding(.top, 10)
         }
@@ -475,7 +461,7 @@ private struct AIConversationDownloadRow: View {
                 Button("取消") {
                     manager.cancel(item)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.secondary)
             } else if item.canOpenFile {

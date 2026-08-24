@@ -333,7 +333,7 @@ private struct ScreenshotInlineTextEditor: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
             .foregroundStyle(Color.jarvisCyan)
 
             Button(action: onCancel) {
@@ -341,7 +341,7 @@ private struct ScreenshotInlineTextEditor: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
             .foregroundStyle(Color.black.opacity(0.56))
         }
         .font(.system(size: max(12, editor.textFontSize * 0.58), weight: .medium))

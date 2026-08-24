@@ -291,7 +291,7 @@ struct SettingsView: View {
             case .checking:
                 Text("正在检查更新…")
             case .upToDate:
-                Text("已是最新版本")
+                EmptyView()
             case let .available(release):
                 Text("发现新版本 \(release.version)")
                     .foregroundStyle(Color.accentColor)
@@ -327,64 +327,18 @@ struct JarvisThemePicker: View {
     @Binding var selection: JarvisTheme
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(JarvisTheme.allCases) { theme in
-                Button {
-                    selection = theme
-                } label: {
-                    Text(theme.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(selection == theme ? Color.white : Color.secondary)
-                        .frame(
-                            minWidth: 54,
-                            minHeight: JarvisMetrics.segmentedItemHeight,
-                            maxHeight: JarvisMetrics.segmentedItemHeight
-                        )
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
-                        .contentShape(Capsule())
-                        .background(
-                            selection == theme ? Color.accentColor.opacity(0.82) : .clear,
-                            in: Capsule()
-                        )
-                }
-                .buttonStyle(.plain)
+        JarvisSegmentedControl(items: Array(JarvisTheme.allCases), selection: $selection) { theme, isSelected in
+            Text(theme.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .frame(
+                    minWidth: 54,
+                    minHeight: JarvisMetrics.segmentedItemHeight,
+                    maxHeight: JarvisMetrics.segmentedItemHeight
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
                 .contentShape(Capsule())
-            }
-        }
-        .padding(JarvisMetrics.segmentedControlPadding)
-        .jarvisGlass(in: Capsule(), interactive: false)
-    }
-}
-
-struct MenuBarView: View {
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        Button {
-            app.captureScreenshot()
-        } label: {
-            Label("框选截图", systemImage: "viewfinder")
-        }
-        Button {
-            NSApp.activate(ignoringOtherApps: true)
-            app.selectedSection = .overview
-        } label: {
-            Label("打开贾维斯", systemImage: "rectangle.on.rectangle")
-        }
-        Button {
-            app.showClipboardPanel()
-        } label: {
-            Label("打开剪贴板（\(app.clipboardShortcut.displayString)）", systemImage: "clipboard")
-        }
-        Divider()
-        Text(app.statusMessage)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        Button {
-            NSApp.terminate(nil)
-        } label: {
-            Label("退出贾维斯", systemImage: "power")
         }
     }
 }
@@ -415,8 +369,12 @@ struct QuickActionButton: View {
             .jarvisGlass(cornerRadius: 13)
             .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.86))
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .jarvisHoverFeedback(
+            in: RoundedRectangle(cornerRadius: 13, style: .continuous),
+            scale: 1.008
+        )
     }
 }
 

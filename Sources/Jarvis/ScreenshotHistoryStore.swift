@@ -60,13 +60,26 @@ final class ScreenshotHistoryStore {
 
     func data(for item: ScreenshotHistoryItem) -> Data? {
         do {
-            return try Data(contentsOf: directoryURL.appendingPathComponent(item.fileName))
+            return try Data(contentsOf: fileURL(for: item))
         } catch {
             JarvisPersistenceLog.logger.error(
                 "读取历史截图失败：\(error.localizedDescription, privacy: .public)"
             )
             return nil
         }
+    }
+
+    func fileURL(for item: ScreenshotHistoryItem) -> URL {
+        directoryURL.appendingPathComponent(item.fileName)
+    }
+
+    func fileSize(for item: ScreenshotHistoryItem) -> Int64? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL(for: item).path),
+              let fileSize = attributes[.size] as? NSNumber
+        else {
+            return nil
+        }
+        return fileSize.int64Value
     }
 
     @discardableResult

@@ -38,6 +38,7 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
         }
         XCTAssertEqual(history.load().map(\.id), [second.id, first.id])
         XCTAssertEqual(history.data(for: first), firstData)
+        XCTAssertEqual(history.fileSize(for: first), Int64(firstData.count))
 
         let editedData = Data([7, 8, 9])
         let edited = history.update(first, data: editedData, date: Date(timeIntervalSince1970: 300))

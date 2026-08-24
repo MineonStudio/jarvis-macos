@@ -2,8 +2,8 @@ import Foundation
 
 extension AppModel {
     func translateScreenshot() {
-        guard let screenshotData = latestScreenshotData else {
-            statusMessage = "请先截取一块屏幕区域"
+        guard let screenshotData = loadLatestScreenshotIfNeeded() else {
+            showToast("请先截取一块屏幕区域")
             return
         }
 
@@ -12,7 +12,7 @@ extension AppModel {
 
     func translateScreenshot(data: Data) {
         guard !data.isEmpty else {
-            statusMessage = "截图内容为空，无法翻译"
+            showToast("截图内容为空，无法翻译")
             return
         }
 
@@ -21,7 +21,7 @@ extension AppModel {
             selectedSection = .settings
             screenshotTranslationState = .failed("请先在设置中配置 API Key")
             screenshotTranslationProgress.isTranslating = false
-            statusMessage = "请先在设置中配置 API Key"
+            showToast("请先在设置中配置 API Key")
             return
         }
 
@@ -54,7 +54,7 @@ extension AppModel {
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false
-                statusMessage = "翻译失败：\(error.localizedDescription)"
+                showToast("翻译失败：\(error.localizedDescription)")
             }
         }
     }
@@ -72,7 +72,7 @@ extension AppModel {
         else {
             screenshotTranslationState = .failed("截图中未识别到文字")
             screenshotTranslationProgress.isTranslating = false
-            statusMessage = "截图中未识别到文字"
+            showToast("截图中未识别到文字")
             return
         }
 
@@ -81,7 +81,7 @@ extension AppModel {
             selectedSection = .settings
             screenshotTranslationState = .failed("请先在设置中配置 API Key")
             screenshotTranslationProgress.isTranslating = false
-            statusMessage = "请先在设置中配置 API Key"
+            showToast("请先在设置中配置 API Key")
             return
         }
 
@@ -115,12 +115,12 @@ extension AppModel {
                 else {
                     screenshotTranslationState = .failed("无法生成翻译后的截图")
                     screenshotTranslationProgress.isTranslating = false
-                    statusMessage = "无法生成翻译后的截图"
+                    showToast("无法生成翻译后的截图")
                     return
                 }
                 screenshotTranslationState = .success(latestTranslation)
                 screenshotTranslationProgress.isTranslating = false
-                statusMessage = "翻译完成，已替换原文区域"
+                showToast("翻译完成，已替换原文区域")
             } catch is CancellationError {
                 return
             } catch {
@@ -129,15 +129,17 @@ extension AppModel {
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false
-                statusMessage = "翻译失败：\(error.localizedDescription)"
+                showToast("翻译失败：\(error.localizedDescription)")
             }
         }
     }
 
     func translateCurrentScreenshot() {
-        let data = screenshotController.currentEditingPNGData() ?? translationSourceData ?? latestScreenshotData
+        let data = screenshotController.currentEditingPNGData()
+            ?? translationSourceData
+            ?? loadLatestScreenshotIfNeeded()
         guard let data else {
-            statusMessage = "请先截取一块屏幕区域"
+            showToast("请先截取一块屏幕区域")
             return
         }
         translateScreenshot(data: translationSourceData ?? data)

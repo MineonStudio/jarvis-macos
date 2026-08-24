@@ -1,7 +1,24 @@
+import AppKit
 @testable import Jarvis
 import XCTest
 
 final class ClipboardTests: XCTestCase {
+    func testClipboardServiceExtractsAllFileURLsFromPasteboard() {
+        let pasteboard = NSPasteboard(
+            name: NSPasteboard.Name("JarvisClipboardTests-\(UUID().uuidString)")
+        )
+        let firstURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("first.txt")
+        let secondURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("second.pdf")
+
+        XCTAssertTrue(pasteboard.writeObjects([firstURL as NSURL, secondURL as NSURL]))
+        XCTAssertEqual(
+            ClipboardService.fileURLs(from: pasteboard),
+            [firstURL, secondURL]
+        )
+    }
+
     func testClipboardItemRoundTripsVideoMetadataAndPin() throws {
         let item = ClipboardItem(
             kind: .video,
@@ -45,6 +62,25 @@ final class ClipboardTests: XCTestCase {
         XCTAssertNil(item.thumbnailPath)
     }
 
+    func testClipboardOrderingKeepsNewestFirstRegardlessOfPinState() {
+        let older = ClipboardItem(
+            createdAt: Date(timeIntervalSince1970: 100),
+            kind: .text,
+            text: "older",
+            isPinned: true
+        )
+        let newer = ClipboardItem(
+            createdAt: Date(timeIntervalSince1970: 200),
+            kind: .text,
+            text: "newer"
+        )
+
+        XCTAssertEqual(
+            ClipboardOrdering.newestFirst([older, newer]),
+            [newer, older]
+        )
+    }
+
     func testVideoThumbnailGeneratorFailsSafelyForMissingFile() {
         let expectation = expectation(description: "Missing video returns no thumbnail")
         ClipboardVideoThumbnailGenerator.makeCGImageAsync(
@@ -79,5 +115,11 @@ final class ClipboardTests: XCTestCase {
             [image]
         )
         XCTAssertEqual(ClipboardFilterLogic.count(for: .text, in: items), 1)
+
+        let counts = ClipboardFilterLogic.counts(in: items)
+        XCTAssertEqual(counts[.all], 3)
+        XCTAssertEqual(counts[.text], 1)
+        XCTAssertEqual(counts[.image], 1)
+        XCTAssertEqual(counts[.video], 1)
     }
 }

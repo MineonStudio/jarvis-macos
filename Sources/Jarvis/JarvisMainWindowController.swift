@@ -1,6 +1,33 @@
 import AppKit
 import SwiftUI
 
+enum JarvisWindowAppearance {
+    static func configure(for window: NSWindow) {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+        window.backgroundColor = .textBackgroundColor
+        window.sharingType = .readOnly
+
+        if let close = window.standardWindowButton(.closeButton),
+           let miniaturize = window.standardWindowButton(.miniaturizeButton),
+           let zoom = window.standardWindowButton(.zoomButton)
+        {
+            let titlebarY = close.frame.minY
+            close.setFrameOrigin(NSPoint(x: 18, y: titlebarY))
+            miniaturize.setFrameOrigin(NSPoint(x: close.frame.maxX + 8, y: titlebarY))
+            zoom.setFrameOrigin(NSPoint(x: miniaturize.frame.maxX + 8, y: titlebarY))
+            close.isHidden = false
+            miniaturize.isHidden = false
+            zoom.isHidden = false
+            close.translatesAutoresizingMaskIntoConstraints = true
+            miniaturize.translatesAutoresizingMaskIntoConstraints = true
+            zoom.translatesAutoresizingMaskIntoConstraints = true
+        }
+    }
+}
+
 /// Owns the main window's AppKit lifecycle independently from SwiftUI's view
 /// redraws. The window frame is restored once when the NSWindow is attached and
 /// persisted from window lifecycle notifications afterward.
@@ -119,30 +146,7 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
     }
 
     private func configureAppearance(for window: NSWindow) {
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-        window.styleMask.insert(.fullSizeContentView)
-        window.backgroundColor = .textBackgroundColor
-        window.sharingType = .readOnly
-
-        if let close = window.standardWindowButton(.closeButton),
-           let miniaturize = window.standardWindowButton(.miniaturizeButton),
-           let zoom = window.standardWindowButton(.zoomButton)
-        {
-            // The native traffic lights belong to the sidebar in the reference
-            // layout, so move the standard button group into that column.
-            let titlebarY = close.frame.minY
-            close.setFrameOrigin(NSPoint(x: 18, y: titlebarY))
-            miniaturize.setFrameOrigin(NSPoint(x: close.frame.maxX + 8, y: titlebarY))
-            zoom.setFrameOrigin(NSPoint(x: miniaturize.frame.maxX + 8, y: titlebarY))
-            close.isHidden = false
-            miniaturize.isHidden = false
-            zoom.isHidden = false
-            close.translatesAutoresizingMaskIntoConstraints = true
-            miniaturize.translatesAutoresizingMaskIntoConstraints = true
-            zoom.translatesAutoresizingMaskIntoConstraints = true
-        }
+        JarvisWindowAppearance.configure(for: window)
     }
 }
 

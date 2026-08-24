@@ -3,6 +3,9 @@ import SwiftUI
 
 @MainActor
 final class ClipboardPanelController: NSObject, NSWindowDelegate {
+    private static let defaultPanelSize = NSSize(width: 1040, height: 600)
+    private static let minimumPanelSize = NSSize(width: 1040, height: 420)
+
     private var panel: NSPanel?
 
     func show(app: AppModel) {
@@ -24,12 +27,16 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
 
     private func makePanel(app: AppModel) {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-            styleMask: [.titled, .closable, .resizable],
+            contentRect: NSRect(
+                origin: .zero,
+                size: Self.defaultPanelSize
+            ),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.title = "剪贴板"
+        JarvisWindowAppearance.configure(for: panel)
         // Keep the native titlebar as the only window drag surface. Content
         // owns all body gestures, including clipboard card export drags.
         panel.isMovableByWindowBackground = false
@@ -38,7 +45,7 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
-        panel.minSize = NSSize(width: 640, height: 420)
+        panel.minSize = Self.minimumPanelSize
         panel.delegate = self
         panel.contentView = NSHostingView(
             rootView: ClipboardPanelView()

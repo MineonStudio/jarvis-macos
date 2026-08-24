@@ -5,12 +5,18 @@ extension AppModel {
     // MARK: - Shared UI state
 
     func showToast(_ message: String) {
+        statusMessage = message
         toastDismissTask?.cancel()
         toastMessage = message
         toastDismissTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            do {
+                try await Task.sleep(nanoseconds: 2_400_000_000)
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             self?.toastMessage = nil
+            self?.toastDismissTask = nil
         }
     }
 

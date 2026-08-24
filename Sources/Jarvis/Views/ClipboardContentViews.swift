@@ -68,7 +68,7 @@ struct ClipboardSearchField: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
                 .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
@@ -103,6 +103,18 @@ enum ClipboardFilterLogic {
     static func count(for filter: ClipboardViewFilter, in items: [ClipboardItem]) -> Int {
         items.filter { filter.matches($0) }.count
     }
+
+    static func counts(in items: [ClipboardItem]) -> [ClipboardViewFilter: Int] {
+        var counts = Dictionary(
+            uniqueKeysWithValues: ClipboardViewFilter.allCases.map { ($0, 0) }
+        )
+        for item in items {
+            for filter in ClipboardViewFilter.allCases where filter.matches(item) {
+                counts[filter, default: 0] += 1
+            }
+        }
+        return counts
+    }
 }
 
 struct ClipboardFilterBar: View {
@@ -112,6 +124,10 @@ struct ClipboardFilterBar: View {
     let focusesOnAppear: Bool
     let items: [ClipboardItem]
 
+    private var filterCounts: [ClipboardViewFilter: Int] {
+        ClipboardFilterLogic.counts(in: items)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -119,7 +135,7 @@ struct ClipboardFilterBar: View {
                     ForEach(ClipboardViewFilter.allCases) { filter in
                         ClipboardFilterChip(
                             filter: filter,
-                            count: ClipboardFilterLogic.count(for: filter, in: items),
+                            count: filterCounts[filter, default: 0],
                             isSelected: selectedFilter == filter
                         ) {
                             selectedFilter = filter
@@ -134,7 +150,7 @@ struct ClipboardFilterBar: View {
                 placeholder: placeholder,
                 focusesOnAppear: focusesOnAppear
             )
-            .frame(width: 260)
+            .frame(width: 320)
         }
     }
 }
@@ -249,8 +265,9 @@ struct ClipboardFilterChip: View {
             }
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))
         .contentShape(Capsule())
+        .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
     }
 }
 
@@ -280,6 +297,7 @@ enum ClipboardCardPresentation {
 
 struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
+    @State private var showingDeleteConfirmation = false
     let item: ClipboardItem
     let presentation: ClipboardCardPresentation
     let onPreview: (() -> Void)?
@@ -336,7 +354,7 @@ struct ClipboardCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.995, pressedOpacity: 0.9))
         .help(
             presentation == .panel
                 ? "点击复制或预览；拖动卡片主体导出内容"
@@ -390,17 +408,17 @@ struct ClipboardCard: View {
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
                 .foregroundStyle(item.isPinned ? .yellow : Color.jarvisTextSecondary)
                 .help(item.isPinned ? "取消收藏" : "收藏")
                 Button {
-                    app.deleteClipboardItem(item)
+                    showingDeleteConfirmation = true
                 } label: {
                     Image(systemName: "trash")
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
                 .foregroundStyle(.red.opacity(0.72))
                 .help("删除")
             }
@@ -420,8 +438,10 @@ struct ClipboardCard: View {
             height: HistoryGridMetrics.cardHeight,
             alignment: .topLeading
         )
-        .jarvisGlass(cornerRadius: 13, interactive: false)
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .jarvisHoverPanelFeedback(
+            scale: 1.03
+        )
         .contextMenu {
             if presentation == .main {
                 Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
@@ -430,8 +450,20 @@ struct ClipboardCard: View {
                     Button("在 Finder 中显示") { app.revealClipboardItem(item) }
                 }
                 Divider()
-                Button("删除", role: .destructive) { app.deleteClipboardItem(item) }
+                Button("删除", role: .destructive) { showingDeleteConfirmation = true }
             }
+        }
+        .confirmationDialog(
+            "删除这条剪贴板记录？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                app.deleteClipboardItem(item)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后无法恢复。")
         }
     }
 }
@@ -498,8 +530,16 @@ struct ClipboardPanelView: View {
             .font(.system(size: 10))
             .foregroundStyle(Color.jarvisTextSecondary)
         }
-        .padding(20)
+        .padding(.top, 32)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.jarvisBackground)
+        .overlay(alignment: .bottom) {
+            JarvisToastHost(message: app.toastMessage)
+                .padding(.bottom, 20)
+        }
+        .ignoresSafeArea(.container, edges: .top)
         .onAppear {
             selectedFilter = .all
         }

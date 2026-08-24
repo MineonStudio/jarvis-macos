@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationSelection: AppSection = .overview
     @State private var loadedSection: AppSection = .overview
 
@@ -15,8 +16,12 @@ struct ContentView: View {
                 // navbar to be composited above the body instead of behind it.
                 Color.clear
                     .frame(height: 102)
-                detailView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ZStack {
+                    detailView
+                        .id(loadedSection)
+                        .transition(.opacity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .overlay(alignment: .top) {
@@ -26,7 +31,7 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     Button {
-                        navigationSelection = .settings
+                        selectSection(.settings)
                     } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 17, weight: .medium))
@@ -42,8 +47,9 @@ struct ContentView: View {
                             )
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
                     .contentShape(Rectangle())
+                    .jarvisHoverFeedback(in: Circle(), scale: 1.04)
                     .help("设置")
                 }
                 .padding(.horizontal, 28)
@@ -56,49 +62,61 @@ struct ContentView: View {
             .zIndex(1)
         }
         .overlay(alignment: .bottom) {
-            if let toastMessage = app.toastMessage {
-                JarvisToast(message: toastMessage)
-                    .padding(.bottom, 26)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            JarvisToastHost(message: app.toastMessage)
+                .padding(.bottom, 26)
         }
         .tint(.accentColor)
         .ignoresSafeArea(.container, edges: .top)
-        .animation(.easeInOut(duration: 0.2), value: app.toastMessage)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            value: app.toastMessage
+        )
         .onChange(of: app.selectedSection) { _, newSection in
             // Other entry points (quick actions, menu bar, screenshot flow)
-            // still drive the app model. Reflect them in the navbar first;
-            // the section task below will mount the page on the next turn.
+            // still drive the app model. Reflect them in the navbar immediately;
+            // the section task below mounts the page after the tab settles.
             guard navigationSelection != newSection else { return }
             navigationSelection = newSection
         }
         .task(id: navigationSelection) {
             let nextSection = navigationSelection
-            guard nextSection != loadedSection else {
-                if app.selectedSection != nextSection {
-                    app.selectedSection = nextSection
-                }
-                return
-            }
+            guard nextSection != loadedSection else { return }
 
-            // Give SwiftUI one turn to commit the optimistic navbar state
-            // before constructing the potentially heavier page hierarchy.
-            await Task.yield()
+            // Let the navigation indicator finish its interaction animation
+            // before mounting a potentially heavy page hierarchy such as the
+            // AI WebView. The tab selection itself is already committed.
+            if !reduceMotion {
+                do {
+                    try await Task.sleep(nanoseconds: 240_000_000)
+                } catch {
+                    return
+                }
+            }
             guard !Task.isCancelled, navigationSelection == nextSection else { return }
-            loadedSection = nextSection
-            app.selectedSection = nextSection
+            if reduceMotion {
+                loadedSection = nextSection
+            } else {
+                withAnimation(JarvisMotion.pageTransition) {
+                    loadedSection = nextSection
+                }
+            }
         }
     }
 
-    private var selectedSectionBinding: Binding<AppSection?> {
+    private func selectSection(_ section: AppSection) {
+        guard navigationSelection != section || app.selectedSection != section else { return }
+        navigationSelection = section
+        app.selectedSection = section
+    }
+
+    private var selectedSectionBinding: Binding<AppSection> {
         Binding(
             get: { navigationSelection },
             set: { newValue in
-                guard let newValue else { return }
-                // This is intentionally local and synchronous. The page
-                // switch is deferred by the task above so the selected tab
-                // responds before its destination is loaded.
-                navigationSelection = newValue
+                // Commit the navigation state synchronously. The page
+                // switch is deferred by the task above so heavy module
+                // construction cannot delay the selected tab.
+                selectSection(newValue)
             }
         )
     }
@@ -115,8 +133,26 @@ struct ContentView: View {
     }
 }
 
+struct JarvisToastHost: View {
+    let message: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if let message {
+                JarvisToast(message: message)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            value: message
+        )
+    }
+}
+
 private struct TopNavigationBar: View {
-    @Binding var selection: AppSection?
+    @Binding var selection: AppSection
 
     private let sections: [AppSection] = [
         .overview,
@@ -126,35 +162,19 @@ private struct TopNavigationBar: View {
     ]
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(sections) { section in
-                Button {
-                    selection = section
-                } label: {
-                    Text(section.navigationTitle)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(selection == section ? Color.white : Color.secondary)
-                        .frame(
-                            minWidth: 70,
-                            minHeight: JarvisMetrics.segmentedItemHeight,
-                            maxHeight: JarvisMetrics.segmentedItemHeight
-                        )
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
-                        .contentShape(Capsule())
-                        .background(
-                            selection == section ? Color.accentColor.opacity(0.82) : .clear,
-                            in: Capsule()
-                        )
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .contentShape(Capsule())
+        JarvisSegmentedControl(items: sections, selection: $selection) { section, isSelected in
+            Text(section.navigationTitle)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .frame(
+                    minWidth: 70,
+                    minHeight: JarvisMetrics.segmentedItemHeight,
+                    maxHeight: JarvisMetrics.segmentedItemHeight
+                )
+                .padding(.horizontal, 10)
+                .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
                 .help(section.navigationTitle)
-            }
         }
-        .padding(JarvisMetrics.segmentedControlPadding)
-        .jarvisGlass(in: Capsule(), interactive: false)
         .shadow(color: Color.black.opacity(0.10), radius: 20, y: 9)
     }
 }

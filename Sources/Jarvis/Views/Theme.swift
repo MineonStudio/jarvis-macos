@@ -174,6 +174,8 @@ extension View {
 }
 
 struct JarvisPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold))
@@ -183,12 +185,17 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.78 : 1)
             .jarvisGlass(tint: .accentColor, cornerRadius: JarvisMetrics.controlRadius)
             .contentShape(RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.98 : 1))
+            .animation(
+                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
     }
 }
 
 struct JarvisSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .medium))
@@ -198,7 +205,10 @@ struct JarvisSecondaryButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.68 : 1)
             .jarvisGlass(cornerRadius: JarvisMetrics.controlRadius)
             .contentShape(RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.98 : 1))
+            .animation(
+                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
     }
 }

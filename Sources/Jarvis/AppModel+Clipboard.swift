@@ -16,17 +16,17 @@ extension AppModel {
         clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
         clipboardStore.removeStoredFiles(for: removedItems)
         if !clipboardStore.save(clipboardItems) {
-            statusMessage = "剪贴板历史保存失败"
+            showToast("剪贴板历史保存失败")
         }
     }
 
     func copyClipboard(_ item: ClipboardItem) {
         guard writeClipboardItem(item) else {
-            statusMessage = "内容已不可用，可能已被移动或删除"
+            showToast("内容已不可用，可能已被移动或删除")
             return
         }
         clipboardService.markCurrentPasteboardAsHandled()
-        statusMessage = "已复制 \(item.preview)"
+        showToast("已复制 \(item.preview)")
     }
 
     func showClipboardMediaPreview(_ item: ClipboardItem) {
@@ -35,7 +35,7 @@ extension AppModel {
             return
         }
         guard item.hasLocalContent else {
-            statusMessage = "媒体文件已不可用"
+            showToast("媒体文件已不可用")
             return
         }
         clipboardMediaPreviewController.show(item: item, app: self)
@@ -52,28 +52,23 @@ extension AppModel {
     func toggleClipboardPin(_ item: ClipboardItem) {
         guard let index = clipboardItems.firstIndex(where: { $0.id == item.id }) else { return }
         clipboardItems[index].isPinned.toggle()
-        clipboardItems.sort {
-            if $0.isPinned != $1.isPinned {
-                return $0.isPinned
-            }
-            return $0.createdAt > $1.createdAt
-        }
         guard clipboardStore.save(clipboardItems) else {
-            statusMessage = "剪贴板收藏状态保存失败"
+            showToast("剪贴板收藏状态保存失败")
             return
         }
-        statusMessage = clipboardItems.first(where: { $0.id == item.id })?.isPinned == true
+        showToast(clipboardItems.first(where: { $0.id == item.id })?.isPinned == true
             ? "已收藏剪贴板内容"
-            : "已取消收藏"
+            : "已取消收藏")
     }
 
     func revealClipboardItem(_ item: ClipboardItem) {
         let path = item.kind == .image ? item.imagePath : item.filePath
         guard let path, FileManager.default.fileExists(atPath: path) else {
-            statusMessage = "本地文件已不可用"
+            showToast("本地文件已不可用")
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        showToast("已在 Finder 中显示")
     }
 
     @discardableResult
@@ -108,15 +103,19 @@ extension AppModel {
         clipboardStore.removeStoredFiles(for: [item])
         clipboardItems.removeAll { $0.id == item.id }
         if !clipboardStore.save(clipboardItems) {
-            statusMessage = "剪贴板历史保存失败"
+            showToast("剪贴板历史保存失败")
+            return
         }
+        showToast("已删除剪贴板记录")
     }
 
     func clearClipboardHistory() {
         clipboardStore.removeStoredFiles(for: clipboardItems)
         clipboardItems.removeAll()
-        statusMessage = clipboardStore.save(clipboardItems)
-            ? "剪贴板历史已清空"
-            : "剪贴板历史清空后保存失败"
+        if clipboardStore.save(clipboardItems) {
+            showToast("剪贴板历史已清空")
+        } else {
+            showToast("剪贴板历史清空后保存失败")
+        }
     }
 }

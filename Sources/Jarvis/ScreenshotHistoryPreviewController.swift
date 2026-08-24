@@ -108,7 +108,8 @@ final class ScreenshotHistoryPreviewController {
         self.dimmingPanel = dimmingPanel
         panel = previewPanel
         dimmingPanel.orderFrontRegardless()
-        previewPanel.makeKeyAndOrderFront(nil)
+        previewPanel.orderFrontRegardless()
+        previewPanel.makeKey()
     }
 
     private func makeHostingView(
@@ -121,6 +122,7 @@ final class ScreenshotHistoryPreviewController {
                 image: presentation.image,
                 imageDisplaySize: presentation.imageDisplaySize,
                 imageViewportSize: presentation.imageViewportSize,
+                app: app,
                 model: presentation.model,
                 onClose: { [weak self] in
                     self?.dismiss()

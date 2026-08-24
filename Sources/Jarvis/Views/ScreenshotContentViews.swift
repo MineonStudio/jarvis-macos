@@ -99,7 +99,7 @@ struct PaginationControl: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
             .disabled(currentPage <= 1)
             .help("上一页")
             Button(action: onNext) {
@@ -107,7 +107,7 @@ struct PaginationControl: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
             .disabled(currentPage >= totalPages)
             .help("下一页")
         }
@@ -121,45 +121,43 @@ struct ScreenshotHistoryCard: View {
     let item: ScreenshotHistoryItem
     @State private var showingDeleteConfirmation = false
 
-    private var data: Data? {
-        app.screenshotHistoryData(for: item)
-    }
-
     private var fileSizeDescription: String? {
-        guard let data else { return nil }
+        guard let fileSize = app.screenshotHistoryFileSize(for: item) else { return nil }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         formatter.includesUnit = true
         formatter.includesCount = true
-        return formatter.string(fromByteCount: Int64(data.count))
+        return formatter.string(fromByteCount: fileSize)
+    }
+
+    private var thumbnailCacheKey: String {
+        "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                if let data,
-                   let image = NSImage(data: data)
-                {
+                if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
                     Button {
                         app.showScreenshotHistoryPreview(item)
                     } label: {
-                        thumbnailImage(image)
-                            .contentShape(Rectangle())
+                        ScreenshotHistoryThumbnail(
+                            fileURL: app.screenshotHistoryFileURL(for: item),
+                            cacheKey: thumbnailCacheKey
+                        )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.995, pressedOpacity: 0.9))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .help("查看原图；拖到 Finder 或其他应用导出 PNG")
                     .onDrag {
-                        ScreenshotSharing.itemProvider(
+                        guard let data = app.screenshotHistoryData(for: item) else {
+                            return NSItemProvider()
+                        }
+                        return ScreenshotSharing.itemProvider(
                             data: data,
                             suggestedName: item.fileName
                         )
-                    } preview: {
-                        thumbnailImage(image)
-                            .frame(width: 180, height: 160)
-                            .background(Color.black.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                 } else {
                     Image(systemName: "photo")
@@ -196,7 +194,7 @@ struct ScreenshotHistoryCard: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
                 .help("二次编辑")
                 Button {
                     showingDeleteConfirmation = true
@@ -205,7 +203,7 @@ struct ScreenshotHistoryCard: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
                 .foregroundStyle(.red.opacity(0.78))
                 .help("删除")
             }
@@ -217,8 +215,10 @@ struct ScreenshotHistoryCard: View {
             height: HistoryGridMetrics.cardHeight,
             alignment: .topLeading
         )
-        .jarvisGlass(cornerRadius: 13, interactive: false)
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .jarvisHoverPanelFeedback(
+            scale: 1.03
+        )
         .confirmationDialog(
             "删除这张截图？",
             isPresented: $showingDeleteConfirmation,
@@ -232,13 +232,30 @@ struct ScreenshotHistoryCard: View {
             Text("删除后无法恢复。")
         }
     }
+}
 
-    private func thumbnailImage(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .scaledToFit()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(8)
+struct ScreenshotHistoryThumbnail: View {
+    let fileURL: URL
+    let cacheKey: String
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: cacheKey) {
+            image = await JarvisThumbnailCache.loadAsync(fileURL: fileURL, maxPixelSize: 640)
+        }
     }
 }
 
@@ -247,6 +264,7 @@ struct ScreenshotHistoryPreview: View {
     let image: NSImage
     let imageDisplaySize: CGSize
     let imageViewportSize: CGSize
+    @ObservedObject var app: AppModel
     @ObservedObject var model: ScreenshotHistoryPreviewModel
     let onClose: () -> Void
     let onEdit: () -> Void
@@ -297,6 +315,10 @@ struct ScreenshotHistoryPreview: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
+        .overlay(alignment: .top) {
+            JarvisToastHost(message: app.toastMessage)
+                .padding(.top, 18)
+        }
         .onExitCommand(perform: onClose)
     }
 
@@ -398,7 +420,7 @@ struct ScreenshotHistoryPreviewToolbar: View {
                     .frame(minWidth: 42, minHeight: 42)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
             .help("重置缩放")
             actionButton(icon: "plus.magnifyingglass", help: "放大", enabled: model.zoom < 4) {
                 model.setZoom(model.zoom + 0.25)
@@ -449,7 +471,7 @@ struct ScreenshotHistoryPreviewToolbar: View {
                 .frame(width: 42, height: 42)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(!enabled)
         .help(help)
     }

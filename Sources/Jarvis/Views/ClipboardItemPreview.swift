@@ -5,14 +5,12 @@ struct ClipboardItemPreview: View {
     private static let videoThumbnailCache = NSCache<NSString, NSImage>()
 
     let item: ClipboardItem
+    @State private var image: NSImage?
     @State private var videoThumbnail: NSImage?
 
     var body: some View {
         ZStack {
-            if item.kind == .image,
-               let path = item.imagePath,
-               let image = NSImage(contentsOfFile: path)
-            {
+            if item.kind == .image, let image {
                 mediaImage(image)
             } else if item.kind == .video,
                       let image = videoThumbnail
@@ -33,34 +31,59 @@ struct ClipboardItemPreview: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: item.id) {
-            guard item.kind == .video,
-                  let videoPath = item.filePath else { return }
+        .task(id: thumbnailTaskID) {
+            image = nil
+            videoThumbnail = nil
 
-            let cacheKey = (item.thumbnailPath ?? videoPath) as NSString
-            if let cached = Self.videoThumbnailCache.object(forKey: cacheKey) {
-                videoThumbnail = cached
-                return
-            }
-
-            if let thumbnailPath = item.thumbnailPath,
-               let thumbnail = NSImage(contentsOfFile: thumbnailPath)
-            {
-                Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
-                videoThumbnail = thumbnail
-                return
-            }
-
-            ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: videoPath)) { image in
-                guard let image else { return }
-                let thumbnail = NSImage(
-                    cgImage: image,
-                    size: NSSize(width: image.width, height: image.height)
+            switch item.kind {
+            case .image:
+                guard let path = item.imagePath else { return }
+                image = await JarvisThumbnailCache.loadAsync(
+                    fileURL: URL(fileURLWithPath: path),
+                    maxPixelSize: 640
                 )
-                Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
-                videoThumbnail = thumbnail
+            case .video:
+                guard let videoPath = item.filePath else { return }
+
+                let cacheKey = (item.thumbnailPath ?? videoPath) as NSString
+                if let cached = Self.videoThumbnailCache.object(forKey: cacheKey) {
+                    videoThumbnail = cached
+                    return
+                }
+
+                if let thumbnailPath = item.thumbnailPath,
+                   let thumbnail = await JarvisThumbnailCache.loadAsync(
+                       fileURL: URL(fileURLWithPath: thumbnailPath),
+                       maxPixelSize: 640
+                   )
+                {
+                    Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
+                    videoThumbnail = thumbnail
+                    return
+                }
+
+                ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: videoPath)) { image in
+                    guard let image else { return }
+                    let thumbnail = NSImage(
+                        cgImage: image,
+                        size: NSSize(width: image.width, height: image.height)
+                    )
+                    Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
+                    videoThumbnail = thumbnail
+                }
+            case .file, .text:
+                break
             }
         }
+    }
+
+    private var thumbnailTaskID: String {
+        [
+            item.id.uuidString,
+            item.imagePath ?? "",
+            item.thumbnailPath ?? "",
+            item.filePath ?? ""
+        ].joined(separator: "|")
     }
 
     private func mediaImage(_ image: NSImage) -> some View {

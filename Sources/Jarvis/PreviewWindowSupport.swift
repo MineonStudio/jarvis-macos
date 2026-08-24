@@ -33,6 +33,8 @@ enum PreviewWindowSupport {
 
     static func configurePreviewPanel(_ panel: NSPanel, title: String) {
         panel.level = .screenSaver
+        panel.animationBehavior = .none
+        panel.alphaValue = 1
         panel.title = title
         panel.titleVisibility = .visible
         panel.titlebarAppearsTransparent = false
@@ -51,13 +53,25 @@ enum PreviewWindowSupport {
 
     static func configureDimmingPanel(_ panel: NSPanel, screenFrame: CGRect) {
         panel.level = .screenSaver
-        panel.backgroundColor = NSColor.black.withAlphaComponent(0.58)
+        panel.animationBehavior = .none
+        panel.alphaValue = 1
+        panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let overlayView = NSView(
+            frame: NSRect(origin: .zero, size: screenFrame.size)
+        )
+        overlayView.wantsLayer = true
+        overlayView.layer?.backgroundColor = NSColor.black
+            .withAlphaComponent(0.58)
+            .cgColor
+        overlayView.autoresizingMask = [.width, .height]
+        panel.contentView = overlayView
         panel.setFrame(screenFrame, display: false)
     }
 }

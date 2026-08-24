@@ -84,6 +84,7 @@ final class ClipboardMediaPreviewController {
                 item: item,
                 image: image,
                 displaySize: displaySize,
+                app: app,
                 model: model,
                 player: mediaPlayer,
                 onCopy: { [weak app] in
@@ -110,7 +111,8 @@ final class ClipboardMediaPreviewController {
         panel = previewPanel
         player = mediaPlayer
         dimmingPanel.orderFrontRegardless()
-        previewPanel.makeKeyAndOrderFront(nil)
+        previewPanel.orderFrontRegardless()
+        previewPanel.makeKey()
     }
 
     private func mediaSource(
@@ -183,6 +185,7 @@ struct ClipboardMediaPreview: View {
     let item: ClipboardItem
     let image: NSImage?
     let displaySize: CGSize
+    @ObservedObject var app: AppModel
     @ObservedObject var model: ClipboardMediaPreviewModel
     let player: AVPlayer?
     let onCopy: () -> Void
@@ -239,6 +242,10 @@ struct ClipboardMediaPreview: View {
             .coordinateSpace(name: "clipboardMediaPreview")
         }
         .background(Color.black)
+        .overlay(alignment: .top) {
+            JarvisToastHost(message: app.toastMessage)
+                .padding(.top, 18)
+        }
         .onExitCommand(perform: onClose)
     }
 
@@ -346,7 +353,7 @@ struct ClipboardMediaPreviewToolbar: View {
                     .frame(minWidth: 42, minHeight: 42)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
             .help("重置缩放")
             actionButton(icon: "plus.magnifyingglass", help: "放大", enabled: model.zoom < 4) {
                 model.adjustZoom(by: 0.25)
@@ -383,7 +390,7 @@ struct ClipboardMediaPreviewToolbar: View {
                 .frame(width: 34, height: 42)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.35))
         .disabled(!enabled)
         .help(help)

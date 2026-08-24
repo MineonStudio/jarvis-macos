@@ -107,7 +107,7 @@ extension ScreenshotToolbar {
             .frame(width: 42, height: 42)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .help(tool.title)
     }
 
@@ -287,7 +287,7 @@ extension ScreenshotToolbar {
             )
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
     }
 
     private var textStyleControl: some View {
@@ -343,7 +343,7 @@ extension ScreenshotToolbar {
                             }
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
                     .help("文字颜色")
                 }
             }
@@ -370,7 +370,7 @@ extension ScreenshotToolbar {
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .help(help)
     }
 
@@ -395,7 +395,7 @@ extension ScreenshotToolbar {
                         }
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
             }
         }
     }
@@ -415,7 +415,7 @@ extension ScreenshotToolbar {
                 .frame(width: 42, height: 42)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(!enabled)
         .help(help)
     }

@@ -86,7 +86,6 @@ final class ClipboardMediaPreviewController {
                 displaySize: displaySize,
                 model: model,
                 player: mediaPlayer,
-                shareItems: ClipboardSharing.shareItems(for: item) ?? [],
                 onCopy: { [weak app] in
                     app?.copyClipboard(item)
                 },
@@ -186,7 +185,6 @@ struct ClipboardMediaPreview: View {
     let displaySize: CGSize
     @ObservedObject var model: ClipboardMediaPreviewModel
     let player: AVPlayer?
-    let shareItems: [Any]
     let onCopy: () -> Void
     let onClose: () -> Void
     @State private var gestureZoomStart: CGFloat?
@@ -229,7 +227,6 @@ struct ClipboardMediaPreview: View {
             .clipped()
             .overlay(alignment: .bottom) {
                 ClipboardMediaPreviewToolbar(
-                    shareItems: shareItems,
                     onCopy: onCopy,
                     onClose: onClose,
                     model: model
@@ -331,7 +328,6 @@ struct ClipboardMediaPreviewToolbar: View {
     static let preferredWidth: CGFloat = 356
     static let preferredHeight: CGFloat = 70
 
-    let shareItems: [Any]
     let onCopy: () -> Void
     let onClose: () -> Void
     @ObservedObject var model: ClipboardMediaPreviewModel
@@ -357,8 +353,6 @@ struct ClipboardMediaPreviewToolbar: View {
             }
             toolbarDivider
             actionButton(icon: "doc.on.doc", help: "一键复制", action: onCopy)
-            ScreenshotShareButton(items: shareItems, accessibilityLabel: "系统分享")
-                .frame(width: 42, height: 42)
             toolbarDivider
             actionButton(icon: "xmark", help: "关闭", action: onClose)
         }

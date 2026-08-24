@@ -6,6 +6,20 @@ import SwiftUI
 /// persisted from window lifecycle notifications afterward.
 final class JarvisMainWindowController: NSObject, ObservableObject {
     static let frameAutosaveName = "Jarvis.MainWindow"
+    static let defaultWindowSize = CGSize(width: 1120, height: 760)
+    static let minimumWindowSize = CGSize(width: 980, height: 680)
+
+    /// The scene uses this before SwiftUI creates the NSWindow. Feeding the
+    /// saved size into `.defaultSize` prevents the default frame from flashing
+    /// before the accessor can restore the complete frame.
+    static var launchWindowSize: CGSize {
+        launchWindowSize(savedFrame: JarvisWindowFrameStore().load())
+    }
+
+    static func launchWindowSize(savedFrame: NSRect?) -> CGSize {
+        guard let savedFrame, isUsable(savedFrame) else { return defaultWindowSize }
+        return savedFrame.size
+    }
 
     private let frameStore = JarvisWindowFrameStore()
     private weak var window: NSWindow?
@@ -37,8 +51,7 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
 
     private func restoreFrame(to window: NSWindow) {
         guard let savedFrame = frameStore.load(),
-              savedFrame.width >= 980,
-              savedFrame.height >= 680
+              Self.isUsable(savedFrame)
         else {
             return
         }
@@ -50,6 +63,10 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
             ? savedFrame
             : NSRect(origin: window.frame.origin, size: savedFrame.size)
         window.setFrame(restoredFrame, display: false)
+    }
+
+    private static func isUsable(_ frame: NSRect) -> Bool {
+        frame.width >= minimumWindowSize.width && frame.height >= minimumWindowSize.height
     }
 
     private func observeFrameChanges(of window: NSWindow) {

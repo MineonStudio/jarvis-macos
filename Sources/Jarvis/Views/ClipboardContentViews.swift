@@ -113,13 +113,7 @@ struct ClipboardFilterBar: View {
     let items: [ClipboardItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ClipboardSearchField(
-                text: $searchText,
-                placeholder: placeholder,
-                focusesOnAppear: focusesOnAppear
-            )
-
+        HStack(alignment: .center, spacing: 14) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
                     ForEach(ClipboardViewFilter.allCases) { filter in
@@ -133,6 +127,14 @@ struct ClipboardFilterBar: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            ClipboardSearchField(
+                text: $searchText,
+                placeholder: placeholder,
+                focusesOnAppear: focusesOnAppear
+            )
+            .frame(width: 260)
         }
     }
 }
@@ -379,11 +381,6 @@ struct ClipboardCard: View {
             }
             .buttonStyle(JarvisSecondaryButtonStyle())
             .disabled(presentation == .panel && !item.hasLocalContent)
-
-            if ClipboardSharing.shareItems(for: item) != nil {
-                ClipboardShareButton(item: item)
-                    .frame(width: 30, height: 30)
-            }
 
             if presentation == .main {
                 Button {

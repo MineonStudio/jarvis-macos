@@ -44,14 +44,6 @@ final class ScreenshotSharingTests: XCTestCase {
         )
     }
 
-    func testClipboardShareItemsPreserveTextPayload() {
-        let item = ClipboardItem(kind: .text, text: "分享文本")
-        let items = ClipboardSharing.shareItems(for: item)
-
-        XCTAssertEqual(items?.count, 1)
-        XCTAssertEqual(items?.first as? NSString, "分享文本")
-    }
-
     func testClipboardImageProviderPublishesPNG() throws {
         let image = NSImage(size: NSSize(width: 2, height: 2))
         image.lockFocus()
@@ -88,10 +80,6 @@ final class ScreenshotSharingTests: XCTestCase {
                 fileName: path.lastPathComponent
             )
             XCTAssertNotNil(ClipboardSharing.itemProvider(for: item))
-            XCTAssertEqual(
-                ClipboardSharing.shareItems(for: item)?.first as? NSURL,
-                NSURL(fileURLWithPath: path.path)
-            )
         }
     }
 }

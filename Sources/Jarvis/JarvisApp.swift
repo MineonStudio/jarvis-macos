@@ -18,7 +18,10 @@ struct JarvisApp: App {
                 .frame(minWidth: 980, minHeight: 680)
                 .background(JarvisMainWindowAccessor(controller: mainWindowController))
         }
-        .defaultSize(width: 1120, height: 760)
+        .defaultSize(
+            width: JarvisMainWindowController.launchWindowSize.width,
+            height: JarvisMainWindowController.launchWindowSize.height
+        )
         .windowStyle(.hiddenTitleBar)
 
         MenuBarExtra {

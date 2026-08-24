@@ -198,13 +198,6 @@ struct ScreenshotHistoryCard: View {
                 }
                 .buttonStyle(.borderless)
                 .help("二次编辑")
-                if let data {
-                    ScreenshotShareButton(
-                        data: data,
-                        accessibilityLabel: "分享截图"
-                    )
-                    .frame(width: 28, height: 28)
-                }
                 Button {
                     showingDeleteConfirmation = true
                 } label: {
@@ -412,8 +405,6 @@ struct ScreenshotHistoryPreviewToolbar: View {
             }
             toolbarDivider
             actionButton(icon: "doc.on.doc", help: "复制到剪贴板", action: onCopy)
-            ScreenshotShareButton(data: data, accessibilityLabel: "系统分享")
-                .frame(width: 42, height: 42)
             actionButton(icon: "square.and.arrow.down", help: "保存", action: onSave)
             toolbarDivider
             actionButton(icon: "trash", help: "删除", destructive: true, action: onDelete)

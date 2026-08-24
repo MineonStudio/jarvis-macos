@@ -75,16 +75,18 @@ extension JarvisUpdateService {
 
         do {
             try dumpProcess.run()
-            dumpProcess.waitUntilExit()
         } catch {
             return
         }
 
+        // Drain stdout before waiting for termination. lsregister can emit a
+        // large dump; waiting first lets the pipe buffer fill and deadlocks
+        // both the child process and the update flow.
+        let dumpData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        dumpProcess.waitUntilExit()
+
         guard dumpProcess.terminationStatus == 0,
-              let dump = String(
-                  data: outputPipe.fileHandleForReading.readDataToEndOfFile(),
-                  encoding: .utf8
-              )
+              let dump = String(data: dumpData, encoding: .utf8)
         else {
             return
         }

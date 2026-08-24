@@ -110,6 +110,42 @@ struct ScreenshotShortcut: Codable, Equatable {
         return value + Self.keyNames[keyCode, default: "键\(keyCode)"]
     }
 
+    /// The key-only value used by NSMenuItem. AppKit renders the modifier
+    /// flags in its dedicated right-aligned shortcut column, just like the
+    /// built-in "退出贾维斯" menu item.
+    var menuKeyEquivalent: String {
+        switch keyCode {
+        case 36: "\r"
+        case 48: "\t"
+        case 49: " "
+        case 51: "\u{8}"
+        case 53: "\u{1B}"
+        case 117: "\u{7F}"
+        case 123: Self.functionKey(0xF702)
+        case 124: Self.functionKey(0xF703)
+        case 125: Self.functionKey(0xF701)
+        case 126: Self.functionKey(0xF700)
+        case 122: Self.functionKey(0xF704)
+        case 120: Self.functionKey(0xF705)
+        case 99: Self.functionKey(0xF706)
+        case 118: Self.functionKey(0xF707)
+        case 96: Self.functionKey(0xF708)
+        case 97: Self.functionKey(0xF709)
+        case 98: Self.functionKey(0xF70A)
+        case 100: Self.functionKey(0xF70B)
+        case 101: Self.functionKey(0xF70C)
+        case 109: Self.functionKey(0xF70D)
+        case 103: Self.functionKey(0xF70E)
+        case 111: Self.functionKey(0xF70F)
+        default:
+            Self.keyNames[keyCode, default: ""].lowercased()
+        }
+    }
+
+    private static func functionKey(_ value: UInt32) -> String {
+        String(decoding: [UInt16(value)], as: UTF16.self)
+    }
+
     fileprivate var carbonModifiers: UInt32 {
         var value: UInt32 = 0
         let flags = modifierFlags

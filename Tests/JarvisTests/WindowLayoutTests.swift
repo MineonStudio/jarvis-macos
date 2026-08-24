@@ -14,6 +14,13 @@ final class WindowLayoutTests: XCTestCase {
         for layout in WindowLayout.allCases {
             XCTAssertEqual(layout.menuIcon.size, NSSize(width: 18, height: 18))
         }
+
+        XCTAssertEqual(WindowLayout.halfLeft.menuKeyEquivalent, "\u{F702}")
+        XCTAssertEqual(WindowLayout.halfRight.menuKeyEquivalent, "\u{F703}")
+        XCTAssertEqual(WindowLayout.upperLeft.menuKeyEquivalent, "u")
+        XCTAssertEqual(WindowLayout.upperRight.menuKeyEquivalent, "i")
+        XCTAssertEqual(WindowLayout.lowerLeft.menuKeyEquivalent, "j")
+        XCTAssertEqual(WindowLayout.lowerRight.menuKeyEquivalent, "k")
     }
 
     func testDirectionsMapToHalvesAndCornersRegardlessOfOrder() {

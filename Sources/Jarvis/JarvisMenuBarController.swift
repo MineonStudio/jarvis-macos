@@ -83,11 +83,12 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         let windowLayoutMenu = NSMenu()
         for layout in WindowLayout.allCases {
             let item = NSMenuItem(
-                title: "\(layout.title)（\(layout.shortcutDisplay)）",
+                title: layout.title,
                 action: #selector(applyWindowLayout(_:)),
-                keyEquivalent: ""
+                keyEquivalent: layout.menuKeyEquivalent
             )
             item.target = self
+            item.keyEquivalentModifierMask = WindowLayout.shortcutModifierFlags
             item.representedObject = layout.rawValue
             item.image = layout.menuIcon
             windowLayoutMenu.addItem(item)
@@ -113,9 +114,16 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         if let button = statusItem?.button {
             styleStatusItemButton(button)
         }
-        screenshotMenuItem.title = "框选截图（\(app.screenshotShortcut.displayString)）"
-        clipboardMenuItem.title = "打开剪贴板（\(app.clipboardShortcut.displayString)）"
+        screenshotMenuItem.title = "框选截图"
+        configureMenuShortcut(screenshotMenuItem, with: app.screenshotShortcut)
+        clipboardMenuItem.title = "打开剪贴板"
+        configureMenuShortcut(clipboardMenuItem, with: app.clipboardShortcut)
         statusMessageMenuItem.title = app.statusMessage
+    }
+
+    private func configureMenuShortcut(_ item: NSMenuItem, with shortcut: ScreenshotShortcut) {
+        item.keyEquivalent = shortcut.menuKeyEquivalent
+        item.keyEquivalentModifierMask = shortcut.modifierFlags
     }
 
     private func styleStatusItemButton(_ button: NSStatusBarButton) {

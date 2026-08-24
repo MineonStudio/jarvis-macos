@@ -63,4 +63,16 @@ final class ShortcutTests: XCTestCase {
             )
         )
     }
+
+    func testMenuShortcutSeparatesKeyEquivalentFromModifiers() {
+        XCTAssertEqual(ScreenshotShortcut.default.menuKeyEquivalent, "\u{F704}")
+        XCTAssertEqual(ScreenshotShortcut.default.modifierFlags, [])
+
+        let shortcut = ScreenshotShortcut(
+            keyCode: 38,
+            modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue
+        )
+        XCTAssertEqual(shortcut.menuKeyEquivalent, "j")
+        XCTAssertEqual(shortcut.modifierFlags, [.command, .shift])
+    }
 }

@@ -78,8 +78,8 @@ private struct WindowLayoutActionCard: View {
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "arrow.up.forward")
-                    .font(.system(size: 11, weight: .semibold))
+                Text(layout.shortcutDisplay)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
             .padding(.horizontal, 14)
@@ -124,19 +124,16 @@ private struct WindowLayoutDiagram: View {
             let height = max(0, geometry.size.height - inset * 2)
 
             ZStack(alignment: fillAlignment) {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.05))
+                Color.clear
                 Rectangle()
                     .fill(Color.accentColor.opacity(0.9))
                     .frame(width: width / 2, height: height * fillHeightRatio)
             }
             .padding(inset)
-            .clipShape(Rectangle())
             .overlay {
                 Rectangle()
-                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.72), lineWidth: 1)
             }
-            .jarvisIconGlass(in: Rectangle())
         }
         .frame(width: 34, height: 34)
     }

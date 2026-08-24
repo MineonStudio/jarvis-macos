@@ -34,8 +34,6 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         defer { image.unlockFocus() }
 
         let bounds = NSRect(x: 2, y: 2, width: 14, height: 14)
-        NSColor.quaternaryLabelColor.setFill()
-        bounds.fill()
 
         let halfWidth = bounds.width / 2
         let halfHeight = bounds.height / 2
@@ -86,9 +84,9 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         NSColor.controlAccentColor.setFill()
         selectedRect.fill()
 
-        NSColor.separatorColor.setStroke()
+        NSColor.labelColor.withAlphaComponent(0.72).setStroke()
         let border = NSBezierPath(rect: bounds)
-        border.lineWidth = 0.75
+        border.lineWidth = 1
         border.stroke()
         return image
     }
@@ -102,6 +100,21 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         case .lowerLeft: "⌥⌘J"
         case .lowerRight: "⌥⌘K"
         }
+    }
+
+    var menuKeyEquivalent: String {
+        switch self {
+        case .halfLeft: Self.functionKey(0xF702)
+        case .halfRight: Self.functionKey(0xF703)
+        case .upperLeft: "u"
+        case .upperRight: "i"
+        case .lowerLeft: "j"
+        case .lowerRight: "k"
+        }
+    }
+
+    private static func functionKey(_ value: UInt32) -> String {
+        String(decoding: [UInt16(value)], as: UTF16.self)
     }
 
     var shortcutKeyCode: UInt16 {

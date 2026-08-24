@@ -19,16 +19,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         action: #selector(openClipboardPanel),
         keyEquivalent: ""
     )
-    private let statusMessageMenuItem = NSMenuItem(
-        title: "系统就绪",
-        action: nil,
-        keyEquivalent: ""
-    )
-    private let windowLayoutMenuItem = NSMenuItem(
-        title: "窗口布局",
-        action: nil,
-        keyEquivalent: ""
-    )
 
     deinit {
         appearanceObservation?.invalidate()
@@ -80,7 +70,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(screenshotMenuItem)
         clipboardMenuItem.target = self
         menu.addItem(clipboardMenuItem)
-        let windowLayoutMenu = NSMenu()
+        menu.addItem(.separator())
         for layout in WindowLayout.allCases {
             let item = NSMenuItem(
                 title: layout.title,
@@ -91,13 +81,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             item.keyEquivalentModifierMask = WindowLayout.shortcutModifierFlags
             item.representedObject = layout.rawValue
             item.image = layout.menuIcon
-            windowLayoutMenu.addItem(item)
+            menu.addItem(item)
         }
-        windowLayoutMenuItem.submenu = windowLayoutMenu
-        menu.addItem(windowLayoutMenuItem)
-        menu.addItem(.separator())
-        statusMessageMenuItem.isEnabled = false
-        menu.addItem(statusMessageMenuItem)
         menu.addItem(.separator())
         menu.addItem(
             NSMenuItem(
@@ -110,15 +95,14 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     }
 
     func menuWillOpen(_: NSMenu) {
-        guard let app else { return }
         if let button = statusItem?.button {
             styleStatusItemButton(button)
         }
+        guard let app else { return }
         screenshotMenuItem.title = "框选截图"
         configureMenuShortcut(screenshotMenuItem, with: app.screenshotShortcut)
         clipboardMenuItem.title = "打开剪贴板"
         configureMenuShortcut(clipboardMenuItem, with: app.clipboardShortcut)
-        statusMessageMenuItem.title = app.statusMessage
     }
 
     private func configureMenuShortcut(_ item: NSMenuItem, with shortcut: ScreenshotShortcut) {

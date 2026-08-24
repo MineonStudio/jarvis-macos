@@ -70,17 +70,10 @@ private struct WindowLayoutActionCard: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 WindowLayoutDiagram(layout: layout)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(layout.title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(layout.shortcutDisplay)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
+                Text(layout.title)
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer(minLength: 0)
-                Text(layout.shortcutDisplay)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                WindowLayoutShortcutLabel(layout: layout)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -93,6 +86,22 @@ private struct WindowLayoutActionCard: View {
             in: RoundedRectangle(cornerRadius: 13, style: .continuous),
             scale: 1.008
         )
+    }
+}
+
+private struct WindowLayoutShortcutLabel: View {
+    let layout: WindowLayout
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(layout.shortcutDisplayParts.enumerated()), id: \.offset) { _, part in
+                Text(part)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .frame(minWidth: 13)
+            }
+        }
+        .foregroundStyle(Color.jarvisTextSecondary)
+        .fixedSize()
     }
 }
 

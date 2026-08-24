@@ -221,7 +221,9 @@ struct ClipboardView: View {
                     }
                 }
             }
-            .padding(JarvisMetrics.pageInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JarvisMetrics.pageInset)
+            .padding(.vertical, JarvisMetrics.pageInset)
         }
         .onChange(of: searchText) { _, _ in
             currentPage = 1

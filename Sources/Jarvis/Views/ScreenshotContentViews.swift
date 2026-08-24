@@ -7,7 +7,9 @@ struct ScreenshotView: View {
             VStack(alignment: .leading, spacing: 22) {
                 ScreenshotHistorySection()
             }
-            .padding(JarvisMetrics.pageInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JarvisMetrics.pageInset)
+            .padding(.vertical, JarvisMetrics.pageInset)
         }
     }
 }

@@ -92,13 +92,17 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     }
 
     var shortcutDisplay: String {
+        shortcutDisplayParts.joined()
+    }
+
+    var shortcutDisplayParts: [String] {
         switch self {
-        case .halfLeft: "⌥⌘←"
-        case .halfRight: "⌥⌘→"
-        case .upperLeft: "⌥⌘U"
-        case .upperRight: "⌥⌘I"
-        case .lowerLeft: "⌥⌘J"
-        case .lowerRight: "⌥⌘K"
+        case .halfLeft: ["⌥", "⌘", "←"]
+        case .halfRight: ["⌥", "⌘", "→"]
+        case .upperLeft: ["⌥", "⌘", "U"]
+        case .upperRight: ["⌥", "⌘", "I"]
+        case .lowerLeft: ["⌥", "⌘", "J"]
+        case .lowerRight: ["⌥", "⌘", "K"]
         }
     }
 

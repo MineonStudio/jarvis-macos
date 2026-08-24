@@ -21,6 +21,7 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertEqual(WindowLayout.upperRight.menuKeyEquivalent, "i")
         XCTAssertEqual(WindowLayout.lowerLeft.menuKeyEquivalent, "j")
         XCTAssertEqual(WindowLayout.lowerRight.menuKeyEquivalent, "k")
+        XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplayParts, ["⌥", "⌘", "←"])
     }
 
     func testDirectionsMapToHalvesAndCornersRegardlessOfOrder() {

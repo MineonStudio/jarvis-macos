@@ -35,6 +35,7 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
 final class AIConversationWebController: NSObject, ObservableObject {
     let provider: AIConversationProvider
     let webView: WKWebView
+    let downloadManager: AIConversationDownloadManager
 
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
@@ -44,8 +45,12 @@ final class AIConversationWebController: NSObject, ObservableObject {
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
 
-    init(provider: AIConversationProvider) {
+    init(
+        provider: AIConversationProvider,
+        downloadManager: AIConversationDownloadManager
+    ) {
         self.provider = provider
+        self.downloadManager = downloadManager
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore.default()
@@ -98,6 +103,62 @@ final class AIConversationWebController: NSObject, ObservableObject {
 }
 
 extension AIConversationWebController: WKNavigationDelegate {
+    func webView(
+        _: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        if navigationAction.shouldPerformDownload {
+            downloadManager.enqueue(
+                provider: provider,
+                sourceURL: navigationAction.request.url
+            )
+            decisionHandler(.download)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    func webView(
+        _: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        if !navigationResponse.canShowMIMEType {
+            downloadManager.enqueue(
+                provider: provider,
+                sourceURL: navigationResponse.response.url
+            )
+            decisionHandler(.download)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    func webView(
+        _: WKWebView,
+        navigationAction: WKNavigationAction,
+        didBecome download: WKDownload
+    ) {
+        downloadManager.attach(
+            download,
+            provider: provider,
+            sourceURL: navigationAction.request.url
+        )
+    }
+
+    func webView(
+        _: WKWebView,
+        navigationResponse: WKNavigationResponse,
+        didBecome download: WKDownload
+    ) {
+        downloadManager.attach(
+            download,
+            provider: provider,
+            sourceURL: navigationResponse.response.url
+        )
+    }
+
     func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation?) {
         isLoading = true
         loadError = nil
@@ -161,6 +222,7 @@ extension AIConversationWebController: WKUIDelegate {
 
 struct AIConversationView: View {
     @EnvironmentObject private var app: AppModel
+    @State private var showsDownloadManager = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -178,7 +240,10 @@ struct AIConversationView: View {
             providerNavigation
 
             Spacer(minLength: 0)
-            AIConversationBrowserControls(controller: currentController)
+            AIConversationBrowserControls(
+                controller: currentController,
+                showsDownloadManager: $showsDownloadManager
+            )
         }
         .padding(.horizontal, 28)
         .frame(height: 54)
@@ -231,6 +296,7 @@ struct AIConversationView: View {
 
 private struct AIConversationBrowserControls: View {
     @ObservedObject var controller: AIConversationWebController
+    @Binding var showsDownloadManager: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -251,6 +317,37 @@ private struct AIConversationBrowserControls: View {
                 action: controller.reloadOrStop,
                 help: controller.isLoading ? "停止加载" : "刷新"
             )
+            downloadManagerButton
+        }
+    }
+
+    private var downloadManagerButton: some View {
+        Button {
+            showsDownloadManager.toggle()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
+
+                if controller.downloadManager.activeDownloadCount > 0 {
+                    Text("\(controller.downloadManager.activeDownloadCount)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(Color.accentColor, in: Circle())
+                        .offset(x: 4, y: -4)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.secondary)
+        .jarvisGlass(in: Circle(), interactive: true)
+        .help("下载管理")
+        .popover(isPresented: $showsDownloadManager, arrowEdge: .top) {
+            AIConversationDownloadManagerView(manager: controller.downloadManager)
+                .frame(width: 390, height: 390)
         }
     }
 
@@ -272,6 +369,141 @@ private struct AIConversationBrowserControls: View {
         .disabled(isDisabled)
         .jarvisGlass(in: Circle(), interactive: true)
         .help(help)
+    }
+}
+
+private struct AIConversationDownloadManagerView: View {
+    @ObservedObject var manager: AIConversationDownloadManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(Color.accentColor)
+                Text("下载管理")
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                if manager.hasDownloads {
+                    Button("清理已完成") {
+                        manager.clearFinished()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .font(.system(size: 11, weight: .medium))
+                }
+            }
+            .padding(.bottom, 12)
+
+            if manager.items.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                    Text("还没有下载任务")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                    Text("在聊天页面点击文件下载后，任务会显示在这里")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(manager.items) { item in
+                            AIConversationDownloadRow(item: item, manager: manager)
+                        }
+                    }
+                }
+                .scrollIndicators(.automatic)
+            }
+
+            Divider()
+                .padding(.top, 12)
+
+            Button {
+                manager.openDownloadsFolder()
+            } label: {
+                Label("打开下载文件夹", systemImage: "folder")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .padding(.top, 10)
+        }
+        .padding(16)
+    }
+}
+
+private struct AIConversationDownloadRow: View {
+    let item: AIConversationDownloadItem
+    @ObservedObject var manager: AIConversationDownloadManager
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: item.state.icon)
+                .foregroundStyle(stateColor)
+                .frame(width: 18, height: 18)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.filename)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text("\(item.provider.title) · \(item.state.title)")
+                    if let errorMessage = item.errorMessage {
+                        Text(errorMessage)
+                            .lineLimit(1)
+                    }
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(Color.secondary)
+
+                if item.state == .downloading {
+                    ProgressView(value: item.progress)
+                        .progressViewStyle(.linear)
+                        .controlSize(.small)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if item.state.isActive {
+                Button("取消") {
+                    manager.cancel(item)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.secondary)
+            } else if item.canOpenFile {
+                Menu {
+                    Button("打开文件") {
+                        manager.open(item)
+                    }
+                    Button("在 Finder 中显示") {
+                        manager.revealInFinder(item)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(Color.secondary)
+                }
+                .menuStyle(.borderlessButton)
+            }
+        }
+        .padding(10)
+        .background(Color.jarvisPanel.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var stateColor: Color {
+        switch item.state {
+        case .completed: .green
+        case .failed: .red
+        case .cancelled: .secondary
+        case .queued, .downloading: .accentColor
+        }
     }
 }
 

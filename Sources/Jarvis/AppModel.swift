@@ -95,6 +95,7 @@ final class AppModel: ObservableObject {
     let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
     let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     let updateService = JarvisUpdateService()
+    let aiConversationDownloadManager = AIConversationDownloadManager()
     private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
@@ -124,7 +125,10 @@ final class AppModel: ObservableObject {
             return controller
         }
 
-        let controller = AIConversationWebController(provider: provider)
+        let controller = AIConversationWebController(
+            provider: provider,
+            downloadManager: aiConversationDownloadManager
+        )
         aiConversationControllers[provider] = controller
         return controller
     }

@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.7.7"
-    private static let fallbackBuild = "170"
+    private static let fallbackShortVersion = "0.7.9"
+    private static let fallbackBuild = "172"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -104,10 +104,7 @@ struct JarvisUpdateService {
         .appendingPathComponent("Library/Logs/Jarvis/update.log")
 
     static func privacyPermissionResetArguments(bundleIdentifier: String) -> [[String]] {
-        [
-            ["reset", "ScreenCapture", bundleIdentifier],
-            ["reset", "Accessibility", bundleIdentifier]
-        ]
+        JarvisPrivacyPermissionReset.arguments(bundleIdentifier: bundleIdentifier)
     }
 
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
@@ -239,41 +236,15 @@ struct JarvisUpdateService {
         handedOffToInstaller = true
     }
 
+    static func resetPrivacyPermissions(bundleIdentifier: String) throws {
+        try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
+    }
+
     private func resetPrivacyPermissions() throws {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             throw JarvisUpdateError.privacyPermissionResetFailed("无法读取应用 Bundle ID")
         }
-
-        for arguments in Self.privacyPermissionResetArguments(bundleIdentifier: bundleIdentifier) {
-            let service = arguments.dropFirst().first ?? "未知服务"
-            let process = Process()
-            let errorPipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-            process.arguments = arguments
-            process.standardError = errorPipe
-
-            do {
-                try process.run()
-                process.waitUntilExit()
-            } catch {
-                throw JarvisUpdateError.privacyPermissionResetFailed(
-                    "\(service)：\(error.localizedDescription)"
-                )
-            }
-
-            guard process.terminationStatus == 0 else {
-                let message = String(
-                    data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                    encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let failureMessage = message?.isEmpty == false
-                    ? message ?? ""
-                    : "tccutil 返回状态码 \(process.terminationStatus)"
-                throw JarvisUpdateError.privacyPermissionResetFailed(
-                    "\(service)：\(failureMessage)"
-                )
-            }
-        }
+        try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
     }
 
     private func versionParts(_ version: String) -> [Int] {

@@ -34,7 +34,9 @@ enum JarvisWindowAppearance {
 final class JarvisMainWindowController: NSObject, ObservableObject {
     static let frameAutosaveName = "Jarvis.MainWindow"
     static let defaultWindowSize = CGSize(width: 1120, height: 760)
-    static let minimumWindowSize = CGSize(width: 980, height: 680)
+    /// Keep the window small enough for a true half-screen layout even on a
+    /// compact 1280-point display.
+    static let minimumWindowSize = CGSize(width: 480, height: 360)
 
     /// The scene uses this before SwiftUI creates the NSWindow. Feeding the
     /// saved size into `.defaultSize` prevents the default frame from flashing

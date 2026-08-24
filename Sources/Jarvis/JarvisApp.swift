@@ -32,7 +32,7 @@ private struct JarvisRootView: View {
                 appModel.themePreference,
                 systemColorScheme: appModel.systemColorScheme
             )
-            .frame(minWidth: 980, minHeight: 680)
+            .frame(minWidth: 480, minHeight: 360)
             .background(JarvisMainWindowAccessor(controller: mainWindowController))
             .onAppear {
                 menuBarController.bind(app: appModel)
@@ -45,7 +45,8 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
 
     func applicationDidFinishLaunching(_: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        JarvisFreshInstallPermissionCleanup.runIfNeeded()
         menuBarController.install()
     }
 }

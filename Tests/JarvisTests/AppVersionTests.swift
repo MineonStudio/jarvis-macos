@@ -32,6 +32,38 @@ final class AppVersionTests: XCTestCase {
         )
     }
 
+    func testFreshInstallPermissionCleanupRunsOncePerInstallationFingerprint() throws {
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-fresh-install-test-\(UUID().uuidString)", isDirectory: true)
+        let bundleURL = temporaryRoot.appendingPathComponent("Jarvis.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+
+        let suiteName = "jarvis-fresh-install-defaults-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var resetCount = 0
+        let firstRun = try JarvisFreshInstallPermissionCleanup.runIfNeeded(
+            bundleURL: bundleURL,
+            bundleIdentifier: "com.jarvis.mac",
+            defaults: defaults
+        ) {
+            resetCount += 1
+        }
+        let secondRun = try JarvisFreshInstallPermissionCleanup.runIfNeeded(
+            bundleURL: bundleURL,
+            bundleIdentifier: "com.jarvis.mac",
+            defaults: defaults
+        ) {
+            resetCount += 1
+        }
+
+        XCTAssertTrue(firstRun)
+        XCTAssertFalse(secondRun)
+        XCTAssertEqual(resetCount, 1)
+    }
+
     func testLaunchServicesCleanupKeepsCurrentAppAndTargetsJarvisResidueOnly() {
         let dump = """
         bundle id:                  Jarvis (0x1)

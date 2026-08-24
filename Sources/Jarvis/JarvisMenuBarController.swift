@@ -8,6 +8,11 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     private weak var app: AppModel?
     private var statusItem: NSStatusItem?
     private let menu = NSMenu()
+    private let screenshotMenuItem = NSMenuItem(
+        title: "框选截图",
+        action: #selector(captureScreenshot),
+        keyEquivalent: ""
+    )
     private let clipboardMenuItem = NSMenuItem(
         title: "打开剪贴板",
         action: #selector(openClipboardPanel),
@@ -41,15 +46,21 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             let menuBarFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
-            button.attributedTitle = NSAttributedString(
+            let title = NSAttributedString(
                 string: Self.menuBarTitle,
                 attributes: [
                     .font: menuBarFont,
                     .foregroundColor: NSColor.white
                 ]
             )
+            // A status-bar button otherwise inherits the current menu-bar
+            // appearance and can ignore contentTintColor for text.
+            button.appearance = NSAppearance(named: .darkAqua)
+            button.title = Self.menuBarTitle
+            button.attributedTitle = title
             button.font = menuBarFont
             button.contentTintColor = .white
+            button.cell?.font = menuBarFont
             button.setAccessibilityLabel(Self.menuBarTitle)
             button.toolTip = Self.menuBarTitle
         }
@@ -61,20 +72,14 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
         menu.addItem(
             NSMenuItem(
-                title: "框选截图",
-                action: #selector(captureScreenshot),
-                keyEquivalent: ""
-            )
-        )
-        menu.items.last?.target = self
-        menu.addItem(
-            NSMenuItem(
                 title: "打开贾维斯",
                 action: #selector(openMainWindow),
                 keyEquivalent: ""
             )
         )
         menu.items.last?.target = self
+        screenshotMenuItem.target = self
+        menu.addItem(screenshotMenuItem)
         clipboardMenuItem.target = self
         menu.addItem(clipboardMenuItem)
         let windowLayoutMenu = NSMenu()
@@ -86,6 +91,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             )
             item.target = self
             item.representedObject = layout.rawValue
+            item.image = NSImage(
+                systemSymbolName: layout.icon,
+                accessibilityDescription: layout.title
+            )
             windowLayoutMenu.addItem(item)
         }
         windowLayoutMenuItem.submenu = windowLayoutMenu
@@ -106,6 +115,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_: NSMenu) {
         guard let app else { return }
+        screenshotMenuItem.title = "框选截图（\(app.screenshotShortcut.displayString)）"
         clipboardMenuItem.title = "打开剪贴板（\(app.clipboardShortcut.displayString)）"
         statusMessageMenuItem.title = app.statusMessage
     }

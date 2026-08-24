@@ -85,6 +85,38 @@ struct JarvisCard<Content: View>: View {
     }
 }
 
+struct JarvisEmptyState: View {
+    let icon: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 11) {
+            Image(systemName: icon)
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 56, height: 56)
+                .background(
+                    Color.accentColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.75)
+                }
+            Text(title)
+                .font(.system(size: 14, weight: .medium))
+                .multilineTextAlignment(.center)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: 190)
+        .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
+    }
+}
+
 struct SectionHeader: View {
     let title: String
 

@@ -39,7 +39,10 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .halfLeft: "rectangle.lefthalf.filled"
         case .halfRight: "rectangle.righthalf.filled"
-        case .upperLeft, .upperRight, .lowerLeft, .lowerRight: "rectangle.grid.2x2"
+        case .upperLeft: "rectangle.inset.topleft.filled"
+        case .upperRight: "rectangle.inset.topright.filled"
+        case .lowerLeft: "rectangle.inset.bottomleft.filled"
+        case .lowerRight: "rectangle.inset.bottomright.filled"
         }
     }
 
@@ -88,51 +91,53 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     }
 
     static func frame(for layout: WindowLayout, in visibleFrame: NSRect) -> NSRect {
-        let middleX = visibleFrame.minX + floor(visibleFrame.width / 2)
-        let middleY = visibleFrame.minY + floor(visibleFrame.height / 2)
+        let halfWidth = visibleFrame.width / 2
+        let halfHeight = visibleFrame.height / 2
+        let middleX = visibleFrame.minX + halfWidth
+        let middleY = visibleFrame.minY + halfHeight
 
         switch layout {
         case .halfLeft:
             return NSRect(
                 x: visibleFrame.minX,
                 y: visibleFrame.minY,
-                width: middleX - visibleFrame.minX,
+                width: halfWidth,
                 height: visibleFrame.height
             )
         case .halfRight:
             return NSRect(
                 x: middleX,
                 y: visibleFrame.minY,
-                width: visibleFrame.maxX - middleX,
+                width: halfWidth,
                 height: visibleFrame.height
             )
         case .upperLeft:
             return NSRect(
                 x: visibleFrame.minX,
                 y: middleY,
-                width: middleX - visibleFrame.minX,
-                height: visibleFrame.maxY - middleY
+                width: halfWidth,
+                height: halfHeight
             )
         case .upperRight:
             return NSRect(
                 x: middleX,
                 y: middleY,
-                width: visibleFrame.maxX - middleX,
-                height: visibleFrame.maxY - middleY
+                width: halfWidth,
+                height: halfHeight
             )
         case .lowerLeft:
             return NSRect(
                 x: visibleFrame.minX,
                 y: visibleFrame.minY,
-                width: middleX - visibleFrame.minX,
-                height: middleY - visibleFrame.minY
+                width: halfWidth,
+                height: halfHeight
             )
         case .lowerRight:
             return NSRect(
                 x: middleX,
                 y: visibleFrame.minY,
-                width: visibleFrame.maxX - middleX,
-                height: middleY - visibleFrame.minY
+                width: halfWidth,
+                height: halfHeight
             )
         }
     }
@@ -209,10 +214,15 @@ final class WindowLayoutController {
     }
 
     func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+        let settingsURLs = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ].compactMap(URL.init(string:))
+
+        for url in settingsURLs where NSWorkspace.shared.open(url) {
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
-        NSWorkspace.shared.open(url)
     }
 
     func apply(_ layout: WindowLayout) {
@@ -344,9 +354,23 @@ final class WindowLayoutController {
             return false
         }
 
+        // Some applications clamp the size when the position is changed in
+        // the same AX transaction. Apply the position, apply the exact target
+        // size, then apply the position once more to stabilize both halves.
+        let initialPositionResult = AXUIElementSetAttributeValue(
+            window,
+            kAXPositionAttribute as CFString,
+            axPosition
+        )
         let sizeResult = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, axSize)
-        let positionResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, axPosition)
-        return sizeResult == .success && positionResult == .success
+        let finalPositionResult = AXUIElementSetAttributeValue(
+            window,
+            kAXPositionAttribute as CFString,
+            axPosition
+        )
+        return initialPositionResult == .success
+            && sizeResult == .success
+            && finalPositionResult == .success
     }
 
     private func screen(containing windowRect: CGRect) -> NSScreen? {

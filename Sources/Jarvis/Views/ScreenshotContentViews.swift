@@ -40,15 +40,11 @@ struct ScreenshotHistorySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if app.screenshotHistory.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "photo.on.rectangle")
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                    Text("完成一张截图后会显示在这里")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 120)
+                JarvisEmptyState(
+                    icon: "photo.on.rectangle",
+                    title: "还没有截图",
+                    message: "框选截图后，历史记录会显示在这里"
+                )
             } else {
                 LazyVGrid(
                     columns: [GridItem(

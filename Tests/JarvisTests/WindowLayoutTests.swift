@@ -38,6 +38,8 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertEqual(right.maxY, visibleFrame.maxY)
         XCTAssertEqual(left.maxX, right.minX)
         XCTAssertEqual(left.width + right.width, visibleFrame.width)
+        XCTAssertEqual(left.width, visibleFrame.width / 2)
+        XCTAssertEqual(right.width, visibleFrame.width / 2)
     }
 
     func testCornerFramesTileTheVisibleArea() {

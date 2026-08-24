@@ -85,8 +85,10 @@ struct WindowLayoutView: View {
                 }
                 Spacer(minLength: 8)
                 if !app.windowLayoutAccessibilityTrusted {
-                    Button("打开系统设置") {
+                    Button {
                         app.openWindowLayoutAccessibilitySettings()
+                    } label: {
+                        Label("打开辅助功能设置", systemImage: "arrow.up.forward.app")
                     }
                     .buttonStyle(JarvisSecondaryButtonStyle())
                 }
@@ -102,11 +104,7 @@ private struct WindowLayoutActionCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: layout.icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 34, height: 34)
-                    .jarvisIconGlass(in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                WindowLayoutDiagram(layout: layout)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(layout.title)
                         .font(.system(size: 13, weight: .semibold))
@@ -130,5 +128,51 @@ private struct WindowLayoutActionCard: View {
             in: RoundedRectangle(cornerRadius: 13, style: .continuous),
             scale: 1.008
         )
+    }
+}
+
+private struct WindowLayoutDiagram: View {
+    let layout: WindowLayout
+
+    private var fillAlignment: Alignment {
+        switch layout {
+        case .halfLeft: .leading
+        case .halfRight: .trailing
+        case .upperLeft: .topLeading
+        case .upperRight: .topTrailing
+        case .lowerLeft: .bottomLeading
+        case .lowerRight: .bottomTrailing
+        }
+    }
+
+    private var fillHeightRatio: CGFloat {
+        switch layout {
+        case .halfLeft, .halfRight: 1
+        case .upperLeft, .upperRight, .lowerLeft, .lowerRight: 0.5
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let inset: CGFloat = 2
+            let width = max(0, geometry.size.width - inset * 2)
+            let height = max(0, geometry.size.height - inset * 2)
+
+            ZStack(alignment: fillAlignment) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.9))
+                    .frame(width: width / 2, height: height * fillHeightRatio)
+            }
+            .padding(inset)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1)
+            }
+            .jarvisIconGlass(in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .frame(width: 34, height: 34)
     }
 }

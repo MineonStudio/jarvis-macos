@@ -275,18 +275,11 @@ struct ClipboardEmptyState: View {
     let hasQuery: Bool
 
     var body: some View {
-        VStack(spacing: 11) {
-            Image(systemName: hasQuery ? "line.3.horizontal.decrease.circle" : "clipboard")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-            Text(hasQuery ? "没有找到匹配内容" : "复制一些内容，历史会自动出现在这里")
-                .font(.system(size: 14, weight: .medium))
-            Text(hasQuery ? "换个关键词或切换内容类型试试" : "可前往设置页自定义剪贴板快捷键")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.jarvisTextSecondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 190)
-        .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
+        JarvisEmptyState(
+            icon: hasQuery ? "line.3.horizontal.decrease.circle" : "clipboard",
+            title: hasQuery ? "没有找到匹配内容" : "还没有剪贴板记录",
+            message: hasQuery ? "换个关键词或切换内容类型试试" : "复制一些内容，历史会自动出现在这里"
+        )
     }
 }
 

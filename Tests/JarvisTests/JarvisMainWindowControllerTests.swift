@@ -13,7 +13,7 @@ final class JarvisMainWindowControllerTests: XCTestCase {
     }
 
     func testLaunchWindowSizeFallsBackForTooSmallSavedFrame() {
-        let savedFrame = NSRect(x: 120, y: 180, width: 900, height: 600)
+        let savedFrame = NSRect(x: 120, y: 180, width: 420, height: 300)
 
         XCTAssertEqual(
             JarvisMainWindowController.launchWindowSize(savedFrame: savedFrame),

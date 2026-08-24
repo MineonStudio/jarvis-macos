@@ -20,7 +20,6 @@ struct ScreenshotToolbar: View {
 
     @ObservedObject var editor: ScreenshotEditorModel
     @ObservedObject var layout: ScreenshotToolbarLayoutModel
-    @ObservedObject var translationProgress: ScreenshotTranslationProgress
     let onAction: (ScreenshotAction) -> Void
 }
 
@@ -43,14 +42,6 @@ extension ScreenshotToolbar {
                 }
 
                 toolbarDivider
-
-                actionButton(
-                    icon: "character.bubble",
-                    help: translationProgress.isTranslating ? "翻译中…" : "自动翻译截图",
-                    enabled: !translationProgress.isTranslating
-                ) {
-                    onAction(.translateRequested(editor.finalPNGData()))
-                }
 
                 actionButton(icon: "square.and.arrow.down", help: "另存为") {
                     onAction(.saveRequested)

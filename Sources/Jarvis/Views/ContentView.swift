@@ -128,6 +128,7 @@ struct ContentView: View {
         case .aiConversation: AIConversationView()
         case .skill(.screenshot): ScreenshotView()
         case .skill(.clipboard): ClipboardView()
+        case .skill(.windowLayout): WindowLayoutView()
         case .settings: SettingsView()
         }
     }
@@ -158,7 +159,8 @@ private struct TopNavigationBar: View {
         .overview,
         .aiConversation,
         .skill(.screenshot),
-        .skill(.clipboard)
+        .skill(.clipboard),
+        .skill(.windowLayout)
     ]
 
     var body: some View {
@@ -188,11 +190,6 @@ struct DashboardView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 18) {
                     SectionHeader(title: "你好，贾维斯")
                     Spacer()
-                    StatusPill(
-                        text: app.hasAPIKey ? "API 已连接" : "未配置 API",
-                        color: app.hasAPIKey ? .accentColor : .secondary,
-                        usesTint: app.hasAPIKey
-                    )
                 }
 
                 VStack(alignment: .leading, spacing: 13) {
@@ -215,8 +212,8 @@ struct DashboardView: View {
                         QuickActionButton(title: "打开剪贴板", icon: "clipboard", tint: .accentColor) {
                             app.selectedSection = .skill(.clipboard)
                         }
-                        QuickActionButton(title: "模型设置", icon: "brain.head.profile", tint: .accentColor) {
-                            app.selectedSection = .settings
+                        QuickActionButton(title: "窗口布局", icon: "macwindow.on.rectangle", tint: .accentColor) {
+                            app.selectedSection = .skill(.windowLayout)
                         }
                     }
                 }
@@ -244,7 +241,7 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("本机优先")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("剪贴板历史保存在本机；只有主动点击截图翻译时，截图才会发送给配置的 API 服务商，由大模型识别并翻译。")
+                        Text("剪贴板历史和截图历史均保存在本机。")
                             .font(.system(size: 12))
                             .foregroundStyle(Color.jarvisTextSecondary)
                             .lineSpacing(2)

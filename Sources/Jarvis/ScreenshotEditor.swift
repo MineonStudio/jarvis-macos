@@ -505,13 +505,6 @@ extension ScreenshotEditorModel {
         return renderedPNGData() ?? originalOutputData
     }
 
-    func translationPNGData() -> Data {
-        // originalOutputData is created by ScreenshotService.crop from the
-        // user's selection, even though originalData remains the full frozen
-        // canvas used to display and edit the screenshot.
-        finalPNGData()
-    }
-
     @discardableResult
     func replaceBaseImage(with data: Data) -> Bool {
         guard let image = NSImage(data: data),

@@ -20,28 +20,6 @@ extension AppModel {
         }
     }
 
-    func saveModelSettings(apiKey: String) {
-        do {
-            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try KeychainStore.shared.setValue(apiKey, for: "jarvis.api-key")
-            }
-
-            let data = try JSONEncoder().encode(modelConfiguration)
-            UserDefaults.standard.set(data, forKey: configurationKey)
-            UserDefaults.standard.set(true, forKey: modelConfigurationSavedKey)
-            isModelConfigurationSaved = true
-            showToast("模型配置保存成功")
-        } catch {
-            isModelConfigurationSaved = false
-            showToast("模型配置保存失败：\(error.localizedDescription)")
-        }
-    }
-
-    func editModelSettings() {
-        isModelConfigurationSaved = false
-        UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
-    }
-
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
@@ -144,40 +122,7 @@ extension AppModel {
         return validation == .available
     }
 
-    func testConnection(apiKeyOverride: String = "") {
-        let key = apiKeyOverride.isEmpty
-            ? (KeychainStore.shared.value(for: "jarvis.api-key") ?? "")
-            : apiKeyOverride
-
-        guard !key.isEmpty else {
-            showToast("请先填写 API Key")
-            return
-        }
-
-        showToast("正在测试连接…")
-        let configuration = modelConfiguration
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await modelGateway.testConnection(configuration: configuration, apiKey: key)
-                showToast("连接成功 · \(configuration.modelName)")
-            } catch {
-                showToast("连接失败：\(error.localizedDescription)")
-            }
-        }
-    }
-
     // MARK: - UserDefaults loading
-
-    func loadConfiguration() {
-        guard let data = UserDefaults.standard.data(forKey: configurationKey),
-              let configuration = try? JSONDecoder().decode(ModelConfiguration.self, from: data)
-        else {
-            return
-        }
-        modelConfiguration = configuration
-        isModelConfigurationSaved = (UserDefaults.standard.object(forKey: modelConfigurationSavedKey) as? Bool) ?? true
-    }
 
     func loadScreenshotShortcut() {
         guard let data = UserDefaults.standard.data(forKey: screenshotShortcutKey),

@@ -168,7 +168,6 @@ extension ScreenshotCaptureController {
 
     func showResult(
         _ session: ScreenshotEditingSession,
-        translationProgress: ScreenshotTranslationProgress,
         onAction: @escaping (ScreenshotAction) -> Void
     ) {
         guard activeSessionID == session.id else { return }
@@ -194,7 +193,6 @@ extension ScreenshotCaptureController {
             capture: capture,
             image: image,
             editor: editor,
-            translationProgress: translationProgress,
             onAction: onAction
         )
         let panels = makePresentationPanels(presentation)
@@ -337,7 +335,6 @@ extension ScreenshotCaptureController {
             rootView: ScreenshotToolbar(
                 editor: presentation.editor,
                 layout: layout,
-                translationProgress: presentation.translationProgress,
                 onAction: { [weak self] action in
                     self?.handleToolbarAction(
                         action,
@@ -375,8 +372,6 @@ extension ScreenshotCaptureController {
         case let .tool(tool):
             resizeToolbar(for: editor, on: screenFrame)
             onAction(.tool(tool))
-        case .translateRequested:
-            onAction(action)
         case .pin:
             break
         default:
@@ -423,7 +418,6 @@ extension ScreenshotCaptureController {
     /// a second edit.
     func showHistoryResult(
         data: Data,
-        translationProgress: ScreenshotTranslationProgress,
         onAction: @escaping (ScreenshotAction) -> Void
     ) {
         guard sessionPhase == .idle,
@@ -449,7 +443,7 @@ extension ScreenshotCaptureController {
             initialCapture: capture
         )
         activeSessionID = session.id
-        showResult(session, translationProgress: translationProgress, onAction: onAction)
+        showResult(session, onAction: onAction)
     }
 
     func dismissResult() {
@@ -477,25 +471,5 @@ extension ScreenshotCaptureController {
 
     func currentEditingPNGData() -> Data? {
         activeEditor?.finalPNGData()
-    }
-
-    /// Returns the current selection-sized image used by the translation API.
-    /// The editor itself renders the full frozen canvas for display, then crops
-    /// back to the user's selection before this method returns.
-    func currentEditingTranslationPNGData() -> Data? {
-        activeEditor?.translationPNGData()
-    }
-
-    @discardableResult
-    func applyTranslatedScreenshot(_ translatedSelectionData: Data) -> Bool {
-        guard let activeEditor else { return false }
-        let outputRect = activeEditor.outputRect ?? CGRect(origin: .zero, size: activeEditor.canvasSize)
-        let fullCanvasData = ScreenshotTranslationRenderer.composite(
-            baseData: activeEditor.originalData,
-            translatedSelectionData: translatedSelectionData,
-            outputRect: outputRect,
-            canvasSize: activeEditor.canvasSize
-        ) ?? translatedSelectionData
-        return activeEditor.replaceBaseImage(with: fullCanvasData)
     }
 }

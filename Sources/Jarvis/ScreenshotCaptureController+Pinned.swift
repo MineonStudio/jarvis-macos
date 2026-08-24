@@ -211,7 +211,6 @@ extension ScreenshotCaptureController {
             rootView: ScreenshotToolbar(
                 editor: item.editor,
                 layout: layout,
-                translationProgress: translationProgress,
                 onAction: { [weak self, weak item] action in
                     guard let self, let item else { return }
                     handlePinnedToolbarAction(action, for: item)
@@ -288,8 +287,6 @@ extension ScreenshotCaptureController {
             item.onAction?(.tool(tool))
         case .undo, .redo, .delete, .duplicate:
             handlePinnedEditorAction(action, for: item)
-        case let .translateRequested(data):
-            item.onAction?(.translateRequested(data))
         case .pin:
             break
         }

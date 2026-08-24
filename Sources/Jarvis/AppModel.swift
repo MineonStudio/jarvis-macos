@@ -34,6 +34,7 @@ enum AppSection: Hashable, Identifiable {
         case .aiConversation: "聊天"
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
+        case .skill(.windowLayout): "窗口布局"
         case .settings: "设置"
         }
     }
@@ -65,14 +66,9 @@ private struct ScreenshotSaveRequest {
 @MainActor
 final class AppModel: ObservableObject {
     @Published var selectedSection: AppSection = .overview
-    @Published var modelConfiguration = ModelConfiguration()
-    @Published var isModelConfigurationSaved = false
     @Published var clipboardItems: [ClipboardItem] = []
     @Published var latestScreenshotData: Data?
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
-    @Published var latestTranslation = ""
-    @Published var targetLanguage: ScreenshotTranslationLanguage = .chinese
-    @Published var screenshotTranslationState: ScreenshotTranslationState = .idle
     @Published var isCapturing = false
     @Published var statusMessage = "系统就绪"
     @Published var toastMessage: String?
@@ -84,8 +80,8 @@ final class AppModel: ObservableObject {
     @Published var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
+    @Published var windowLayoutAccessibilityTrusted = false
 
-    let modelGateway = ModelGateway()
     let clipboardService = ClipboardService()
     let clipboardStore = ClipboardStore()
     let clipboardPanelController = ClipboardPanelController()
@@ -99,25 +95,15 @@ final class AppModel: ObservableObject {
     private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
+    var windowLayoutController: WindowLayoutController?
     var systemAppearanceObservation: NSKeyValueObservation?
-    var modelConfigurationObservation: AnyCancellable?
     var editingHistoryID: UUID?
 
-    let configurationKey = "jarvis.model.configuration"
-    let modelConfigurationSavedKey = "jarvis.model.configuration.saved"
     let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     let clipboardShortcutKey = "jarvis.clipboard.shortcut"
     let themePreferenceKey = "jarvis.theme.preference"
-    let translationLanguageKey = "jarvis.screenshot.translation.language"
-    var translationTask: Task<Void, Never>?
-    var translationRequestID = UUID()
-    var translationSourceData: Data?
     var toastDismissTask: Task<Void, Never>?
-
-    var screenshotTranslationProgress: ScreenshotTranslationProgress {
-        screenshotController.translationProgress
-    }
 
     func aiConversationController(for provider: AIConversationProvider) -> AIConversationWebController {
         if let controller = aiConversationControllers[provider] {
@@ -144,18 +130,9 @@ final class AppModel: ObservableObject {
             latestScreenshotData = cachedScreenshot
             screenshotHistory = [migratedItem]
         }
-        loadConfiguration()
-        modelConfigurationObservation = $modelConfiguration
-            .dropFirst()
-            .sink { [weak self] _ in
-                guard let self else { return }
-                isModelConfigurationSaved = false
-                UserDefaults.standard.set(false, forKey: modelConfigurationSavedKey)
-            }
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
-        loadTranslationLanguage()
         refreshSystemColorScheme()
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
@@ -182,15 +159,16 @@ final class AppModel: ObservableObject {
             }
         }
 
+        windowLayoutController = WindowLayoutController { [weak self] message in
+            self?.showToast(message)
+        }
+        windowLayoutAccessibilityTrusted = windowLayoutController?.isAccessibilityTrusted ?? false
+
         clipboardService.start { [weak self] item in
             Task { @MainActor [weak self] in
                 self?.receiveClipboardItem(item)
             }
         }
-    }
-
-    var hasAPIKey: Bool {
-        KeychainStore.shared.value(for: "jarvis.api-key") != nil
     }
 
     func loadLatestScreenshotIfNeeded() -> Data? {
@@ -221,8 +199,6 @@ extension AppModel {
             return
         }
 
-        cancelScreenshotTranslation()
-
         editingHistoryID = nil
         guard screenshotController.requestScreenCaptureAccess() else {
             isCapturing = false
@@ -247,8 +223,7 @@ extension AppModel {
             case let .success(session):
                 statusMessage = "截图已保留在冻结画面上，可以直接编辑"
                 screenshotController.showResult(
-                    session,
-                    translationProgress: screenshotTranslationProgress
+                    session
                 ) { [weak self] action in
                     self?.handleScreenshotAction(action)
                 }
@@ -282,20 +257,15 @@ extension AppModel {
             )
         case let .confirm(data):
             finalizeScreenshot(data, historyID: editingHistoryID)
-            cancelScreenshotTranslation()
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setData(data, forType: .png)
             showToast("截图已确认并复制到剪贴板")
         case let .pin(data):
             finalizeScreenshot(data, historyID: editingHistoryID)
-            cancelScreenshotTranslation()
             showToast("截图已贴在屏幕上")
         case .cancel:
-            cancelScreenshotTranslation()
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
-        case let .translateRequested(data):
-            translateScreenshot(data: data)
         default:
             handleEditorStatusAction(action)
         }
@@ -428,13 +398,11 @@ extension AppModel {
     }
 
     func clearScreenshotCache() {
-        cancelScreenshotTranslation()
         guard screenshotCacheStore.clear() else {
             showToast("截图缓存清除失败")
             return
         }
         latestScreenshotData = nil
-        latestTranslation = ""
         showToast("截图缓存已清除")
     }
 
@@ -543,7 +511,6 @@ extension AppModel {
             showToast("请先完成当前截图操作")
             return
         }
-        cancelScreenshotTranslation()
         guard let data = screenshotHistoryStore.data(for: item) else {
             showToast("历史截图文件不存在")
             reloadScreenshotHistory()
@@ -554,8 +521,7 @@ extension AppModel {
         selectedSection = .skill(.screenshot)
         statusMessage = "正在编辑历史截图"
         screenshotController.showHistoryResult(
-            data: data,
-            translationProgress: screenshotTranslationProgress
+            data: data
         ) { [weak self] action in
             self?.handleScreenshotAction(action)
         }
@@ -585,8 +551,6 @@ extension AppModel {
                     return
                 }
                 latestScreenshotData = nil
-                latestTranslation = ""
-                screenshotTranslationState = .idle
             }
         }
         showToast("已删除历史截图")

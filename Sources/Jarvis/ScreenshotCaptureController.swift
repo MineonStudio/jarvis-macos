@@ -14,7 +14,6 @@ enum ScreenshotAction {
     case redo
     case delete
     case duplicate
-    case translateRequested(Data)
 }
 
 struct ScreenshotEditingSession: Sendable {
@@ -33,7 +32,6 @@ struct ScreenshotPresentation {
     let capture: ScreenshotCapture
     let image: NSImage
     let editor: ScreenshotEditorModel
-    let translationProgress: ScreenshotTranslationProgress
     let onAction: (ScreenshotAction) -> Void
 }
 
@@ -77,11 +75,6 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
     }
 }
 
-@MainActor
-final class ScreenshotTranslationProgress: ObservableObject {
-    @Published var isTranslating = false
-}
-
 enum ScreenshotToolbarMetrics {
     static let baseWidth: CGFloat = 440
     static let compactHeight: CGFloat = 70
@@ -94,7 +87,6 @@ enum ScreenshotToolbarMetrics {
 @MainActor
 final class ScreenshotCaptureController {
     let screenshotService = ScreenshotService()
-    let translationProgress = ScreenshotTranslationProgress()
     var selectionWindows: [SelectionOverlayWindow] = []
     var resultWindow: NSPanel?
     var toolbarWindow: NSPanel?

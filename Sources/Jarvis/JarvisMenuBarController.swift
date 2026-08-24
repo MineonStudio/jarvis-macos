@@ -18,6 +18,11 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         action: nil,
         keyEquivalent: ""
     )
+    private let windowLayoutMenuItem = NSMenuItem(
+        title: "窗口布局",
+        action: nil,
+        keyEquivalent: ""
+    )
 
     func bind(app: AppModel) {
         self.app = app
@@ -55,6 +60,19 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             )
         )
         menu.addItem(clipboardMenuItem)
+        let windowLayoutMenu = NSMenu()
+        for layout in WindowLayout.allCases {
+            let item = NSMenuItem(
+                title: "\(layout.title)（\(layout.shortcutDisplay)）",
+                action: #selector(applyWindowLayout(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = layout.rawValue
+            windowLayoutMenu.addItem(item)
+        }
+        windowLayoutMenuItem.submenu = windowLayoutMenu
+        menu.addItem(windowLayoutMenuItem)
         menu.addItem(.separator())
         statusMessageMenuItem.isEnabled = false
         menu.addItem(statusMessageMenuItem)
@@ -87,6 +105,15 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openClipboardPanel() {
         app?.showClipboardPanel()
+    }
+
+    @objc private func applyWindowLayout(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let layout = WindowLayout(rawValue: rawValue)
+        else {
+            return
+        }
+        app?.applyWindowLayout(layout)
     }
 
     @objc private func terminate() {

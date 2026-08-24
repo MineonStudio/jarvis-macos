@@ -18,6 +18,7 @@ struct ScreenshotTranslationInput: Sendable {
     static let maxModelDimension = 2048
 
     let data: Data
+    let mediaType: String
     let detail: ScreenshotTranslationImageDetail
     let sourcePixelSize: ScreenshotTranslationImageSize
     let modelPixelSize: ScreenshotTranslationImageSize
@@ -40,6 +41,7 @@ struct ScreenshotTranslationInput: Sendable {
         guard maxDimension > maxModelDimension else {
             return ScreenshotTranslationInput(
                 data: imageData,
+                mediaType: "image/png",
                 detail: detail,
                 sourcePixelSize: ScreenshotTranslationImageSize(
                     width: image.width,
@@ -71,6 +73,7 @@ struct ScreenshotTranslationInput: Sendable {
 
         return ScreenshotTranslationInput(
             data: modelData,
+            mediaType: "image/png",
             detail: detail,
             sourcePixelSize: ScreenshotTranslationImageSize(
                 width: image.width,

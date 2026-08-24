@@ -43,51 +43,16 @@ extension AppModel {
                 statusMessage = "正在翻译选区 \(input.sourcePixelSize.width)×\(input.sourcePixelSize.height)"
 
                 let isDarkMode = themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
-                var streamedBlocks: [ScreenshotTranslationBlock] = []
-                var didRenderPreview = false
-                let result: ScreenshotTranslationResult
-
-                do {
-                    for try await block in modelGateway.streamScreenshotTranslation(
-                        input: input,
-                        targetLanguage: targetLanguage.rawValue,
-                        configuration: modelConfiguration,
-                        apiKey: key
-                    ) {
-                        try Task.checkCancellation()
-                        guard translationRequestID == requestID else { return }
-
-                        streamedBlocks.append(block)
-                        latestTranslation = ScreenshotTranslationResult(blocks: streamedBlocks).translatedText
-                        let shouldRenderPreview = !didRenderPreview
-                        guard shouldRenderPreview else { continue }
-
-                        let previewData = await renderScreenshotTranslation(
-                            sourceData: data,
-                            blocks: streamedBlocks,
-                            isDarkMode: isDarkMode
-                        )
-                        try Task.checkCancellation()
-                        guard translationRequestID == requestID else { return }
-                        if let previewData {
-                            _ = screenshotController.applyTranslatedScreenshot(previewData)
-                        }
-                        didRenderPreview = true
-                    }
-                    guard !streamedBlocks.isEmpty else {
-                        throw ModelGatewayError.noText
-                    }
-                    result = ScreenshotTranslationResult(blocks: streamedBlocks)
-                } catch let error as ModelGatewayError
-                    where error.isStreamUnsupported && streamedBlocks.isEmpty
-                {
-                    result = try await modelGateway.translateScreenshot(
-                        input: input,
-                        targetLanguage: targetLanguage.rawValue,
-                        configuration: modelConfiguration,
-                        apiKey: key
-                    )
-                }
+                // One request is faster and more predictable than the old
+                // stream-then-fallback flow. The stream did not improve the
+                // final image because rendering waited for a complete result,
+                // while unsupported gateways caused a second API request.
+                let result = try await modelGateway.translateScreenshot(
+                    input: input,
+                    targetLanguage: targetLanguage.rawValue,
+                    configuration: modelConfiguration,
+                    apiKey: key
+                )
 
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }

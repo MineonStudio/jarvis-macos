@@ -41,18 +41,57 @@ extension AppModel {
                 let input = try await prepareScreenshotTranslationInput(from: data)
                 try Task.checkCancellation()
 
-                let result = try await modelGateway.translateScreenshot(
-                    input: input,
-                    targetLanguage: targetLanguage.rawValue,
-                    configuration: modelConfiguration,
-                    apiKey: key
-                )
+                let isDarkMode = themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
+                var streamedBlocks: [ScreenshotTranslationBlock] = []
+                var lastRenderedBlockCount = 0
+                let result: ScreenshotTranslationResult
+
+                do {
+                    for try await block in modelGateway.streamScreenshotTranslation(
+                        input: input,
+                        targetLanguage: targetLanguage.rawValue,
+                        configuration: modelConfiguration,
+                        apiKey: key
+                    ) {
+                        try Task.checkCancellation()
+                        guard translationRequestID == requestID else { return }
+
+                        streamedBlocks.append(block)
+                        latestTranslation = ScreenshotTranslationResult(blocks: streamedBlocks).translatedText
+                        let shouldRenderPreview = streamedBlocks.count == 1
+                            || streamedBlocks.count - lastRenderedBlockCount >= 3
+                        guard shouldRenderPreview else { continue }
+
+                        let previewData = await renderScreenshotTranslation(
+                            sourceData: data,
+                            blocks: streamedBlocks,
+                            isDarkMode: isDarkMode
+                        )
+                        try Task.checkCancellation()
+                        guard translationRequestID == requestID else { return }
+                        if let previewData {
+                            _ = screenshotController.applyTranslatedScreenshot(previewData)
+                        }
+                        lastRenderedBlockCount = streamedBlocks.count
+                    }
+                    guard !streamedBlocks.isEmpty else {
+                        throw ModelGatewayError.noText
+                    }
+                    result = ScreenshotTranslationResult(blocks: streamedBlocks)
+                } catch let error as ModelGatewayError
+                    where error.isStreamUnsupported && streamedBlocks.isEmpty
+                {
+                    result = try await modelGateway.translateScreenshot(
+                        input: input,
+                        targetLanguage: targetLanguage.rawValue,
+                        configuration: modelConfiguration,
+                        apiKey: key
+                    )
+                }
+
                 try Task.checkCancellation()
                 guard translationRequestID == requestID else { return }
-
-                translationTask = nil
                 latestTranslation = result.translatedText
-                let isDarkMode = themePreference.resolvedColorScheme(system: systemColorScheme) == .dark
                 let translatedData = await renderScreenshotTranslation(
                     sourceData: data,
                     blocks: result.blocks,
@@ -63,11 +102,13 @@ extension AppModel {
                 guard let translatedData,
                       screenshotController.applyTranslatedScreenshot(translatedData)
                 else {
+                    translationTask = nil
                     screenshotTranslationState = .failed("无法生成翻译后的截图")
                     screenshotTranslationProgress.isTranslating = false
                     showToast("无法生成翻译后的截图")
                     return
                 }
+                translationTask = nil
                 screenshotTranslationState = .success(latestTranslation)
                 screenshotTranslationProgress.isTranslating = false
                 ScreenshotTranslationLog.logger.debug(
@@ -78,6 +119,7 @@ extension AppModel {
                 return
             } catch {
                 guard translationRequestID == requestID else { return }
+                translationTask = nil
                 let message = error.localizedDescription
                 screenshotTranslationState = .failed(message)
                 screenshotTranslationProgress.isTranslating = false

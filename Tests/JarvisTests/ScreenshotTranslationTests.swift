@@ -43,14 +43,18 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(darkText.redComponent, 0, accuracy: 0.001)
         XCTAssertEqual(darkText.greenComponent, 0, accuracy: 0.001)
         XCTAssertEqual(darkText.blueComponent, 0, accuracy: 0.001)
-        XCTAssertLessThan(
-            ScreenshotTranslationRenderer.translationBlurBrightness(isDarkMode: false),
-            0
+        let lightMask = try XCTUnwrap(
+            ScreenshotTranslationRenderer
+                .translationMaskColor(isDarkMode: false)
+                .usingColorSpace(.deviceRGB)
         )
-        XCTAssertGreaterThan(
-            ScreenshotTranslationRenderer.translationBlurBrightness(isDarkMode: true),
-            0
+        let darkMask = try XCTUnwrap(
+            ScreenshotTranslationRenderer
+                .translationMaskColor(isDarkMode: true)
+                .usingColorSpace(.deviceRGB)
         )
+        XCTAssertEqual(lightMask.redComponent, 0, accuracy: 0.001)
+        XCTAssertEqual(darkMask.redComponent, 1, accuracy: 0.001)
     }
 
     func testScreenshotTranslationPromptRequiresVisionBoxes() {
@@ -60,8 +64,22 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(prompt.contains("English"))
         XCTAssertTrue(prompt.contains("左上角"))
         XCTAssertTrue(prompt.contains("完整行高"))
+        XCTAssertTrue(prompt.contains("相邻行"))
         XCTAssertTrue(prompt.contains("改变 x、y、width 或 height"))
         XCTAssertTrue(prompt.contains("\"blocks\""))
+    }
+
+    func testCompactScreenshotTranslationPromptUsesPixelJSONLProtocol() {
+        let prompt = ModelGateway.compactScreenshotTranslationPrompt(
+            targetLanguage: "中文",
+            imageSize: ScreenshotTranslationImageSize(width: 480, height: 374)
+        )
+
+        XCTAssertTrue(prompt.contains("480×374"))
+        XCTAssertTrue(prompt.contains("JSONL"))
+        XCTAssertTrue(prompt.contains("逐行"))
+        XCTAssertTrue(prompt.contains("\"b\":[x,y,width,height]"))
+        XCTAssertTrue(prompt.contains("整数"))
     }
 
     func testScreenshotTranslationInputUsesAdaptiveModelDetail() {
@@ -104,11 +122,57 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(input.originalByteCount, sourceData.count)
         XCTAssertEqual(input.modelByteCount, input.data.count)
         XCTAssertLessThanOrEqual(max(modelBitmap.pixelsWide, modelBitmap.pixelsHigh), 2048)
+        XCTAssertEqual(input.modelPixelSize.width, 2048)
+        XCTAssertEqual(input.modelPixelSize.height, 1024)
         XCTAssertEqual(
             input.detail,
             ScreenshotTranslationInput.imageDetail(for: sourceData, maxDimension: 2400)
         )
         XCTAssertNotEqual(input.data, sourceData)
+    }
+
+    func testCompactScreenshotTranslationParserMapsPixelBoxesToNormalizedTopLeftBoxes() throws {
+        let result = try XCTUnwrap(
+            ModelGateway.parseCompactScreenshotTranslation(
+                """
+                {"b":[52,50,220,18],"t":"平台基础设施"}
+                {"b":[100,200,120,40],"s":"Source","t":"译文"}
+                """,
+                imageSize: ScreenshotTranslationImageSize(width: 480, height: 374)
+            )
+        )
+
+        XCTAssertEqual(result.blocks.count, 2)
+        XCTAssertEqual(result.blocks[0].sourceText, "")
+        XCTAssertEqual(result.blocks[0].translatedText, "平台基础设施")
+        XCTAssertEqual(result.blocks[0].boundingBox.origin.x, 52.0 / 480.0, accuracy: 0.0001)
+        XCTAssertEqual(result.blocks[0].boundingBox.origin.y, 50.0 / 374.0, accuracy: 0.0001)
+        XCTAssertEqual(result.blocks[0].boundingBox.width, 220.0 / 480.0, accuracy: 0.0001)
+        XCTAssertEqual(result.blocks[0].boundingBox.height, 18.0 / 374.0, accuracy: 0.0001)
+        XCTAssertEqual(result.blocks[1].sourceText, "Source")
+    }
+
+    func testCompactScreenshotTranslationParserRejectsInvalidPixelBoxes() {
+        let imageSize = ScreenshotTranslationImageSize(width: 480, height: 374)
+
+        XCTAssertNil(
+            ModelGateway.parseCompactScreenshotTranslationLine(
+                "{\"b\":[450,50,40,18],\"t\":\"超出右边界\"}",
+                imageSize: imageSize
+            )
+        )
+        XCTAssertNil(
+            ModelGateway.parseCompactScreenshotTranslationLine(
+                "{\"b\":[52,50,220.5,18],\"t\":\"非整数框\"}",
+                imageSize: imageSize
+            )
+        )
+        XCTAssertNil(
+            ModelGateway.parseCompactScreenshotTranslationLine(
+                "{\"b\":[52,50,220,18],\"t\":\"   \"}",
+                imageSize: imageSize
+            )
+        )
     }
 
     func testScreenshotTranslationParserPreservesSourceAndTranslationBoxes() throws {
@@ -202,6 +266,18 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(replacementRect.midY, sourceRect.midY, accuracy: 0.001)
     }
 
+    func testTranslationTextRectAnchorsToTheSourceLineTop() {
+        let sourceRect = CGRect(x: 10, y: 20, width: 120, height: 24)
+        let textRect = ScreenshotTranslationRenderer.translationTextRect(
+            in: sourceRect,
+            measuredHeight: 14
+        )
+
+        XCTAssertEqual(textRect.minX, sourceRect.minX, accuracy: 0.001)
+        XCTAssertEqual(textRect.maxY, sourceRect.maxY, accuracy: 0.001)
+        XCTAssertEqual(textRect.height, 14, accuracy: 0.001)
+    }
+
     func testTranslationRendererCreatesPNGForAlignedBlocks() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
@@ -228,7 +304,7 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertGreaterThan(outputBitmap?.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 0.99)
     }
 
-    func testTranslationRendererUsesOnlyTheBlurredBackgroundLayer() throws {
+    func testTranslationRendererUsesOnlyOneOpaqueMaskLayer() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
         NSColor.white.setFill()
@@ -250,9 +326,9 @@ final class ScreenshotTranslationTests: XCTestCase {
         let outputBitmap = try XCTUnwrap(NSBitmapImageRep(data: output))
         let background = try XCTUnwrap(outputBitmap.colorAt(x: 8, y: 30)?.usingColorSpace(.deviceRGB))
 
-        XCTAssertGreaterThan(background.redComponent, 0.7)
-        XCTAssertGreaterThan(background.greenComponent, 0.7)
-        XCTAssertGreaterThan(background.blueComponent, 0.7)
+        XCTAssertLessThan(background.redComponent, 0.05)
+        XCTAssertLessThan(background.greenComponent, 0.05)
+        XCTAssertLessThan(background.blueComponent, 0.05)
     }
 
     func testTranslationRendererRejectsEmptyTranslationBlocks() throws {

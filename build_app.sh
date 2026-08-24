@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.7.3}"
-JARVIS_BUILD="${JARVIS_BUILD:-166}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.7.4}"
+JARVIS_BUILD="${JARVIS_BUILD:-167}"
 
 cd "$ROOT_DIR"
 swift build -c release

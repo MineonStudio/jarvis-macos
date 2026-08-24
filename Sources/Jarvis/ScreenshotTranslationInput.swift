@@ -9,11 +9,17 @@ enum ScreenshotTranslationImageDetail: String, Sendable {
     case high
 }
 
+struct ScreenshotTranslationImageSize: Equatable, Sendable {
+    let width: Int
+    let height: Int
+}
+
 struct ScreenshotTranslationInput: Sendable {
     static let maxModelDimension = 2048
 
     let data: Data
     let detail: ScreenshotTranslationImageDetail
+    let modelPixelSize: ScreenshotTranslationImageSize
     let originalByteCount: Int
     let modelByteCount: Int
     let wasDownsampled: Bool
@@ -34,6 +40,10 @@ struct ScreenshotTranslationInput: Sendable {
             return ScreenshotTranslationInput(
                 data: imageData,
                 detail: detail,
+                modelPixelSize: ScreenshotTranslationImageSize(
+                    width: image.width,
+                    height: image.height
+                ),
                 originalByteCount: imageData.count,
                 modelByteCount: imageData.count,
                 wasDownsampled: false
@@ -57,6 +67,10 @@ struct ScreenshotTranslationInput: Sendable {
         return ScreenshotTranslationInput(
             data: modelData,
             detail: detail,
+            modelPixelSize: ScreenshotTranslationImageSize(
+                width: thumbnail.width,
+                height: thumbnail.height
+            ),
             originalByteCount: imageData.count,
             modelByteCount: modelData.count,
             wasDownsampled: true

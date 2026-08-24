@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage
 import CoreText
 import Foundation
 import ImageIO
@@ -157,8 +156,6 @@ private struct SourcePixelSampler {
 // helpers together so visual changes can be reviewed as one pipeline.
 // swiftlint:disable type_body_length
 enum ScreenshotTranslationRenderer {
-    private static let ciContext = CIContext(options: nil)
-
     static func render(
         sourceData: Data,
         result: ScreenshotTranslationResult,
@@ -204,28 +201,15 @@ enum ScreenshotTranslationRenderer {
                 imageSize: CGSize(width: width, height: height)
             )
         }
-        let blurRegion = replacementRects.reduce(CGRect.null) { partialResult, rect in
-            partialResult.union(rect)
-        }
-        if let blurred = blurredImage(
-            sourceImage,
-            in: blurRegion,
-            radius: 10,
-            brightness: translationBlurBrightness(isDarkMode: isDarkMode)
-        ), !replacementRects.isEmpty {
-            context.saveGState()
-            replacementRects.forEach { context.addRect($0) }
-            context.clip()
-            context.draw(blurred.image, in: blurred.rect)
-            context.restoreGState()
-        }
+        drawTranslationMask(
+            in: replacementRects,
+            isDarkMode: isDarkMode,
+            context: context,
+            imageSize: CGSize(width: width, height: height)
+        )
 
         for block in blocks {
             let sourceRect = pixelRect(
-                forTopLeftNormalizedRect: block.boundingBox,
-                imageSize: CGSize(width: width, height: height)
-            )
-            let rect = replacementRect(
                 forTopLeftNormalizedRect: block.boundingBox,
                 imageSize: CGSize(width: width, height: height)
             )
@@ -235,7 +219,7 @@ enum ScreenshotTranslationRenderer {
             )
             drawReplacement(
                 block.translatedText,
-                in: rect,
+                in: sourceRect,
                 sourceFontSize: style.fontSize,
                 isDarkMode: isDarkMode,
                 context: context
@@ -324,6 +308,25 @@ enum ScreenshotTranslationRenderer {
         ).insetBy(dx: -6, dy: -4)
     }
 
+    private static func drawTranslationMask(
+        in rects: [CGRect],
+        isDarkMode: Bool,
+        context: CGContext,
+        imageSize: CGSize
+    ) {
+        guard !rects.isEmpty else { return }
+        context.saveGState()
+        rects.forEach { context.addRect($0) }
+        context.clip()
+        context.setFillColor(translationMaskColor(isDarkMode: isDarkMode).cgColor)
+        context.fill(CGRect(origin: .zero, size: imageSize))
+        context.restoreGState()
+    }
+
+    static func translationMaskColor(isDarkMode: Bool) -> NSColor {
+        isDarkMode ? .white : .black
+    }
+
     private static func drawReplacement(
         _ text: String,
         in rect: CGRect,
@@ -331,7 +334,7 @@ enum ScreenshotTranslationRenderer {
         isDarkMode: Bool,
         context: CGContext
     ) {
-        let textRect = rect.insetBy(dx: 8, dy: 4)
+        let textRect = rect.insetBy(dx: 2, dy: 0)
         let preferredFontSize = max(6, sourceFontSize * 1.08)
         let fittedSize = fittedFontSize(
             text,
@@ -340,18 +343,29 @@ enum ScreenshotTranslationRenderer {
         )
         let fontSize = max(sourceFontSize, fittedSize)
         let measured = measuredTextSize(text, fontSize: fontSize, width: textRect.width)
-        let centeredTextRect = CGRect(
-            x: textRect.minX,
-            y: textRect.midY - measured.height / 2,
-            width: textRect.width,
-            height: max(1, measured.height)
+        let topAlignedTextRect = translationTextRect(
+            in: textRect,
+            measuredHeight: measured.height
         )
         drawText(
             text,
-            in: centeredTextRect,
+            in: topAlignedTextRect,
             context: context,
             color: translationTextColor(isDarkMode: isDarkMode),
             fontSize: fontSize
+        )
+    }
+
+    static func translationTextRect(
+        in rect: CGRect,
+        measuredHeight: CGFloat
+    ) -> CGRect {
+        let height = max(1, measuredHeight)
+        return CGRect(
+            x: rect.minX,
+            y: rect.maxY - height,
+            width: rect.width,
+            height: height
         )
     }
 
@@ -395,10 +409,6 @@ enum ScreenshotTranslationRenderer {
 
     static func translationTextColor(isDarkMode: Bool) -> NSColor {
         isDarkMode ? .black : .white
-    }
-
-    static func translationBlurBrightness(isDarkMode: Bool) -> CGFloat {
-        isDarkMode ? 0.22 : -0.22
     }
 
     static func estimatedSourceFontSize(forLineHeight lineHeight: CGFloat) -> CGFloat {
@@ -451,37 +461,6 @@ enum ScreenshotTranslationRenderer {
             ),
             nil
         )
-    }
-
-    private static func blurredImage(
-        _ image: CGImage,
-        in region: CGRect,
-        radius: CGFloat,
-        brightness: CGFloat
-    ) -> (image: CGImage, rect: CGRect)? {
-        let input = CIImage(cgImage: image)
-        let blurRegion = region
-            .insetBy(dx: -radius, dy: -radius)
-            .intersection(input.extent)
-        guard !blurRegion.isNull, !blurRegion.isEmpty else { return nil }
-        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
-        filter.setValue(input, forKey: kCIInputImageKey)
-        filter.setValue(radius, forKey: kCIInputRadiusKey)
-        guard let blurredOutput = filter.outputImage?.cropped(to: blurRegion),
-              let colorFilter = CIFilter(name: "CIColorControls")
-        else {
-            return nil
-        }
-        colorFilter.setValue(blurredOutput, forKey: kCIInputImageKey)
-        colorFilter.setValue(brightness, forKey: kCIInputBrightnessKey)
-        colorFilter.setValue(1, forKey: kCIInputContrastKey)
-        colorFilter.setValue(1, forKey: kCIInputSaturationKey)
-        guard let output = colorFilter.outputImage?.cropped(to: blurRegion),
-              let outputImage = ciContext.createCGImage(output, from: blurRegion)
-        else {
-            return nil
-        }
-        return (outputImage, blurRegion)
     }
 
     private static func drawText(

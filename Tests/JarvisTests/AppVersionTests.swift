@@ -20,18 +20,6 @@ final class AppVersionTests: XCTestCase {
         XCTAssertTrue(JarvisUpdateService.updateLogURL.path.hasSuffix("Library/Logs/Jarvis/update.log"))
     }
 
-    func testUpdateRequestsUseBoundedTimeoutsAndDownloadHeaders() throws {
-        let url = try XCTUnwrap(URL(string: "https://example.com/Jarvis.zip"))
-        let request = JarvisUpdateService.updateRequest(for: url)
-
-        XCTAssertEqual(request.timeoutInterval, JarvisUpdateService.updateRequestTimeout)
-        XCTAssertEqual(
-            request.value(forHTTPHeaderField: "User-Agent"),
-            "Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos"
-        )
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/octet-stream")
-    }
-
     func testPrivacyPermissionResetCommandsUseBundleIdentity() {
         XCTAssertEqual(
             JarvisUpdateService.privacyPermissionResetArguments(

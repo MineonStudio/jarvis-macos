@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.8.4"
-    private static let fallbackBuild = "177"
+    private static let fallbackShortVersion = "0.8.5"
+    private static let fallbackBuild = "178"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -72,7 +72,6 @@ private struct GitHubReleaseAsset: Decodable {
 
 enum JarvisUpdateError: LocalizedError {
     case downloadUnavailable
-    case downloadTimedOut
     case invalidArchive
     case invalidApplication
     case unsupportedInstallLocation
@@ -84,8 +83,6 @@ enum JarvisUpdateError: LocalizedError {
         switch self {
         case .downloadUnavailable:
             "该版本没有可用的应用安装包"
-        case .downloadTimedOut:
-            "下载更新包超时，请检查网络连接后重试"
         case .invalidArchive:
             "更新包格式无效"
         case .invalidApplication:
@@ -103,9 +100,6 @@ enum JarvisUpdateError: LocalizedError {
 }
 
 struct JarvisUpdateService {
-    static let updateRequestTimeout: TimeInterval = 30
-    static let updateResourceTimeout: TimeInterval = 180
-
     static let updateLogURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/Jarvis/update.log")
 
@@ -115,7 +109,8 @@ struct JarvisUpdateService {
 
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
         let endpoint = URL(string: "https://api.github.com/repos/MineonStudio/jarvis-macos/releases/latest")!
-        var request = Self.updateRequest(for: endpoint)
+        var request = URLRequest(url: endpoint)
+        request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -184,23 +179,13 @@ struct JarvisUpdateService {
             }
         }
 
-        let request = Self.updateRequest(for: downloadURL)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = Self.updateRequestTimeout
-        configuration.timeoutIntervalForResource = Self.updateResourceTimeout
-        configuration.waitsForConnectivity = false
-        configuration.allowsExpensiveNetworkAccess = true
-        configuration.allowsConstrainedNetworkAccess = true
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-
-        let downloadedURL: URL
-        let response: URLResponse
-        do {
-            (downloadedURL, response) = try await session.download(for: request)
-        } catch let error as URLError where error.code == .timedOut {
-            throw JarvisUpdateError.downloadTimedOut
-        }
+        // Keep the download path aligned with the verified v0.7.1 release:
+        // URLSession.shared follows the GitHub Release redirect and owns the
+        // temporary download file until the request completes.
+        var request = URLRequest(url: downloadURL)
+        request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        let (downloadedURL, response) = try await URLSession.shared.download(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ..< 300).contains(httpResponse.statusCode)
         else {
@@ -270,15 +255,6 @@ struct JarvisUpdateService {
             .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             .split(separator: ".")
             .compactMap { Int($0) }
-    }
-
-    static func updateRequest(for url: URL) -> URLRequest {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = updateRequestTimeout
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-        return request
     }
 
     private func validateInstallLocation(_ appURL: URL) throws {

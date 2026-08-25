@@ -3,7 +3,7 @@ import AppKit
 import XCTest
 
 final class WindowLayoutTests: XCTestCase {
-    func testUserFacingTitlesAndMenuIconsUseSquareRegionDiagrams() {
+    func testUserFacingTitlesAndMenuIconsUseSixteenByNineRegionDiagrams() {
         XCTAssertEqual(WindowLayout.halfLeft.title, "左半屏")
         XCTAssertEqual(WindowLayout.halfRight.title, "右半屏")
         XCTAssertEqual(WindowLayout.upperLeft.title, "左上角")
@@ -12,7 +12,7 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertEqual(WindowLayout.lowerRight.title, "右下角")
 
         for layout in WindowLayout.allCases {
-            XCTAssertEqual(layout.menuIcon.size, NSSize(width: 18, height: 18))
+            XCTAssertEqual(layout.menuIcon.size, NSSize(width: 24, height: 16))
         }
 
         XCTAssertEqual(WindowLayout.halfLeft.menuKeyEquivalent, "\u{F702}")
@@ -21,7 +21,7 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertEqual(WindowLayout.upperRight.menuKeyEquivalent, "i")
         XCTAssertEqual(WindowLayout.lowerLeft.menuKeyEquivalent, "j")
         XCTAssertEqual(WindowLayout.lowerRight.menuKeyEquivalent, "k")
-        XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplayParts, ["⌥", "⌘", "←"])
+        XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplayParts, ["⇧", "⌘", "←"])
     }
 
     func testDirectionsMapToHalvesAndCornersRegardlessOfOrder() {
@@ -35,15 +35,17 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertNil(WindowLayout.layout(for: [.up]))
     }
 
-    func testShortcutsMatchTilesDefaults() {
+    func testShortcutsUseShiftCommandBindings() {
         let modifiers = WindowLayout.shortcutModifierFlags
 
+        XCTAssertEqual(modifiers, [.command, .shift])
         XCTAssertEqual(WindowLayout.layout(for: 123, modifiers: modifiers), .halfLeft)
         XCTAssertEqual(WindowLayout.layout(for: 124, modifiers: modifiers), .halfRight)
         XCTAssertEqual(WindowLayout.layout(for: 32, modifiers: modifiers), .upperLeft)
         XCTAssertEqual(WindowLayout.layout(for: 34, modifiers: modifiers), .upperRight)
         XCTAssertEqual(WindowLayout.layout(for: 38, modifiers: modifiers), .lowerLeft)
         XCTAssertEqual(WindowLayout.layout(for: 40, modifiers: modifiers), .lowerRight)
+        XCTAssertNil(WindowLayout.layout(for: 123, modifiers: [.command, .option]))
         XCTAssertNil(WindowLayout.layout(for: 123, modifiers: .shift))
         XCTAssertNil(WindowLayout.layout(for: 126, modifiers: modifiers))
     }

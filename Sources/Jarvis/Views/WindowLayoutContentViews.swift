@@ -38,7 +38,7 @@ struct WindowLayoutView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("把当前窗口快速放到屏幕的指定区域")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("使用与 Tiles 一致的 ⌥⌘ 快捷键：方向键切换左右半屏，U/I/J/K 切换四个角落。")
+                    Text("使用 ⇧⌘ 快捷键：方向键切换左右半屏，U/I/J/K 切换四个角落。")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .lineSpacing(2)
@@ -144,6 +144,6 @@ private struct WindowLayoutDiagram: View {
                     .strokeBorder(Color.primary.opacity(0.72), lineWidth: 1)
             }
         }
-        .frame(width: 34, height: 34)
+        .frame(width: 44, height: 24.75)
     }
 }

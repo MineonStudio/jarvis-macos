@@ -29,11 +29,11 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     }
 
     var menuIcon: NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18))
+        let image = NSImage(size: NSSize(width: 24, height: 16))
         image.lockFocus()
         defer { image.unlockFocus() }
 
-        let bounds = NSRect(x: 2, y: 2, width: 14, height: 14)
+        let bounds = NSRect(x: 2, y: 2, width: 20, height: 11.25)
 
         let halfWidth = bounds.width / 2
         let halfHeight = bounds.height / 2
@@ -97,12 +97,12 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
 
     var shortcutDisplayParts: [String] {
         switch self {
-        case .halfLeft: ["⌥", "⌘", "←"]
-        case .halfRight: ["⌥", "⌘", "→"]
-        case .upperLeft: ["⌥", "⌘", "U"]
-        case .upperRight: ["⌥", "⌘", "I"]
-        case .lowerLeft: ["⌥", "⌘", "J"]
-        case .lowerRight: ["⌥", "⌘", "K"]
+        case .halfLeft: ["⇧", "⌘", "←"]
+        case .halfRight: ["⇧", "⌘", "→"]
+        case .upperLeft: ["⇧", "⌘", "U"]
+        case .upperRight: ["⇧", "⌘", "I"]
+        case .lowerLeft: ["⇧", "⌘", "J"]
+        case .lowerRight: ["⇧", "⌘", "K"]
         }
     }
 
@@ -132,7 +132,7 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    static let shortcutModifierFlags: NSEvent.ModifierFlags = [.command, .option]
+    static let shortcutModifierFlags: NSEvent.ModifierFlags = [.command, .shift]
 
     static func layout(for keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> WindowLayout? {
         let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
@@ -227,45 +227,15 @@ enum WindowLayoutDirection: Hashable {
 @MainActor
 final class WindowLayoutController {
     private let statusHandler: (String) -> Void
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-    private var activationObserver: NSObjectProtocol?
-    private var lastExternalApplication: NSRunningApplication?
+    private var shortcutManagers: [ScreenshotShortcutManager] = []
 
     init(statusHandler: @escaping (String) -> Void) {
         self.statusHandler = statusHandler
-        if let application = NSWorkspace.shared.frontmostApplication,
-           application.processIdentifier != ProcessInfo.processInfo.processIdentifier
-        {
-            lastExternalApplication = application
-        }
-        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  application.processIdentifier != ProcessInfo.processInfo.processIdentifier
-            else {
-                return
-            }
-            Task { @MainActor [weak self] in
-                self?.lastExternalApplication = application
-            }
-        }
-        installMonitors()
+        installShortcuts()
     }
 
     deinit {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-        }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-        }
-        if let activationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
-        }
+        shortcutManagers.removeAll()
     }
 
     var isAccessibilityTrusted: Bool {
@@ -274,9 +244,7 @@ final class WindowLayoutController {
 
     @discardableResult
     func requestAccessibilityAccess() -> Bool {
-        let trusted = JarvisPrivacyPermissionAccess.requestAccessibilityAccess()
-        installMonitors()
-        return trusted
+        JarvisPrivacyPermissionAccess.requestAccessibilityAccess()
     }
 
     func apply(_ layout: WindowLayout) {
@@ -304,32 +272,21 @@ final class WindowLayoutController {
         statusHandler("已将 \(target.application.localizedName ?? "当前窗口") 调整为\(layout.shortTitle)")
     }
 
-    private func installMonitors() {
-        let eventMask: NSEvent.EventTypeMask = [.keyDown]
-        if globalMonitor == nil {
-            globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] event in
-                self?.handle(event)
+    private func installShortcuts() {
+        shortcutManagers = WindowLayout.allCases.enumerated().map { index, layout in
+            let binding = ScreenshotShortcut(
+                keyCode: layout.shortcutKeyCode,
+                modifiers: WindowLayout.shortcutModifierFlags.rawValue
+            )
+            return ScreenshotShortcutManager(
+                binding: binding,
+                hotKeyID: UInt32(10 + index)
+            ) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.apply(layout)
+                }
             }
         }
-        if localMonitor == nil {
-            localMonitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
-                self?.handle(event)
-                return event
-            }
-        }
-    }
-
-    private func handle(_ event: NSEvent) {
-        guard event.type == .keyDown,
-              !event.isARepeat,
-              let layout = WindowLayout.layout(
-                  for: event.keyCode,
-                  modifiers: event.modifierFlags
-              )
-        else {
-            return
-        }
-        apply(layout)
     }
 
     private struct FocusedWindow {
@@ -342,10 +299,10 @@ final class WindowLayoutController {
     }
 
     private func focusedWindowOfFrontmostApplication() -> FocusedWindow? {
-        let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
-        let application = NSWorkspace.shared.frontmostApplication?.processIdentifier == currentProcessIdentifier
-            ? lastExternalApplication
-            : NSWorkspace.shared.frontmostApplication
+        // The frontmost app is the target, including Jarvis itself. Older
+        // builds deliberately skipped Jarvis and therefore could never tile
+        // the main window when it was active.
+        let application = NSWorkspace.shared.frontmostApplication
         guard let application, !application.isTerminated else { return nil }
 
         let applicationElement = AXUIElementCreateApplication(application.processIdentifier)

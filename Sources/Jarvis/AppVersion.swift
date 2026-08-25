@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.8.6"
-    private static let fallbackBuild = "179"
+    private static let fallbackShortVersion = "0.8.7"
+    private static let fallbackBuild = "180"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -158,9 +158,26 @@ struct JarvisUpdateService {
         guard let downloadURL = release.downloadURL else {
             throw JarvisUpdateError.downloadUnavailable
         }
+
+        // Resolve the writable install location before touching LaunchServices.
+        // When macOS runs a quarantined app through App Translocation, the
+        // original Downloads path is only discoverable while its registration
+        // is still intact.
+        let launchedAppURL = Bundle.main.bundleURL.standardizedFileURL
+        guard launchedAppURL.pathExtension.lowercased() == "app",
+              launchedAppURL.lastPathComponent == "Jarvis.app"
+        else {
+            throw JarvisUpdateError.unsupportedInstallLocation
+        }
+        let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
+        try validateInstallLocation(currentAppURL)
+
         // Remove stale Jarvis/agent registrations before the replacement is
-        // staged. ChatGPT and other apps are excluded by bundle identifier.
-        cleanupStaleLaunchServices()
+        // staged, but preserve both the running bundle and the resolved
+        // writable install location. ChatGPT and other apps are excluded by
+        // bundle identifier.
+        cleanupStaleLaunchServices(preserving: [launchedAppURL, currentAppURL])
+
         // Reset while the current app is still running and the user has just
         // confirmed the update. The replacement process is deliberately not
         // responsible for TCC state.
@@ -208,15 +225,6 @@ struct JarvisUpdateService {
         else {
             throw JarvisUpdateError.invalidApplication
         }
-
-        let launchedAppURL = Bundle.main.bundleURL.standardizedFileURL
-        guard launchedAppURL.pathExtension.lowercased() == "app",
-              launchedAppURL.lastPathComponent == "Jarvis.app"
-        else {
-            throw JarvisUpdateError.unsupportedInstallLocation
-        }
-        let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
-        try validateInstallLocation(currentAppURL)
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")
         try makeInstallerScript(

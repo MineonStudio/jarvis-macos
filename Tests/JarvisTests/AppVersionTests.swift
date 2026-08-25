@@ -78,29 +78,36 @@ final class AppVersionTests: XCTestCase {
         XCTAssertEqual(resetCount, 1)
     }
 
-    func testLaunchServicesCleanupKeepsCurrentAppAndTargetsJarvisResidueOnly() {
+    func testLaunchServicesCleanupKeepsRunningAndResolvedAppsAndTargetsJarvisResidueOnly() {
         let dump = """
         bundle id:                  Jarvis (0x1)
-        path:                       /Users/wesley/Downloads/Jarvis.app (0x2)
+        path:                       /private/var/folders/vy/AppTranslocation/ABC/d/Jarvis.app (0x2)
+        identifier:                 com.jarvis.mac
+        --------------------------------------------------------------------------------
+        bundle id:                  Jarvis (0x2)
+        path:                       /Users/wesley/Downloads/Jarvis.app (0x3)
         identifier:                 com.jarvis.mac
         --------------------------------------------------------------------------------
         bundle id:                  Jarvis Dev (0x3)
-        path:                       /Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app (0x4)
+        path:                       /Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app (0x5)
         identifier:                 com.jarvis.mac.dev
         --------------------------------------------------------------------------------
         bundle id:                  JarvisStatusBarProbe (0x5)
-        path:                       /private/tmp/JarvisStatusBarProbe.app (0x6)
+        path:                       /private/tmp/JarvisStatusBarProbe.app (0x7)
         identifier:                 com.example.jarvis-status-probe
         --------------------------------------------------------------------------------
         bundle id:                  ChatGPT (0x7)
-        path:                       /Applications/ChatGPT.app (0x8)
+        path:                       /Applications/ChatGPT.app (0x9)
         identifier:                 com.openai.codex
         """
 
         XCTAssertEqual(
             JarvisUpdateService.launchServicesCleanupPaths(
                 from: dump,
-                preserving: URL(fileURLWithPath: "/Users/wesley/Downloads/Jarvis.app"),
+                preserving: [
+                    URL(fileURLWithPath: "/private/var/folders/vy/AppTranslocation/ABC/d/Jarvis.app"),
+                    URL(fileURLWithPath: "/Users/wesley/Downloads/Jarvis.app")
+                ],
                 bundleIdentifier: "com.jarvis.mac"
             ),
             [

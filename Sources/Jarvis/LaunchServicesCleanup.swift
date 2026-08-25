@@ -3,10 +3,10 @@ import Foundation
 extension JarvisUpdateService {
     static func launchServicesCleanupPaths(
         from dump: String,
-        preserving currentAppURL: URL,
+        preserving currentAppURLs: [URL],
         bundleIdentifier: String
     ) -> [URL] {
-        let currentPath = currentAppURL.standardizedFileURL.path
+        let preservedPaths = Set(currentAppURLs.map(\.standardizedFileURL.path))
         let separator = String(repeating: "-", count: 80)
         var paths = Set<String>()
 
@@ -49,7 +49,7 @@ extension JarvisUpdateService {
             }
 
             let url = URL(fileURLWithPath: path).standardizedFileURL
-            guard url.pathExtension.lowercased() == "app", url.path != currentPath else {
+            guard url.pathExtension.lowercased() == "app", !preservedPaths.contains(url.path) else {
                 continue
             }
             paths.insert(url.path)
@@ -58,7 +58,7 @@ extension JarvisUpdateService {
         return paths.sorted().map(URL.init(fileURLWithPath:))
     }
 
-    func cleanupStaleLaunchServices() {
+    func cleanupStaleLaunchServices(preserving appURLs: [URL] = []) {
         let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
         guard let bundleIdentifier = Bundle.main.bundleIdentifier,
               FileManager.default.isExecutableFile(atPath: lsregisterPath)
@@ -93,7 +93,7 @@ extension JarvisUpdateService {
 
         let stalePaths = Self.launchServicesCleanupPaths(
             from: dump,
-            preserving: Bundle.main.bundleURL,
+            preserving: appURLs.isEmpty ? [Bundle.main.bundleURL] : appURLs,
             bundleIdentifier: bundleIdentifier
         )
         for path in stalePaths {

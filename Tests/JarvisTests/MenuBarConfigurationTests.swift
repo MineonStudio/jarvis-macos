@@ -27,11 +27,10 @@ final class MenuBarConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testMenuBarUsesThinWhiteTitleStyle() {
-        let font = JarvisMenuBarController.menuBarFont
-        let color = JarvisMenuBarController.menuBarTitleColor
-
-        XCTAssertEqual(font.pointSize, 13)
-        XCTAssertEqual(color, .white)
+    func testMenuBarUsesTemplateIconResourceWithAccessibleTitle() {
+        XCTAssertEqual(JarvisMenuBarController.menuBarIconResourceName, "JarvisMenuBarIcon")
+        XCTAssertEqual(JarvisMenuBarController.menuBarIconFileExtension, "png")
+        XCTAssertEqual(JarvisMenuBarController.menuBarIconTintColor, .white)
+        XCTAssertEqual(JarvisMenuBarController.menuBarTitle, "JARVIS")
     }
 }

@@ -4,11 +4,12 @@ import AppKit
 final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let shared = JarvisMenuBarController()
     static let menuBarTitle = "JARVIS"
+    static let menuBarIconResourceName = "JarvisMenuBarIcon"
+    static let menuBarIconFileExtension = "png"
+    static let menuBarIconTintColor = NSColor.white
     static let menuBarAutosaveName = NSStatusItem.AutosaveName(
         "com.jarvis.mac.primary-status-item"
     )
-    static let menuBarFont = NSFont.systemFont(ofSize: 13, weight: .light)
-    static let menuBarTitleColor = NSColor.white
 
     private var app: AppModel?
     private var statusItem: NSStatusItem?
@@ -45,7 +46,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
         configureMenuIfNeeded()
 
-        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.autosaveName = Self.menuBarAutosaveName
         self.statusItem = statusItem
         statusItem.menu = menu
@@ -132,22 +133,37 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func styleStatusItemButton(_ button: NSStatusBarButton) {
-        let title = NSAttributedString(
-            string: Self.menuBarTitle,
-            attributes: [
-                .font: Self.menuBarFont,
-                .foregroundColor: Self.menuBarTitleColor
-            ]
-        )
         button.appearance = NSAppearance(named: .darkAqua)
-        button.title = Self.menuBarTitle
-        button.attributedTitle = title
-        button.font = Self.menuBarFont
-        button.contentTintColor = Self.menuBarTitleColor
-        button.cell?.font = Self.menuBarFont
+        button.contentTintColor = Self.menuBarIconTintColor
         button.cell?.backgroundStyle = .emphasized
+
+        if let icon = Self.makeMenuBarIcon() {
+            button.image = icon
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            button.title = ""
+            button.attributedTitle = NSAttributedString(string: "")
+        } else {
+            // Keep the menu discoverable if a damaged bundle is missing the icon.
+            button.title = Self.menuBarTitle
+        }
+
         button.setAccessibilityLabel(Self.menuBarTitle)
         button.toolTip = Self.menuBarTitle
+    }
+
+    private static func makeMenuBarIcon() -> NSImage? {
+        guard let url = Bundle.main.url(
+            forResource: menuBarIconResourceName,
+            withExtension: menuBarIconFileExtension
+        ),
+            let image = NSImage(contentsOf: url)
+        else {
+            return nil
+        }
+
+        image.isTemplate = true
+        return image
     }
 
     @objc private func captureScreenshot() {

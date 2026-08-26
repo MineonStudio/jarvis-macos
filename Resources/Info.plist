@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.8.16</string>
+	<string>0.8.17</string>
 	<key>CFBundleVersion</key>
-	<string>200</string>
+	<string>201</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -23,6 +23,8 @@
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>贾维斯使用 ScreenCaptureKit 读取显示器画面，完成窗口选择和框选截图；不使用系统音频或麦克风。</string>
 	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<string>jarvis</string>
+	<key>CFBundleIconFile</key>
+	<string>jarvis</string>
 </dict>
 </plist>

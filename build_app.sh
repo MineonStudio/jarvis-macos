@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.8.16}"
-JARVIS_BUILD="${JARVIS_BUILD:-200}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.8.17}"
+JARVIS_BUILD="${JARVIS_BUILD:-201}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -42,25 +42,27 @@ if [[ -f "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" ]]; then
      "$APP_DIR/Contents/Resources/JarvisMenuBarIcon.png"
 fi
 
-# Use the standard macOS Asset Catalog as the Dock/Finder icon source. This
-# keeps CFBundleIconName/AppIcon and LaunchServices on one cacheable path.
-ASSET_CATALOG_DIR="$ROOT_DIR/Resources/Assets.xcassets"
+# Use the native Icon Composer asset as the Dock/Finder icon source. This
+# preserves the layered macOS 26 composition instead of flattening it into a
+# square PNG inside the system's rounded Dock tile.
+ICON_COMPOSER_DIR="$ROOT_DIR/Resources/jarvis.icon"
 ASSET_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
 rm -f "$APP_DIR/Contents/Resources/Assets.car" \
       "$APP_DIR/Contents/Resources/AppIcon.icns" \
       "$APP_DIR/Contents/Resources/Jarvis.icns" \
+      "$APP_DIR/Contents/Resources/jarvis.icns" \
       "$ASSET_PARTIAL_INFO"
 
-if [[ -d "$ASSET_CATALOG_DIR" ]]; then
+if [[ -d "$ICON_COMPOSER_DIR" ]]; then
   xcrun actool \
+    "$ICON_COMPOSER_DIR" \
     --compile "$APP_DIR/Contents/Resources" \
     --platform macosx \
     --minimum-deployment-target 26.0 \
-    --app-icon AppIcon \
+    --app-icon jarvis \
     --output-partial-info-plist "$ASSET_PARTIAL_INFO" \
     --notices \
-    --warnings \
-    "$ASSET_CATALOG_DIR" >/dev/null
+    --warnings >/dev/null
   rm -f "$ASSET_PARTIAL_INFO"
 fi
 

@@ -24,7 +24,5 @@
 	<string>贾维斯使用 ScreenCaptureKit 读取显示器画面，完成窗口选择和框选截图；不使用系统音频或麦克风。</string>
 	<key>CFBundleIconName</key>
 	<string>jarvis</string>
-	<key>CFBundleIconFile</key>
-	<string>jarvis</string>
 </dict>
 </plist>

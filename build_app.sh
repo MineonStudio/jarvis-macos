@@ -44,7 +44,9 @@ fi
 
 # Use the native Icon Composer asset as the Dock/Finder icon source. This
 # preserves the layered macOS 26 composition instead of flattening it into a
-# square PNG inside the system's rounded Dock tile.
+# square PNG inside the system's rounded Dock tile. Keep CFBundleIconFile out
+# of Info.plist: that legacy key makes Dock prefer the static jarvis.icns and
+# bypass the light/dark Icon Composer specialization.
 ICON_COMPOSER_DIR="$ROOT_DIR/Resources/jarvis.icon"
 ASSET_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
 rm -f "$APP_DIR/Contents/Resources/Assets.car" \

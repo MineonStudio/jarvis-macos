@@ -128,29 +128,57 @@ struct ClipboardFilterBar: View {
         ClipboardFilterLogic.counts(in: items)
     }
 
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(ClipboardViewFilter.allCases) { filter in
-                        ClipboardFilterChip(
-                            filter: filter,
-                            count: filterCounts[filter, default: 0],
-                            isSelected: selectedFilter == filter
-                        ) {
-                            selectedFilter = filter
-                        }
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(ClipboardViewFilter.allCases) { filter in
+                    ClipboardFilterChip(
+                        filter: filter,
+                        count: filterCounts[filter, default: 0],
+                        isSelected: selectedFilter == filter
+                    ) {
+                        selectedFilter = filter
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: 36, alignment: .leading)
+    }
+
+    private var regularLayout: some View {
+        HStack(alignment: .center, spacing: 14) {
+            filterChips
+                .fixedSize(horizontal: true, vertical: false)
+
+            Spacer(minLength: 0)
 
             ClipboardSearchField(
                 text: $searchText,
                 placeholder: placeholder,
                 focusesOnAppear: focusesOnAppear
             )
-            .frame(width: 320)
+            .frame(width: HistoryGridMetrics.clipboardSearchFieldWidth)
+        }
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            filterChips
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ClipboardSearchField(
+                text: $searchText,
+                placeholder: placeholder,
+                focusesOnAppear: focusesOnAppear
+            )
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            regularLayout
+            compactLayout
         }
     }
 }
@@ -276,113 +304,69 @@ enum ClipboardCardPresentation {
 
 struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDeleteConfirmation = false
+    @State private var isHovered = false
     let item: ClipboardItem
     let presentation: ClipboardCardPresentation
-    let onPreview: (() -> Void)?
-    let usesCompactImageLayout: Bool
 
     init(
         item: ClipboardItem,
-        presentation: ClipboardCardPresentation,
-        onPreview: (() -> Void)? = nil,
-        usesCompactImageLayout: Bool = false
+        presentation: ClipboardCardPresentation
     ) {
         self.item = item
         self.presentation = presentation
-        self.onPreview = onPreview
-        self.usesCompactImageLayout = usesCompactImageLayout
     }
 
-    private var cardWidth: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImageCardWidth : HistoryGridMetrics.cardWidth
-    }
-
-    private var cardHeight: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImageCardHeight : HistoryGridMetrics.cardHeight
-    }
-
-    private var previewHeight: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImagePreviewHeight : HistoryGridMetrics.previewHeight
-    }
-
-    private var cardPadding: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImageCardPadding : HistoryGridMetrics.cardPadding
-    }
-
-    private var contentSpacing: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImageContentSpacing : 8
-    }
-
-    private var metadataHeight: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImageMetadataHeight : 18
-    }
-
-    private var actionBarHeight: CGFloat {
-        usesCompactImageLayout ? HistoryGridMetrics.compactImageActionBarHeight : 30
-    }
-
-    private var actionButtonSize: CGFloat {
-        usesCompactImageLayout ? 22 : 30
+    private var previewContent: some View {
+        ZStack {
+            if item.kind == .text {
+                Text(item.preview)
+                    .font(.system(size: 12, weight: .regular))
+                    .lineLimit(6)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .padding(HistoryGridMetrics.clipboardCardPadding)
+            } else if item.kind == .file {
+                VStack(spacing: 10) {
+                    Image(systemName: item.kind.icon)
+                        .font(.system(size: 38, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                    Text(item.preview)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(3)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, HistoryGridMetrics.clipboardCardPadding)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                ClipboardItemPreview(item: item)
+            }
+        }
+        .frame(
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardCardHeight,
+            alignment: .center
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
+        .contentShape(Rectangle())
+        .help("拖到 Finder 或其他应用导出内容")
     }
 
     @ViewBuilder
-    private var previewButton: some View {
-        let button = Button {
-            if presentation == .panel {
-                onPreview?()
-            } else if item.kind == .image || item.kind == .video {
-                app.showClipboardMediaPreview(item)
-            } else {
-                app.copyClipboard(item)
-            }
-        } label: {
-            ZStack {
-                if item.kind == .text {
-                    Text(item.preview)
-                        .font(.system(size: 12, weight: .regular))
-                        .lineLimit(6)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(cardPadding)
-                } else if item.kind == .file {
-                    VStack(spacing: 10) {
-                        Image(systemName: item.kind.icon)
-                            .font(.system(size: 38, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                        Text(item.preview)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(3)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, cardPadding)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ClipboardItemPreview(item: item)
-                }
-            }
-            .frame(
-                width: cardWidth - (cardPadding * 2),
-                height: previewHeight
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.995, pressedOpacity: 0.9))
-        .help(
-            presentation == .panel
-                ? "点击复制或预览；拖动卡片主体导出内容"
-                : (item.kind == .image || item.kind == .video ? "查看大图" : "一键复制")
-        )
-
+    private var previewArea: some View {
         if ClipboardSharing.itemProvider(for: item) != nil {
-            button
+            previewContent
                 .onDrag {
                     ClipboardSharing.itemProvider(for: item) ?? NSItemProvider()
                 }
-                .help("拖到 Finder 或其他应用导出内容")
         } else {
-            button
+            previewContent
         }
     }
 
@@ -400,61 +384,135 @@ struct ClipboardCard: View {
                     .lineLimit(1)
             }
         }
-        .frame(height: metadataHeight)
+        .frame(
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardMetadataHeight
+        )
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 4) {
+    private var actionOverlay: some View {
+        HStack(spacing: 5) {
+            if item.kind == .image || item.kind == .video {
+                Button {
+                    app.showClipboardMediaPreview(item)
+                } label: {
+                    Image(systemName: "eye")
+                        .frame(
+                            width: HistoryGridMetrics.clipboardActionButtonSize,
+                            height: HistoryGridMetrics.clipboardActionButtonSize
+                        )
+                        .contentShape(Circle())
+                }
+                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
+                .foregroundStyle(Color.secondary)
+                .font(.system(size: 13, weight: .medium))
+                .jarvisGlass(in: Circle(), interactive: true)
+                .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+                .help("查看大图")
+            }
+
             Button {
                 app.copyClipboard(item)
             } label: {
-                Label("一键复制", systemImage: "doc.on.doc")
-                    .frame(maxWidth: .infinity)
+                Image(systemName: "doc.on.doc")
+                    .frame(
+                        width: HistoryGridMetrics.clipboardActionButtonSize,
+                        height: HistoryGridMetrics.clipboardActionButtonSize
+                    )
+                    .contentShape(Circle())
             }
-            .buttonStyle(JarvisSecondaryButtonStyle())
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
+            .foregroundStyle(Color.secondary)
+            .font(.system(size: 13, weight: .medium))
             .disabled(presentation == .panel && !item.hasLocalContent)
+            .jarvisGlass(in: Circle(), interactive: true)
+            .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+            .help("复制")
 
-            if presentation == .main {
-                Button {
-                    app.toggleClipboardPin(item)
-                } label: {
-                    Image(systemName: item.isPinned ? "star.slash" : "star")
-                        .frame(width: actionButtonSize, height: actionButtonSize)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-                .foregroundStyle(item.isPinned ? .yellow : Color.jarvisTextSecondary)
-                .help(item.isPinned ? "取消收藏" : "收藏")
-                Button {
-                    showingDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .frame(width: actionButtonSize, height: actionButtonSize)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-                .foregroundStyle(.red.opacity(0.72))
-                .help("删除")
+            Button {
+                app.toggleClipboardPin(item)
+            } label: {
+                Image(systemName: item.isPinned ? "star.slash" : "star")
+                    .frame(
+                        width: HistoryGridMetrics.clipboardActionButtonSize,
+                        height: HistoryGridMetrics.clipboardActionButtonSize
+                    )
+                    .contentShape(Circle())
             }
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
+            .foregroundStyle(item.isPinned ? .yellow : Color.jarvisTextSecondary)
+            .font(.system(size: 13, weight: .medium))
+            .jarvisGlass(in: Circle(), interactive: true)
+            .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+            .help(item.isPinned ? "取消收藏" : "收藏")
+
+            Button {
+                showingDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .frame(
+                        width: HistoryGridMetrics.clipboardActionButtonSize,
+                        height: HistoryGridMetrics.clipboardActionButtonSize
+                    )
+                    .contentShape(Circle())
+            }
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
+            .foregroundStyle(.red.opacity(0.72))
+            .font(.system(size: 13, weight: .medium))
+            .jarvisGlass(in: Circle(), interactive: true)
+            .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+            .help("删除")
         }
-        .frame(height: actionBarHeight)
+        .font(.system(size: 14, weight: .semibold))
+        .opacity(isHovered ? 1 : 0)
+        .allowsHitTesting(isHovered)
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+    }
+
+    private var cardBody: some View {
+        ZStack(alignment: .center) {
+            previewArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .scaleEffect(
+                    isHovered && !reduceMotion
+                        ? HistoryGridMetrics.clipboardPreviewHoverScale
+                        : 1
+                )
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                    value: isHovered
+                )
+
+            actionOverlay
+        }
+        .frame(
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardCardHeight,
+            alignment: .topLeading
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
+        .jarvisGlass(
+            cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+            interactive: false
+        )
+        .onHover { isHovered = $0 }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: contentSpacing) {
-            previewButton
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardContentSpacing) {
+            cardBody
             metadataRow
-            actionBar
         }
-        .padding(cardPadding)
-        .frame(
-            width: cardWidth,
-            height: cardHeight,
-            alignment: .topLeading
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .jarvisHoverPanelFeedback(
-            scale: 1.03
+        .contentShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
         )
         .contextMenu {
             if presentation == .main {
@@ -485,47 +543,27 @@ struct ClipboardCard: View {
 struct ClipboardGrid: View {
     let items: [ClipboardItem]
     let presentation: ClipboardCardPresentation
-    let onPreview: ((ClipboardItem) -> Void)?
-
-    init(
-        items: [ClipboardItem],
-        presentation: ClipboardCardPresentation,
-        onPreview: ((ClipboardItem) -> Void)? = nil
-    ) {
-        self.items = items
-        self.presentation = presentation
-        self.onPreview = onPreview
-    }
-
-    private var isImageGrid: Bool {
-        !items.isEmpty && items.allSatisfy { $0.kind == .image }
-    }
-
-    private var cardWidth: CGFloat {
-        isImageGrid ? HistoryGridMetrics.compactImageCardWidth : HistoryGridMetrics.cardWidth
-    }
-
-    private var gridSpacing: CGFloat {
-        isImageGrid ? HistoryGridMetrics.imageSpacing : HistoryGridMetrics.spacing
-    }
 
     var body: some View {
         LazyVGrid(
             columns: [GridItem(
-                .adaptive(minimum: cardWidth, maximum: cardWidth),
-                spacing: gridSpacing
+                .adaptive(
+                    minimum: HistoryGridMetrics.clipboardCardWidth,
+                    maximum: HistoryGridMetrics.clipboardCardWidth
+                ),
+                spacing: HistoryGridMetrics.clipboardGridSpacing
             )],
-            spacing: gridSpacing
+            alignment: .leading,
+            spacing: HistoryGridMetrics.clipboardGridSpacing
         ) {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
-                    presentation: presentation,
-                    onPreview: onPreview.map { preview in { preview(item) } },
-                    usesCompactImageLayout: item.kind == .image
+                    presentation: presentation
                 )
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -564,8 +602,7 @@ struct ClipboardPanelView: View {
                 ScrollView {
                     ClipboardGrid(
                         items: filteredItems,
-                        presentation: .panel,
-                        onPreview: { app.showClipboardMediaPreview($0) }
+                        presentation: .panel
                     )
                 }
             }

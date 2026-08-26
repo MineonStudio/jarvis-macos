@@ -21,9 +21,9 @@ struct ContentView: View {
                 footerAction: { selectSection(.settings) }
             )
             .navigationSplitViewColumnWidth(
-                min: 152,
+                min: JarvisMetrics.sidebarMinimumWidth,
                 ideal: JarvisMetrics.sidebarWidth,
-                max: 220
+                max: JarvisMetrics.sidebarMaximumWidth
             )
         } detail: {
             loadedSectionView

@@ -40,6 +40,16 @@ enum ClipboardKind: String, Codable, CaseIterable {
     }
 }
 
+enum JarvisHistoryDateFormatting {
+    static func string(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy/MM/dd HH:mm"
+        return formatter.string(from: date)
+    }
+}
+
 struct ClipboardItem: Codable, Identifiable, Equatable {
     let id: UUID
     let createdAt: Date
@@ -167,7 +177,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     }
 
     var shortTimestamp: String {
-        createdAt.formatted(.dateTime.year().month().day().hour().minute())
+        JarvisHistoryDateFormatting.string(from: createdAt)
     }
 }
 

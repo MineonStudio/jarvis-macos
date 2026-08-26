@@ -15,12 +15,6 @@ final class WindowLayoutTests: XCTestCase {
             XCTAssertEqual(layout.menuIcon.size, NSSize(width: 24, height: 16))
         }
 
-        XCTAssertEqual(WindowLayout.halfLeft.menuKeyEquivalent, "\u{F702}")
-        XCTAssertEqual(WindowLayout.halfRight.menuKeyEquivalent, "\u{F703}")
-        XCTAssertEqual(WindowLayout.upperLeft.menuKeyEquivalent, "u")
-        XCTAssertEqual(WindowLayout.upperRight.menuKeyEquivalent, "i")
-        XCTAssertEqual(WindowLayout.lowerLeft.menuKeyEquivalent, "j")
-        XCTAssertEqual(WindowLayout.lowerRight.menuKeyEquivalent, "k")
         XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplayParts, ["⇧", "⌘", "←"])
     }
 
@@ -35,16 +29,38 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertNil(WindowLayout.layout(for: [.up]))
     }
 
-    func testInAppShortcutLabelsAreDisplayOnlyAndMenuBindingsStaySeparate() {
+    func testInAppShortcutLabelsAreDisplayOnly() {
         XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplay, "⇧⌘←")
         XCTAssertEqual(WindowLayout.upperRight.shortcutDisplay, "⇧⌘I")
-        XCTAssertEqual(WindowLayout.menuShortcutModifierFlags, [.command, .shift])
     }
 
-    func testImageGalleryMetricsUseHalfSizedCardsAndCategorySpacing() {
-        XCTAssertEqual(HistoryGridMetrics.compactImageCardWidth, 110)
-        XCTAssertEqual(HistoryGridMetrics.compactImageCardHeight, 147)
-        XCTAssertEqual(HistoryGridMetrics.imageSpacing, 7)
+    func testScreenshotGalleryUsesClipboardGridMetrics() {
+        XCTAssertEqual(
+            HistoryGridMetrics.clipboardCardHeight,
+            HistoryGridMetrics.clipboardCardWidth * 9 / 16,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(HistoryGridMetrics.clipboardActionButtonSize, 32)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCornerRadius, 12)
+        XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 14)
+    }
+
+    func testLowerLayoutsStayAboveBottomDock() {
+        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let safeFrame = WindowLayoutScreenArea.safeVisibleFrame(
+            screenFrame: screenFrame,
+            visibleFrame: screenFrame,
+            dockFrame: NSRect(x: 0, y: 0, width: 1440, height: 96)
+        )
+
+        let lowerLeft = WindowLayout.frame(for: .lowerLeft, in: safeFrame)
+        let lowerRight = WindowLayout.frame(for: .lowerRight, in: safeFrame)
+
+        XCTAssertEqual(safeFrame.minY, 96)
+        XCTAssertGreaterThanOrEqual(lowerLeft.minY, 96)
+        XCTAssertGreaterThanOrEqual(lowerRight.minY, 96)
+        XCTAssertLessThanOrEqual(lowerLeft.minY, lowerLeft.maxY)
+        XCTAssertLessThanOrEqual(lowerRight.minY, lowerRight.maxY)
     }
 
     func testHalfFramesUseTheCompleteVisibleArea() {

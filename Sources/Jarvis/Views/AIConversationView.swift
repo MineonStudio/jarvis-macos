@@ -55,6 +55,45 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum AIConversationLayoutMetrics {
+    static let providerIconWidth: CGFloat = 18
+    static let providerItemSpacing: CGFloat = 7
+    static let providerItemHorizontalPadding: CGFloat = 24
+    static let providerNavigationItemSpacing: CGFloat = 2
+    static let providerNavigationPadding: CGFloat = 4
+    static let topBarSpacing: CGFloat = 12
+    static let browserControlSize: CGFloat = 32
+    static let browserControlSpacing: CGFloat = 8
+    static let browserControlCount = 4
+
+    static var providerNavigationMinimumWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: 13)
+        let itemWidth = AIConversationProvider.allCases.reduce(CGFloat.zero) { width, provider in
+            let titleWidth = (provider.title as NSString)
+                .size(withAttributes: [.font: font])
+                .width
+            return width
+                + providerIconWidth
+                + providerItemSpacing
+                + titleWidth
+                + providerItemHorizontalPadding
+        }
+        let itemSpacing = providerNavigationItemSpacing
+            * CGFloat(max(0, AIConversationProvider.allCases.count - 1))
+        return ceil(itemWidth + itemSpacing + providerNavigationPadding + 8)
+    }
+
+    static var browserControlsMinimumWidth: CGFloat {
+        (browserControlSize * CGFloat(browserControlCount))
+            + (browserControlSpacing * CGFloat(browserControlCount - 1))
+            + 8
+    }
+
+    static var minimumTopBarWidth: CGFloat {
+        providerNavigationMinimumWidth + topBarSpacing + browserControlsMinimumWidth
+    }
+}
+
 @MainActor
 final class AIConversationWebController: NSObject, ObservableObject {
     let provider: AIConversationProvider
@@ -266,18 +305,15 @@ struct AIConversationTopBar: View {
 
     var body: some View {
         JarvisTopBarContainer {
-            ZStack {
+            HStack(spacing: AIConversationLayoutMetrics.topBarSpacing) {
                 AIConversationProviderNavigation(selection: $app.selectedAIProvider)
-
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-
-                    AIConversationBrowserControls(
-                        controller: currentController,
-                        showsDownloadManager: $showsDownloadManager
-                    )
-                }
+                Spacer(minLength: 0)
+                AIConversationBrowserControls(
+                    controller: currentController,
+                    showsDownloadManager: $showsDownloadManager
+                )
             }
+            .frame(minWidth: AIConversationLayoutMetrics.minimumTopBarWidth)
         }
     }
 

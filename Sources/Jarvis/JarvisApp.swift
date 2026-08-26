@@ -47,7 +47,10 @@ private struct JarvisRootView: View {
                 appModel.themePreference,
                 systemColorScheme: appModel.systemColorScheme
             )
-            .frame(minWidth: 480, minHeight: 360)
+            .frame(
+                minWidth: JarvisMainWindowController.minimumWindowSize.width,
+                minHeight: JarvisMainWindowController.minimumWindowSize.height
+            )
             // Keep the system title-bar region and its native window controls.
             // Apple recommends removing only the title and toolbar background
             // when content should extend beneath that region.

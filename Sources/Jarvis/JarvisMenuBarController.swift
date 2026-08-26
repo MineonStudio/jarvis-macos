@@ -7,6 +7,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let menuBarIconResourceName = "JarvisMenuBarIcon"
     static let menuBarIconFileExtension = "png"
     static let menuBarIconTintColor = NSColor.white
+    static let menuBarIconPointSize = NSSize(width: 18, height: 18)
     static let menuBarAutosaveName = NSStatusItem.AutosaveName(
         "com.jarvis.mac.primary-status-item"
     )
@@ -46,7 +47,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
         configureMenuIfNeeded()
 
-        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = Self.menuBarAutosaveName
         self.statusItem = statusItem
         statusItem.menu = menu
@@ -133,9 +134,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func styleStatusItemButton(_ button: NSStatusBarButton) {
-        button.appearance = NSAppearance(named: .darkAqua)
         button.contentTintColor = Self.menuBarIconTintColor
-        button.cell?.backgroundStyle = .emphasized
+        button.isBordered = false
 
         if let icon = Self.makeMenuBarIcon() {
             button.image = icon
@@ -162,7 +162,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             return nil
         }
 
-        image.isTemplate = true
+        image.isTemplate = false
+        image.size = Self.menuBarIconPointSize
         return image
     }
 

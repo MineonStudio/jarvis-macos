@@ -16,15 +16,110 @@ enum JarvisWindowAppearance {
     }
 }
 
+enum JarvisWindowLayoutMetrics {
+    /// A little extra room absorbs the split-view divider and fractional
+    /// layout rounding, so the last card and its hover controls never touch
+    /// the window edge.
+    static let contentSafetyMargin: CGFloat = 8
+    static let splitViewDividerAllowance: CGFloat = 1
+    static let clipboardPanelHorizontalPadding: CGFloat = 40
+    static let clipboardPanelTopPadding: CGFloat = 32
+    static let clipboardPanelBottomPadding: CGFloat = 20
+    static let clipboardPanelFooterHeight: CGFloat = 12
+    static let clipboardPanelDividerHeight: CGFloat = 5
+    static let clipboardCompactFilterBarHeight: CGFloat = 90
+    static let skillTopBarHeight: CGFloat = 54
+    static let emptyStateMinimumHeight: CGFloat = 190
+
+    private static var clipboardMinimumRowHeight: CGFloat {
+        HistoryGridMetrics.clipboardCardHeight
+            + HistoryGridMetrics.clipboardContentSpacing
+            + HistoryGridMetrics.clipboardMetadataHeight
+    }
+
+    private static var clipboardMinimumContentHeight: CGFloat {
+        max(clipboardMinimumRowHeight, emptyStateMinimumHeight)
+    }
+
+    static var mainWindowMinimumWidth: CGFloat {
+        let clipboardDetailWidth = max(
+            HistoryGridMetrics.clipboardCardWidth,
+            HistoryGridMetrics.clipboardSearchFieldWidth
+        ) + (JarvisMetrics.pageInset * 2)
+        let windowLayoutDetailWidth =
+            WindowLayoutDisplayMetrics.minimumGridWidth + (JarvisMetrics.pageInset * 2)
+        let detailWidth = max(
+            clipboardDetailWidth,
+            windowLayoutDetailWidth,
+            AIConversationLayoutMetrics.minimumTopBarWidth
+        )
+        return ceil(
+            JarvisMetrics.sidebarMinimumWidth
+                + splitViewDividerAllowance
+                + (JarvisMetrics.shellHorizontalPadding * 2)
+                + detailWidth
+                + contentSafetyMargin
+        )
+    }
+
+    static var mainWindowMinimumHeight: CGFloat {
+        let clipboardPageHeight = clipboardCompactFilterBarHeight
+            + HistoryGridMetrics.imageSpacing
+            + clipboardMinimumContentHeight
+            + (JarvisMetrics.pageInset * 2)
+        return ceil(
+            skillTopBarHeight
+                + (JarvisMetrics.shellVerticalPadding * 2)
+                + clipboardPageHeight
+                + contentSafetyMargin
+        )
+    }
+
+    static var clipboardPanelMinimumWidth: CGFloat {
+        let contentWidth = max(
+            HistoryGridMetrics.clipboardCardWidth,
+            HistoryGridMetrics.clipboardSearchFieldWidth
+        )
+        return ceil(contentWidth + clipboardPanelHorizontalPadding + contentSafetyMargin)
+    }
+
+    static var clipboardPanelMinimumHeight: CGFloat {
+        let bodyHeight = clipboardCompactFilterBarHeight
+            + HistoryGridMetrics.imageSpacing
+            + clipboardPanelDividerHeight
+            + HistoryGridMetrics.imageSpacing
+            + clipboardMinimumContentHeight
+            + HistoryGridMetrics.imageSpacing
+            + clipboardPanelFooterHeight
+        return ceil(
+            clipboardPanelTopPadding
+                + bodyHeight
+                + clipboardPanelBottomPadding
+                + contentSafetyMargin
+        )
+    }
+}
+
 /// Owns the main window's AppKit lifecycle independently from SwiftUI's view
 /// redraws. The window frame is restored once when the NSWindow is attached and
 /// persisted from window lifecycle notifications afterward.
 final class JarvisMainWindowController: NSObject, ObservableObject {
     static let frameAutosaveName = "Jarvis.MainWindow"
-    static let defaultWindowSize = CGSize(width: 1120, height: 760)
-    /// Keep the window small enough for a true half-screen layout even on a
-    /// compact 1280-point display.
-    static let minimumWindowSize = CGSize(width: 480, height: 360)
+    static var defaultWindowSize: CGSize {
+        CGSize(
+            width: max(1380, JarvisWindowLayoutMetrics.mainWindowMinimumWidth),
+            height: max(760, JarvisWindowLayoutMetrics.mainWindowMinimumHeight)
+        )
+    }
+
+    /// The minimum frame is derived from the intrinsic controls used by the
+    /// navigation, clipboard, window-layout, and AI conversation surfaces.
+    static var minimumWindowSize: CGSize {
+        CGSize(
+            width: JarvisWindowLayoutMetrics.mainWindowMinimumWidth,
+            height: JarvisWindowLayoutMetrics.mainWindowMinimumHeight
+        )
+    }
 
     /// The scene uses this before SwiftUI creates the NSWindow. Feeding the
     /// saved size into `.defaultSize` prevents the default frame from flashing
@@ -54,6 +149,10 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
         detach()
         self.window = window
         window.setFrameAutosaveName(Self.frameAutosaveName)
+        window.minSize = NSSize(
+            width: Self.minimumWindowSize.width,
+            height: Self.minimumWindowSize.height
+        )
         restoreFrame(to: window)
         configureAppearance(for: window)
         observeFrameChanges(of: window)

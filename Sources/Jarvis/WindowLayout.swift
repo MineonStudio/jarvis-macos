@@ -191,6 +191,118 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum WindowLayoutScreenArea {
+    static func visibleFrame(for screen: NSScreen) -> NSRect {
+        safeVisibleFrame(
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            dockFrame: dockFrame(on: screen)
+        )
+    }
+
+    static func safeVisibleFrame(
+        screenFrame: NSRect,
+        visibleFrame: NSRect,
+        dockFrame: NSRect?
+    ) -> NSRect {
+        var safeFrame = visibleFrame.intersection(screenFrame)
+        guard let dockFrame,
+              !dockFrame.isNull,
+              !dockFrame.isEmpty
+        else {
+            return safeFrame
+        }
+
+        let dock = dockFrame.intersection(screenFrame)
+        guard !dock.isNull, !dock.isEmpty else { return safeFrame }
+
+        let isBottomDock = dock.width >= screenFrame.width * 0.65
+            && dock.height < screenFrame.height * 0.5
+            && dock.minY <= screenFrame.minY + screenFrame.height * 0.25
+        if isBottomDock {
+            let safeMaxY = min(safeFrame.maxY, screenFrame.maxY)
+            let safeMinY = max(safeFrame.minY, dock.maxY)
+            safeFrame = NSRect(
+                x: safeFrame.minX,
+                y: safeMinY,
+                width: safeFrame.width,
+                height: max(0, safeMaxY - safeMinY)
+            )
+            return safeFrame
+        }
+
+        let isLeftDock = dock.height >= screenFrame.height * 0.65
+            && dock.width < screenFrame.width * 0.5
+            && dock.minX <= screenFrame.minX + screenFrame.width * 0.25
+        if isLeftDock {
+            let safeMaxX = min(safeFrame.maxX, screenFrame.maxX)
+            let safeMinX = max(safeFrame.minX, dock.maxX)
+            safeFrame = NSRect(
+                x: safeMinX,
+                y: safeFrame.minY,
+                width: max(0, safeMaxX - safeMinX),
+                height: safeFrame.height
+            )
+            return safeFrame
+        }
+
+        let isRightDock = dock.height >= screenFrame.height * 0.65
+            && dock.width < screenFrame.width * 0.5
+            && dock.maxX >= screenFrame.maxX - screenFrame.width * 0.25
+        if isRightDock {
+            let safeMinX = max(safeFrame.minX, screenFrame.minX)
+            let safeMaxX = min(safeFrame.maxX, dock.minX)
+            safeFrame = NSRect(
+                x: safeMinX,
+                y: safeFrame.minY,
+                width: max(0, safeMaxX - safeMinX),
+                height: safeFrame.height
+            )
+        }
+        return safeFrame
+    }
+
+    private static func dockFrame(on screen: NSScreen) -> NSRect? {
+        guard let windowInfoList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return nil
+        }
+
+        let desktopTop = NSScreen.screens.map(\.frame.maxY).max() ?? screen.frame.maxY
+        var bestFrame: NSRect?
+        var bestArea: CGFloat = 0
+
+        for info in windowInfoList {
+            let ownerName = (info[kCGWindowOwnerName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            guard ownerName == "dock" || ownerName == "程序坞",
+                  let boundsValue = info[kCGWindowBounds as String] as? NSDictionary,
+                  let quartzBounds = CGRect(dictionaryRepresentation: boundsValue)
+            else {
+                continue
+            }
+
+            let appKitFrame = NSRect(
+                x: quartzBounds.minX,
+                y: desktopTop - quartzBounds.maxY,
+                width: quartzBounds.width,
+                height: quartzBounds.height
+            )
+            let intersection = appKitFrame.intersection(screen.frame)
+            let area = intersection.width * intersection.height
+            if area > bestArea {
+                bestArea = area
+                bestFrame = intersection
+            }
+        }
+
+        return bestFrame
+    }
+}
+
 enum WindowLayoutDirection: Hashable {
     case left
     case right
@@ -241,7 +353,10 @@ final class WindowLayoutController {
             return
         }
 
-        let targetFrame = WindowLayout.frame(for: layout, in: geometry.screen.visibleFrame)
+        let targetFrame = WindowLayout.frame(
+            for: layout,
+            in: WindowLayoutScreenArea.visibleFrame(for: geometry.screen)
+        )
         guard setFrame(targetFrame, on: target.window, using: geometry.screen) else {
             statusHandler("当前窗口不允许调整大小或位置")
             return

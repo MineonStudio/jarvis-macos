@@ -16,25 +16,29 @@ struct ScreenshotView: View {
 
 enum HistoryGridMetrics {
     static let pageSize = 12
-    static let cardWidth: CGFloat = 220
-    static let cardHeight: CGFloat = 294
-    static let previewHeight: CGFloat = 200
-    static let cardPadding: CGFloat = 10
-    static let minimumCardWidth = cardWidth
-    static let maximumCardWidth = cardWidth
-    static let spacing: CGFloat = 12
-
-    // Image cards are intentionally compact so the visual weight of the
-    // screenshot/clipboard galleries matches the surrounding content panels.
-    // Keep the dimensions as exact halves of the existing card dimensions.
-    static let compactImageCardWidth = cardWidth / 2
-    static let compactImageCardHeight = cardHeight / 2
-    static let compactImagePreviewHeight: CGFloat = 90
-    static let compactImageCardPadding: CGFloat = 5
-    static let compactImageContentSpacing: CGFloat = 4
-    static let compactImageMetadataHeight: CGFloat = 12
-    static let compactImageActionBarHeight: CGFloat = 26
     static let imageSpacing: CGFloat = 7
+
+    // Both history galleries use the same 16:9 landscape panel and controls.
+    static let historyCardBaseWidth: CGFloat = 192
+    static let historyCardBasePadding: CGFloat = 10
+    static let clipboardCardWidth: CGFloat = historyCardBaseWidth * 1.1
+    static let clipboardCardHeight: CGFloat = clipboardCardWidth * 9 / 16
+    static let clipboardCardPadding: CGFloat = historyCardBasePadding * 0.6
+    static let clipboardPreviewHeight: CGFloat = clipboardCardHeight
+    static let clipboardContentSpacing: CGFloat = 4
+    static let clipboardMetadataHeight: CGFloat = 12
+    static let clipboardSearchFieldWidth: CGFloat = 320
+    static let clipboardActionButtonSize: CGFloat = 32
+    static let clipboardPreviewHoverScale: CGFloat = 1.08
+    static let clipboardCornerRadius: CGFloat = 12
+    static let clipboardGridSpacing: CGFloat = 14
+
+    static func clipboardGridWidth(for columnCount: Int) -> CGFloat {
+        guard columnCount > 0 else { return 0 }
+        let cardWidth = clipboardCardWidth * CGFloat(columnCount)
+        let spacing = clipboardGridSpacing * CGFloat(max(0, columnCount - 1))
+        return cardWidth + spacing
+    }
 }
 
 struct ScreenshotHistorySection: View {
@@ -63,12 +67,13 @@ struct ScreenshotHistorySection: View {
                 LazyVGrid(
                     columns: [GridItem(
                         .adaptive(
-                            minimum: HistoryGridMetrics.minimumCardWidth,
-                            maximum: HistoryGridMetrics.maximumCardWidth
+                            minimum: HistoryGridMetrics.clipboardCardWidth,
+                            maximum: HistoryGridMetrics.clipboardCardWidth
                         ),
-                        spacing: HistoryGridMetrics.spacing
+                        spacing: HistoryGridMetrics.clipboardGridSpacing
                     )],
-                    spacing: HistoryGridMetrics.spacing
+                    alignment: .leading,
+                    spacing: HistoryGridMetrics.clipboardGridSpacing
                 ) {
                     ForEach(pageItems) { item in
                         ScreenshotHistoryCard(
@@ -128,8 +133,10 @@ struct PaginationControl: View {
 
 struct ScreenshotHistoryCard: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ScreenshotHistoryItem
     @State private var showingDeleteConfirmation = false
+    @State private var isHovered = false
 
     private var fileSizeDescription: String? {
         guard let fileSize = app.screenshotHistoryFileSize(for: item) else { return nil }
@@ -144,90 +151,168 @@ struct ScreenshotHistoryCard: View {
         "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.compactImageContentSpacing) {
-            ZStack {
-                if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
-                    Button {
-                        app.showScreenshotHistoryPreview(item)
-                    } label: {
-                        ScreenshotHistoryThumbnail(
-                            fileURL: app.screenshotHistoryFileURL(for: item),
-                            cacheKey: thumbnailCacheKey
-                        )
-                    }
-                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.995, pressedOpacity: 0.9))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .help("查看原图；拖到 Finder 或其他应用导出 PNG")
-                    .onDrag {
-                        guard let data = app.screenshotHistoryData(for: item) else {
-                            return NSItemProvider()
-                        }
-                        return ScreenshotSharing.itemProvider(
-                            data: data,
-                            suggestedName: item.fileName
-                        )
-                    }
-                } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 28))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
+    private var previewContent: some View {
+        Group {
+            if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
+                ScreenshotHistoryThumbnail(
+                    fileURL: app.screenshotHistoryFileURL(for: item),
+                    cacheKey: thumbnailCacheKey
+                )
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.jarvisTextSecondary)
             }
-            .frame(width: HistoryGridMetrics.compactImageCardWidth - (HistoryGridMetrics.compactImageCardPadding * 2))
-            .frame(height: HistoryGridMetrics.compactImagePreviewHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .clipped()
+        }
+        .frame(
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardCardHeight,
+            alignment: .center
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
+        .contentShape(Rectangle())
+        .help("拖到 Finder 或其他应用导出 PNG")
+    }
 
-            HStack(spacing: 4) {
-                Text(item.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 10))
+    @ViewBuilder
+    private var previewArea: some View {
+        if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
+            previewContent
+                .onDrag {
+                    guard let data = app.screenshotHistoryData(for: item) else {
+                        return NSItemProvider()
+                    }
+                    return ScreenshotSharing.itemProvider(
+                        data: data,
+                        suggestedName: item.fileName
+                    )
+                }
+        } else {
+            previewContent
+        }
+    }
+
+    private var metadataRow: some View {
+        HStack(spacing: 6) {
+            Text(JarvisHistoryDateFormatting.string(from: item.updatedAt))
+                .font(.system(size: 9))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if let fileSizeDescription {
+                Text(fileSizeDescription)
+                    .font(.system(size: 9))
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(1)
-                Spacer(minLength: 0)
-                if let fileSizeDescription {
-                    Text(fileSizeDescription)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                        .lineLimit(1)
-                }
             }
-            .frame(height: HistoryGridMetrics.compactImageMetadataHeight)
-
-            HStack(spacing: 4) {
-                Spacer(minLength: 0)
-                Button {
-                    app.editScreenshotHistory(item)
-                } label: {
-                    Image(systemName: "pencil")
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-                .help("二次编辑")
-                Button {
-                    showingDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-                .foregroundStyle(.red.opacity(0.78))
-                .help("删除")
-            }
-            .frame(height: HistoryGridMetrics.compactImageActionBarHeight)
         }
-        .padding(HistoryGridMetrics.compactImageCardPadding)
         .frame(
-            width: HistoryGridMetrics.compactImageCardWidth,
-            height: HistoryGridMetrics.compactImageCardHeight,
-            alignment: .topLeading
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardMetadataHeight
         )
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .jarvisHoverPanelFeedback(
-            scale: 1.03
+    }
+
+    private var actionOverlay: some View {
+        HStack(spacing: 5) {
+            screenshotActionButton(
+                systemName: "eye",
+                help: "查看大图",
+                action: { app.showScreenshotHistoryPreview(item) }
+            )
+            screenshotActionButton(
+                systemName: "doc.on.doc",
+                help: "复制",
+                action: { app.copyScreenshotHistory(item) }
+            )
+            screenshotActionButton(
+                systemName: "pencil",
+                help: "二次编辑",
+                action: { app.editScreenshotHistory(item) }
+            )
+            screenshotActionButton(
+                systemName: "trash",
+                help: "删除",
+                tint: .red.opacity(0.72),
+                action: { showingDeleteConfirmation = true }
+            )
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .opacity(isHovered ? 1 : 0)
+        .allowsHitTesting(isHovered)
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+    }
+
+    private func screenshotActionButton(
+        systemName: String,
+        help: String,
+        tint: Color = .secondary,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .frame(
+                    width: HistoryGridMetrics.clipboardActionButtonSize,
+                    height: HistoryGridMetrics.clipboardActionButtonSize
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
+        .foregroundStyle(tint)
+        .font(.system(size: 13, weight: .medium))
+        .jarvisGlass(in: Circle(), interactive: true)
+        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+        .help(help)
+    }
+
+    private var cardBody: some View {
+        ZStack(alignment: .center) {
+            previewArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .scaleEffect(
+                    isHovered && !reduceMotion
+                        ? HistoryGridMetrics.clipboardPreviewHoverScale
+                        : 1
+                )
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                    value: isHovered
+                )
+
+            actionOverlay
+        }
+        .frame(
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardCardHeight,
+            alignment: .center
+        )
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
+        .jarvisGlass(
+            cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+            interactive: false
+        )
+        .onHover { isHovered = $0 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardContentSpacing) {
+            cardBody
+            metadataRow
+        }
+        .contentShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
         )
         .confirmationDialog(
             "删除这张截图？",
@@ -254,15 +339,18 @@ struct ScreenshotHistoryThumbnail: View {
             if let image {
                 Image(nsImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .padding(HistoryGridMetrics.compactImageCardPadding)
+                    .scaledToFill()
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 28))
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(
+            width: HistoryGridMetrics.clipboardCardWidth,
+            height: HistoryGridMetrics.clipboardCardHeight
+        )
+        .clipped()
         .task(id: cacheKey) {
             image = await JarvisThumbnailCache.loadAsync(fileURL: fileURL, maxPixelSize: 640)
         }

@@ -122,4 +122,34 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(counts[.image], 1)
         XCTAssertEqual(counts[.video], 1)
     }
+
+    func testClipboardGridUsesOneUniformCardSize() {
+        XCTAssertEqual(HistoryGridMetrics.clipboardCardWidth, 211.2, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCardHeight, 118.8, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHeight, 118.8, accuracy: 0.001)
+        XCTAssertEqual(
+            HistoryGridMetrics.clipboardCardHeight,
+            HistoryGridMetrics.clipboardCardWidth * 9 / 16,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(HistoryGridMetrics.clipboardActionButtonSize, 32)
+        XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHoverScale, 1.08)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCornerRadius, 12)
+        XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 14)
+    }
+
+    func testClipboardTimestampUsesSlashDateAndTimeFormat() {
+        let item = ClipboardItem(
+            createdAt: Date(timeIntervalSince1970: 1_757_296_000),
+            kind: .text,
+            text: "date"
+        )
+
+        XCTAssertTrue(
+            item.shortTimestamp.range(
+                of: #"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}$"#,
+                options: .regularExpression
+            ) != nil
+        )
+    }
 }

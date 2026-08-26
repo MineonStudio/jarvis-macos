@@ -1,8 +1,34 @@
 import SwiftUI
 
-struct WindowLayoutView: View {
-    @EnvironmentObject private var app: AppModel
+enum WindowLayoutDisplayMetrics {
+    static let diagramWidth: CGFloat = 44
+    static let cardContentSpacing: CGFloat = 12
+    static let cardHorizontalPadding: CGFloat = 28
+    static let minimumTitleWidth: CGFloat = 52
+    static let shortcutPartWidth: CGFloat = 13
+    static let shortcutPartSpacing: CGFloat = 4
+    static let maximumShortcutPartCount = 3
+    static let gridSpacing: CGFloat = 12
 
+    static var shortcutWidth: CGFloat {
+        (shortcutPartWidth * CGFloat(maximumShortcutPartCount))
+            + (shortcutPartSpacing * CGFloat(maximumShortcutPartCount - 1))
+    }
+
+    static var minimumCardWidth: CGFloat {
+        cardHorizontalPadding
+            + diagramWidth
+            + cardContentSpacing
+            + minimumTitleWidth
+            + shortcutWidth
+    }
+
+    static var minimumGridWidth: CGFloat {
+        (minimumCardWidth * 2) + gridSpacing
+    }
+}
+
+struct WindowLayoutView: View {
     private let layouts: [WindowLayout] = [
         .halfLeft,
         .halfRight,
@@ -38,7 +64,7 @@ struct WindowLayoutView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("把当前窗口快速放到屏幕的指定区域")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("快捷键提示仅用于展示；请点击下方布局卡片，或从菜单栏执行窗口调整。")
+                    Text("快捷键提示仅用于展示；请从菜单栏执行窗口调整。")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .lineSpacing(2)
@@ -50,42 +76,41 @@ struct WindowLayoutView: View {
 
     private var layoutGrid: some View {
         LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-            spacing: 12
+            columns: [
+                GridItem(
+                    .flexible(minimum: WindowLayoutDisplayMetrics.minimumCardWidth),
+                    spacing: WindowLayoutDisplayMetrics.gridSpacing
+                ),
+                GridItem(
+                    .flexible(minimum: WindowLayoutDisplayMetrics.minimumCardWidth),
+                    spacing: WindowLayoutDisplayMetrics.gridSpacing
+                )
+            ],
+            spacing: WindowLayoutDisplayMetrics.gridSpacing
         ) {
             ForEach(layouts) { layout in
-                WindowLayoutActionCard(layout: layout) {
-                    app.applyWindowLayout(layout)
-                }
+                WindowLayoutDisplayCard(layout: layout)
             }
         }
     }
 }
 
-private struct WindowLayoutActionCard: View {
+private struct WindowLayoutDisplayCard: View {
     let layout: WindowLayout
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                WindowLayoutDiagram(layout: layout)
-                Text(layout.title)
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer(minLength: 0)
-                WindowLayoutShortcutLabel(layout: layout)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .jarvisGlass(cornerRadius: 13)
-            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        HStack(spacing: 12) {
+            WindowLayoutDiagram(layout: layout)
+            Text(layout.title)
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 0)
+            WindowLayoutShortcutLabel(layout: layout)
         }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.86))
-        .jarvisHoverFeedback(
-            in: RoundedRectangle(cornerRadius: 13, style: .continuous),
-            scale: 1.008
-        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .jarvisGlass(cornerRadius: 13)
+        .accessibilityElement(children: .combine)
     }
 }
 

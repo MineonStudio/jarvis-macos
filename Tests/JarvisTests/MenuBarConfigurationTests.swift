@@ -20,6 +20,26 @@ final class MenuBarConfigurationTests: XCTestCase {
         }
     }
 
+    func testWindowLayoutMenuItemsExposeTheirShortcuts() async throws {
+        let controller = await JarvisMenuBarController()
+        let menu = await controller.configuredMenuForTesting()
+        let layoutTitles = Set(WindowLayout.allCases.map(\.title))
+        let layoutItems = menu.items.filter { layoutTitles.contains($0.title) }
+
+        XCTAssertEqual(layoutItems.count, WindowLayout.allCases.count)
+
+        let itemsByTitle = Dictionary(uniqueKeysWithValues: layoutItems.map { ($0.title, $0) })
+        for layout in WindowLayout.allCases {
+            let item = try XCTUnwrap(itemsByTitle[layout.title])
+            XCTAssertEqual(item.keyEquivalent, layout.menuKeyEquivalent, layout.title)
+            XCTAssertEqual(
+                item.keyEquivalentModifierMask,
+                WindowLayout.menuShortcutModifierFlags,
+                layout.title
+            )
+        }
+    }
+
     func testStatusItemUsesStableNamespacedAutosaveName() async {
         let autosaveName = await JarvisMenuBarController.menuBarAutosaveName
 
@@ -27,10 +47,14 @@ final class MenuBarConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testMenuBarUsesTemplateIconResourceWithAccessibleTitle() {
+    func testMenuBarUsesConfiguredIconResourceWithAccessibleTitle() {
         XCTAssertEqual(JarvisMenuBarController.menuBarIconResourceName, "JarvisMenuBarIcon")
         XCTAssertEqual(JarvisMenuBarController.menuBarIconFileExtension, "png")
         XCTAssertEqual(JarvisMenuBarController.menuBarIconTintColor, .white)
+        XCTAssertEqual(
+            JarvisMenuBarController.menuBarIconPointSize,
+            NSSize(width: 18, height: 18)
+        )
         XCTAssertEqual(JarvisMenuBarController.menuBarTitle, "JARVIS")
     }
 }

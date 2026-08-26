@@ -89,8 +89,8 @@ struct ClipboardItemPreview: View {
     private func mediaImage(_ image: NSImage) -> some View {
         Image(nsImage: image)
             .resizable()
-            .scaledToFit()
+            .scaledToFill()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(8)
+            .clipped()
     }
 }

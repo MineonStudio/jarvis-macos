@@ -75,7 +75,9 @@ enum JarvisMetrics {
     static let segmentedControlPadding: CGFloat = 2
     static let segmentedItemVerticalPadding: CGFloat = 4
     static let topNavigationVerticalPadding: CGFloat = 6
+    static let sidebarMinimumWidth: CGFloat = 152
     static let sidebarWidth: CGFloat = 168
+    static let sidebarMaximumWidth: CGFloat = 220
     static let sidebarContentPadding: CGFloat = 8
 }
 

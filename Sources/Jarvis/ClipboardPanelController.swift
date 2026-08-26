@@ -3,8 +3,19 @@ import SwiftUI
 
 @MainActor
 final class ClipboardPanelController: NSObject, NSWindowDelegate {
-    private static let defaultPanelSize = NSSize(width: 1040, height: 600)
-    private static let minimumPanelSize = NSSize(width: 1040, height: 420)
+    private static var minimumPanelSize: NSSize {
+        NSSize(
+            width: JarvisWindowLayoutMetrics.clipboardPanelMinimumWidth,
+            height: JarvisWindowLayoutMetrics.clipboardPanelMinimumHeight
+        )
+    }
+
+    private static var defaultPanelSize: NSSize {
+        NSSize(
+            width: max(1040, minimumPanelSize.width),
+            height: 600
+        )
+    }
 
     private var panel: NSPanel?
 

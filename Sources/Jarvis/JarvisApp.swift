@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+enum JarvisApplicationPresentation {
+    static let activationPolicy: NSApplication.ActivationPolicy = .regular
+}
+
 @main
 @MainActor
 struct JarvisApp: App {
@@ -9,7 +13,7 @@ struct JarvisApp: App {
     @StateObject private var appModel: AppModel
 
     init() {
-        NSApplication.shared.setActivationPolicy(.accessory)
+        NSApplication.shared.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
 
         let appModel = AppModel()
         _appModel = StateObject(wrappedValue: appModel)
@@ -20,7 +24,7 @@ struct JarvisApp: App {
 
     var body: some Scene {
         WindowGroup("贾维斯") {
-            JarvisRootView(menuBarController: menuBarController, appModel: appModel)
+            JarvisRootView(appModel: appModel)
         }
         .defaultSize(
             width: JarvisMainWindowController.launchWindowSize.width,
@@ -31,7 +35,6 @@ struct JarvisApp: App {
 }
 
 private struct JarvisRootView: View {
-    let menuBarController: JarvisMenuBarController
     @ObservedObject var appModel: AppModel
 
     @StateObject private var mainWindowController = JarvisMainWindowController()
@@ -59,12 +62,8 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
 
     func applicationDidFinishLaunching(_: Notification) {
-        NSLog("Jarvis applicationDidFinishLaunching isRunning=\(NSApp.isRunning)")
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
         JarvisFreshInstallPermissionCleanup.runIfNeeded()
-        DispatchQueue.main.async { [weak self] in
-            NSLog("Jarvis scheduling menu bar install isRunning=\(NSApp.isRunning)")
-            self?.menuBarController.install()
-        }
+        menuBarController.install()
     }
 }

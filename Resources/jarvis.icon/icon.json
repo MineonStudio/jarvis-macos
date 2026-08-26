@@ -7,8 +7,10 @@
           "fill" : "automatic",
           "glass" : true,
           "hidden" : false,
-          "image-name" : "Codex 图像 2026年8月26日 15_31_01.png",
           "image-name-specializations" : [
+            {
+              "value" : "Codex 图像 2026年8月26日 15_31_01.png"
+            },
             {
               "appearance" : "dark",
               "value" : "Codex 图像 2026年8月26日 15_31_01-dark.png"

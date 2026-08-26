@@ -12,7 +12,7 @@ struct ShortcutSettingsCard: View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 15) {
                 Label("快捷键", systemImage: "keyboard")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(JarvisTypography.bodyEmphasis)
 
                 shortcutRow(
                     title: "截图",
@@ -76,7 +76,7 @@ struct ShortcutSettingsCard: View {
     ) -> some View {
         HStack(spacing: 14) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(JarvisTypography.bodyEmphasis)
             Spacer(minLength: 8)
             ShortcutRecorderControl(
                 shortcut: shortcut,
@@ -116,7 +116,7 @@ struct SettingsView: View {
         JarvisCard {
             HStack(spacing: 14) {
                 Label("主题", systemImage: "circle.lefthalf.filled")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(JarvisTypography.bodyEmphasis)
                 Spacer()
                 JarvisThemePicker(selection: Binding(
                     get: { app.themePreference },
@@ -128,25 +128,16 @@ struct SettingsView: View {
 
     private var launchAtLoginSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 14) {
-                    Label("开机自启", systemImage: "power")
-                        .font(.system(size: 14, weight: .semibold))
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { app.launchAtLoginEnabled },
-                        set: { app.updateLaunchAtLogin($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-
-                Text("登录 macOS 后自动启动贾维斯")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                Text(app.launchAtLoginService.statusDescription)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.jarvisTextSecondary)
+            HStack(spacing: 14) {
+                Label("开机自启", systemImage: "power")
+                    .font(JarvisTypography.cardTitle)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { app.launchAtLoginEnabled },
+                    set: { app.updateLaunchAtLogin($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
             }
         }
     }
@@ -156,9 +147,9 @@ struct SettingsView: View {
             HStack(spacing: 14) {
                 HStack(spacing: 6) {
                     Label("版本与更新", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(JarvisTypography.bodyEmphasis)
                     Text("(v\(JarvisAppVersion.shortVersion))")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(JarvisTypography.monospaced)
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
                 Spacer()
@@ -174,7 +165,7 @@ struct SettingsView: View {
             case let .available(release):
                 HStack(spacing: 10) {
                     Text(release.version)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(JarvisTypography.monospaced)
                         .foregroundStyle(Color.accentColor)
                         .lineLimit(1)
                     Button("下载最新版") {
@@ -228,7 +219,7 @@ struct SettingsView: View {
                 Text(message)
             }
         }
-        .font(.system(size: 10))
+        .font(JarvisTypography.caption)
         .foregroundStyle(Color.jarvisTextSecondary)
         .lineLimit(1)
     }
@@ -254,7 +245,7 @@ struct JarvisThemePicker: View {
     var body: some View {
         JarvisSegmentedControl(items: Array(JarvisTheme.allCases), selection: $selection) { theme, isSelected in
             Text(theme.title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(JarvisTypography.controlEmphasis)
                 .foregroundStyle(isSelected ? Color.white : Color.secondary)
                 .frame(
                     minWidth: 54,
@@ -282,7 +273,7 @@ struct QuickActionButton: View {
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
                     .jarvisIconGlass(tint: tint, in: Circle())
-                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(title).font(JarvisTypography.bodyEmphasis)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
@@ -308,7 +299,7 @@ struct JarvisToast: View {
 
     var body: some View {
         Text(message)
-            .font(.system(size: 12, weight: .medium))
+            .font(JarvisTypography.captionEmphasis)
             .foregroundStyle(.primary)
             .lineLimit(2)
             .multilineTextAlignment(.center)

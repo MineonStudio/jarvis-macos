@@ -306,14 +306,19 @@ struct AIConversationTopBar: View {
     var body: some View {
         JarvisTopBarContainer {
             HStack(spacing: AIConversationLayoutMetrics.topBarSpacing) {
-                AIConversationProviderNavigation(selection: $app.selectedAIProvider)
                 Spacer(minLength: 0)
                 AIConversationBrowserControls(
                     controller: currentController,
                     showsDownloadManager: $showsDownloadManager
                 )
             }
-            .frame(minWidth: AIConversationLayoutMetrics.minimumTopBarWidth)
+            .frame(
+                minWidth: AIConversationLayoutMetrics.minimumTopBarWidth,
+                maxWidth: .infinity
+            )
+            .overlay {
+                AIConversationProviderNavigation(selection: $app.selectedAIProvider)
+            }
         }
     }
 
@@ -334,7 +339,7 @@ private struct AIConversationProviderNavigation: View {
                 AIConversationProviderIcon(provider: provider, isSelected: isSelected)
                 Text(provider.title)
             }
-            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+            .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
             .foregroundStyle(isSelected ? Color.white : Color.secondary)
             .frame(
                 minHeight: JarvisMetrics.segmentedItemHeight,
@@ -425,7 +430,7 @@ private struct AIConversationBrowserControls: View {
 
                 if controller.downloadManager.activeDownloadCount > 0 {
                     Text("\(controller.downloadManager.activeDownloadCount)")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(JarvisTypography.badge)
                         .foregroundStyle(.white)
                         .frame(minWidth: 14, minHeight: 14)
                         .background(Color.accentColor, in: Circle())
@@ -475,7 +480,7 @@ private struct AIConversationDownloadManagerView: View {
                 Image(systemName: "arrow.down.circle.fill")
                     .foregroundStyle(Color.accentColor)
                 Text("下载管理")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(JarvisTypography.cardTitle)
                 Spacer()
                 if manager.hasDownloads {
                     Button("清理已完成") {
@@ -483,7 +488,7 @@ private struct AIConversationDownloadManagerView: View {
                     }
                     .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
                     .foregroundStyle(Color.accentColor)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(JarvisTypography.control)
                 }
             }
             .padding(.bottom, 12)
@@ -494,10 +499,10 @@ private struct AIConversationDownloadManagerView: View {
                         .font(.system(size: 28, weight: .medium))
                         .foregroundStyle(Color.secondary)
                     Text("还没有下载任务")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(JarvisTypography.bodyEmphasis)
                         .foregroundStyle(Color.secondary)
                     Text("在聊天页面点击文件下载后，任务会显示在这里")
-                        .font(.system(size: 11))
+                        .font(JarvisTypography.secondary)
                         .foregroundStyle(Color.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -520,7 +525,7 @@ private struct AIConversationDownloadManagerView: View {
                 manager.openDownloadsFolder()
             } label: {
                 Label("打开下载文件夹", systemImage: "folder")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(JarvisTypography.control)
             }
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
             .foregroundStyle(Color.accentColor)
@@ -543,7 +548,7 @@ private struct AIConversationDownloadRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.filename)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(JarvisTypography.body)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 HStack(spacing: 6) {
@@ -553,7 +558,7 @@ private struct AIConversationDownloadRow: View {
                             .lineLimit(1)
                     }
                 }
-                .font(.system(size: 10))
+                .font(JarvisTypography.caption)
                 .foregroundStyle(Color.secondary)
 
                 if item.state == .downloading {
@@ -570,7 +575,7 @@ private struct AIConversationDownloadRow: View {
                     manager.cancel(item)
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
-                .font(.system(size: 11, weight: .medium))
+                .font(JarvisTypography.captionEmphasis)
                 .foregroundStyle(Color.secondary)
             } else if item.canOpenFile {
                 Menu {
@@ -614,9 +619,9 @@ private struct AIConversationBrowserPage: View {
                         .font(.system(size: 28, weight: .medium))
                         .foregroundStyle(Color.accentColor)
                     Text("\(controller.provider.title) 页面加载失败")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(JarvisTypography.cardTitle)
                     Text(loadError)
-                        .font(.system(size: 12))
+                        .font(JarvisTypography.secondary)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(3)

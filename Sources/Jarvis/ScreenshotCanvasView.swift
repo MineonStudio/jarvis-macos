@@ -425,7 +425,7 @@ private struct ScreenshotSelectionOverlay: View {
                 .allowsHitTesting(false)
 
                 Text("\(Int(selectionRect.width)) × \(Int(selectionRect.height))")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(JarvisTypography.monospaced)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)

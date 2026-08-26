@@ -26,7 +26,7 @@ enum HistoryGridMetrics {
     static let clipboardCardPadding: CGFloat = historyCardBasePadding * 0.6
     static let clipboardPreviewHeight: CGFloat = clipboardCardHeight
     static let clipboardContentSpacing: CGFloat = 4
-    static let clipboardMetadataHeight: CGFloat = 12
+    static let clipboardMetadataHeight: CGFloat = 16
     static let clipboardSearchFieldWidth: CGFloat = 320
     static let clipboardActionButtonSize: CGFloat = 32
     static let clipboardPreviewHoverScale: CGFloat = 1.08
@@ -106,7 +106,7 @@ struct PaginationControl: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("第 \(currentPage) / \(totalPages) 页")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(JarvisTypography.monospaced)
                 .foregroundStyle(Color.jarvisTextSecondary)
             Spacer()
             Button(action: onPrevious) {
@@ -200,13 +200,13 @@ struct ScreenshotHistoryCard: View {
     private var metadataRow: some View {
         HStack(spacing: 6) {
             Text(JarvisHistoryDateFormatting.string(from: item.updatedAt))
-                .font(.system(size: 9))
+                .font(JarvisTypography.caption)
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             if let fileSizeDescription {
                 Text(fileSizeDescription)
-                    .font(.system(size: 9))
+                    .font(JarvisTypography.caption)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(1)
             }
@@ -513,7 +513,7 @@ struct ScreenshotHistoryPreviewToolbar: View {
                 model.setZoom(1)
             } label: {
                 Text("\(Int(model.zoom * 100))%")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(JarvisTypography.monospaced)
                     .foregroundStyle(Color.secondary)
                     .frame(minWidth: 42, minHeight: 42)
                     .contentShape(Rectangle())

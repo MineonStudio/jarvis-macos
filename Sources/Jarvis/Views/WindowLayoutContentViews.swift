@@ -63,9 +63,9 @@ struct WindowLayoutView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("把当前窗口快速放到屏幕的指定区域")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(JarvisTypography.bodyEmphasis)
                     Text("快捷键提示仅用于展示；请从菜单栏执行窗口调整。")
-                        .font(.system(size: 12))
+                        .font(JarvisTypography.secondary)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .lineSpacing(2)
                 }
@@ -102,7 +102,7 @@ private struct WindowLayoutDisplayCard: View {
         HStack(spacing: 12) {
             WindowLayoutDiagram(layout: layout)
             Text(layout.title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(JarvisTypography.bodyEmphasis)
             Spacer(minLength: 0)
             WindowLayoutShortcutLabel(layout: layout)
         }
@@ -121,7 +121,7 @@ private struct WindowLayoutShortcutLabel: View {
         HStack(spacing: 4) {
             ForEach(Array(layout.shortcutDisplayParts.enumerated()), id: \.offset) { _, part in
                 Text(part)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(JarvisTypography.monospaced)
                     .frame(minWidth: 13)
             }
         }

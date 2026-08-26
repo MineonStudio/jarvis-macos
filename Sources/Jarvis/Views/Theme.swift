@@ -41,6 +41,21 @@ enum JarvisTheme: String, CaseIterable, Identifiable {
     }
 }
 
+enum JarvisTypography {
+    static let pageTitle = Font.system(size: 26, weight: .semibold, design: .rounded)
+    static let cardTitle = Font.system(size: 16, weight: .semibold)
+    static let body = Font.system(size: 14)
+    static let bodyEmphasis = Font.system(size: 14, weight: .semibold)
+    static let control = Font.system(size: 13, weight: .medium)
+    static let controlEmphasis = Font.system(size: 13, weight: .semibold)
+    static let secondary = Font.system(size: 13)
+    static let caption = Font.system(size: 12)
+    static let captionEmphasis = Font.system(size: 12, weight: .medium)
+    static let monospaced = Font.system(size: 12, weight: .medium, design: .monospaced)
+    static let badge = Font.system(size: 11, weight: .bold, design: .rounded)
+    static let metricValue = Font.system(size: 22, weight: .semibold, design: .rounded)
+}
+
 /// Uses SwiftUI's presentation-level appearance API with the current system
 /// scheme resolved explicitly. Resolving .system to .light/.dark avoids a
 /// macOS Settings scene retaining the previous preferred scheme until another
@@ -126,10 +141,10 @@ struct JarvisEmptyState: View {
                         .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.75)
                 }
             Text(title)
-                .font(.system(size: 14, weight: .medium))
+                .font(JarvisTypography.cardTitle)
                 .multilineTextAlignment(.center)
             Text(message)
-                .font(.system(size: 11))
+                .font(JarvisTypography.secondary)
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -143,7 +158,7 @@ struct SectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 26, weight: .semibold, design: .rounded))
+            .font(JarvisTypography.pageTitle)
             .foregroundStyle(.primary)
     }
 }
@@ -250,7 +265,7 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .semibold))
+            .font(JarvisTypography.controlEmphasis)
             .foregroundStyle(.white)
             .padding(.horizontal, 15)
             .padding(.vertical, 8)
@@ -270,7 +285,7 @@ struct JarvisSecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .font(JarvisTypography.control)
             .foregroundStyle(.primary)
             .padding(.horizontal, 15)
             .padding(.vertical, 8)

@@ -144,7 +144,7 @@ extension ScreenshotToolbar {
     private var arrowStyleControl: some View {
         HStack(spacing: 9) {
             Text("颜色")
-                .font(.system(size: 12, weight: .medium))
+                .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
             colorButtons(selected: editor.arrowColor) { color in
@@ -156,14 +156,14 @@ extension ScreenshotToolbar {
                 .frame(width: 1, height: 22)
 
             Text("粗细")
-                .font(.system(size: 12, weight: .medium))
+                .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
             Slider(value: $editor.arrowLineWidth, in: 2 ... 12, step: 1)
                 .frame(width: 82)
 
             Text("\(Int(editor.arrowLineWidth))")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(JarvisTypography.monospaced)
                 .foregroundStyle(Color.secondary)
                 .frame(width: 18, alignment: .leading)
 
@@ -177,7 +177,7 @@ extension ScreenshotToolbar {
                 }
             } label: {
                 Label(editor.arrowHeadStyle.title, systemImage: "arrow.up.right")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(JarvisTypography.control)
                     .foregroundStyle(Color.primary)
             }
             .menuStyle(.borderlessButton)
@@ -190,7 +190,7 @@ extension ScreenshotToolbar {
     private var rectangleStyleControl: some View {
         HStack(spacing: 9) {
             Text("颜色")
-                .font(.system(size: 12, weight: .medium))
+                .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
             colorButtons(selected: editor.rectangleColor) { color in
@@ -202,14 +202,14 @@ extension ScreenshotToolbar {
                 .frame(width: 1, height: 22)
 
             Text("粗细")
-                .font(.system(size: 12, weight: .medium))
+                .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
             Slider(value: $editor.rectangleLineWidth, in: 1 ... 12, step: 1)
                 .frame(width: 82)
 
             Text("\(Int(editor.rectangleLineWidth))")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(JarvisTypography.monospaced)
                 .foregroundStyle(Color.secondary)
                 .frame(width: 18, alignment: .leading)
 
@@ -223,7 +223,7 @@ extension ScreenshotToolbar {
                 }
             } label: {
                 Label(editor.rectangleLineStyle.title, systemImage: editor.rectangleLineStyle.icon)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(JarvisTypography.control)
                     .foregroundStyle(Color.primary)
             }
             .menuStyle(.borderlessButton)
@@ -289,7 +289,7 @@ extension ScreenshotToolbar {
     private var mosaicBrushSizeControl: some View {
         HStack(spacing: 6) {
             Text("笔触")
-                .font(.system(size: 12, weight: .medium))
+                .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
             Image(systemName: "circle.fill")
@@ -316,7 +316,7 @@ extension ScreenshotToolbar {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .medium))
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(JarvisTypography.control)
             }
             .foregroundStyle(selected ? Color.primary : Color.secondary)
             .padding(.horizontal, 7)
@@ -334,14 +334,14 @@ extension ScreenshotToolbar {
     private var textStyleControl: some View {
         HStack(spacing: 9) {
             Text("字号")
-                .font(.system(size: 12, weight: .medium))
+                .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
             Slider(value: $editor.textFontSize, in: 12 ... 48, step: 1)
                 .frame(width: 86)
 
             Text("\(Int(editor.textFontSize))")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(JarvisTypography.monospaced)
                 .foregroundStyle(Color.secondary)
                 .frame(width: 22, alignment: .leading)
 

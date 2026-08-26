@@ -348,7 +348,7 @@ struct ClipboardMediaPreviewToolbar: View {
                 model.setZoom(1)
             } label: {
                 Text("\(Int(model.zoom * 100))%")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(JarvisTypography.monospaced)
                     .foregroundStyle(Color.secondary)
                     .frame(minWidth: 42, minHeight: 42)
                     .contentShape(Rectangle())

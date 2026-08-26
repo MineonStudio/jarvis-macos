@@ -276,7 +276,7 @@ private struct SkillNavigationBar: View {
                     .font(.system(size: 12, weight: .medium))
                 Text(skill.navigationTitle)
             }
-            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+            .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
             .foregroundStyle(isSelected ? Color.white : Color.secondary)
             .frame(
                 minHeight: JarvisMetrics.segmentedItemHeight,
@@ -305,10 +305,10 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("快捷操作")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(JarvisTypography.cardTitle)
                         Spacer()
                         Text(app.statusMessage)
-                            .font(.system(size: 11))
+                            .font(JarvisTypography.secondary)
                             .foregroundStyle(Color.jarvisTextSecondary)
                     }
 
@@ -352,15 +352,15 @@ struct DashboardView: View {
                         .jarvisIconGlass(in: Circle())
                     VStack(alignment: .leading, spacing: 4) {
                         Text("本机优先")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(JarvisTypography.bodyEmphasis)
                         Text("剪贴板历史和截图历史均保存在本机。")
-                            .font(.system(size: 12))
+                            .font(JarvisTypography.secondary)
                             .foregroundStyle(Color.jarvisTextSecondary)
                             .lineSpacing(2)
                     }
                     Spacer(minLength: 12)
                     Text("隐私")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(JarvisTypography.captionEmphasis)
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
             }
@@ -381,10 +381,10 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
                     Label("权限状态", systemImage: "lock.shield")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(JarvisTypography.bodyEmphasis)
                     Spacer()
                     Text(app.screenCapturePermissionGranted && app.accessibilityPermissionGranted ? "已就绪" : "需要授权")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(JarvisTypography.captionEmphasis)
                         .foregroundStyle(
                             app.screenCapturePermissionGranted && app.accessibilityPermissionGranted
                                 ? Color.green
@@ -431,9 +431,9 @@ private struct DashboardPermissionRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(JarvisTypography.bodyEmphasis)
                 Text(message)
-                    .font(.system(size: 11))
+                    .font(JarvisTypography.secondary)
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
 
@@ -465,12 +465,12 @@ struct DashboardMetric: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text(value)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(JarvisTypography.metricValue)
                     Text(title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(JarvisTypography.control)
                 }
                 Text(detail)
-                    .font(.system(size: 10))
+                    .font(JarvisTypography.caption)
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
             Spacer(minLength: 0)

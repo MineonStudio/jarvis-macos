@@ -264,7 +264,7 @@ struct ClipboardFilterChip: View {
                 }
                 Text("\(filter.title)（\(count)）")
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(JarvisTypography.control)
             .foregroundStyle(isSelected ? Color.accentColor : Color.jarvisTextSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -322,7 +322,7 @@ struct ClipboardCard: View {
         ZStack {
             if item.kind == .text {
                 Text(item.preview)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(JarvisTypography.body)
                     .lineLimit(6)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -333,7 +333,7 @@ struct ClipboardCard: View {
                         .font(.system(size: 38, weight: .medium))
                         .foregroundStyle(Color.accentColor)
                     Text(item.preview)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(JarvisTypography.secondary)
                         .lineLimit(3)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, HistoryGridMetrics.clipboardCardPadding)
@@ -373,13 +373,13 @@ struct ClipboardCard: View {
     private var metadataRow: some View {
         HStack(spacing: 6) {
             Text(item.shortTimestamp)
-                .font(.system(size: 9))
+                .font(JarvisTypography.caption)
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             if let size = item.sizeDescription {
                 Text(size)
-                    .font(.system(size: 9))
+                    .font(JarvisTypography.caption)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(1)
             }
@@ -612,7 +612,7 @@ struct ClipboardPanelView: View {
                 Text("拖动卡片主体导出内容 · 拖动标题栏移动窗口")
                 Spacer()
             }
-            .font(.system(size: 10))
+            .font(JarvisTypography.caption)
             .foregroundStyle(Color.jarvisTextSecondary)
         }
         .padding(.top, 32)

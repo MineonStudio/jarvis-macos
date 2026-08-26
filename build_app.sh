@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.8.12}"
-JARVIS_BUILD="${JARVIS_BUILD:-196}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.8.13}"
+JARVIS_BUILD="${JARVIS_BUILD:-197}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -37,19 +37,32 @@ rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleDark.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png"
 
-if [[ -f "$ROOT_DIR/Resources/Jarvis.icns" ]]; then
-  cp "$ROOT_DIR/Resources/Jarvis.icns" "$APP_DIR/Contents/Resources/Jarvis.icns"
-fi
-
 if [[ -f "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" ]]; then
   cp "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" \
      "$APP_DIR/Contents/Resources/JarvisMenuBarIcon.png"
 fi
 
-# Use the same single standard ICNS resource as the known-good 0.5 release.
-# Do not add custom menu icons or a second Asset Catalog source of truth.
+# Use the standard macOS Asset Catalog as the Dock/Finder icon source. This
+# keeps CFBundleIconName/AppIcon and LaunchServices on one cacheable path.
+ASSET_CATALOG_DIR="$ROOT_DIR/Resources/Assets.xcassets"
+ASSET_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
 rm -f "$APP_DIR/Contents/Resources/Assets.car" \
-      "$APP_DIR/Contents/Resources/AppIcon.icns"
+      "$APP_DIR/Contents/Resources/AppIcon.icns" \
+      "$APP_DIR/Contents/Resources/Jarvis.icns" \
+      "$ASSET_PARTIAL_INFO"
+
+if [[ -d "$ASSET_CATALOG_DIR" ]]; then
+  xcrun actool \
+    --compile "$APP_DIR/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 26.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$ASSET_PARTIAL_INFO" \
+    --notices \
+    --warnings \
+    "$ASSET_CATALOG_DIR" >/dev/null
+  rm -f "$ASSET_PARTIAL_INFO"
+fi
 
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --deep --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null

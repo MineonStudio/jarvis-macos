@@ -2,13 +2,25 @@ import AppKit
 import SwiftUI
 
 @main
+@MainActor
 struct JarvisApp: App {
     @NSApplicationDelegateAdaptor(JarvisApplicationDelegate.self) private var applicationDelegate
     private let menuBarController = JarvisMenuBarController.shared
+    @StateObject private var appModel: AppModel
+
+    init() {
+        NSApplication.shared.setActivationPolicy(.accessory)
+
+        let appModel = AppModel()
+        _appModel = StateObject(wrappedValue: appModel)
+        // Bind before the status item is installed. Menu actions must remain
+        // usable even when the main window has not appeared yet.
+        menuBarController.bind(app: appModel)
+    }
 
     var body: some Scene {
         WindowGroup("贾维斯") {
-            JarvisRootView(menuBarController: menuBarController)
+            JarvisRootView(menuBarController: menuBarController, appModel: appModel)
         }
         .defaultSize(
             width: JarvisMainWindowController.launchWindowSize.width,
@@ -20,8 +32,8 @@ struct JarvisApp: App {
 
 private struct JarvisRootView: View {
     let menuBarController: JarvisMenuBarController
+    @ObservedObject var appModel: AppModel
 
-    @StateObject private var appModel = AppModel()
     @StateObject private var mainWindowController = JarvisMainWindowController()
 
     var body: some View {
@@ -39,9 +51,6 @@ private struct JarvisRootView: View {
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .toolbar(removing: .title)
             .background(JarvisMainWindowAccessor(controller: mainWindowController))
-            .onAppear {
-                menuBarController.bind(app: appModel)
-            }
     }
 }
 
@@ -50,8 +59,12 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
 
     func applicationDidFinishLaunching(_: Notification) {
+        NSLog("Jarvis applicationDidFinishLaunching isRunning=\(NSApp.isRunning)")
         NSApp.setActivationPolicy(.accessory)
         JarvisFreshInstallPermissionCleanup.runIfNeeded()
-        menuBarController.install()
+        DispatchQueue.main.async { [weak self] in
+            NSLog("Jarvis scheduling menu bar install isRunning=\(NSApp.isRunning)")
+            self?.menuBarController.install()
+        }
     }
 }

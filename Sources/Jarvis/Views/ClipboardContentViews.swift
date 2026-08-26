@@ -181,7 +181,7 @@ struct ClipboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
                 ClipboardFilterBar(
                     searchText: $searchText,
                     selectedFilter: $selectedFilter,
@@ -194,23 +194,7 @@ struct ClipboardView: View {
                         hasQuery: !searchText.isEmpty || selectedFilter != .all
                     )
                 } else {
-                    LazyVGrid(
-                        columns: [GridItem(
-                            .adaptive(
-                                minimum: HistoryGridMetrics.minimumCardWidth,
-                                maximum: HistoryGridMetrics.maximumCardWidth
-                            ),
-                            spacing: HistoryGridMetrics.spacing
-                        )],
-                        spacing: HistoryGridMetrics.spacing
-                    ) {
-                        ForEach(pageItems) { item in
-                            ClipboardCard(
-                                item: item,
-                                presentation: .main
-                            )
-                        }
-                    }
+                    ClipboardGrid(items: pageItems, presentation: .main)
 
                     if totalPages > 1 {
                         PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
@@ -296,15 +280,50 @@ struct ClipboardCard: View {
     let item: ClipboardItem
     let presentation: ClipboardCardPresentation
     let onPreview: (() -> Void)?
+    let usesCompactImageLayout: Bool
 
     init(
         item: ClipboardItem,
         presentation: ClipboardCardPresentation,
-        onPreview: (() -> Void)? = nil
+        onPreview: (() -> Void)? = nil,
+        usesCompactImageLayout: Bool = false
     ) {
         self.item = item
         self.presentation = presentation
         self.onPreview = onPreview
+        self.usesCompactImageLayout = usesCompactImageLayout
+    }
+
+    private var cardWidth: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImageCardWidth : HistoryGridMetrics.cardWidth
+    }
+
+    private var cardHeight: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImageCardHeight : HistoryGridMetrics.cardHeight
+    }
+
+    private var previewHeight: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImagePreviewHeight : HistoryGridMetrics.previewHeight
+    }
+
+    private var cardPadding: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImageCardPadding : HistoryGridMetrics.cardPadding
+    }
+
+    private var contentSpacing: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImageContentSpacing : 8
+    }
+
+    private var metadataHeight: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImageMetadataHeight : 18
+    }
+
+    private var actionBarHeight: CGFloat {
+        usesCompactImageLayout ? HistoryGridMetrics.compactImageActionBarHeight : 30
+    }
+
+    private var actionButtonSize: CGFloat {
+        usesCompactImageLayout ? 22 : 30
     }
 
     @ViewBuilder
@@ -325,7 +344,7 @@ struct ClipboardCard: View {
                         .lineLimit(6)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(HistoryGridMetrics.cardPadding)
+                        .padding(cardPadding)
                 } else if item.kind == .file {
                     VStack(spacing: 10) {
                         Image(systemName: item.kind.icon)
@@ -335,7 +354,7 @@ struct ClipboardCard: View {
                             .font(.system(size: 12, weight: .medium))
                             .lineLimit(3)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, HistoryGridMetrics.cardPadding)
+                            .padding(.horizontal, cardPadding)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -343,8 +362,8 @@ struct ClipboardCard: View {
                 }
             }
             .frame(
-                width: HistoryGridMetrics.cardWidth - (HistoryGridMetrics.cardPadding * 2),
-                height: HistoryGridMetrics.previewHeight
+                width: cardWidth - (cardPadding * 2),
+                height: previewHeight
             )
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
@@ -381,7 +400,7 @@ struct ClipboardCard: View {
                     .lineLimit(1)
             }
         }
-        .frame(height: 18)
+        .frame(height: metadataHeight)
     }
 
     private var actionBar: some View {
@@ -400,7 +419,7 @@ struct ClipboardCard: View {
                     app.toggleClipboardPin(item)
                 } label: {
                     Image(systemName: item.isPinned ? "star.slash" : "star")
-                        .frame(width: 30, height: 30)
+                        .frame(width: actionButtonSize, height: actionButtonSize)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
@@ -410,7 +429,7 @@ struct ClipboardCard: View {
                     showingDeleteConfirmation = true
                 } label: {
                     Image(systemName: "trash")
-                        .frame(width: 30, height: 30)
+                        .frame(width: actionButtonSize, height: actionButtonSize)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
@@ -418,19 +437,19 @@ struct ClipboardCard: View {
                 .help("删除")
             }
         }
-        .frame(height: 30)
+        .frame(height: actionBarHeight)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: contentSpacing) {
             previewButton
             metadataRow
             actionBar
         }
-        .padding(HistoryGridMetrics.cardPadding)
+        .padding(cardPadding)
         .frame(
-            width: HistoryGridMetrics.cardWidth,
-            height: HistoryGridMetrics.cardHeight,
+            width: cardWidth,
+            height: cardHeight,
             alignment: .topLeading
         )
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -463,6 +482,53 @@ struct ClipboardCard: View {
     }
 }
 
+struct ClipboardGrid: View {
+    let items: [ClipboardItem]
+    let presentation: ClipboardCardPresentation
+    let onPreview: ((ClipboardItem) -> Void)?
+
+    init(
+        items: [ClipboardItem],
+        presentation: ClipboardCardPresentation,
+        onPreview: ((ClipboardItem) -> Void)? = nil
+    ) {
+        self.items = items
+        self.presentation = presentation
+        self.onPreview = onPreview
+    }
+
+    private var isImageGrid: Bool {
+        !items.isEmpty && items.allSatisfy { $0.kind == .image }
+    }
+
+    private var cardWidth: CGFloat {
+        isImageGrid ? HistoryGridMetrics.compactImageCardWidth : HistoryGridMetrics.cardWidth
+    }
+
+    private var gridSpacing: CGFloat {
+        isImageGrid ? HistoryGridMetrics.imageSpacing : HistoryGridMetrics.spacing
+    }
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(
+                .adaptive(minimum: cardWidth, maximum: cardWidth),
+                spacing: gridSpacing
+            )],
+            spacing: gridSpacing
+        ) {
+            ForEach(items) { item in
+                ClipboardCard(
+                    item: item,
+                    presentation: presentation,
+                    onPreview: onPreview.map { preview in { preview(item) } },
+                    usesCompactImageLayout: item.kind == .image
+                )
+            }
+        }
+    }
+}
+
 struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
     @State private var searchText = ""
@@ -477,7 +543,7 @@ struct ClipboardPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
             ClipboardFilterBar(
                 searchText: $searchText,
                 selectedFilter: $selectedFilter,
@@ -496,24 +562,11 @@ struct ClipboardPanelView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(
-                            .adaptive(
-                                minimum: HistoryGridMetrics.minimumCardWidth,
-                                maximum: HistoryGridMetrics.maximumCardWidth
-                            ),
-                            spacing: HistoryGridMetrics.spacing
-                        )],
-                        spacing: HistoryGridMetrics.spacing
-                    ) {
-                        ForEach(filteredItems) { item in
-                            ClipboardCard(
-                                item: item,
-                                presentation: .panel,
-                                onPreview: { app.showClipboardMediaPreview(item) }
-                            )
-                        }
-                    }
+                    ClipboardGrid(
+                        items: filteredItems,
+                        presentation: .panel,
+                        onPreview: { app.showClipboardMediaPreview($0) }
+                    )
                 }
             }
 

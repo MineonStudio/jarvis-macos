@@ -23,6 +23,18 @@ enum HistoryGridMetrics {
     static let minimumCardWidth = cardWidth
     static let maximumCardWidth = cardWidth
     static let spacing: CGFloat = 12
+
+    // Image cards are intentionally compact so the visual weight of the
+    // screenshot/clipboard galleries matches the surrounding content panels.
+    // Keep the dimensions as exact halves of the existing card dimensions.
+    static let compactImageCardWidth = cardWidth / 2
+    static let compactImageCardHeight = cardHeight / 2
+    static let compactImagePreviewHeight: CGFloat = 90
+    static let compactImageCardPadding: CGFloat = 5
+    static let compactImageContentSpacing: CGFloat = 4
+    static let compactImageMetadataHeight: CGFloat = 12
+    static let compactImageActionBarHeight: CGFloat = 26
+    static let imageSpacing: CGFloat = 7
 }
 
 struct ScreenshotHistorySection: View {
@@ -40,7 +52,7 @@ struct ScreenshotHistorySection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
             if app.screenshotHistory.isEmpty {
                 JarvisEmptyState(
                     icon: "photo.on.rectangle",
@@ -133,7 +145,7 @@ struct ScreenshotHistoryCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.compactImageContentSpacing) {
             ZStack {
                 if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
                     Button {
@@ -163,12 +175,12 @@ struct ScreenshotHistoryCard: View {
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
             }
-            .frame(width: HistoryGridMetrics.cardWidth - (HistoryGridMetrics.cardPadding * 2))
-            .frame(height: HistoryGridMetrics.previewHeight)
+            .frame(width: HistoryGridMetrics.compactImageCardWidth - (HistoryGridMetrics.compactImageCardPadding * 2))
+            .frame(height: HistoryGridMetrics.compactImagePreviewHeight)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .clipped()
 
-            HStack(spacing: 7) {
+            HStack(spacing: 4) {
                 Text(item.updatedAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.system(size: 10))
                     .foregroundStyle(Color.jarvisTextSecondary)
@@ -181,7 +193,7 @@ struct ScreenshotHistoryCard: View {
                         .lineLimit(1)
                 }
             }
-            .frame(height: 18)
+            .frame(height: HistoryGridMetrics.compactImageMetadataHeight)
 
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
@@ -189,7 +201,7 @@ struct ScreenshotHistoryCard: View {
                     app.editScreenshotHistory(item)
                 } label: {
                     Image(systemName: "pencil")
-                        .frame(width: 28, height: 28)
+                        .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
@@ -198,19 +210,19 @@ struct ScreenshotHistoryCard: View {
                     showingDeleteConfirmation = true
                 } label: {
                     Image(systemName: "trash")
-                        .frame(width: 28, height: 28)
+                        .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
                 .foregroundStyle(.red.opacity(0.78))
                 .help("删除")
             }
-            .frame(height: 30)
+            .frame(height: HistoryGridMetrics.compactImageActionBarHeight)
         }
-        .padding(HistoryGridMetrics.cardPadding)
+        .padding(HistoryGridMetrics.compactImageCardPadding)
         .frame(
-            width: HistoryGridMetrics.cardWidth,
-            height: HistoryGridMetrics.cardHeight,
+            width: HistoryGridMetrics.compactImageCardWidth,
+            height: HistoryGridMetrics.compactImageCardHeight,
             alignment: .topLeading
         )
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -243,7 +255,7 @@ struct ScreenshotHistoryThumbnail: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .padding(HistoryGridMetrics.cardPadding)
+                    .padding(HistoryGridMetrics.compactImageCardPadding)
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 28))

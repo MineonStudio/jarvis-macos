@@ -106,6 +106,9 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    /// The menu bar keeps these bindings so its menu items remain keyboard
+    /// accessible. The shortcut shown in the in-app cards is presentation
+    /// metadata only; no global shortcut is registered for this feature.
     var menuKeyEquivalent: String {
         switch self {
         case .halfLeft: Self.functionKey(0xF702)
@@ -121,26 +124,7 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         String(decoding: [UInt16(value)], as: UTF16.self)
     }
 
-    var shortcutKeyCode: UInt16 {
-        switch self {
-        case .halfLeft: 123
-        case .halfRight: 124
-        case .upperLeft: 32
-        case .upperRight: 34
-        case .lowerLeft: 38
-        case .lowerRight: 40
-        }
-    }
-
-    static let shortcutModifierFlags: NSEvent.ModifierFlags = [.command, .shift]
-
-    static func layout(for keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> WindowLayout? {
-        let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
-        guard relevantModifiers == shortcutModifierFlags else {
-            return nil
-        }
-        return allCases.first { $0.shortcutKeyCode == keyCode }
-    }
+    static let menuShortcutModifierFlags: NSEvent.ModifierFlags = [.command, .shift]
 
     static func layout(for directions: Set<WindowLayoutDirection>) -> WindowLayout? {
         switch directions {
@@ -227,15 +211,9 @@ enum WindowLayoutDirection: Hashable {
 @MainActor
 final class WindowLayoutController {
     private let statusHandler: (String) -> Void
-    private var shortcutManagers: [ScreenshotShortcutManager] = []
 
     init(statusHandler: @escaping (String) -> Void) {
         self.statusHandler = statusHandler
-        installShortcuts()
-    }
-
-    deinit {
-        shortcutManagers.removeAll()
     }
 
     var isAccessibilityTrusted: Bool {
@@ -270,23 +248,6 @@ final class WindowLayoutController {
         }
 
         statusHandler("已将 \(target.application.localizedName ?? "当前窗口") 调整为\(layout.shortTitle)")
-    }
-
-    private func installShortcuts() {
-        shortcutManagers = WindowLayout.allCases.enumerated().map { index, layout in
-            let binding = ScreenshotShortcut(
-                keyCode: layout.shortcutKeyCode,
-                modifiers: WindowLayout.shortcutModifierFlags.rawValue
-            )
-            return ScreenshotShortcutManager(
-                binding: binding,
-                hotKeyID: UInt32(10 + index)
-            ) { [weak self] in
-                Task { @MainActor [weak self] in
-                    self?.apply(layout)
-                }
-            }
-        }
     }
 
     private struct FocusedWindow {

@@ -38,7 +38,7 @@ struct WindowLayoutView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("把当前窗口快速放到屏幕的指定区域")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("使用 ⇧⌘ 快捷键：方向键切换左右半屏，U/I/J/K 切换四个角落。")
+                    Text("快捷键提示仅用于展示；请点击下方布局卡片，或从菜单栏执行窗口调整。")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .lineSpacing(2)

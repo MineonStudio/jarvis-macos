@@ -35,19 +35,16 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertNil(WindowLayout.layout(for: [.up]))
     }
 
-    func testShortcutsUseShiftCommandBindings() {
-        let modifiers = WindowLayout.shortcutModifierFlags
+    func testInAppShortcutLabelsAreDisplayOnlyAndMenuBindingsStaySeparate() {
+        XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplay, "⇧⌘←")
+        XCTAssertEqual(WindowLayout.upperRight.shortcutDisplay, "⇧⌘I")
+        XCTAssertEqual(WindowLayout.menuShortcutModifierFlags, [.command, .shift])
+    }
 
-        XCTAssertEqual(modifiers, [.command, .shift])
-        XCTAssertEqual(WindowLayout.layout(for: 123, modifiers: modifiers), .halfLeft)
-        XCTAssertEqual(WindowLayout.layout(for: 124, modifiers: modifiers), .halfRight)
-        XCTAssertEqual(WindowLayout.layout(for: 32, modifiers: modifiers), .upperLeft)
-        XCTAssertEqual(WindowLayout.layout(for: 34, modifiers: modifiers), .upperRight)
-        XCTAssertEqual(WindowLayout.layout(for: 38, modifiers: modifiers), .lowerLeft)
-        XCTAssertEqual(WindowLayout.layout(for: 40, modifiers: modifiers), .lowerRight)
-        XCTAssertNil(WindowLayout.layout(for: 123, modifiers: [.command, .option]))
-        XCTAssertNil(WindowLayout.layout(for: 123, modifiers: .shift))
-        XCTAssertNil(WindowLayout.layout(for: 126, modifiers: modifiers))
+    func testImageGalleryMetricsUseHalfSizedCardsAndCategorySpacing() {
+        XCTAssertEqual(HistoryGridMetrics.compactImageCardWidth, 110)
+        XCTAssertEqual(HistoryGridMetrics.compactImageCardHeight, 147)
+        XCTAssertEqual(HistoryGridMetrics.imageSpacing, 7)
     }
 
     func testHalfFramesUseTheCompleteVisibleArea() {

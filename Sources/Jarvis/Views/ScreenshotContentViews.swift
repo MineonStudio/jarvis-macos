@@ -2,20 +2,31 @@ import AppKit
 import SwiftUI
 
 struct ScreenshotView: View {
+    @State private var availableGridWidth: CGFloat = 0
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                ScreenshotHistorySection()
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    ScreenshotHistorySection(availableGridWidth: availableGridWidth)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, JarvisMetrics.pageInset)
+                .padding(.vertical, JarvisMetrics.pageInset)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, JarvisMetrics.pageInset)
-            .padding(.vertical, JarvisMetrics.pageInset)
+            .onAppear {
+                availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+            }
+            .onChange(of: proxy.size.width) { _, width in
+                availableGridWidth = max(0, width - JarvisMetrics.pageInset * 2)
+            }
         }
     }
 }
 
 enum HistoryGridMetrics {
-    static let pageSize = 12
+    static let pageRows = 3
+    static let defaultPageSize = 12
     static let imageSpacing: CGFloat = 7
 
     // Both history galleries use the same 16:9 landscape panel and controls.
@@ -39,20 +50,35 @@ enum HistoryGridMetrics {
         let spacing = clipboardGridSpacing * CGFloat(max(0, columnCount - 1))
         return cardWidth + spacing
     }
+
+    static func columnCount(for availableWidth: CGFloat) -> Int {
+        guard availableWidth > 0 else { return defaultPageSize / pageRows }
+        let columnUnit = clipboardCardWidth + clipboardGridSpacing
+        return max(1, Int(floor((availableWidth + clipboardGridSpacing) / columnUnit)))
+    }
+
+    static func pageSize(for availableWidth: CGFloat) -> Int {
+        columnCount(for: availableWidth) * pageRows
+    }
 }
 
 struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
     @State private var currentPage = 1
+    let availableGridWidth: CGFloat
+
+    private var pageSize: Int {
+        HistoryGridMetrics.pageSize(for: availableGridWidth)
+    }
 
     private var totalPages: Int {
-        max(1, (app.screenshotHistory.count + HistoryGridMetrics.pageSize - 1) / HistoryGridMetrics.pageSize)
+        max(1, (app.screenshotHistory.count + pageSize - 1) / pageSize)
     }
 
     private var pageItems: [ScreenshotHistoryItem] {
         let page = min(max(currentPage, 1), totalPages)
-        let startIndex = (page - 1) * HistoryGridMetrics.pageSize
-        return Array(app.screenshotHistory.dropFirst(startIndex).prefix(HistoryGridMetrics.pageSize))
+        let startIndex = (page - 1) * pageSize
+        return Array(app.screenshotHistory.dropFirst(startIndex).prefix(pageSize))
     }
 
     var body: some View {
@@ -81,6 +107,7 @@ struct ScreenshotHistorySection: View {
                         )
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if totalPages > 1 {
                     PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
@@ -90,6 +117,9 @@ struct ScreenshotHistorySection: View {
                     }
                 }
             }
+        }
+        .onChange(of: pageSize) { _, _ in
+            currentPage = min(currentPage, totalPages)
         }
         .onChange(of: app.screenshotHistory.count) { _, _ in
             currentPage = min(currentPage, totalPages)
@@ -270,7 +300,7 @@ struct ScreenshotHistoryCard: View {
     }
 
     private var cardBody: some View {
-        ZStack(alignment: .center) {
+        ZStack(alignment: .bottom) {
             previewArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .scaleEffect(
@@ -284,6 +314,8 @@ struct ScreenshotHistoryCard: View {
                 )
 
             actionOverlay
+                .padding(.horizontal, 6)
+                .padding(.bottom, 8)
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,

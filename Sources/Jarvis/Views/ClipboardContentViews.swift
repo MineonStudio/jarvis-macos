@@ -188,6 +188,7 @@ struct ClipboardView: View {
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
+    @State private var availableGridWidth: CGFloat = 0
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -197,45 +198,60 @@ struct ClipboardView: View {
         )
     }
 
+    private var pageSize: Int {
+        HistoryGridMetrics.pageSize(for: availableGridWidth)
+    }
+
     private var totalPages: Int {
-        max(1, (filteredItems.count + HistoryGridMetrics.pageSize - 1) / HistoryGridMetrics.pageSize)
+        max(1, (filteredItems.count + pageSize - 1) / pageSize)
     }
 
     private var pageItems: [ClipboardItem] {
         let page = min(max(currentPage, 1), totalPages)
-        let startIndex = (page - 1) * HistoryGridMetrics.pageSize
-        return Array(filteredItems.dropFirst(startIndex).prefix(HistoryGridMetrics.pageSize))
+        let startIndex = (page - 1) * pageSize
+        return Array(filteredItems.dropFirst(startIndex).prefix(pageSize))
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
-                ClipboardFilterBar(
-                    searchText: $searchText,
-                    selectedFilter: $selectedFilter,
-                    placeholder: "搜索文本、文件名…",
-                    focusesOnAppear: false,
-                    items: app.clipboardItems
-                )
-                if filteredItems.isEmpty {
-                    ClipboardEmptyState(
-                        hasQuery: !searchText.isEmpty || selectedFilter != .all
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
+                    ClipboardFilterBar(
+                        searchText: $searchText,
+                        selectedFilter: $selectedFilter,
+                        placeholder: "搜索文本、文件名…",
+                        focusesOnAppear: false,
+                        items: app.clipboardItems
                     )
-                } else {
-                    ClipboardGrid(items: pageItems, presentation: .main)
+                    if filteredItems.isEmpty {
+                        ClipboardEmptyState(
+                            hasQuery: !searchText.isEmpty || selectedFilter != .all
+                        )
+                    } else {
+                        ClipboardGrid(items: pageItems, presentation: .main)
 
-                    if totalPages > 1 {
-                        PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
-                            currentPage = max(1, currentPage - 1)
-                        } onNext: {
-                            currentPage = min(totalPages, currentPage + 1)
+                        if totalPages > 1 {
+                            PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
+                                currentPage = max(1, currentPage - 1)
+                            } onNext: {
+                                currentPage = min(totalPages, currentPage + 1)
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, JarvisMetrics.pageInset)
+                .padding(.vertical, JarvisMetrics.pageInset)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, JarvisMetrics.pageInset)
-            .padding(.vertical, JarvisMetrics.pageInset)
+            .onAppear {
+                availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+            }
+            .onChange(of: proxy.size.width) { _, width in
+                availableGridWidth = max(0, width - JarvisMetrics.pageInset * 2)
+            }
+        }
+        .onChange(of: pageSize) { _, _ in
+            currentPage = min(currentPage, totalPages)
         }
         .onChange(of: searchText) { _, _ in
             currentPage = 1
@@ -470,7 +486,7 @@ struct ClipboardCard: View {
     }
 
     private var cardBody: some View {
-        ZStack(alignment: .center) {
+        ZStack(alignment: .bottom) {
             previewArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .scaleEffect(
@@ -484,6 +500,8 @@ struct ClipboardCard: View {
                 )
 
             actionOverlay
+                .padding(.horizontal, 6)
+                .padding(.bottom, 8)
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,

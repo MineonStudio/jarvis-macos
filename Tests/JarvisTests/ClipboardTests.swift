@@ -138,6 +138,16 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 14)
     }
 
+    func testHistoryGridPaginationKeepsEachPageToCompleteRows() {
+        let fiveColumnWidth = HistoryGridMetrics.clipboardGridWidth(for: 5)
+        XCTAssertEqual(HistoryGridMetrics.columnCount(for: fiveColumnWidth), 5)
+        XCTAssertEqual(HistoryGridMetrics.pageSize(for: fiveColumnWidth), 15)
+
+        let fourColumnWidth = HistoryGridMetrics.clipboardGridWidth(for: 4)
+        XCTAssertEqual(HistoryGridMetrics.columnCount(for: fourColumnWidth), 4)
+        XCTAssertEqual(HistoryGridMetrics.pageSize(for: fourColumnWidth), 12)
+    }
+
     func testClipboardTimestampUsesSlashDateAndTimeFormat() {
         let item = ClipboardItem(
             createdAt: Date(timeIntervalSince1970: 1_757_296_000),

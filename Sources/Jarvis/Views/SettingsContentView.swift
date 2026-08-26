@@ -104,6 +104,8 @@ struct SettingsView: View {
 
                 themeSettingsCard
 
+                launchAtLoginSettingsCard
+
                 ShortcutSettingsCard()
             }
             .padding(JarvisMetrics.pageInset)
@@ -120,6 +122,31 @@ struct SettingsView: View {
                     get: { app.themePreference },
                     set: { app.updateThemePreference($0) }
                 ))
+            }
+        }
+    }
+
+    private var launchAtLoginSettingsCard: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    Label("开机自启", systemImage: "power")
+                        .font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { app.launchAtLoginEnabled },
+                        set: { app.updateLaunchAtLogin($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+
+                Text("登录 macOS 后自动启动贾维斯")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                Text(app.launchAtLoginService.statusDescription)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
     }

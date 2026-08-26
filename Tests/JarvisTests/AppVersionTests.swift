@@ -46,6 +46,27 @@ final class AppVersionTests: XCTestCase {
         XCTAssertFalse(JarvisPrivacyPermissionReset.isMissingBundleFailure("权限服务不可用"))
     }
 
+    func testLaunchAtLoginPreferenceDefaultsToEnabled() throws {
+        let suiteName = "jarvis-launch-at-login-defaults-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertTrue(JarvisLaunchAtLoginPreference.load(from: defaults))
+        XCTAssertEqual(
+            defaults.object(forKey: JarvisLaunchAtLoginPreference.key) as? Bool,
+            true
+        )
+    }
+
+    func testLaunchAtLoginPreferencePreservesExplicitChoice() throws {
+        let suiteName = "jarvis-launch-at-login-choice-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(false, forKey: JarvisLaunchAtLoginPreference.key)
+
+        XCTAssertFalse(JarvisLaunchAtLoginPreference.load(from: defaults))
+    }
+
     func testFreshInstallPermissionCleanupRunsOncePerInstallationFingerprint() throws {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-fresh-install-test-\(UUID().uuidString)", isDirectory: true)

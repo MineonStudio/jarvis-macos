@@ -82,6 +82,7 @@ final class AppModel: ObservableObject {
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
+    @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
 
     let clipboardService = ClipboardService()
     let clipboardStore = ClipboardStore()
@@ -93,6 +94,7 @@ final class AppModel: ObservableObject {
     let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     let updateService = JarvisUpdateService()
     let aiConversationDownloadManager = AIConversationDownloadManager()
+    let launchAtLoginService = JarvisLaunchAtLoginService.shared
     private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
@@ -134,6 +136,7 @@ final class AppModel: ObservableObject {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
+        loadLaunchAtLoginPreference()
         refreshSystemColorScheme()
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
@@ -164,6 +167,7 @@ final class AppModel: ObservableObject {
             self?.showToast(message)
         }
         refreshPermissionStatus()
+        synchronizeLaunchAtLogin()
 
         clipboardService.start { [weak self] item in
             Task { @MainActor [weak self] in

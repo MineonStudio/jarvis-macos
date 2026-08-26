@@ -25,6 +25,26 @@ extension AppModel {
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
     }
 
+    func updateLaunchAtLogin(_ enabled: Bool) {
+        let previousValue = launchAtLoginEnabled
+
+        do {
+            if enabled {
+                try launchAtLoginService.register()
+            } else {
+                try launchAtLoginService.unregister()
+            }
+        } catch {
+            launchAtLoginEnabled = previousValue
+            showToast(enabled ? "开机自启添加失败：\(error.localizedDescription)" : "开机自启关闭失败：\(error.localizedDescription)")
+            return
+        }
+
+        launchAtLoginEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: JarvisLaunchAtLoginPreference.key)
+        showToast(enabled ? "已开启开机自启" : "已关闭开机自启")
+    }
+
     func refreshSystemColorScheme() {
         let appearance = NSApp.effectiveAppearance
         let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
@@ -38,6 +58,20 @@ extension AppModel {
             return
         }
         themePreference = preference
+    }
+
+    func loadLaunchAtLoginPreference() {
+        launchAtLoginEnabled = JarvisLaunchAtLoginPreference.load(from: .standard)
+    }
+
+    func synchronizeLaunchAtLogin() {
+        guard launchAtLoginEnabled else { return }
+
+        do {
+            try launchAtLoginService.register()
+        } catch {
+            NSLog("Jarvis could not register as a login item: \(error.localizedDescription)")
+        }
     }
 
     @discardableResult

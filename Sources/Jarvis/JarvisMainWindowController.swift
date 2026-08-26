@@ -3,28 +3,16 @@ import SwiftUI
 
 enum JarvisWindowAppearance {
     static func configure(for window: NSWindow) {
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.styleMask.insert(.fullSizeContentView)
         window.backgroundColor = .textBackgroundColor
         window.sharingType = .readOnly
+    }
 
-        if let close = window.standardWindowButton(.closeButton),
-           let miniaturize = window.standardWindowButton(.miniaturizeButton),
-           let zoom = window.standardWindowButton(.zoomButton)
-        {
-            let titlebarY = close.frame.minY
-            close.setFrameOrigin(NSPoint(x: 18, y: titlebarY))
-            miniaturize.setFrameOrigin(NSPoint(x: close.frame.maxX + 8, y: titlebarY))
-            zoom.setFrameOrigin(NSPoint(x: miniaturize.frame.maxX + 8, y: titlebarY))
-            close.isHidden = false
-            miniaturize.isHidden = false
-            zoom.isHidden = false
-            close.translatesAutoresizingMaskIntoConstraints = true
-            miniaturize.translatesAutoresizingMaskIntoConstraints = true
-            zoom.translatesAutoresizingMaskIntoConstraints = true
-        }
+    static func configureTransparentTitlebar(for window: NSWindow) {
+        configure(for: window)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
     }
 }
 

@@ -17,6 +17,14 @@ enum SkillID: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    var navigationTitle: String {
+        switch self {
+        case .screenshot: "截图"
+        case .clipboard: "剪贴板"
+        case .windowLayout: "窗口布局"
+        }
+    }
+
     var icon: String {
         switch self {
         case .screenshot: "viewfinder"

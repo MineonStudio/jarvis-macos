@@ -65,6 +65,9 @@ extension Color {
 
 enum JarvisMetrics {
     static let pageInset: CGFloat = 30
+    static let shellHorizontalPadding: CGFloat = 10
+    static let shellVerticalPadding: CGFloat = 10
+    static let shellContentSpacing: CGFloat = 10
     static let cardRadius: CGFloat = 14
     static let controlRadius: CGFloat = 10
     static let iconTintOpacity: CGFloat = 0.22
@@ -72,6 +75,22 @@ enum JarvisMetrics {
     static let segmentedControlPadding: CGFloat = 2
     static let segmentedItemVerticalPadding: CGFloat = 4
     static let topNavigationVerticalPadding: CGFloat = 6
+    static let sidebarWidth: CGFloat = 168
+    static let sidebarContentPadding: CGFloat = 8
+}
+
+struct JarvisTopBarContainer<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+            .padding(.bottom, JarvisMetrics.shellContentSpacing)
+    }
 }
 
 struct JarvisCard<Content: View>: View {
@@ -168,6 +187,21 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
     }
 }
 
+struct JarvisFloatingPanelModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .jarvisGlass(cornerRadius: cornerRadius, interactive: false)
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: Color.black.opacity(0.11), radius: 16, y: 6)
+    }
+}
+
 extension View {
     func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {
         modifier(JarvisThemeModifier(theme: theme, systemColorScheme: systemColorScheme))
@@ -187,6 +221,10 @@ extension View {
         interactive: Bool = true
     ) -> some View {
         modifier(JarvisGlassShapeModifier(tint: tint, shape: shape, interactive: interactive))
+    }
+
+    func jarvisFloatingPanel(cornerRadius: CGFloat = 16) -> some View {
+        modifier(JarvisFloatingPanelModifier(cornerRadius: cornerRadius))
     }
 
     /// A lighter Liquid Glass treatment for the small icon containers used

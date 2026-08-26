@@ -6,6 +6,7 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
     case deepSeek = "deepseek"
     case gpt
     case doubao
+    case grok
 
     var id: String {
         rawValue
@@ -16,6 +17,27 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
         case .deepSeek: "DeepSeek"
         case .gpt: "ChatGPT"
         case .doubao: "豆包"
+        case .grok: "Grok"
+        }
+    }
+
+    var iconResourceName: String {
+        rawValue
+    }
+
+    var iconResourceExtension: String {
+        switch self {
+        case .doubao: "png"
+        case .deepSeek, .gpt, .grok: "svg"
+        }
+    }
+
+    var selectedIconResourceName: String? {
+        switch self {
+        case .deepSeek: "deepseek-selected"
+        case .gpt: "gpt-selected"
+        case .doubao: nil
+        case .grok: "grok-selected"
         }
     }
 
@@ -27,6 +49,8 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
             URL(string: "https://chatgpt.com/")!
         case .doubao:
             URL(string: "https://www.doubao.com/chat/")!
+        case .grok:
+            URL(string: "https://grok.com/")!
         }
     }
 }
@@ -222,59 +246,107 @@ extension AIConversationWebController: WKUIDelegate {
 
 struct AIConversationView: View {
     @EnvironmentObject private var app: AppModel
-    @State private var showsDownloadManager = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            aiToolbar
-            AIConversationBrowserPage(
-                controller: currentController
-            )
-            .id(app.selectedAIProvider)
-        }
-        .background(Color.jarvisBackground)
-    }
-
-    private var aiToolbar: some View {
-        HStack {
-            providerNavigation
-
-            Spacer(minLength: 0)
-            AIConversationBrowserControls(
-                controller: currentController,
-                showsDownloadManager: $showsDownloadManager
-            )
-        }
-        .padding(.horizontal, 28)
-        .frame(height: 54)
-        .background(Color.jarvisBackground.opacity(0.96))
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
-    }
-
-    private var providerNavigation: some View {
-        JarvisSegmentedControl(
-            items: Array(AIConversationProvider.allCases),
-            selection: $app.selectedAIProvider
-        ) { provider, isSelected in
-            Text(provider.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                .frame(
-                    minWidth: 72,
-                    minHeight: JarvisMetrics.segmentedItemHeight,
-                    maxHeight: JarvisMetrics.segmentedItemHeight
-                )
-                .padding(.horizontal, 8)
-                .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
-                .help(provider.title)
-        }
-        .shadow(color: Color.black.opacity(0.10), radius: 14, y: 6)
+        AIConversationBrowserPage(
+            controller: currentController
+        )
+        .id(app.selectedAIProvider)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var currentController: AIConversationWebController {
         app.aiConversationController(for: app.selectedAIProvider)
+    }
+}
+
+struct AIConversationTopBar: View {
+    @EnvironmentObject private var app: AppModel
+    @State private var showsDownloadManager = false
+
+    var body: some View {
+        JarvisTopBarContainer {
+            ZStack {
+                AIConversationProviderNavigation(selection: $app.selectedAIProvider)
+
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+
+                    AIConversationBrowserControls(
+                        controller: currentController,
+                        showsDownloadManager: $showsDownloadManager
+                    )
+                }
+            }
+        }
+    }
+
+    private var currentController: AIConversationWebController {
+        app.aiConversationController(for: app.selectedAIProvider)
+    }
+}
+
+private struct AIConversationProviderNavigation: View {
+    @Binding var selection: AIConversationProvider
+
+    var body: some View {
+        JarvisSegmentedControl(
+            items: Array(AIConversationProvider.allCases),
+            selection: $selection
+        ) { provider, isSelected in
+            HStack(spacing: 7) {
+                AIConversationProviderIcon(provider: provider, isSelected: isSelected)
+                Text(provider.title)
+            }
+            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .frame(
+                minHeight: JarvisMetrics.segmentedItemHeight,
+                maxHeight: JarvisMetrics.segmentedItemHeight
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
+            .help(provider.title)
+        }
+        .shadow(color: Color.black.opacity(0.10), radius: 20, y: 9)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private struct AIConversationProviderIcon: View {
+    let provider: AIConversationProvider
+    let isSelected: Bool
+
+    var body: some View {
+        Group {
+            if let image = Self.image(for: provider, isSelected: isSelected) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            }
+        }
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
+    }
+
+    private static func image(
+        for provider: AIConversationProvider,
+        isSelected: Bool
+    ) -> NSImage? {
+        let resourceName = isSelected
+            ? (provider.selectedIconResourceName ?? provider.iconResourceName)
+            : provider.iconResourceName
+        guard let url = Bundle.main.url(
+            forResource: resourceName,
+            withExtension: provider.iconResourceExtension,
+            subdirectory: "AIProviderIcons"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+
+        image.isTemplate = false
+        return image
     }
 }
 
@@ -497,33 +569,34 @@ private struct AIConversationBrowserPage: View {
     @ObservedObject var controller: AIConversationWebController
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                AIConversationWebView(controller: controller)
+        ZStack {
+            AIConversationWebView(controller: controller)
 
-                if let loadError = controller.loadError {
-                    VStack(spacing: 12) {
-                        Image(systemName: "wifi.exclamationmark")
-                            .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                        Text("\(controller.provider.title) 页面加载失败")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text(loadError)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                        Button("重新加载") {
-                            controller.reloadOrStop()
-                        }
-                        .buttonStyle(.borderedProminent)
+            if let loadError = controller.loadError {
+                VStack(spacing: 12) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                    Text("\(controller.provider.title) 页面加载失败")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(loadError)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                    Button("重新加载") {
+                        controller.reloadOrStop()
                     }
-                    .padding(28)
-                    .frame(maxWidth: 420)
-                    .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
+                    .buttonStyle(.borderedProminent)
                 }
+                .padding(28)
+                .frame(maxWidth: 420)
+                .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .jarvisFloatingPanel(cornerRadius: 16)
     }
 }
 
@@ -531,7 +604,11 @@ private struct AIConversationWebView: NSViewRepresentable {
     @ObservedObject var controller: AIConversationWebController
 
     func makeNSView(context _: Context) -> WKWebView {
-        controller.webView
+        let webView = controller.webView
+        webView.wantsLayer = true
+        webView.layer?.cornerRadius = 16
+        webView.layer?.masksToBounds = true
+        return webView
     }
 
     func updateNSView(_ _: WKWebView, context _: Context) {}

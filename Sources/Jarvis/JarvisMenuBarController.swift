@@ -4,6 +4,9 @@ import AppKit
 final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let shared = JarvisMenuBarController()
     static let menuBarTitle = "JARVIS"
+    static let menuBarAutosaveName = NSStatusItem.AutosaveName(
+        "com.jarvis.mac.primary-status-item"
+    )
 
     private weak var app: AppModel?
     private var statusItem: NSStatusItem?
@@ -39,6 +42,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         }
 
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.autosaveName = Self.menuBarAutosaveName
         if let button = statusItem.button {
             styleStatusItemButton(button)
         }

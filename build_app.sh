@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$ROOT_DIR/dist/Jarvis.app"
-JARVIS_VERSION="${JARVIS_VERSION:-0.8.7}"
-JARVIS_BUILD="${JARVIS_BUILD:-180}"
+JARVIS_VERSION="${JARVIS_VERSION:-0.8.8}"
+JARVIS_BUILD="${JARVIS_BUILD:-181}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -13,6 +13,18 @@ swift build -c release
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BUILD_DIR/Jarvis" "$APP_DIR/Contents/MacOS/Jarvis"
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+
+if [[ -d "$ROOT_DIR/Resources/AIProviderIcons" ]]; then
+  mkdir -p "$APP_DIR/Contents/Resources/AIProviderIcons"
+  for staleIcon in \
+    "$APP_DIR/Contents/Resources/AIProviderIcons"/*.png(N) \
+    "$APP_DIR/Contents/Resources/AIProviderIcons"/*.svg(N); do
+    rm -f "$staleIcon"
+  done
+  cp "$ROOT_DIR/Resources/AIProviderIcons"/*.png \
+     "$ROOT_DIR/Resources/AIProviderIcons"/*.svg \
+     "$APP_DIR/Contents/Resources/AIProviderIcons/"
+fi
 
 # Keep the same bundle identity and install path while allowing normal
 # version/build-number upgrades for future releases.

@@ -14,7 +14,7 @@ struct JarvisApp: App {
             width: JarvisMainWindowController.launchWindowSize.width,
             height: JarvisMainWindowController.launchWindowSize.height
         )
-        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified)
     }
 }
 
@@ -33,6 +33,11 @@ private struct JarvisRootView: View {
                 systemColorScheme: appModel.systemColorScheme
             )
             .frame(minWidth: 480, minHeight: 360)
+            // Keep the system title-bar region and its native window controls.
+            // Apple recommends removing only the title and toolbar background
+            // when content should extend beneath that region.
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+            .toolbar(removing: .title)
             .background(JarvisMainWindowAccessor(controller: mainWindowController))
             .onAppear {
                 menuBarController.bind(app: appModel)
@@ -45,7 +50,7 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
 
     func applicationDidFinishLaunching(_: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(.accessory)
         JarvisFreshInstallPermissionCleanup.runIfNeeded()
         menuBarController.install()
     }

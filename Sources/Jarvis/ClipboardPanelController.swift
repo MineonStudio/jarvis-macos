@@ -36,7 +36,7 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
             defer: false
         )
         panel.title = "剪贴板"
-        JarvisWindowAppearance.configure(for: panel)
+        JarvisWindowAppearance.configureTransparentTitlebar(for: panel)
         // Keep the native titlebar as the only window drag surface. Content
         // owns all body gestures, including clipboard card export drags.
         panel.isMovableByWindowBackground = false

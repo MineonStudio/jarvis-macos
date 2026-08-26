@@ -4,69 +4,45 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var navigationSelection: AppSection = .overview
+    @State private var navigationSelection: TopLevelSection = .overview
+    @State private var selectedSkill: SkillID = .screenshot
     @State private var loadedSection: AppSection = .overview
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Color.jarvisBackground
-
-            VStack(spacing: 0) {
-                // Preserve the original content position while allowing the
-                // navbar to be composited above the body instead of behind it.
-                Color.clear
-                    .frame(height: 102)
-                ZStack {
-                    detailView
-                        .id(loadedSection)
-                        .transition(.opacity)
-                }
+        NavigationSplitView {
+            JarvisSidebarNavigation(
+                items: primaryNavigationItems,
+                selection: selectedSectionBinding,
+                title: { $0.title },
+                icon: { $0.icon },
+                footerTitle: "设置",
+                footerIcon: "gearshape",
+                footerIsSelected: navigationSelection == .settings,
+                footerAction: { selectSection(.settings) }
+            )
+            .navigationSplitViewColumnWidth(
+                min: 152,
+                ideal: JarvisMetrics.sidebarWidth,
+                max: 220
+            )
+        } detail: {
+            loadedSectionView
+                .id(loadedSection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .overlay(alignment: .top) {
-            ZStack {
-                TopNavigationBar(selection: selectedSectionBinding)
-
-                HStack {
-                    Spacer()
-                    Button {
-                        selectSection(.settings)
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 17, weight: .medium))
-                            .frame(width: 36, height: 36)
-                            .foregroundStyle(
-                                navigationSelection == .settings ? Color.white : Color.secondary
-                            )
-                            .background(
-                                navigationSelection == .settings
-                                    ? Color.accentColor.opacity(0.82)
-                                    : .clear,
-                                in: Circle()
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-                    .contentShape(Rectangle())
-                    .jarvisHoverFeedback(in: Circle(), scale: 1.04)
-                    .help("设置")
-                }
-                .padding(.horizontal, 28)
-            }
-            .frame(height: 70)
-            // The window uses a full-size transparent title bar. Keep the
-            // capsule below the native traffic lights instead of letting it
-            // occupy the same top strip.
-            .padding(.top, 32)
-            .zIndex(1)
+                .padding(.leading, JarvisMetrics.shellContentSpacing)
+                .padding(.trailing, JarvisMetrics.shellHorizontalPadding)
+                .padding(.vertical, JarvisMetrics.shellVerticalPadding)
+                .background(Color.jarvisBackground)
+                .ignoresSafeArea(
+                    .container,
+                    edges: detailExtendsIntoTitlebar ? .top : []
+                )
         }
         .overlay(alignment: .bottom) {
             JarvisToastHost(message: app.toastMessage)
                 .padding(.bottom, 26)
         }
         .tint(.accentColor)
-        .ignoresSafeArea(.container, edges: .top)
         .animation(
             JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
             value: app.toastMessage
@@ -75,11 +51,20 @@ struct ContentView: View {
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar immediately;
             // the section task below mounts the page after the tab settles.
-            guard navigationSelection != newSection else { return }
-            navigationSelection = newSection
+            switch newSection {
+            case let .skill(skill):
+                selectedSkill = skill
+                navigationSelection = .skillLibrary
+            case .overview:
+                navigationSelection = .overview
+            case .aiConversation:
+                navigationSelection = .aiConversation
+            case .settings:
+                navigationSelection = .settings
+            }
         }
-        .task(id: navigationSelection) {
-            let nextSection = navigationSelection
+        .task(id: navigationTargetID) {
+            let nextSection = contentSection(for: navigationSelection)
             guard nextSection != loadedSection else { return }
 
             // Let the navigation indicator finish its interaction animation
@@ -92,24 +77,37 @@ struct ContentView: View {
                     return
                 }
             }
-            guard !Task.isCancelled, navigationSelection == nextSection else { return }
+            guard !Task.isCancelled, nextSection == contentSection(for: navigationSelection) else { return }
             if reduceMotion {
                 loadedSection = nextSection
             } else {
-                withAnimation(JarvisMotion.pageTransition) {
-                    loadedSection = nextSection
-                }
+                // Replace the top bar and its page atomically. A cross-fade
+                // would keep the old and new mutually exclusive tab sets
+                // composited together for part of the transition.
+                loadedSection = nextSection
             }
         }
     }
 
-    private func selectSection(_ section: AppSection) {
-        guard navigationSelection != section || app.selectedSection != section else { return }
+    private func selectSection(_ section: TopLevelSection) {
+        guard navigationSelection != section || app.selectedSection != section.appSection else { return }
         navigationSelection = section
-        app.selectedSection = section
+        switch section {
+        case .skillLibrary:
+            app.selectedSection = .skill(selectedSkill)
+        case .overview, .aiConversation, .settings:
+            app.selectedSection = section.appSection
+        }
     }
 
-    private var selectedSectionBinding: Binding<AppSection> {
+    private func selectSkill(_ skill: SkillID) {
+        guard selectedSkill != skill else { return }
+        selectedSkill = skill
+        guard navigationSelection == .skillLibrary else { return }
+        app.selectedSection = .skill(skill)
+    }
+
+    private var selectedSectionBinding: Binding<TopLevelSection> {
         Binding(
             get: { navigationSelection },
             set: { newValue in
@@ -121,6 +119,43 @@ struct ContentView: View {
         )
     }
 
+    private var primaryNavigationItems: [TopLevelSection] {
+        [.overview, .aiConversation, .skillLibrary]
+    }
+
+    private var selectedSkillBinding: Binding<SkillID> {
+        Binding(
+            get: { selectedSkill },
+            set: { selectSkill($0) }
+        )
+    }
+
+    private var navigationTargetID: String {
+        "\(navigationSelection.id)|\(selectedSkill.id)"
+    }
+
+    private var detailExtendsIntoTitlebar: Bool {
+        switch loadedSection {
+        case .aiConversation, .skill:
+            true
+        case .overview, .settings:
+            false
+        }
+    }
+
+    private func contentSection(for section: TopLevelSection) -> AppSection {
+        switch section {
+        case .overview:
+            .overview
+        case .aiConversation:
+            .aiConversation
+        case .skillLibrary:
+            .skill(selectedSkill)
+        case .settings:
+            .settings
+        }
+    }
+
     @ViewBuilder
     private var detailView: some View {
         switch loadedSection {
@@ -130,6 +165,42 @@ struct ContentView: View {
         case .skill(.clipboard): ClipboardView()
         case .skill(.windowLayout): WindowLayoutView()
         case .settings: SettingsView()
+        }
+    }
+
+    private var loadedSectionView: some View {
+        VStack(spacing: 0) {
+            topNavigationBar
+
+            selectedContentView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var topNavigationBar: some View {
+        switch loadedSection {
+        case .aiConversation:
+            AIConversationTopBar()
+        case .skill:
+            JarvisTopBarContainer {
+                SkillNavigationBar(selection: selectedSkillBinding)
+            }
+        case .overview, .settings:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var selectedContentView: some View {
+        switch loadedSection {
+        case .skill:
+            detailView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .jarvisFloatingPanel(cornerRadius: 16)
+        case .overview, .aiConversation, .settings:
+            detailView
         }
     }
 }
@@ -152,32 +223,71 @@ struct JarvisToastHost: View {
     }
 }
 
-private struct TopNavigationBar: View {
-    @Binding var selection: AppSection
+private enum TopLevelSection: Hashable, Identifiable {
+    case overview
+    case aiConversation
+    case skillLibrary
+    case settings
 
-    private let sections: [AppSection] = [
-        .overview,
-        .aiConversation,
-        .skill(.screenshot),
-        .skill(.clipboard),
-        .skill(.windowLayout)
-    ]
+    var id: String {
+        switch self {
+        case .overview: "overview"
+        case .aiConversation: "ai-conversation"
+        case .skillLibrary: "skill-library"
+        case .settings: "settings"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .overview: "总览"
+        case .aiConversation: "聊天"
+        case .skillLibrary: "技能库"
+        case .settings: "设置"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .overview: "rectangle.grid.2x2"
+        case .aiConversation: "bubble.left.and.bubble.right"
+        case .skillLibrary: "square.stack.3d.up"
+        case .settings: "gearshape"
+        }
+    }
+
+    var appSection: AppSection {
+        switch self {
+        case .overview: .overview
+        case .aiConversation: .aiConversation
+        case .skillLibrary: .skill(.screenshot)
+        case .settings: .settings
+        }
+    }
+}
+
+private struct SkillNavigationBar: View {
+    @Binding var selection: SkillID
 
     var body: some View {
-        JarvisSegmentedControl(items: sections, selection: $selection) { section, isSelected in
-            Text(section.navigationTitle)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                .frame(
-                    minWidth: 70,
-                    minHeight: JarvisMetrics.segmentedItemHeight,
-                    maxHeight: JarvisMetrics.segmentedItemHeight
-                )
-                .padding(.horizontal, 10)
-                .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
-                .help(section.navigationTitle)
+        JarvisSegmentedControl(items: Array(SkillID.allCases), selection: $selection) { skill, isSelected in
+            HStack(spacing: 7) {
+                Image(systemName: skill.icon)
+                    .font(.system(size: 12, weight: .medium))
+                Text(skill.navigationTitle)
+            }
+            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .frame(
+                minHeight: JarvisMetrics.segmentedItemHeight,
+                maxHeight: JarvisMetrics.segmentedItemHeight
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
+            .help(skill.navigationTitle)
         }
         .shadow(color: Color.black.opacity(0.10), radius: 20, y: 9)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

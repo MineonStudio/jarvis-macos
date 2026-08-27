@@ -6,6 +6,7 @@ struct ScreenshotCanvasView: View {
     @ObservedObject var editor: ScreenshotEditorModel
     let interactive: Bool
     let showsSelectionOverlay: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         image: NSImage,
@@ -38,6 +39,7 @@ struct ScreenshotCanvasView: View {
 
             ForEach(editor.renderedTranslationBlocks) { block in
                 ScreenshotTranslationBlockView(block: block)
+                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             ForEach(editor.annotations) { annotation in
@@ -46,6 +48,7 @@ struct ScreenshotCanvasView: View {
                     canvasSize: editor.canvasSize,
                     mosaicImage: editor.mosaicImage(style: annotation.mosaicStyle)
                 )
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             if let draftAnnotation {
@@ -55,6 +58,7 @@ struct ScreenshotCanvasView: View {
                     mosaicImage: editor.mosaicImage(style: draftAnnotation.mosaicStyle),
                     isDraft: true
                 )
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             if interactive {
@@ -74,12 +78,18 @@ struct ScreenshotCanvasView: View {
             if interactive, showsSelectionOverlay {
                 if editor.selectionRect != nil {
                     ScreenshotSelectionOverlay(editor: editor)
+                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                 } else {
                     Rectangle()
                         .stroke(Color.blue.opacity(0.48), lineWidth: 1)
+                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                 }
             }
         }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: editor.annotations.count
+        )
     }
 
     private var canvasGesture: some Gesture {
@@ -226,6 +236,7 @@ struct ScreenshotCanvasView: View {
             editorWidth: inlineEditorWidth,
             editorHeight: inlineEditorHeight,
             textEditorHeight: inlineTextEditorHeight,
+            showsScrollIndicator: showsTextEditorScrollIndicator,
             onCommit: commitText,
             onCancel: cancelText
         )
@@ -233,7 +244,10 @@ struct ScreenshotCanvasView: View {
 
     private func beginTextEditing(id: UUID) {
         guard let annotation = editor.annotations.first(where: { $0.id == id && $0.kind == .text }) else { return }
-        textInputPoint = annotation.start
+        textInputPoint = CGPoint(
+            x: annotation.start.x - annotation.textSize.width / 2 + 9,
+            y: annotation.start.y
+        )
         editingTextID = id
         textDraft = annotation.text ?? ""
         editor.textFontSize = annotation.fontSize
@@ -246,10 +260,15 @@ struct ScreenshotCanvasView: View {
 
     private func commitText() {
         guard let textInputPoint else { return }
+        let committedText = wrappedTextDraft
         if let editingTextID {
-            editor.updateText(id: editingTextID, text: textDraft)
+            editor.updateText(
+                id: editingTextID,
+                text: committedText,
+                alignedAtLeft: textInputPoint
+            )
         } else {
-            editor.addText(at: textInputPoint, text: textDraft)
+            editor.addText(alignedAtLeft: textInputPoint, text: committedText)
         }
         self.textInputPoint = nil
         editingTextID = nil
@@ -269,19 +288,95 @@ struct ScreenshotCanvasView: View {
         let measuredWidth = inlineTextLines
             .map { ($0 as NSString).size(withAttributes: attributes).width }
             .max() ?? 0
-        let availableWidth = max(190, editor.canvasSize.width - 70)
-        return min(availableWidth, max(190, measuredWidth + 30))
+        let minimumFieldWidth = textWidth(for: 10, using: attributes) + 30
+        let maximumFieldWidth = textWidth(for: 15, using: attributes) + 30
+        let availableWidth = max(minimumFieldWidth, editor.canvasSize.width - 96)
+        let defaultWidth = textWidth(
+            for: defaultSingleLineCharacterCount,
+            using: attributes
+        ) + 30
+        let contentWidth = min(measuredWidth + 30, maximumFieldWidth)
+        return min(availableWidth, max(minimumFieldWidth, max(defaultWidth, contentWidth)))
     }
 
     private var inlineTextEditorHeight: CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
-        let width = max(inlineFieldWidth - 12, 1)
-        let totalLines = inlineTextLines.reduce(0) { count, line in
-            let measuredWidth = (line as NSString).size(withAttributes: attributes).width
-            return count + max(1, Int(ceil(measuredWidth / width)))
+        let width = max(inlineFieldWidth - 30, 1)
+        let totalLines = inlineTextLineCount(using: attributes, width: width)
+        let lineHeight = max(
+            editor.textFontSize * 1.28,
+            inlineTextFont.ascender - inlineTextFont.descender + inlineTextFont.leading
+        )
+        return min(180, max(40, CGFloat(totalLines) * lineHeight + 16))
+    }
+
+    private var showsTextEditorScrollIndicator: Bool {
+        let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
+        let width = max(inlineFieldWidth - 30, 1)
+        return inlineTextLineCount(using: attributes, width: width) > 1
+    }
+
+    private var wrappedTextDraft: String {
+        let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
+        let width = max(inlineFieldWidth - 30, 1)
+        return inlineTextLines
+            .flatMap { wrappedLines(for: $0, width: width, using: attributes) }
+            .joined(separator: "\n")
+    }
+
+    private func inlineTextLineCount(
+        using attributes: [NSAttributedString.Key: Any],
+        width: CGFloat
+    ) -> Int {
+        inlineTextLines.reduce(0) { count, line in
+            count + wrappedLines(for: line, width: width, using: attributes).count
         }
-        let lineHeight = max(editor.textFontSize * 1.28, inlineTextFont.ascender - inlineTextFont.descender)
-        return max(38, CGFloat(totalLines) * lineHeight + 8)
+    }
+
+    private func wrappedLines(
+        for line: String,
+        width: CGFloat,
+        using attributes: [NSAttributedString.Key: Any]
+    ) -> [String] {
+        guard !line.isEmpty else { return [""] }
+
+        var lines: [String] = []
+        var currentLine = ""
+        var currentWidth: CGFloat = 0
+
+        for character in line {
+            let characterString = String(character)
+            let characterWidth = (characterString as NSString).size(withAttributes: attributes).width
+            if !currentLine.isEmpty, currentWidth + characterWidth > width {
+                lines.append(currentLine)
+                currentLine = characterString
+                currentWidth = characterWidth
+            } else if currentLine.count >= 15 {
+                lines.append(currentLine)
+                currentLine = characterString
+                currentWidth = characterWidth
+            } else {
+                currentLine.append(character)
+                currentWidth += characterWidth
+            }
+        }
+
+        if !currentLine.isEmpty {
+            lines.append(currentLine)
+        }
+        return lines
+    }
+
+    private var defaultSingleLineCharacterCount: Int {
+        min(15, max(10, Int(editor.canvasSize.width / 100)))
+    }
+
+    private func textWidth(
+        for characterCount: Int,
+        using attributes: [NSAttributedString.Key: Any]
+    ) -> CGFloat {
+        let sample = String(repeating: "中", count: characterCount)
+        return (sample as NSString).size(withAttributes: attributes).width
     }
 
     private var inlineTextFont: NSFont {
@@ -292,11 +387,11 @@ struct ScreenshotCanvasView: View {
     }
 
     private var inlineTextLines: [String] {
-        textDraft.components(separatedBy: "\n")
+        String(textDraft.prefix(150)).components(separatedBy: "\n")
     }
 
     private var inlineEditorWidth: CGFloat {
-        inlineFieldWidth + 50
+        inlineFieldWidth + 96
     }
 
     private var inlineEditorHeight: CGFloat {
@@ -325,6 +420,7 @@ private struct ScreenshotInlineTextEditor: View {
     let editorWidth: CGFloat
     let editorHeight: CGFloat
     let textEditorHeight: CGFloat
+    let showsScrollIndicator: Bool
     let onCommit: () -> Void
     let onCancel: () -> Void
 
@@ -337,28 +433,33 @@ private struct ScreenshotInlineTextEditor: View {
             .foregroundStyle(editor.textColor.color)
             .tint(editor.textColor.color)
             .focused($textFieldFocused)
+            .scrollIndicators(showsScrollIndicator ? .visible : .hidden, axes: .vertical)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 8)
             .frame(width: fieldWidth, height: textEditorHeight)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .jarvisGlass(in: Capsule(), interactive: false)
+            .contentShape(Capsule())
     }
 
     private var actionButtons: some View {
-        VStack(spacing: 5) {
+        HStack(spacing: 6) {
             Button(action: onCommit) {
                 Image(systemName: "checkmark")
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
             }
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
             .foregroundStyle(Color.jarvisCyan)
+            .jarvisGlass(tint: .accentColor.opacity(0.20), in: Circle(), interactive: true)
 
             Button(action: onCancel) {
                 Image(systemName: "xmark")
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
             }
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-            .foregroundStyle(Color.black.opacity(0.56))
+            .foregroundStyle(Color.primary.opacity(0.62))
+            .jarvisGlass(in: Circle(), interactive: true)
         }
         .font(.system(size: max(12, editor.textFontSize * 0.58), weight: .medium))
     }
@@ -369,20 +470,11 @@ private struct ScreenshotInlineTextEditor: View {
             actionButtons
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .frame(width: editorWidth, height: editorHeight)
-        .background(Color.white.opacity(0.82))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.black.opacity(0.12), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .shadow(color: Color.black.opacity(0.14), radius: 8, y: 3)
         .position(
-            x: min(
-                max(point.x + editorWidth / 2, editorWidth / 2),
-                max(editorWidth / 2, editor.canvasSize.width - editorWidth / 2)
-            ),
+            x: point.x - 8 + editorWidth / 2,
             y: min(
                 max(point.y + editorHeight / 2, editorHeight / 2),
                 max(editorHeight / 2, editor.canvasSize.height - editorHeight / 2)
@@ -392,6 +484,10 @@ private struct ScreenshotInlineTextEditor: View {
             DispatchQueue.main.async {
                 textFieldFocused = true
             }
+        }
+        .onChange(of: textDraft) { _, newValue in
+            guard newValue.count > 150 else { return }
+            textDraft = String(newValue.prefix(150))
         }
     }
 }

@@ -190,6 +190,7 @@ struct ClipboardMediaPreview: View {
     let player: AVPlayer?
     let onCopy: () -> Void
     let onClose: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var gestureZoomStart: CGFloat?
     @State private var gestureOffsetStart: CGSize?
     @State private var toolbarOffset: CGSize = .zero
@@ -210,7 +211,9 @@ struct ClipboardMediaPreview: View {
                         .gesture(dragGesture)
                         .simultaneousGesture(magnificationGesture)
                         .onTapGesture(count: 2) {
-                            model.setZoom(model.zoom > 1 ? 1 : 2)
+                            withAnimation(JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion)) {
+                                model.setZoom(model.zoom > 1 ? 1 : 2)
+                            }
                         }
                 } else if let player {
                     ClipboardAVPlayerView(player: player, zoom: model.zoom)
@@ -338,14 +341,15 @@ struct ClipboardMediaPreviewToolbar: View {
     let onCopy: () -> Void
     let onClose: () -> Void
     @ObservedObject var model: ClipboardMediaPreviewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
             actionButton(icon: "minus.magnifyingglass", help: "缩小", enabled: model.zoom > 0.25) {
-                model.adjustZoom(by: -0.25)
+                adjustZoom(by: -0.25)
             }
             Button {
-                model.setZoom(1)
+                setZoom(1)
             } label: {
                 Text("\(Int(model.zoom * 100))%")
                     .font(JarvisTypography.monospaced)
@@ -356,7 +360,7 @@ struct ClipboardMediaPreviewToolbar: View {
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
             .help("重置缩放")
             actionButton(icon: "plus.magnifyingglass", help: "放大", enabled: model.zoom < 4) {
-                model.adjustZoom(by: 0.25)
+                adjustZoom(by: 0.25)
             }
             toolbarDivider
             actionButton(icon: "doc.on.doc", help: "一键复制", action: onCopy)
@@ -394,6 +398,18 @@ struct ClipboardMediaPreviewToolbar: View {
         .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.35))
         .disabled(!enabled)
         .help(help)
+    }
+
+    private func adjustZoom(by delta: CGFloat) {
+        withAnimation(JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion)) {
+            model.adjustZoom(by: delta)
+        }
+    }
+
+    private func setZoom(_ value: CGFloat) {
+        withAnimation(JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion)) {
+            model.setZoom(value)
+        }
     }
 }
 

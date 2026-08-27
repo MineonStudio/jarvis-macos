@@ -144,6 +144,7 @@ struct ClipboardFilterBar: View {
 
 struct ClipboardView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
@@ -192,21 +193,33 @@ struct ClipboardView: View {
                         ClipboardEmptyState(
                             hasQuery: !searchText.isEmpty || selectedFilter != .all
                         )
+                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                     } else {
-                        ClipboardGrid(items: pageItems, presentation: .main)
+                        VStack(spacing: 0) {
+                            ClipboardGrid(items: pageItems, presentation: .main)
 
-                        if totalPages > 1 {
-                            PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
-                                currentPage = max(1, currentPage - 1)
-                            } onNext: {
-                                currentPage = min(totalPages, currentPage + 1)
+                            if totalPages > 1 {
+                                PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
+                                    currentPage = max(1, currentPage - 1)
+                                } onNext: {
+                                    currentPage = min(totalPages, currentPage + 1)
+                                }
                             }
                         }
+                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
                 .padding(.vertical, HistoryGridMetrics.historyPanelInset)
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+                    value: selectedFilter
+                )
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+                    value: currentPage
+                )
             }
             .onAppear {
                 availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
@@ -412,8 +425,12 @@ struct ClipboardCard: View {
         }
         .font(.system(size: 14, weight: .semibold))
         .opacity(isHovered ? 1 : 0)
+        .scaleEffect(isHovered || reduceMotion ? 1 : 0.94)
         .allowsHitTesting(isHovered)
-        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: isHovered
+        )
     }
 
     private var cardBody: some View {
@@ -492,6 +509,7 @@ struct ClipboardCard: View {
 struct ClipboardGrid: View {
     let items: [ClipboardItem]
     let presentation: ClipboardCardPresentation
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         LazyVGrid(
@@ -510,14 +528,20 @@ struct ClipboardGrid: View {
                     item: item,
                     presentation: presentation
                 )
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: items.map(\.id)
+        )
     }
 }
 
 struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searchText = ""
     @State private var selectedFilter: ClipboardViewFilter = .all
 
@@ -547,6 +571,7 @@ struct ClipboardPanelView: View {
                 ClipboardEmptyState(
                     hasQuery: !searchText.isEmpty || selectedFilter != .all
                 )
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             } else {
                 ScrollView {
                     ClipboardGrid(
@@ -554,6 +579,7 @@ struct ClipboardPanelView: View {
                         presentation: .panel
                     )
                 }
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             HStack(spacing: 7) {
@@ -577,5 +603,9 @@ struct ClipboardPanelView: View {
         .onAppear {
             selectedFilter = .all
         }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: selectedFilter
+        )
     }
 }

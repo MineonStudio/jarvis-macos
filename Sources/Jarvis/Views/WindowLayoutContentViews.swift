@@ -110,6 +110,7 @@ private struct WindowLayoutDisplayCard: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .jarvisGlass(cornerRadius: 13)
+        .jarvisHoverPanelFeedback(scale: 1.012)
         .accessibilityElement(children: .combine)
     }
 }

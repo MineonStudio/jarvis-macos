@@ -25,6 +25,7 @@ struct ScreenshotToolbar: View {
     @ObservedObject var editor: ScreenshotEditorModel
     @ObservedObject var layout: ScreenshotToolbarLayoutModel
     let onAction: (ScreenshotAction) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 }
 
 extension ScreenshotToolbar {
@@ -83,6 +84,7 @@ extension ScreenshotToolbar {
 
                 secondaryControl
                     .frame(height: 40)
+                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
         .padding(.horizontal, 11)
@@ -95,6 +97,10 @@ extension ScreenshotToolbar {
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .jarvisGlass(cornerRadius: 16)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: editor.secondaryBarVisible
+        )
     }
 
     private func toolButton(_ tool: ScreenshotTool) -> some View {

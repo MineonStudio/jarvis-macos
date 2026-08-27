@@ -104,6 +104,7 @@ enum HistoryGridMetrics {
 
 struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var currentPage = 1
     @State private var selectedTimeFilter: ScreenshotTimeFilter = .all
     let availableGridWidth: CGFloat
@@ -150,6 +151,7 @@ struct ScreenshotHistorySection: View {
                         ? "框选截图后，历史记录会显示在这里"
                         : "切换其他时间范围查看截图"
                 )
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             } else {
                 LazyVGrid(
                     columns: [GridItem(
@@ -166,9 +168,14 @@ struct ScreenshotHistorySection: View {
                         ScreenshotHistoryCard(
                             item: item
                         )
+                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+                    value: pageItems.map(\.id)
+                )
 
                 if totalPages > 1 {
                     PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
@@ -179,6 +186,14 @@ struct ScreenshotHistorySection: View {
                 }
             }
         }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: selectedTimeFilter
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: currentPage
+        )
         .onChange(of: pageSize) { _, _ in
             currentPage = min(currentPage, totalPages)
         }
@@ -337,8 +352,12 @@ struct ScreenshotHistoryCard: View {
         }
         .font(.system(size: 14, weight: .semibold))
         .opacity(isHovered ? 1 : 0)
+        .scaleEffect(isHovered || reduceMotion ? 1 : 0.94)
         .allowsHitTesting(isHovered)
-        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: isHovered
+        )
     }
 
     private func screenshotActionButton(
@@ -465,6 +484,7 @@ struct ScreenshotHistoryPreview: View {
     let onCopy: () -> Void
     let onSave: () -> Void
     let onDelete: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var gestureZoomStart: CGFloat?
     @State private var gestureOffsetStart: CGSize?
     @State private var toolbarOffset: CGSize = .zero
@@ -547,7 +567,9 @@ struct ScreenshotHistoryPreview: View {
     }
 
     private func setZoom(_ value: CGFloat) {
-        model.setZoom(value)
+        withAnimation(JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion)) {
+            model.setZoom(value)
+        }
     }
 
     private func toolbarDragGesture(in containerSize: CGSize) -> some Gesture {
@@ -597,16 +619,17 @@ struct ScreenshotHistoryPreviewToolbar: View {
     let onClose: () -> Void
     @ObservedObject var model: ScreenshotHistoryPreviewModel
     @State private var showingDeleteConfirmation = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
             actionButton(icon: "pencil", help: "二次编辑", action: onEdit)
             toolbarDivider
             actionButton(icon: "minus.magnifyingglass", help: "缩小", enabled: model.zoom > 0.25) {
-                model.setZoom(model.zoom - 0.25)
+                setZoom(model.zoom - 0.25)
             }
             Button {
-                model.setZoom(1)
+                setZoom(1)
             } label: {
                 Text("\(Int(model.zoom * 100))%")
                     .font(JarvisTypography.monospaced)
@@ -617,7 +640,7 @@ struct ScreenshotHistoryPreviewToolbar: View {
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
             .help("重置缩放")
             actionButton(icon: "plus.magnifyingglass", help: "放大", enabled: model.zoom < 4) {
-                model.setZoom(model.zoom + 0.25)
+                setZoom(model.zoom + 0.25)
             }
             toolbarDivider
             actionButton(icon: "doc.on.doc", help: "复制到剪贴板", action: onCopy)
@@ -675,5 +698,11 @@ struct ScreenshotHistoryPreviewToolbar: View {
             .fill(Color.primary.opacity(0.22))
             .frame(width: 1, height: 28)
             .padding(.horizontal, 8)
+    }
+
+    private func setZoom(_ value: CGFloat) {
+        withAnimation(JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion)) {
+            model.setZoom(value)
+        }
     }
 }

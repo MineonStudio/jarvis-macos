@@ -6,6 +6,8 @@ struct HistoryFilterChip: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Button(action: action) {
             Text("\(title)（\(count)）")
@@ -30,5 +32,9 @@ struct HistoryFilterChip: View {
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))
         .contentShape(Capsule())
         .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            value: isSelected
+        )
     }
 }

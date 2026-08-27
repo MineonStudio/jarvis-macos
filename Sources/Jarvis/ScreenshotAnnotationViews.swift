@@ -86,11 +86,12 @@ struct TextAnnotationView: View {
     let isDraft: Bool
 
     var body: some View {
-        Text(annotation.text ?? "")
+        Text(verbatim: annotation.text ?? "")
             .font(.system(size: annotation.fontSize, weight: annotation.isBold ? .semibold : .regular))
             .italic(annotation.isItalic)
             .strikethrough(annotation.isStrikethrough, color: annotation.textColor.color)
             .foregroundStyle(annotation.textColor.color.opacity(isDraft ? 0.62 : 1))
+            .multilineTextAlignment(.leading)
             .lineLimit(nil)
             .frame(width: annotation.textSize.width, height: annotation.textSize.height)
             .position(x: annotation.start.x, y: annotation.start.y)

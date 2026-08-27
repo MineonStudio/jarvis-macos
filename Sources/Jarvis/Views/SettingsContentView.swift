@@ -176,6 +176,7 @@ struct ScreenshotTranslationSettingsCard: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -221,6 +222,10 @@ struct SettingsView: View {
                 ))
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                    value: app.launchAtLoginEnabled
+                )
             }
         }
     }
@@ -280,6 +285,10 @@ struct SettingsView: View {
             }
         }
         .frame(height: 34, alignment: .center)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+            value: app.updateState
+        )
     }
 
     private var updateStatusLabel: some View {

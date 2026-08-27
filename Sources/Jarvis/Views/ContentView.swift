@@ -44,7 +44,7 @@ struct ContentView: View {
         }
         .tint(.accentColor)
         .animation(
-            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
             value: app.toastMessage
         )
         .onChange(of: app.selectedSection) { _, newSection in
@@ -84,7 +84,9 @@ struct ContentView: View {
                 // Replace the top bar and its page atomically. A cross-fade
                 // would keep the old and new mutually exclusive tab sets
                 // composited together for part of the transition.
-                loadedSection = nextSection
+                withAnimation(JarvisMotion.pageTransition) {
+                    loadedSection = nextSection
+                }
             }
         }
     }
@@ -175,6 +177,11 @@ struct ContentView: View {
             selectedContentView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+        .animation(
+            JarvisMotion.animation(JarvisMotion.pageTransition, reduceMotion: reduceMotion),
+            value: loadedSection
+        )
     }
 
     @ViewBuilder
@@ -217,7 +224,7 @@ struct JarvisToastHost: View {
             }
         }
         .animation(
-            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
             value: message
         )
     }
@@ -297,10 +304,7 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .firstTextBaseline, spacing: 18) {
-                    SectionHeader(title: "你好，贾维斯")
-                    Spacer()
-                }
+                JarvisOrbView()
 
                 HStack(spacing: 0) {
                     DashboardMetric(title: "截图", value: "\(app.screenshotHistory.count)", detail: "历史记录", icon: "photo")
@@ -314,26 +318,6 @@ struct DashboardView: View {
                     .overlay(Color.primary.opacity(0.10))
 
                 permissionCard
-
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "lock.shield")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 28, height: 28)
-                        .jarvisIconGlass(in: Circle())
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("本机优先")
-                            .font(JarvisTypography.bodyEmphasis)
-                        Text("剪贴板历史和截图历史均保存在本机。")
-                            .font(JarvisTypography.secondary)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                            .lineSpacing(2)
-                    }
-                    Spacer(minLength: 12)
-                    Text("隐私")
-                        .font(JarvisTypography.captionEmphasis)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
             }
             .frame(maxWidth: 980, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -426,6 +410,8 @@ struct DashboardMetric: View {
     let detail: String
     let icon: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
@@ -437,6 +423,11 @@ struct DashboardMetric: View {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text(value)
                         .font(JarvisTypography.metricValue)
+                        .contentTransition(.numericText())
+                        .animation(
+                            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+                            value: value
+                        )
                     Text(title)
                         .font(JarvisTypography.control)
                 }

@@ -29,7 +29,10 @@ struct ClipboardSearchField: View {
             }
         }
         .padding(.horizontal, 15)
-        .frame(minHeight: HistoryGridMetrics.clipboardSearchFieldHeight)
+        .frame(
+            minHeight: HistoryGridMetrics.clipboardSearchFieldHeight,
+            maxHeight: HistoryGridMetrics.clipboardSearchFieldHeight
+        )
         .jarvisGlass(in: Capsule(), interactive: false)
         .contentShape(Capsule())
         .onTapGesture {

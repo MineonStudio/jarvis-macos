@@ -32,6 +32,22 @@ private enum ClipboardCacheCleanupTimeOption: String, CaseIterable, Identifiable
     }
 }
 
+private enum ClipboardCacheCleanupMode: String, CaseIterable, Identifiable {
+    case time
+    case category
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .time: "时间"
+        case .category: "分类"
+        }
+    }
+}
+
 private enum ClipboardCacheCleanupRequest: Identifiable {
     case category(ClipboardCacheCategory)
     case time(ClipboardCacheCleanupTimeOption)
@@ -53,8 +69,7 @@ private enum ClipboardCacheCleanupRequest: Identifiable {
 
 struct ClipboardCacheSettingsCard: View {
     @EnvironmentObject private var app: AppModel
-    @State private var selectedCleanupCategory: ClipboardCacheCategory = .all
-    @State private var selectedCleanupTime: ClipboardCacheCleanupTimeOption = .all
+    @State private var selectedCleanupMode: ClipboardCacheCleanupMode = .time
     @State private var pendingCleanup: ClipboardCacheCleanupRequest?
 
     private let capacityOptions = ClipboardCacheStore.supportedMaximumBytes
@@ -152,67 +167,45 @@ struct ClipboardCacheSettingsCard: View {
                         .font(.system(size: 14, weight: .semibold))
 
                     HStack {
-                        Text("分类")
-                            .font(.system(size: 12, weight: .semibold))
-                        Spacer()
-                        Picker("分类", selection: $selectedCleanupCategory) {
-                            ForEach(ClipboardCacheCategory.allCases) { category in
-                                Text(category.title).tag(category)
+                        Picker("清理类型", selection: $selectedCleanupMode) {
+                            ForEach(ClipboardCacheCleanupMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
                             }
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        Button("清理") {
-                            guard selectedCleanupCategory != .favorites else { return }
-                            pendingCleanup = .category(selectedCleanupCategory)
-                        }
-                        .buttonStyle(JarvisSecondaryButtonStyle())
-                        .disabled(selectedCleanupCategory == .favorites)
-                    }
 
-                    HStack {
-                        Text("时间")
-                            .font(.system(size: 12, weight: .semibold))
-                        Spacer()
-                        Picker("时间", selection: $selectedCleanupTime) {
-                            ForEach(ClipboardCacheCleanupTimeOption.allCases) { option in
-                                Text(option.title).tag(option)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        Button("清理") {
-                            pendingCleanup = .time(selectedCleanupTime)
-                        }
-                        .buttonStyle(JarvisSecondaryButtonStyle())
+                        cleanupOptions
                     }
 
                     Divider().overlay(Color.primary.opacity(0.12))
 
-                    Toggle(
-                        "按时间自动清理",
-                        isOn: Binding(
-                            get: { app.clipboardCacheAutoCleanupEnabled },
-                            set: { app.updateClipboardCacheAutoCleanupEnabled($0) }
-                        )
-                    )
-                    if app.clipboardCacheAutoCleanupEnabled {
-                        HStack {
-                            Spacer()
-                            Picker(
-                                "自动清理周期",
-                                selection: Binding(
-                                    get: { app.clipboardCacheAutoCleanupPeriod },
-                                    set: { app.updateClipboardCacheAutoCleanupPeriod($0) }
-                                )
-                            ) {
-                                ForEach(ClipboardCacheCleanupPeriod.allCases) { period in
-                                    Text(period.title).tag(period)
-                                }
+                    HStack(spacing: 14) {
+                        Text("开启自动清理")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Picker(
+                            "自动清理周期",
+                            selection: Binding(
+                                get: { app.clipboardCacheAutoCleanupPeriod },
+                                set: { app.updateClipboardCacheAutoCleanupPeriod($0) }
+                            )
+                        ) {
+                            ForEach(ClipboardCacheCleanupPeriod.allCases) { period in
+                                Text(period.title).tag(period)
                             }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { app.clipboardCacheAutoCleanupEnabled },
+                                set: { app.updateClipboardCacheAutoCleanupEnabled($0) }
+                            )
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                     }
                 }
             }
@@ -270,5 +263,31 @@ struct ClipboardCacheSettingsCard: View {
         case let .time(option):
             app.clearClipboardCache(olderThan: option.period?.cutoffDate)
         }
+    }
+
+    private var cleanupOptions: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                switch selectedCleanupMode {
+                case .time:
+                    ForEach(ClipboardCacheCleanupTimeOption.allCases) { option in
+                        Button(option.title) {
+                            pendingCleanup = .time(option)
+                        }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
+                    }
+                case .category:
+                    ForEach(ClipboardCacheCategory.allCases) { category in
+                        Button(category.title) {
+                            guard category != .favorites else { return }
+                            pendingCleanup = .category(category)
+                        }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
+                        .disabled(category == .favorites)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

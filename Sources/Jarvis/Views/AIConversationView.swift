@@ -394,6 +394,7 @@ private struct AIConversationProviderIcon: View {
 private struct AIConversationBrowserControls: View {
     @ObservedObject var controller: AIConversationWebController
     @Binding var showsDownloadManager: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -416,6 +417,10 @@ private struct AIConversationBrowserControls: View {
             )
             downloadManagerButton
         }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: controller.isLoading
+        )
     }
 
     private var downloadManagerButton: some View {
@@ -435,6 +440,7 @@ private struct AIConversationBrowserControls: View {
                         .frame(minWidth: 14, minHeight: 14)
                         .background(Color.accentColor, in: Circle())
                         .offset(x: 4, y: -4)
+                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                 }
             }
         }
@@ -443,6 +449,10 @@ private struct AIConversationBrowserControls: View {
         .jarvisGlass(in: Circle(), interactive: true)
         .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help("下载管理")
+        .animation(
+            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+            value: controller.downloadManager.activeDownloadCount
+        )
         .popover(isPresented: $showsDownloadManager, arrowEdge: .top) {
             AIConversationDownloadManagerView(manager: controller.downloadManager)
                 .frame(width: 390, height: 390)
@@ -473,6 +483,7 @@ private struct AIConversationBrowserControls: View {
 
 private struct AIConversationDownloadManagerView: View {
     @ObservedObject var manager: AIConversationDownloadManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -507,15 +518,22 @@ private struct AIConversationDownloadManagerView: View {
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(manager.items) { item in
                             AIConversationDownloadRow(item: item, manager: manager)
+                                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                         }
                     }
+                    .animation(
+                        JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+                        value: manager.items.count
+                    )
                 }
                 .scrollIndicators(.automatic)
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             Divider()
@@ -532,6 +550,10 @@ private struct AIConversationDownloadManagerView: View {
             .padding(.top, 10)
         }
         .padding(16)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: manager.items.count
+        )
     }
 }
 
@@ -608,6 +630,7 @@ private struct AIConversationDownloadRow: View {
 
 private struct AIConversationBrowserPage: View {
     @ObservedObject var controller: AIConversationWebController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -633,11 +656,16 @@ private struct AIConversationBrowserPage: View {
                 .padding(28)
                 .frame(maxWidth: 420)
                 .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .jarvisFloatingPanel(cornerRadius: 16)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: controller.loadError
+        )
     }
 }
 

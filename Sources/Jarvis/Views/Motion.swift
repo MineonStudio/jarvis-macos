@@ -1,13 +1,24 @@
 import SwiftUI
 
 enum JarvisMotion {
-    static let buttonPress = Animation.easeOut(duration: 0.12)
-    static let hover = Animation.easeOut(duration: 0.16)
-    static let selection = Animation.easeInOut(duration: 0.2)
-    static let pageTransition = Animation.easeInOut(duration: 0.24)
+    // Keep the motion vocabulary small and physical. The lower response values
+    // are reserved for controls; larger surfaces get a softer settle.
+    static let buttonPress = Animation.spring(response: 0.16, dampingFraction: 0.78, blendDuration: 0.02)
+    static let hover = Animation.spring(response: 0.24, dampingFraction: 0.82, blendDuration: 0.03)
+    static let selection = Animation.spring(response: 0.30, dampingFraction: 0.82, blendDuration: 0.04)
+    static let content = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.03)
+    static let feedback = Animation.spring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.03)
+    static let pageTransition = Animation.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.05)
+    static let selectionPillTint = Color.accentColor.opacity(0.82)
 
     static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : animation
+    }
+
+    static func contentTransition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion
+            ? .identity
+            : .opacity.combined(with: .scale(scale: 0.985, anchor: .center))
     }
 }
 
@@ -71,11 +82,7 @@ struct JarvisHoverPanelModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background {
-                Color.clear
-                    .jarvisGlass(cornerRadius: 13, interactive: false)
-                    .scaleEffect(isScaled ? scale : 1)
-            }
+            .scaleEffect(isScaled ? scale : 1)
             .zIndex(isHovered ? 1 : 0)
             .animation(
                 JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
@@ -133,7 +140,7 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
         ZStack(alignment: .topLeading) {
             if let selectedFrame = itemFrames[AnyHashable(selection.id)] {
                 Capsule()
-                    .fill(Color.accentColor.opacity(0.82))
+                    .fill(JarvisMotion.selectionPillTint)
                     .frame(width: selectedFrame.width, height: selectedFrame.height)
                     .offset(x: selectedFrame.minX, y: selectedFrame.minY)
                     .allowsHitTesting(false)
@@ -167,6 +174,10 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
                     .contentShape(Capsule())
                 }
             }
+            .animation(
+                JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                value: selection
+            )
         }
         .coordinateSpace(name: "JarvisSegmentedControl")
         .padding(JarvisMetrics.segmentedControlPadding)

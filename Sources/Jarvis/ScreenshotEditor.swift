@@ -386,6 +386,23 @@ extension ScreenshotEditorModel {
         ))
     }
 
+    func addText(alignedAtLeft point: CGPoint, text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        var annotation = ScreenshotAnnotation(
+            kind: .text,
+            points: [point],
+            text: text,
+            brushSize: 0,
+            fontSize: textFontSize,
+            textColor: textColor,
+            isBold: textBold,
+            isItalic: textItalic,
+            isStrikethrough: textStrikethrough
+        )
+        annotation.points = [textCenter(alignedAtLeft: point, for: annotation)]
+        append(annotation)
+    }
+
     func beginMove(id: UUID) {
         guard annotations.contains(where: { $0.id == id }) else { return }
         selectedAnnotationID = id
@@ -431,6 +448,10 @@ extension ScreenshotEditorModel {
     }
 
     func updateText(id: UUID, text: String) {
+        updateText(id: id, text: text, alignedAtLeft: nil)
+    }
+
+    func updateText(id: UUID, text: String, alignedAtLeft point: CGPoint?) {
         guard let index = annotations.firstIndex(where: { $0.id == id && $0.kind == .text }) else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             deleteAnnotation(id: id)
@@ -443,10 +464,20 @@ extension ScreenshotEditorModel {
         updated.isBold = textBold
         updated.isItalic = textItalic
         updated.isStrikethrough = textStrikethrough
+        if let point {
+            updated.points = [textCenter(alignedAtLeft: point, for: updated)]
+        }
         guard updated != annotations[index] else { return }
         recordBeforeMutation()
         annotations[index] = updated
         redoStack.removeAll()
+    }
+
+    private func textCenter(alignedAtLeft point: CGPoint, for annotation: ScreenshotAnnotation) -> CGPoint {
+        CGPoint(
+            x: point.x + annotation.textSize.width / 2 - 9,
+            y: point.y
+        )
     }
 
     func deleteSelectedAnnotation() {

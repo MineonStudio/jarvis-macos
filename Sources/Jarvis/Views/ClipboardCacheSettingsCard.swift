@@ -69,6 +69,7 @@ private enum ClipboardCacheCleanupRequest: Identifiable {
 
 struct ClipboardCacheSettingsCard: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedCleanupMode: ClipboardCacheCleanupMode = .time
     @State private var pendingCleanup: ClipboardCacheCleanupRequest?
 
@@ -107,6 +108,11 @@ struct ClipboardCacheSettingsCard: View {
                         Text(capacityDescription(app.clipboardCacheMaximumBytes))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.jarvisTextSecondary)
+                            .contentTransition(.numericText())
+                            .animation(
+                                JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+                                value: app.clipboardCacheMaximumBytes
+                            )
                     }
                     Slider(
                         value: Binding(
@@ -151,6 +157,10 @@ struct ClipboardCacheSettingsCard: View {
                                     width: proxy.size.width * usage.fraction,
                                     height: proxy.size.height
                                 )
+                                .animation(
+                                    JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+                                    value: usage.fraction
+                                )
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
@@ -158,6 +168,11 @@ struct ClipboardCacheSettingsCard: View {
                     Text("已保存 \(app.clipboardCacheUsage.fileCount) 个缓存文件")
                         .font(.system(size: 10))
                         .foregroundStyle(Color.jarvisTextSecondary)
+                        .contentTransition(.numericText())
+                        .animation(
+                            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+                            value: app.clipboardCacheUsage.fileCount
+                        )
                 }
 
                 Divider().overlay(Color.primary.opacity(0.12))
@@ -213,6 +228,10 @@ struct ClipboardCacheSettingsCard: View {
         .onAppear {
             app.refreshClipboardCacheUsage()
         }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: selectedCleanupMode
+        )
         .alert(item: $pendingCleanup) { request in
             Alert(
                 title: Text("确认清理缓存"),
@@ -289,5 +308,7 @@ struct ClipboardCacheSettingsCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .id(selectedCleanupMode)
+        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
     }
 }

@@ -10,6 +10,9 @@ struct JarvisSidebarNavigation<Item: Identifiable & Hashable>: View {
     let footerIsSelected: Bool
     let footerAction: (() -> Void)?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var sidebarSelectionAnimation
+
     init(
         items: [Item],
         selection: Binding<Item>,
@@ -32,62 +35,105 @@ struct JarvisSidebarNavigation<Item: Identifiable & Hashable>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            List(items, selection: listSelection) { item in
-                Label {
-                    Text(title(item))
-                        .font(.system(size: 13))
-                } icon: {
-                    Image(systemName: icon(item))
-                        .font(.system(size: 13))
+            Text("JARVIS")
+                .font(JarvisTypography.pageTitle)
+                .tracking(2.4)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+
+            VStack(spacing: 4) {
+                ForEach(items) { item in
+                    let isSelected = selection == item
+
+                    Button {
+                        withAnimation(
+                            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion)
+                        ) {
+                            selection = item
+                        }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: icon(item))
+                                .font(.system(size: 12, weight: .medium))
+                            Text(title(item))
+                                .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                        }
+                        .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .background {
+                            if isSelected {
+                                Capsule()
+                                    .fill(JarvisMotion.selectionPillTint)
+                                    .matchedGeometryEffect(
+                                        id: "sidebar-selection",
+                                        in: sidebarSelectionAnimation
+                                    )
+                            }
+                        }
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .animation(
+                        JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                        value: selection
+                    )
+                    .help(title(item))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
-                .tag(item.id)
-                .help(title(item))
             }
-            .listStyle(.sidebar)
+            .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
+            .padding(.top, JarvisMetrics.sidebarContentPadding)
+            .animation(
+                JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                value: selection
+            )
+
+            Spacer(minLength: 0)
 
             if let footerTitle, let footerIcon, let footerAction {
                 Divider()
                     .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
 
-                Button(action: footerAction) {
-                    Label {
-                        Text(footerTitle)
-                            .font(.system(size: 13))
-                    } icon: {
+                Button {
+                    withAnimation(
+                        JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion)
+                    ) {
+                        footerAction()
+                    }
+                } label: {
+                    HStack(spacing: 7) {
                         Image(systemName: footerIcon)
-                            .font(.system(size: 13))
+                            .font(.system(size: 12, weight: .medium))
+                        Text(footerTitle)
+                            .font(footerIsSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
                     }
                     .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                     .padding(.horizontal, 8)
-                    .background(
-                        footerIsSelected ? Color.accentColor.opacity(0.14) : .clear,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-                    .contentShape(Rectangle())
+                    .background {
+                        if footerIsSelected {
+                            Capsule()
+                                .fill(JarvisMotion.selectionPillTint)
+                                .matchedGeometryEffect(
+                                    id: "sidebar-selection",
+                                    in: sidebarSelectionAnimation
+                                )
+                        }
+                    }
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(footerIsSelected ? Color.accentColor : Color.primary)
+                .foregroundStyle(footerIsSelected ? Color.white : Color.secondary)
                 .padding(JarvisMetrics.sidebarContentPadding)
                 .help(footerTitle)
                 .accessibilityAddTraits(footerIsSelected ? .isSelected : [])
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                    value: footerIsSelected
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var listSelection: Binding<Item.ID?> {
-        Binding(
-            get: {
-                items.contains(selection) ? selection.id : nil
-            },
-            set: { selectedID in
-                guard let selectedID,
-                      let item = items.first(where: { $0.id == selectedID })
-                else {
-                    return
-                }
-                selection = item
-            }
-        )
     }
 }

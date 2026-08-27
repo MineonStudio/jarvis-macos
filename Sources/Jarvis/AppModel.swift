@@ -83,6 +83,8 @@ final class AppModel: ObservableObject {
     @Published var screenshotTranslationEndpoint = ScreenshotTranslationConfiguration.defaultEndpoint
     @Published var screenshotTranslationModel = ScreenshotTranslationConfiguration.defaultModel
     @Published var screenshotTranslationAPIKeyConfigured = false
+    @Published var screenshotTranslationAPIKeyMask = ""
+    @Published var screenshotTranslationSettingsLocked = false
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
     @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue

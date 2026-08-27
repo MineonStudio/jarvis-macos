@@ -103,7 +103,7 @@ struct ScreenshotTranslationSettingsCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
                     ScreenshotTranslationIcon(isSelected: false)
-                    Text("截图翻译")
+                    Text("配置 API")
                         .font(JarvisTypography.bodyEmphasis)
                 }
 
@@ -119,6 +119,7 @@ struct ScreenshotTranslationSettingsCard: View {
                         )
                     )
                     .textFieldStyle(.roundedBorder)
+                    .disabled(app.screenshotTranslationSettingsLocked)
                 }
 
                 HStack(spacing: 10) {
@@ -133,6 +134,7 @@ struct ScreenshotTranslationSettingsCard: View {
                         )
                     )
                     .textFieldStyle(.roundedBorder)
+                    .disabled(app.screenshotTranslationSettingsLocked)
                     Spacer(minLength: 0)
                 }
 
@@ -141,20 +143,25 @@ struct ScreenshotTranslationSettingsCard: View {
                         .font(JarvisTypography.control)
                         .frame(width: 70, alignment: .leading)
                     SecureField(
-                        "••••••••",
+                        app.screenshotTranslationAPIKeyMask.isEmpty
+                            ? "输入 API Key"
+                            : app.screenshotTranslationAPIKeyMask,
                         text: $apiKey
                     )
                     .textFieldStyle(.roundedBorder)
-                    Button("保存") {
-                        guard app.saveScreenshotTranslationAPIKey(apiKey) else { return }
-                        apiKey = ""
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    if app.screenshotTranslationAPIKeyConfigured {
-                        Button("清除") {
-                            _ = app.clearScreenshotTranslationAPIKey()
+                    .disabled(app.screenshotTranslationSettingsLocked)
+                    if app.screenshotTranslationSettingsLocked {
+                        Button("编辑") {
+                            app.editScreenshotTranslationSettings()
                         }
                         .buttonStyle(JarvisSecondaryButtonStyle())
+                    } else {
+                        Button("保存") {
+                            guard app.saveScreenshotTranslationAPIKey(apiKey) else { return }
+                            apiKey = ""
+                        }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
+                        .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }

@@ -52,7 +52,10 @@ extension AppModel {
         let configuration = ScreenshotTranslationConfiguration.load()
         screenshotTranslationEndpoint = configuration.endpoint
         screenshotTranslationModel = configuration.model
-        screenshotTranslationAPIKeyConfigured = configuration.isConfigured
+        let hasAPIKey = !configuration.apiKey.isEmpty
+        screenshotTranslationAPIKeyConfigured = hasAPIKey
+        screenshotTranslationAPIKeyMask = String(repeating: "•", count: configuration.apiKey.count)
+        screenshotTranslationSettingsLocked = hasAPIKey
     }
 
     func updateScreenshotTranslationEndpoint(_ endpoint: String) {
@@ -74,7 +77,10 @@ extension AppModel {
             } else {
                 try AIAPIKeychain.shared.write(trimmed)
             }
-            screenshotTranslationAPIKeyConfigured = !trimmed.isEmpty
+            let hasAPIKey = !trimmed.isEmpty
+            screenshotTranslationAPIKeyConfigured = hasAPIKey
+            screenshotTranslationAPIKeyMask = String(repeating: "•", count: trimmed.count)
+            screenshotTranslationSettingsLocked = hasAPIKey
             showToast(trimmed.isEmpty ? "已清除截图翻译 API Key" : "截图翻译 API Key 已保存")
             return true
         } catch {
@@ -86,6 +92,10 @@ extension AppModel {
     @discardableResult
     func clearScreenshotTranslationAPIKey() -> Bool {
         saveScreenshotTranslationAPIKey("")
+    }
+
+    func editScreenshotTranslationSettings() {
+        screenshotTranslationSettingsLocked = false
     }
 
     func refreshSystemColorScheme() {

@@ -42,7 +42,13 @@ struct ClipboardCacheSettingsCard: View {
                     Slider(
                         value: Binding(
                             get: {
-                                Double(capacityOptions.firstIndex(of: app.clipboardCacheMaximumBytes) ?? 1)
+                                let defaultIndex = capacityOptions.firstIndex(
+                                    of: ClipboardCacheStore.defaultMaximumBytes
+                                ) ?? 0
+                                return Double(
+                                    capacityOptions.firstIndex(of: app.clipboardCacheMaximumBytes)
+                                        ?? defaultIndex
+                                )
                             },
                             set: { index in
                                 let optionIndex = min(
@@ -66,13 +72,18 @@ struct ClipboardCacheSettingsCard: View {
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                     }
                     GeometryReader { proxy in
+                        let usage = app.clipboardCacheUsage
                         ZStack(alignment: .leading) {
                             Capsule()
                                 .fill(Color.primary.opacity(0.10))
                             Capsule()
-                                .fill(usageColor(for: app.clipboardCacheUsage))
-                                .frame(width: proxy.size.width * app.clipboardCacheUsage.fraction)
+                                .fill(usageColor(for: usage))
+                                .frame(
+                                    width: proxy.size.width * usage.fraction,
+                                    height: proxy.size.height
+                                )
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
                     .frame(height: 8)
                     Text("已保存 \(app.clipboardCacheUsage.fileCount) 个缓存文件")

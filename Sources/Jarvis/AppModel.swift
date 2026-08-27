@@ -148,6 +148,7 @@ final class AppModel: ObservableObject {
             latestScreenshotData = cachedScreenshot
             screenshotHistory = [migratedItem]
         }
+        trimClipboardCacheIfNeeded()
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
@@ -195,11 +196,18 @@ final class AppModel: ObservableObject {
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()
 
-        clipboardService.start { [weak self] item in
-            Task { @MainActor [weak self] in
-                self?.receiveClipboardItem(item)
+        clipboardService.start(
+            onChange: { [weak self] item in
+                Task { @MainActor [weak self] in
+                    self?.receiveClipboardItem(item)
+                }
+            },
+            prepareCacheSpace: { [weak self] additionalBytes in
+                DispatchQueue.main.sync {
+                    self?.trimClipboardCacheIfNeeded(forAdditionalBytes: additionalBytes)
+                }
             }
-        }
+        )
     }
 
     func loadLatestScreenshotIfNeeded() -> Data? {

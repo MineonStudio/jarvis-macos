@@ -7,7 +7,8 @@ struct ClipboardCacheUsage: Equatable {
 
     var fraction: Double {
         guard capacityBytes > 0 else { return 1 }
-        return min(max(Double(usedBytes) / Double(capacityBytes), 0), 1)
+        guard usedBytes < capacityBytes else { return 1 }
+        return max(Double(usedBytes) / Double(capacityBytes), 0)
     }
 
     var isOverCapacity: Bool {
@@ -21,7 +22,7 @@ struct ClipboardCacheMigration {
 }
 
 final class ClipboardCacheStore: @unchecked Sendable {
-    static let defaultMaximumBytes: Int64 = 1024 * 1024 * 1024
+    static let defaultMaximumBytes: Int64 = 5 * 1024 * 1024 * 1024
     static let minimumMaximumBytes: Int64 = 256 * 1024 * 1024
     static let maximumMaximumBytes: Int64 = 10 * 1024 * 1024 * 1024
     static let supportedMaximumBytes: [Int64] = [minimumMaximumBytes]
@@ -49,7 +50,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
         directoryURL = storedDirectory ?? defaultDirectory
 
         let storedMaximum = defaults.object(forKey: Self.maximumBytesKey) as? NSNumber
-        maximumBytes = Self.normalizeMaximumBytes(storedMaximum?.int64Value ?? Self.defaultMaximumBytes)
+        maximumBytes = Self.normalizedMaximumBytes(storedMaximum?.int64Value ?? Self.defaultMaximumBytes)
 
         try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     }
@@ -63,7 +64,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
     }
 
     func updateMaximumBytes(_ value: Int64) {
-        let clamped = Self.normalizeMaximumBytes(value)
+        let clamped = Self.normalizedMaximumBytes(value)
         lock.withLock {
             maximumBytes = clamped
             defaults.set(clamped, forKey: Self.maximumBytesKey)
@@ -140,6 +141,42 @@ final class ClipboardCacheStore: @unchecked Sendable {
     func removeLegacyFiles(atPaths paths: [String]) {
         for path in paths {
             removeStoredFile(atPath: path)
+        }
+    }
+
+    @discardableResult
+    func removeOrphanedManagedFiles(referencedPaths: Set<String>) -> Bool {
+        lock.withLock {
+            guard let enumerator = fileManager.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                return false
+            }
+
+            let referenced = Set(referencedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+            var removed = false
+            for case let url as URL in enumerator {
+                let standardizedURL = url.standardizedFileURL
+                guard
+                    standardizedURL.lastPathComponent.hasPrefix("item-"),
+                    !referenced.contains(standardizedURL.path),
+                    (try? standardizedURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                else {
+                    continue
+                }
+
+                do {
+                    try fileManager.removeItem(at: standardizedURL)
+                    removed = true
+                } catch {
+                    JarvisPersistenceLog.logger.error(
+                        "删除孤立剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+            return removed
         }
     }
 
@@ -308,7 +345,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
         return support.appendingPathComponent("Jarvis/Clipboard", isDirectory: true)
     }
 
-    private static func normalizeMaximumBytes(_ value: Int64) -> Int64 {
+    static func normalizedMaximumBytes(_ value: Int64) -> Int64 {
         let clamped = min(max(value, minimumMaximumBytes), maximumMaximumBytes)
         return supportedMaximumBytes.min { lhs, rhs in
             abs(lhs - clamped) < abs(rhs - clamped)

@@ -186,13 +186,18 @@ final class ClipboardService {
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var onChange: ((ClipboardItem) -> Void)?
+    private var prepareCacheSpace: ((Int64) -> Void)?
 
     init(cacheStore: ClipboardCacheStore = ClipboardCacheStore()) {
         self.cacheStore = cacheStore
     }
 
-    func start(onChange: @escaping (ClipboardItem) -> Void) {
+    func start(
+        onChange: @escaping (ClipboardItem) -> Void,
+        prepareCacheSpace: @escaping (Int64) -> Void = { _ in }
+    ) {
         self.onChange = onChange
+        self.prepareCacheSpace = prepareCacheSpace
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
             self?.checkPasteboard()
@@ -341,11 +346,13 @@ final class ClipboardService {
         // Keep very large files as references so copying a movie never blocks
         // the app or silently fills the user's disk.
         guard fileSize <= ClipboardLimits.maximumStoredFileSize else { return nil }
+        prepareCacheSpace?(fileSize)
         return cacheStore.storeFile(sourceURL, fileSize: fileSize)
     }
 
     private func saveData(_ data: Data, fileExtension: String) -> String? {
-        cacheStore.storeData(data, fileExtension: fileExtension)
+        prepareCacheSpace?(Int64(data.count))
+        return cacheStore.storeData(data, fileExtension: fileExtension)
     }
 
     private func digest(_ data: Data) -> String {

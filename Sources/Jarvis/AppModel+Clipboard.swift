@@ -135,7 +135,15 @@ extension AppModel {
     }
 
     func updateClipboardCacheMaximumBytes(_ value: Int64) {
-        clipboardCacheStore.updateMaximumBytes(value)
+        let requestedMaximum = ClipboardCacheStore.normalizedMaximumBytes(value)
+        let usage = clipboardCacheStore.usage()
+        guard requestedMaximum >= usage.usedBytes else {
+            showToast("缓存空间上限不能低于当前占用 \(cacheSizeDescription(usage.usedBytes))")
+            clipboardCacheUsage = usage
+            return
+        }
+
+        clipboardCacheStore.updateMaximumBytes(requestedMaximum)
         clipboardCacheMaximumBytes = clipboardCacheStore.currentMaximumBytes
         trimClipboardCacheIfNeeded()
         refreshClipboardCacheUsage()
@@ -173,28 +181,54 @@ extension AppModel {
                 clipboardCacheStore.removeLegacyFiles(atPaths: migration.legacyPaths)
                 showToast("剪贴板缓存目录已更新")
             }
+            trimClipboardCacheIfNeeded()
             refreshClipboardCacheUsage()
         } catch {
             showToast("缓存目录切换失败：\(error.localizedDescription)")
         }
     }
 
-    private func trimClipboardCacheIfNeeded() {
+    func trimClipboardCacheIfNeeded(forAdditionalBytes additionalBytes: Int64 = 0) {
         var usage = clipboardCacheStore.usage()
-        guard usage.isOverCapacity else { return }
+        let needsRoom: (ClipboardCacheUsage) -> Bool = { usage in
+            usage.isOverCapacity
+                || additionalBytes > max(0, usage.capacityBytes - usage.usedBytes)
+        }
+        guard needsRoom(usage) else { return }
+        guard additionalBytes <= usage.capacityBytes || usage.isOverCapacity else { return }
 
         let candidates = clipboardItems
             .filter { !$0.isPinned && $0.isStoredCopy }
             .sorted { $0.createdAt < $1.createdAt }
         var changed = false
-        for item in candidates where usage.isOverCapacity {
+        for item in candidates where needsRoom(usage) {
             clipboardStore.removeStoredFiles(for: [item])
             clipboardItems.removeAll { $0.id == item.id }
             usage = clipboardCacheStore.usage()
             changed = true
         }
+
+        if needsRoom(usage) {
+            let referencedPaths = Set(
+                clipboardItems.flatMap { item in
+                    [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
+                }
+            )
+            if clipboardCacheStore.removeOrphanedManagedFiles(referencedPaths: referencedPaths) {
+                usage = clipboardCacheStore.usage()
+                changed = true
+            }
+        }
         if changed {
             _ = clipboardStore.save(clipboardItems)
         }
+    }
+
+    private func cacheSizeDescription(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        return formatter.string(fromByteCount: bytes)
     }
 }

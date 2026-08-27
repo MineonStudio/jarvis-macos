@@ -186,4 +186,17 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(usage.fileCount, 1)
         XCTAssertEqual(usage.capacityBytes, ClipboardCacheStore.minimumMaximumBytes)
     }
+
+    func testClipboardCacheUsageFillsTheBarAtAndAboveCapacity() {
+        let capacity = ClipboardCacheStore.defaultMaximumBytes
+        XCTAssertEqual(
+            ClipboardCacheUsage(usedBytes: capacity, capacityBytes: capacity, fileCount: 1).fraction,
+            1
+        )
+        XCTAssertEqual(
+            ClipboardCacheUsage(usedBytes: capacity + 1, capacityBytes: capacity, fileCount: 1).fraction,
+            1
+        )
+        XCTAssertEqual(ClipboardCacheStore.defaultMaximumBytes, 5 * 1024 * 1024 * 1024)
+    }
 }

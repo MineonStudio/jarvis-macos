@@ -55,13 +55,6 @@ struct ClipboardCacheSettingsCard: View {
                         in: 0 ... Double(capacityOptions.count - 1),
                         step: 1
                     )
-                    HStack {
-                        Text("256 MB")
-                        Spacer()
-                        Text("10 GB")
-                    }
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.jarvisTextSecondary)
                 }
 
                 VStack(alignment: .leading, spacing: 7) {
@@ -71,7 +64,6 @@ struct ClipboardCacheSettingsCard: View {
                         Spacer()
                         Text("\(byteDescription(app.clipboardCacheUsage.usedBytes)) / \(capacityDescription(app.clipboardCacheUsage.capacityBytes))")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(usageColor(for: app.clipboardCacheUsage))
                     }
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {

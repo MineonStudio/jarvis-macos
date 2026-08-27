@@ -35,8 +35,10 @@ struct JarvisSidebarNavigation<Item: Identifiable & Hashable>: View {
             List(items, selection: listSelection) { item in
                 Label {
                     Text(title(item))
+                        .font(.system(size: 13))
                 } icon: {
                     Image(systemName: icon(item))
+                        .font(.system(size: 13))
                 }
                 .tag(item.id)
                 .help(title(item))
@@ -48,14 +50,20 @@ struct JarvisSidebarNavigation<Item: Identifiable & Hashable>: View {
                     .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
 
                 Button(action: footerAction) {
-                    Label(footerTitle, systemImage: footerIcon)
-                        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .background(
-                            footerIsSelected ? Color.accentColor.opacity(0.14) : .clear,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
-                        .contentShape(Rectangle())
+                    Label {
+                        Text(footerTitle)
+                            .font(.system(size: 13))
+                    } icon: {
+                        Image(systemName: footerIcon)
+                            .font(.system(size: 13))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .background(
+                        footerIsSelected ? Color.accentColor.opacity(0.14) : .clear,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(footerIsSelected ? Color.accentColor : Color.primary)

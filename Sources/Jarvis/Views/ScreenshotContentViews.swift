@@ -48,7 +48,9 @@ enum HistoryGridMetrics {
     static let clipboardCornerRadius: CGFloat = 12
     static let clipboardGridSpacing: CGFloat = 14
     static let paginationControlHeight: CGFloat = 34
-    static let screenshotGridVerticalInset: CGFloat = JarvisMetrics.pageInset * 2
+    static let screenshotFilterBarHeight: CGFloat = 36
+    static let screenshotGridVerticalInset: CGFloat =
+        JarvisMetrics.pageInset * 2 + screenshotFilterBarHeight + imageSpacing
     static let clipboardGridVerticalInset: CGFloat =
         JarvisMetrics.pageInset * 2 + JarvisWindowLayoutMetrics.clipboardCompactFilterBarHeight
             + imageSpacing
@@ -94,35 +96,50 @@ enum HistoryGridMetrics {
 struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
     @State private var currentPage = 1
+    @State private var selectedTimeFilter: ScreenshotTimeFilter = .all
     let availableGridWidth: CGFloat
     let availableGridHeight: CGFloat
+
+    private var filteredItems: [ScreenshotHistoryItem] {
+        ScreenshotTimeFilterLogic.filteredItems(
+            from: app.screenshotHistory,
+            filter: selectedTimeFilter
+        )
+    }
 
     private var pageSize: Int {
         HistoryGridMetrics.pageSize(
             for: availableGridWidth,
             availableHeight: availableGridHeight,
-            itemCount: app.screenshotHistory.count,
+            itemCount: filteredItems.count,
             verticalInset: HistoryGridMetrics.screenshotGridVerticalInset
         )
     }
 
     private var totalPages: Int {
-        max(1, (app.screenshotHistory.count + pageSize - 1) / pageSize)
+        max(1, (filteredItems.count + pageSize - 1) / pageSize)
     }
 
     private var pageItems: [ScreenshotHistoryItem] {
         let page = min(max(currentPage, 1), totalPages)
         let startIndex = (page - 1) * pageSize
-        return Array(app.screenshotHistory.dropFirst(startIndex).prefix(pageSize))
+        return Array(filteredItems.dropFirst(startIndex).prefix(pageSize))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
-            if app.screenshotHistory.isEmpty {
+            ScreenshotTimeFilterBar(
+                selectedFilter: $selectedTimeFilter,
+                items: app.screenshotHistory
+            )
+
+            if filteredItems.isEmpty {
                 JarvisEmptyState(
                     icon: "photo.on.rectangle",
-                    title: "还没有截图",
-                    message: "框选截图后，历史记录会显示在这里"
+                    title: app.screenshotHistory.isEmpty ? "还没有截图" : "该时间范围暂无截图",
+                    message: app.screenshotHistory.isEmpty
+                        ? "框选截图后，历史记录会显示在这里"
+                        : "切换其他时间范围查看截图"
                 )
             } else {
                 LazyVGrid(
@@ -156,7 +173,10 @@ struct ScreenshotHistorySection: View {
         .onChange(of: pageSize) { _, _ in
             currentPage = min(currentPage, totalPages)
         }
-        .onChange(of: app.screenshotHistory.count) { _, _ in
+        .onChange(of: selectedTimeFilter) { _, _ in
+            currentPage = 1
+        }
+        .onChange(of: filteredItems.count) { _, _ in
             currentPage = min(currentPage, totalPages)
         }
     }

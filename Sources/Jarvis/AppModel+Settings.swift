@@ -52,7 +52,6 @@ extension AppModel {
         let configuration = ScreenshotTranslationConfiguration.load()
         screenshotTranslationEndpoint = configuration.endpoint
         screenshotTranslationModel = configuration.model
-        screenshotTranslationTargetLanguage = configuration.targetLanguage
         screenshotTranslationAPIKeyConfigured = configuration.isConfigured
     }
 
@@ -64,11 +63,6 @@ extension AppModel {
     func updateScreenshotTranslationModel(_ model: String) {
         screenshotTranslationModel = model
         UserDefaults.standard.set(model, forKey: ScreenshotTranslationConfiguration.modelKey)
-    }
-
-    func updateScreenshotTranslationTargetLanguage(_ language: ScreenshotTranslationLanguage) {
-        screenshotTranslationTargetLanguage = language
-        UserDefaults.standard.set(language.rawValue, forKey: ScreenshotTranslationConfiguration.targetLanguageKey)
     }
 
     @discardableResult

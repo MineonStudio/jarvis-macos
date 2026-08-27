@@ -19,28 +19,6 @@ extension ScreenshotEditorModel {
         }
     }
 
-    var translationStatusText: String? {
-        switch translationState {
-        case .idle:
-            nil
-        case .recognizing:
-            "正在本机识别文字…"
-        case let .translating(completed, total):
-            "正在翻译 \(completed) / \(total)"
-        case let .completed(count):
-            "已翻译 \(count) 个文本区域"
-        case let .failed(message):
-            message
-        }
-    }
-
-    var translationErrorMessage: String? {
-        if case let .failed(message) = translationState {
-            return message
-        }
-        return nil
-    }
-
     func enterTranslationMode() {
         selectedTool = nil
         selectedAnnotationID = nil

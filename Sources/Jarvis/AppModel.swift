@@ -82,7 +82,6 @@ final class AppModel: ObservableObject {
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
     @Published var screenshotTranslationEndpoint = ScreenshotTranslationConfiguration.defaultEndpoint
     @Published var screenshotTranslationModel = ScreenshotTranslationConfiguration.defaultModel
-    @Published var screenshotTranslationTargetLanguage: ScreenshotTranslationLanguage = .simplifiedChinese
     @Published var screenshotTranslationAPIKeyConfigured = false
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false

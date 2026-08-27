@@ -1,5 +1,36 @@
 import SwiftUI
 
+struct ScreenshotTranslationIcon: View {
+    let isSelected: Bool
+
+    var body: some View {
+        let accent = isSelected ? Color.accentColor : Color.secondary
+        ZStack {
+            Image(systemName: "bubble.left.fill")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(isSelected ? accent : Color.primary)
+                .offset(x: -3, y: 3)
+
+            Image(systemName: "bubble.right")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(accent)
+                .offset(x: 3, y: -3)
+
+            Text("A")
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white)
+                .offset(x: -4, y: 4)
+
+            Text("文")
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .foregroundStyle(accent)
+                .offset(x: 4, y: -4)
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityLabel("截图翻译")
+    }
+}
+
 struct ScreenshotTranslationBlockView: View {
     let block: ScreenshotTranslationRenderBlock
 

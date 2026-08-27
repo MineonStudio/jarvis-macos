@@ -130,9 +130,7 @@ extension ScreenshotToolbar {
             editor.enterTranslationMode()
             onAction(.translation)
         } label: {
-            Image(systemName: "character.book.closed")
-                .font(.system(size: 21, weight: .medium))
-                .foregroundStyle(editor.translationMode ? Color.accentColor : Color.secondary)
+            ScreenshotTranslationIcon(isSelected: editor.translationMode)
                 .frame(width: 24, height: 24)
                 .frame(width: 42, height: 42)
                 .contentShape(Rectangle())
@@ -183,9 +181,6 @@ extension ScreenshotToolbar {
 
     private var translationControl: some View {
         HStack(spacing: 10) {
-            Label("翻译", systemImage: "character.book.closed")
-                .font(JarvisTypography.controlEmphasis)
-
             Text("目标语言")
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
@@ -219,49 +214,17 @@ extension ScreenshotToolbar {
                 .fill(Color.primary.opacity(0.16))
                 .frame(width: 1, height: 22)
 
-            if let status = editor.translationStatusText {
-                if editor.translationState.isRunning {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text(status)
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(status == editor.translationErrorMessage ? Color.red : Color.jarvisTextSecondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: 190, alignment: .leading)
-            } else if !editor.translationConfiguration.isConfigured {
-                Text("请先在设置中配置 API")
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-            } else {
-                Text("Vision 本机识别文字")
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
+            Button("重新翻译") {
+                onAction(.startTranslation)
             }
+            .buttonStyle(JarvisPrimaryButtonStyle())
+            .disabled(editor.translationState.isRunning || !editor.translationConfiguration.isConfigured)
 
-            Spacer(minLength: 4)
-
-            if editor.translationState.isRunning {
-                Button("取消") {
-                    onAction(.cancelTranslation)
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-            } else {
-                Button(editor.translationBlocks.isEmpty ? "识别并翻译" : "重新翻译") {
-                    onAction(.startTranslation)
-                }
-                .buttonStyle(JarvisPrimaryButtonStyle())
-                .disabled(!editor.translationConfiguration.isConfigured)
-
-                if !editor.translationBlocks.isEmpty {
-                    Button(editor.translationVisible ? "隐藏译文" : "显示译文") {
-                        onAction(.toggleTranslationVisibility)
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                }
+            Button(editor.translationVisible ? "显示原文" : "显示译文") {
+                onAction(.toggleTranslationVisibility)
             }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .disabled(editor.translationState.isRunning || editor.translationBlocks.isEmpty)
         }
         .padding(.horizontal, 6)
     }

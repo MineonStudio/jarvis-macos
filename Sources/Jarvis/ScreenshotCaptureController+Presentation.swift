@@ -381,8 +381,8 @@ extension ScreenshotCaptureController {
             resizeToolbar(for: editor, on: screenFrame)
             onAction(.tool(tool))
         case .translation:
+            editor.startTranslation()
             resizeToolbar(for: editor, on: screenFrame)
-            onAction(.translation)
         case .startTranslation:
             editor.startTranslation()
             resizeToolbar(for: editor, on: screenFrame)

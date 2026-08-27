@@ -81,7 +81,7 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 
 enum ScreenshotToolbarMetrics {
     static let baseWidth: CGFloat = 520
-    static let translationWidth: CGFloat = 760
+    static let translationWidth: CGFloat = 520
     static let compactHeight: CGFloat = 70
     static let expandedHeight: CGFloat = 111
     static let gap: CGFloat = 16

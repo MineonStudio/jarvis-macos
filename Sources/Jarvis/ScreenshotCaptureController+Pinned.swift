@@ -287,6 +287,7 @@ extension ScreenshotCaptureController {
             resizePinnedToolbar(for: item)
             item.onAction?(.tool(tool))
         case .translation:
+            item.editor.startTranslation()
             resizePinnedToolbar(for: item)
         case .startTranslation:
             item.editor.startTranslation()

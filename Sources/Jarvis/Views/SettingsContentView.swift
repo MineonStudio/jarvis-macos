@@ -101,12 +101,11 @@ struct ScreenshotTranslationSettingsCard: View {
     var body: some View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 14) {
-                Label("截图翻译", systemImage: "character.book.closed")
-                    .font(JarvisTypography.bodyEmphasis)
-
-                Text("Vision 在本机识别文字；翻译只发送识别出的文本给 AI 服务。")
-                    .font(JarvisTypography.secondary)
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                HStack(spacing: 8) {
+                    ScreenshotTranslationIcon(isSelected: false)
+                    Text("截图翻译")
+                        .font(JarvisTypography.bodyEmphasis)
+                }
 
                 HStack(spacing: 10) {
                     Text("接口地址")
@@ -138,31 +137,11 @@ struct ScreenshotTranslationSettingsCard: View {
                 }
 
                 HStack(spacing: 10) {
-                    Text("目标语言")
-                        .font(JarvisTypography.control)
-                        .frame(width: 70, alignment: .leading)
-                    Picker(
-                        "目标语言",
-                        selection: Binding(
-                            get: { app.screenshotTranslationTargetLanguage },
-                            set: { app.updateScreenshotTranslationTargetLanguage($0) }
-                        )
-                    ) {
-                        ForEach(ScreenshotTranslationLanguage.allCases) { language in
-                            Text(language.title).tag(language)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    Spacer(minLength: 0)
-                }
-
-                HStack(spacing: 10) {
                     Text("API Key")
                         .font(JarvisTypography.control)
                         .frame(width: 70, alignment: .leading)
                     SecureField(
-                        app.screenshotTranslationAPIKeyConfigured ? "已配置，输入新 Key 可替换" : "输入 API Key",
+                        "••••••••",
                         text: $apiKey
                     )
                     .textFieldStyle(.roundedBorder)
@@ -177,15 +156,6 @@ struct ScreenshotTranslationSettingsCard: View {
                         }
                         .buttonStyle(JarvisSecondaryButtonStyle())
                     }
-                }
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(app.screenshotTranslationAPIKeyConfigured ? Color.green : Color.orange)
-                        .frame(width: 7, height: 7)
-                    Text(app.screenshotTranslationAPIKeyConfigured ? "翻译服务已配置" : "配置 API Key 后即可使用 AI 翻译")
-                        .font(JarvisTypography.caption)
-                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
             }
         }

@@ -14,6 +14,10 @@ enum ScreenshotAction {
     case redo
     case delete
     case duplicate
+    case translation
+    case startTranslation
+    case cancelTranslation
+    case toggleTranslationVisibility
 }
 
 struct ScreenshotEditingSession: Sendable {
@@ -76,7 +80,8 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 }
 
 enum ScreenshotToolbarMetrics {
-    static let baseWidth: CGFloat = 440
+    static let baseWidth: CGFloat = 520
+    static let translationWidth: CGFloat = 760
     static let compactHeight: CGFloat = 70
     static let expandedHeight: CGFloat = 111
     static let gap: CGFloat = 16

@@ -229,18 +229,26 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published var textStrikethrough = false
     @Published private(set) var annotations: [ScreenshotAnnotation] = []
     @Published private(set) var redoStack: [[ScreenshotAnnotation]] = []
+    @Published var translationMode = false
+    @Published var translationVisible = true
+    @Published var translationTargetLanguage: ScreenshotTranslationLanguage
+    @Published var translationBlocks: [ScreenshotTranslationBlock] = []
+    @Published var translationState: ScreenshotTranslationState = .idle
 
     private let coordinateSpace: ScreenshotCoordinateSpace
     private let initialSelectionRect: CGRect?
     private var undoStack: [[ScreenshotAnnotation]] = []
     private var activeMoveSnapshot: [ScreenshotAnnotation]?
+    var translationTask: Task<Void, Never>?
+    let translationConfiguration: ScreenshotTranslationConfiguration
 
     init(
         image: NSImage,
         data: Data,
         outputData: Data,
         canvasSize: CGSize,
-        outputRect: CGRect? = nil
+        outputRect: CGRect? = nil,
+        translationConfiguration: ScreenshotTranslationConfiguration = .load()
     ) {
         originalImage = image
         originalData = data
@@ -259,6 +267,12 @@ final class ScreenshotEditorModel: ObservableObject {
         initialSelectionRect = canvasSelectionRect
         blurredImageCache = nil
         pixelatedImageCache = nil
+        self.translationConfiguration = translationConfiguration
+        translationTargetLanguage = translationConfiguration.targetLanguage
+    }
+
+    deinit {
+        translationTask?.cancel()
     }
 }
 
@@ -298,7 +312,11 @@ extension ScreenshotEditorModel {
     }
 
     var secondaryBarVisible: Bool {
-        selectedTool == .arrow || selectedTool == .rectangle || selectedTool == .mosaic || selectedTool == .text
+        translationMode
+            || selectedTool == .arrow
+            || selectedTool == .rectangle
+            || selectedTool == .mosaic
+            || selectedTool == .text
     }
 
     var selectedAnnotation: ScreenshotAnnotation? {
@@ -308,6 +326,7 @@ extension ScreenshotEditorModel {
 
     func selectTool(_ tool: ScreenshotTool?) {
         selectedTool = tool
+        translationMode = false
         if tool != .text {
             selectedAnnotationID = nil
         }
@@ -497,7 +516,9 @@ extension ScreenshotEditorModel {
     }
 
     var hasVisualEdits: Bool {
-        !annotations.isEmpty || selectionRect != initialSelectionRect
+        !annotations.isEmpty
+            || selectionRect != initialSelectionRect
+            || (translationVisible && !translationBlocks.isEmpty)
     }
 
     func finalPNGData() -> Data {
@@ -529,6 +550,7 @@ extension ScreenshotEditorModel {
         undoStack.removeAll()
         redoStack.removeAll()
         selectedAnnotationID = nil
+        clearTranslation()
         blurredImageCache = nil
         pixelatedImageCache = nil
         return true
@@ -545,7 +567,9 @@ extension ScreenshotEditorModel {
                 : nil,
             pixelatedImage: annotations.contains(where: { $0.kind == .mosaic && $0.mosaicStyle == .pixelate })
                 ? mosaicImage(style: .pixelate)
-                : nil
+                : nil,
+            translations: renderedTranslationBlocks,
+            showsTranslation: translationVisible
         )
         guard let data = ScreenshotRenderPipeline().renderFullCanvas(request) else {
             return nil

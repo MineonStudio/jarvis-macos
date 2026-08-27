@@ -94,6 +94,104 @@ struct ShortcutSettingsCard: View {
     }
 }
 
+struct ScreenshotTranslationSettingsCard: View {
+    @EnvironmentObject private var app: AppModel
+    @State private var apiKey = ""
+
+    var body: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("截图翻译", systemImage: "character.book.closed")
+                    .font(JarvisTypography.bodyEmphasis)
+
+                Text("Vision 在本机识别文字；翻译只发送识别出的文本给 AI 服务。")
+                    .font(JarvisTypography.secondary)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+
+                HStack(spacing: 10) {
+                    Text("接口地址")
+                        .font(JarvisTypography.control)
+                        .frame(width: 70, alignment: .leading)
+                    TextField(
+                        ScreenshotTranslationConfiguration.defaultEndpoint,
+                        text: Binding(
+                            get: { app.screenshotTranslationEndpoint },
+                            set: { app.updateScreenshotTranslationEndpoint($0) }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                }
+
+                HStack(spacing: 10) {
+                    Text("模型")
+                        .font(JarvisTypography.control)
+                        .frame(width: 70, alignment: .leading)
+                    TextField(
+                        ScreenshotTranslationConfiguration.defaultModel,
+                        text: Binding(
+                            get: { app.screenshotTranslationModel },
+                            set: { app.updateScreenshotTranslationModel($0) }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 10) {
+                    Text("目标语言")
+                        .font(JarvisTypography.control)
+                        .frame(width: 70, alignment: .leading)
+                    Picker(
+                        "目标语言",
+                        selection: Binding(
+                            get: { app.screenshotTranslationTargetLanguage },
+                            set: { app.updateScreenshotTranslationTargetLanguage($0) }
+                        )
+                    ) {
+                        ForEach(ScreenshotTranslationLanguage.allCases) { language in
+                            Text(language.title).tag(language)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 10) {
+                    Text("API Key")
+                        .font(JarvisTypography.control)
+                        .frame(width: 70, alignment: .leading)
+                    SecureField(
+                        app.screenshotTranslationAPIKeyConfigured ? "已配置，输入新 Key 可替换" : "输入 API Key",
+                        text: $apiKey
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    Button("保存") {
+                        guard app.saveScreenshotTranslationAPIKey(apiKey) else { return }
+                        apiKey = ""
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    if app.screenshotTranslationAPIKeyConfigured {
+                        Button("清除") {
+                            _ = app.clearScreenshotTranslationAPIKey()
+                        }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(app.screenshotTranslationAPIKeyConfigured ? Color.green : Color.orange)
+                        .frame(width: 7, height: 7)
+                    Text(app.screenshotTranslationAPIKeyConfigured ? "翻译服务已配置" : "配置 API Key 后即可使用 AI 翻译")
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
+            }
+        }
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
 
@@ -106,6 +204,8 @@ struct SettingsView: View {
 
                 launchAtLoginSettingsCard
                 ClipboardCacheSettingsCard()
+
+                ScreenshotTranslationSettingsCard()
 
                 ShortcutSettingsCard()
             }

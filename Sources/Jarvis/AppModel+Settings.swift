@@ -46,6 +46,54 @@ extension AppModel {
         showToast(enabled ? "已开启开机自启" : "已关闭开机自启")
     }
 
+    // MARK: - Screenshot translation settings
+
+    func loadScreenshotTranslationSettings() {
+        let configuration = ScreenshotTranslationConfiguration.load()
+        screenshotTranslationEndpoint = configuration.endpoint
+        screenshotTranslationModel = configuration.model
+        screenshotTranslationTargetLanguage = configuration.targetLanguage
+        screenshotTranslationAPIKeyConfigured = configuration.isConfigured
+    }
+
+    func updateScreenshotTranslationEndpoint(_ endpoint: String) {
+        screenshotTranslationEndpoint = endpoint
+        UserDefaults.standard.set(endpoint, forKey: ScreenshotTranslationConfiguration.endpointKey)
+    }
+
+    func updateScreenshotTranslationModel(_ model: String) {
+        screenshotTranslationModel = model
+        UserDefaults.standard.set(model, forKey: ScreenshotTranslationConfiguration.modelKey)
+    }
+
+    func updateScreenshotTranslationTargetLanguage(_ language: ScreenshotTranslationLanguage) {
+        screenshotTranslationTargetLanguage = language
+        UserDefaults.standard.set(language.rawValue, forKey: ScreenshotTranslationConfiguration.targetLanguageKey)
+    }
+
+    @discardableResult
+    func saveScreenshotTranslationAPIKey(_ apiKey: String) -> Bool {
+        do {
+            let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                try ScreenshotTranslationKeychain.shared.delete()
+            } else {
+                try ScreenshotTranslationKeychain.shared.write(trimmed)
+            }
+            screenshotTranslationAPIKeyConfigured = !trimmed.isEmpty
+            showToast(trimmed.isEmpty ? "已清除截图翻译 API Key" : "截图翻译 API Key 已保存")
+            return true
+        } catch {
+            showToast("保存截图翻译 API Key 失败：\(error.localizedDescription)")
+            return false
+        }
+    }
+
+    @discardableResult
+    func clearScreenshotTranslationAPIKey() -> Bool {
+        saveScreenshotTranslationAPIKey("")
+    }
+
     func refreshSystemColorScheme() {
         let appearance = NSApp.effectiveAppearance
         let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])

@@ -36,6 +36,10 @@ struct ScreenshotCanvasView: View {
                 .interpolation(.high)
                 .frame(width: editor.canvasSize.width, height: editor.canvasSize.height)
 
+            ForEach(editor.renderedTranslationBlocks) { block in
+                ScreenshotTranslationBlockView(block: block)
+            }
+
             ForEach(editor.annotations) { annotation in
                 ScreenshotAnnotationView(
                     annotation: annotation,

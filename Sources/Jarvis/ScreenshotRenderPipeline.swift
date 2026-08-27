@@ -8,6 +8,28 @@ struct ScreenshotRenderRequest {
     let annotations: [ScreenshotAnnotation]
     let blurredImage: NSImage?
     let pixelatedImage: NSImage?
+    let translations: [ScreenshotTranslationRenderBlock]
+    let showsTranslation: Bool
+
+    init(
+        image: NSImage,
+        canvasSize: CGSize,
+        pixelScale: CGFloat,
+        annotations: [ScreenshotAnnotation],
+        blurredImage: NSImage?,
+        pixelatedImage: NSImage?,
+        translations: [ScreenshotTranslationRenderBlock] = [],
+        showsTranslation: Bool = false
+    ) {
+        self.image = image
+        self.canvasSize = canvasSize
+        self.pixelScale = pixelScale
+        self.annotations = annotations
+        self.blurredImage = blurredImage
+        self.pixelatedImage = pixelatedImage
+        self.translations = translations
+        self.showsTranslation = showsTranslation
+    }
 }
 
 /// Renders the final screenshot independently from the interactive SwiftUI
@@ -79,6 +101,18 @@ final class ScreenshotRenderPipeline {
 
         for annotation in request.annotations where annotation.kind == .text {
             drawText(annotation, in: context, canvasSize: request.canvasSize, scale: scale)
+        }
+
+        if request.showsTranslation {
+            for translation in request.translations {
+                drawTranslation(
+                    translation,
+                    in: context,
+                    canvasSize: request.canvasSize,
+                    pixelHeight: pixelHeight,
+                    scale: scale
+                )
+            }
         }
 
         guard let renderedImage = context.makeImage() else { return nil }
@@ -255,6 +289,64 @@ final class ScreenshotRenderPipeline {
                 path.stroke()
             }
         }
+        NSGraphicsContext.restoreGraphicsState()
+        context.restoreGState()
+    }
+
+    private func drawTranslation(
+        _ translation: ScreenshotTranslationRenderBlock,
+        in context: CGContext,
+        canvasSize: CGSize,
+        pixelHeight: Int,
+        scale: CGFloat
+    ) {
+        let bounds = translation.bounds.integral
+        guard bounds.width > 4, bounds.height > 4 else { return }
+
+        let fontSize = max(11, min(28, bounds.height * 0.62))
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+        let padding: CGFloat = 6
+        let textRect = CGRect(
+            x: bounds.minX + padding,
+            y: bounds.minY + padding,
+            width: max(1, bounds.width - padding * 2),
+            height: max(1, bounds.height - padding * 2)
+        )
+
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(pixelHeight))
+        context.scaleBy(x: scale, y: -scale)
+        context.setFillColor(NSColor.black.withAlphaComponent(0.72).cgColor)
+        context.addPath(CGPath(
+            roundedRect: bounds,
+            cornerWidth: min(8, bounds.height / 3),
+            cornerHeight: min(8, bounds.height / 3),
+            transform: nil
+        ))
+        context.fillPath()
+        context.restoreGState()
+
+        context.saveGState()
+        context.scaleBy(x: scale, y: scale)
+        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        let flippedTextRect = NSRect(
+            x: textRect.minX,
+            y: canvasSize.height - textRect.maxY,
+            width: textRect.width,
+            height: textRect.height
+        )
+        NSAttributedString(string: translation.translatedText, attributes: attributes)
+            .draw(
+                with: flippedTextRect,
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            )
         NSGraphicsContext.restoreGraphicsState()
         context.restoreGState()
     }

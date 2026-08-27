@@ -255,7 +255,8 @@ extension ScreenshotCaptureController {
                 : ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbar.preferredWidth(
                 for: item.editor.selectedTool,
-                mosaicMode: item.editor.mosaicMode
+                mosaicMode: item.editor.mosaicMode,
+                translationMode: item.editor.translationMode
             )
         )
         toolbarWindow.setFrame(frame, display: true, animate: false)
@@ -285,6 +286,17 @@ extension ScreenshotCaptureController {
         case let .tool(tool):
             resizePinnedToolbar(for: item)
             item.onAction?(.tool(tool))
+        case .translation:
+            resizePinnedToolbar(for: item)
+        case .startTranslation:
+            item.editor.startTranslation()
+            resizePinnedToolbar(for: item)
+        case .cancelTranslation:
+            item.editor.cancelTranslation()
+            resizePinnedToolbar(for: item)
+        case .toggleTranslationVisibility:
+            item.editor.translationVisible.toggle()
+            resizePinnedToolbar(for: item)
         case .undo, .redo, .delete, .duplicate:
             handlePinnedEditorAction(action, for: item)
         case .pin:
@@ -368,7 +380,11 @@ extension ScreenshotCaptureController {
             height: editor.secondaryBarVisible
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbar.preferredWidth(for: editor.selectedTool, mosaicMode: editor.mosaicMode)
+            width: ScreenshotToolbar.preferredWidth(
+                for: editor.selectedTool,
+                mosaicMode: editor.mosaicMode,
+                translationMode: editor.translationMode
+            )
         )
         toolbarWindow.setFrame(frame, display: true, animate: false)
         toolbarWindow.contentView?.frame = NSRect(origin: .zero, size: frame.size)

@@ -80,6 +80,10 @@ final class AppModel: ObservableObject {
     @Published var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
+    @Published var screenshotTranslationEndpoint = ScreenshotTranslationConfiguration.defaultEndpoint
+    @Published var screenshotTranslationModel = ScreenshotTranslationConfiguration.defaultModel
+    @Published var screenshotTranslationTargetLanguage: ScreenshotTranslationLanguage = .simplifiedChinese
+    @Published var screenshotTranslationAPIKeyConfigured = false
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
     @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
@@ -159,6 +163,7 @@ final class AppModel: ObservableObject {
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
         loadClipboardShortcut()
+        loadScreenshotTranslationSettings()
         loadThemePreference()
         loadLaunchAtLoginPreference()
         refreshSystemColorScheme()

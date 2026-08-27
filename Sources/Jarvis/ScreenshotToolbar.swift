@@ -7,9 +7,13 @@ struct ScreenshotToolbar: View {
 
     static func preferredWidth(
         for tool: ScreenshotTool?,
-        mosaicMode: ScreenshotMosaicMode = .rectangle
+        mosaicMode: ScreenshotMosaicMode = .rectangle,
+        translationMode: Bool = false
     ) -> CGFloat {
-        switch tool {
+        if translationMode {
+            return ScreenshotToolbarMetrics.translationWidth
+        }
+        return switch tool {
         case .mosaic: mosaicMode == .brush ? 520 : baseWidth
         case .text: 520
         case .arrow: 520
@@ -34,6 +38,10 @@ extension ScreenshotToolbar {
 
                 toolbarDivider
 
+                translationButton
+
+                toolbarDivider
+
                 actionButton(icon: "arrow.uturn.backward", help: "撤销", enabled: editor.canUndo) {
                     onAction(.undo)
                 }
@@ -43,13 +51,25 @@ extension ScreenshotToolbar {
 
                 toolbarDivider
 
-                actionButton(icon: "square.and.arrow.down", help: "另存为") {
+                actionButton(
+                    icon: "square.and.arrow.down",
+                    help: "另存为",
+                    enabled: !editor.translationState.isRunning
+                ) {
                     onAction(.saveRequested)
                 }
-                actionButton(icon: "xmark", help: "取消") {
+                actionButton(
+                    icon: "xmark",
+                    help: "取消",
+                    enabled: !editor.translationState.isRunning
+                ) {
                     onAction(.cancel)
                 }
-                actionButton(icon: "checkmark", help: "确认") {
+                actionButton(
+                    icon: "checkmark",
+                    help: "确认",
+                    enabled: !editor.translationState.isRunning
+                ) {
                     onAction(.confirmRequested)
                 }
             }
@@ -101,7 +121,25 @@ extension ScreenshotToolbar {
             .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .disabled(editor.translationState.isRunning)
         .help(tool.title)
+    }
+
+    private var translationButton: some View {
+        Button {
+            editor.enterTranslationMode()
+            onAction(.translation)
+        } label: {
+            Image(systemName: "character.book.closed")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(editor.translationMode ? Color.accentColor : Color.secondary)
+                .frame(width: 24, height: 24)
+                .frame(width: 42, height: 42)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .disabled(editor.translationState.isRunning)
+        .help("截图翻译")
     }
 
     private struct MosaicToolIcon: View {
@@ -130,7 +168,9 @@ extension ScreenshotToolbar {
 
     @ViewBuilder
     private var secondaryControl: some View {
-        if editor.selectedTool == .arrow {
+        if editor.translationMode {
+            translationControl
+        } else if editor.selectedTool == .arrow {
             arrowStyleControl
         } else if editor.selectedTool == .rectangle {
             rectangleStyleControl
@@ -139,6 +179,91 @@ extension ScreenshotToolbar {
         } else if editor.selectedTool == .text {
             textStyleControl
         }
+    }
+
+    private var translationControl: some View {
+        HStack(spacing: 10) {
+            Label("翻译", systemImage: "character.book.closed")
+                .font(JarvisTypography.controlEmphasis)
+
+            Text("目标语言")
+                .font(JarvisTypography.control)
+                .foregroundStyle(Color.secondary)
+
+            Menu {
+                ForEach(ScreenshotTranslationLanguage.allCases) { language in
+                    Button {
+                        editor.translationTargetLanguage = language
+                        UserDefaults.standard.set(
+                            language.rawValue,
+                            forKey: ScreenshotTranslationConfiguration.targetLanguageKey
+                        )
+                    } label: {
+                        Label(
+                            language.title,
+                            systemImage: language == editor.translationTargetLanguage
+                                ? "checkmark"
+                                : "textformat"
+                        )
+                    }
+                }
+            } label: {
+                Text(editor.translationTargetLanguage.title)
+                    .font(JarvisTypography.control)
+                    .foregroundStyle(Color.primary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.16))
+                .frame(width: 1, height: 22)
+
+            if let status = editor.translationStatusText {
+                if editor.translationState.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(status)
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(status == editor.translationErrorMessage ? Color.red : Color.jarvisTextSecondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 190, alignment: .leading)
+            } else if !editor.translationConfiguration.isConfigured {
+                Text("请先在设置中配置 API")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
+            } else {
+                Text("Vision 本机识别文字")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            if editor.translationState.isRunning {
+                Button("取消") {
+                    onAction(.cancelTranslation)
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+            } else {
+                Button(editor.translationBlocks.isEmpty ? "识别并翻译" : "重新翻译") {
+                    onAction(.startTranslation)
+                }
+                .buttonStyle(JarvisPrimaryButtonStyle())
+                .disabled(!editor.translationConfiguration.isConfigured)
+
+                if !editor.translationBlocks.isEmpty {
+                    Button(editor.translationVisible ? "隐藏译文" : "显示译文") {
+                        onAction(.toggleTranslationVisibility)
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                }
+            }
+        }
+        .padding(.horizontal, 6)
     }
 
     private var arrowStyleControl: some View {

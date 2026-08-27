@@ -380,6 +380,18 @@ extension ScreenshotCaptureController {
         case let .tool(tool):
             resizeToolbar(for: editor, on: screenFrame)
             onAction(.tool(tool))
+        case .translation:
+            resizeToolbar(for: editor, on: screenFrame)
+            onAction(.translation)
+        case .startTranslation:
+            editor.startTranslation()
+            resizeToolbar(for: editor, on: screenFrame)
+        case .cancelTranslation:
+            editor.cancelTranslation()
+            resizeToolbar(for: editor, on: screenFrame)
+        case .toggleTranslationVisibility:
+            editor.translationVisible.toggle()
+            resizeToolbar(for: editor, on: screenFrame)
         case .pin:
             break
         default:

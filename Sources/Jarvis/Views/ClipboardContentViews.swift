@@ -145,6 +145,7 @@ struct ClipboardView: View {
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
     @State private var availableGridWidth: CGFloat = 0
+    @State private var availableGridHeight: CGFloat = 0
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -155,7 +156,12 @@ struct ClipboardView: View {
     }
 
     private var pageSize: Int {
-        HistoryGridMetrics.pageSize(for: availableGridWidth)
+        HistoryGridMetrics.pageSize(
+            for: availableGridWidth,
+            availableHeight: availableGridHeight,
+            itemCount: filteredItems.count,
+            verticalInset: HistoryGridMetrics.clipboardGridVerticalInset
+        )
     }
 
     private var totalPages: Int {
@@ -201,9 +207,11 @@ struct ClipboardView: View {
             }
             .onAppear {
                 availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+                availableGridHeight = max(0, proxy.size.height)
             }
-            .onChange(of: proxy.size.width) { _, width in
-                availableGridWidth = max(0, width - JarvisMetrics.pageInset * 2)
+            .onChange(of: proxy.size) { _, size in
+                availableGridWidth = max(0, size.width - JarvisMetrics.pageInset * 2)
+                availableGridHeight = max(0, size.height)
             }
         }
         .onChange(of: pageSize) { _, _ in

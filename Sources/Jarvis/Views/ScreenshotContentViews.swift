@@ -3,12 +3,16 @@ import SwiftUI
 
 struct ScreenshotView: View {
     @State private var availableGridWidth: CGFloat = 0
+    @State private var availableGridHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    ScreenshotHistorySection(availableGridWidth: availableGridWidth)
+                    ScreenshotHistorySection(
+                        availableGridWidth: availableGridWidth,
+                        availableGridHeight: availableGridHeight
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, JarvisMetrics.pageInset)
@@ -16,17 +20,17 @@ struct ScreenshotView: View {
             }
             .onAppear {
                 availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+                availableGridHeight = max(0, proxy.size.height)
             }
-            .onChange(of: proxy.size.width) { _, width in
-                availableGridWidth = max(0, width - JarvisMetrics.pageInset * 2)
+            .onChange(of: proxy.size) { _, size in
+                availableGridWidth = max(0, size.width - JarvisMetrics.pageInset * 2)
+                availableGridHeight = max(0, size.height)
             }
         }
     }
 }
 
 enum HistoryGridMetrics {
-    static let pageRows = 3
-    static let defaultPageSize = 12
     static let imageSpacing: CGFloat = 7
 
     // Both history galleries use the same 16:9 landscape panel and controls.
@@ -43,6 +47,11 @@ enum HistoryGridMetrics {
     static let clipboardPreviewHoverScale: CGFloat = 1.08
     static let clipboardCornerRadius: CGFloat = 12
     static let clipboardGridSpacing: CGFloat = 14
+    static let paginationControlHeight: CGFloat = 34
+    static let screenshotGridVerticalInset: CGFloat = JarvisMetrics.pageInset * 2
+    static let clipboardGridVerticalInset: CGFloat =
+        JarvisMetrics.pageInset * 2 + JarvisWindowLayoutMetrics.clipboardCompactFilterBarHeight
+            + imageSpacing
 
     static func clipboardGridWidth(for columnCount: Int) -> CGFloat {
         guard columnCount > 0 else { return 0 }
@@ -52,13 +61,33 @@ enum HistoryGridMetrics {
     }
 
     static func columnCount(for availableWidth: CGFloat) -> Int {
-        guard availableWidth > 0 else { return defaultPageSize / pageRows }
+        guard availableWidth > 0 else { return 1 }
         let columnUnit = clipboardCardWidth + clipboardGridSpacing
         return max(1, Int(floor((availableWidth + clipboardGridSpacing) / columnUnit)))
     }
 
-    static func pageSize(for availableWidth: CGFloat) -> Int {
-        columnCount(for: availableWidth) * pageRows
+    static func rowCount(for availableHeight: CGFloat) -> Int {
+        guard availableHeight > 0 else { return 1 }
+        let rowUnit = clipboardCardHeight + clipboardGridSpacing
+        return max(1, Int(floor((availableHeight + clipboardGridSpacing) / rowUnit)))
+    }
+
+    static func pageSize(
+        for availableWidth: CGFloat,
+        availableHeight: CGFloat,
+        itemCount: Int,
+        verticalInset: CGFloat
+    ) -> Int {
+        let columns = columnCount(for: availableWidth)
+        let gridHeight = max(0, availableHeight - verticalInset)
+        let rowsWithoutPagination = rowCount(for: gridHeight)
+        let rowsWithPagination = rowCount(
+            for: gridHeight - paginationControlHeight - imageSpacing
+        )
+        let rows = itemCount > columns * rowsWithoutPagination
+            ? rowsWithPagination
+            : rowsWithoutPagination
+        return columns * rows
     }
 }
 
@@ -66,9 +95,15 @@ struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
     @State private var currentPage = 1
     let availableGridWidth: CGFloat
+    let availableGridHeight: CGFloat
 
     private var pageSize: Int {
-        HistoryGridMetrics.pageSize(for: availableGridWidth)
+        HistoryGridMetrics.pageSize(
+            for: availableGridWidth,
+            availableHeight: availableGridHeight,
+            itemCount: app.screenshotHistory.count,
+            verticalInset: HistoryGridMetrics.screenshotGridVerticalInset
+        )
     }
 
     private var totalPages: Int {

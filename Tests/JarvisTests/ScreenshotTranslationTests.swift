@@ -50,6 +50,33 @@ final class ScreenshotTranslationTests: XCTestCase {
         }
     }
 
+    func testTranslationServiceDelegatesTextToTheAPIAndKeepsVisionBounds() async throws {
+        let id = UUID()
+        let blocks = [ScreenshotOCRBlock(
+            id: id,
+            text: "Hello",
+            normalizedBounds: CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.1),
+            confidence: 0.95
+        )]
+        let service = ScreenshotTranslationService(apiClient: StubTranslationAPI())
+        let configuration = ScreenshotTranslationConfiguration(
+            endpoint: "https://example.com/v1/chat/completions",
+            model: "test-model",
+            apiKey: "test-key",
+            targetLanguage: .simplifiedChinese
+        )
+
+        let result = try await service.translate(
+            blocks,
+            targetLanguage: .simplifiedChinese,
+            configuration: configuration
+        )
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].translatedText, "你好")
+        XCTAssertEqual(result[0].normalizedBounds, blocks[0].normalizedBounds)
+    }
+
     func testRenderPipelineIncludesTranslationLayer() throws {
         let image = NSImage(size: NSSize(width: 120, height: 80))
         image.lockFocus()
@@ -76,5 +103,15 @@ final class ScreenshotTranslationTests: XCTestCase {
 
         let data = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(request))
         XCTAssertNotNil(NSImage(data: data))
+    }
+}
+
+private struct StubTranslationAPI: AITranslationAPI {
+    func translate(
+        _ items: [AITranslationInput],
+        targetLanguage _: String,
+        configuration _: AIAPIConfiguration
+    ) async throws -> [AITranslationOutput] {
+        items.map { AITranslationOutput(id: $0.id, translation: "你好") }
     }
 }

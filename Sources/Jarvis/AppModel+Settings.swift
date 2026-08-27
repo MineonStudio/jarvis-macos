@@ -76,9 +76,9 @@ extension AppModel {
         do {
             let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
-                try ScreenshotTranslationKeychain.shared.delete()
+                try AIAPIKeychain.shared.delete()
             } else {
-                try ScreenshotTranslationKeychain.shared.write(trimmed)
+                try AIAPIKeychain.shared.write(trimmed)
             }
             screenshotTranslationAPIKeyConfigured = !trimmed.isEmpty
             showToast(trimmed.isEmpty ? "已清除截图翻译 API Key" : "截图翻译 API Key 已保存")

@@ -1,6 +1,5 @@
 import Foundation
 import ImageIO
-import Security
 import Vision
 
 enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
@@ -26,32 +25,55 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
 }
 
 struct ScreenshotTranslationConfiguration: Equatable, Sendable {
-    static let endpointKey = "jarvis.screenshot.translation.endpoint"
-    static let modelKey = "jarvis.screenshot.translation.model"
+    static let endpointKey = AIAPIConfiguration.endpointKey
+    static let modelKey = AIAPIConfiguration.modelKey
     static let targetLanguageKey = "jarvis.screenshot.translation.target-language"
+    static let defaultEndpoint = AIAPIConfiguration.defaultEndpoint
+    static let defaultModel = AIAPIConfiguration.defaultModel
 
-    static let defaultEndpoint = "https://api.openai.com/v1/chat/completions"
-    static let defaultModel = "gpt-4o-mini"
-
-    var endpoint: String
-    var model: String
-    var apiKey: String
+    let api: AIAPIConfiguration
     var targetLanguage: ScreenshotTranslationLanguage
 
+    var endpoint: String {
+        api.endpoint
+    }
+
+    var model: String {
+        api.model
+    }
+
+    var apiKey: String {
+        api.apiKey
+    }
+
     var isConfigured: Bool {
-        !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        api.isConfigured
+    }
+
+    init(
+        endpoint: String,
+        model: String,
+        apiKey: String,
+        targetLanguage: ScreenshotTranslationLanguage
+    ) {
+        api = AIAPIConfiguration(endpoint: endpoint, model: model, apiKey: apiKey)
+        self.targetLanguage = targetLanguage
+    }
+
+    init(
+        api: AIAPIConfiguration,
+        targetLanguage: ScreenshotTranslationLanguage
+    ) {
+        self.api = api
+        self.targetLanguage = targetLanguage
     }
 
     static func load(
         defaults: UserDefaults = .standard,
-        keychain: ScreenshotTranslationKeychain = .shared
+        keychain: AIAPIKeychain = .shared
     ) -> Self {
         Self(
-            endpoint: defaults.string(forKey: endpointKey) ?? defaultEndpoint,
-            model: defaults.string(forKey: modelKey) ?? defaultModel,
-            apiKey: (try? keychain.read()) ?? "",
+            api: AIAPIConfiguration.load(defaults: defaults, keychain: keychain),
             targetLanguage: ScreenshotTranslationLanguage(
                 rawValue: defaults.string(forKey: targetLanguageKey) ?? ""
             ) ?? .simplifiedChinese
@@ -114,24 +136,22 @@ enum ScreenshotTranslationState: Equatable {
 enum ScreenshotTranslationError: LocalizedError, Equatable {
     case invalidImage
     case noTextFound
-    case missingConfiguration
-    case invalidEndpoint
-    case invalidResponse
-    case server(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidImage: "无法读取截图图像"
         case .noTextFound: "没有识别到可翻译的文字"
-        case .missingConfiguration: "请先在设置中配置 AI 翻译服务"
-        case .invalidEndpoint: "AI 翻译服务地址无效"
-        case .invalidResponse: "AI 翻译服务返回了无法解析的结果"
-        case let .server(message): message
         }
     }
 }
 
 struct ScreenshotTranslationService: Sendable {
+    private let apiClient: any AITranslationAPI
+
+    init(apiClient: any AITranslationAPI = OpenAICompatibleAPIClient()) {
+        self.apiClient = apiClient
+    }
+
     func recognizeText(in data: Data) async throws -> [ScreenshotOCRBlock] {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -182,58 +202,17 @@ struct ScreenshotTranslationService: Sendable {
 
     func translate(
         _ blocks: [ScreenshotOCRBlock],
-        targetLanguage _: ScreenshotTranslationLanguage,
+        targetLanguage: ScreenshotTranslationLanguage,
         configuration: ScreenshotTranslationConfiguration
     ) async throws -> [ScreenshotTranslationBlock] {
         guard !blocks.isEmpty else { throw ScreenshotTranslationError.noTextFound }
-        guard configuration.isConfigured else { throw ScreenshotTranslationError.missingConfiguration }
-        guard let endpoint = endpointURL(from: configuration.endpoint) else {
-            throw ScreenshotTranslationError.invalidEndpoint
-        }
-
-        let sourceItems = blocks.map { ["id": $0.id.uuidString, "text": $0.text] }
-        let systemPrompt = """
-        You translate OCR text from screenshots. Translate every item into (targetLanguage.title).
-        Preserve meaning, numbers, code, URLs, punctuation, and line breaks where useful.
-        Return only valid JSON in this exact shape: {"translations":[{"id":"original-id","translation":"translated text"}]}.
-        Do not add commentary, markdown fences, or omit any item.
-        """
-        let userPayload = try JSONSerialization.data(withJSONObject: sourceItems, options: [.sortedKeys])
-        guard let userText = String(data: userPayload, encoding: .utf8) else {
-            throw ScreenshotTranslationError.invalidResponse
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 45
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer (configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": configuration.model,
-            "temperature": 0.1,
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": userText]
-            ]
-        ])
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw ScreenshotTranslationError.invalidResponse
-        }
-        guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let message = Self.serverMessage(from: data) ?? "AI 翻译服务请求失败（(httpResponse.statusCode)）"
-            throw ScreenshotTranslationError.server(message)
-        }
-
-        guard let content = Self.chatCompletionContent(from: data),
-              let responseData = Self.jsonDataFromModelContent(content),
-              let translated = try? JSONDecoder().decode(TranslationResponse.self, from: responseData)
-        else {
-            throw ScreenshotTranslationError.invalidResponse
-        }
-
-        let translationsByID = translated.translations.reduce(into: [String: String]()) { result, item in
+        let inputs = blocks.map { AITranslationInput(id: $0.id.uuidString, text: $0.text) }
+        let outputs = try await apiClient.translate(
+            inputs,
+            targetLanguage: targetLanguage.title,
+            configuration: configuration.api
+        )
+        let translationsByID = outputs.reduce(into: [String: String]()) { result, item in
             result[item.id] = item.translation
         }
         let result = blocks.compactMap { block -> ScreenshotTranslationBlock? in
@@ -250,143 +229,7 @@ struct ScreenshotTranslationService: Sendable {
                 confidence: block.confidence
             )
         }
-        guard result.count == blocks.count else { throw ScreenshotTranslationError.invalidResponse }
+        guard result.count == blocks.count else { throw AIAPIError.invalidResponse }
         return result
-    }
-
-    private func endpointURL(from rawValue: String) -> URL? {
-        let trimmed = rawValue
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard var components = URLComponents(string: trimmed),
-              components.scheme != nil,
-              components.host != nil
-        else {
-            return nil
-        }
-        if !components.path.hasSuffix("/chat/completions") {
-            components.path = components.path.hasSuffix("/")
-                ? components.path + "chat/completions"
-                : components.path + "/chat/completions"
-        }
-        return components.url
-    }
-
-    private static func chatCompletionContent(from data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = root["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any]
-        else {
-            return nil
-        }
-        if let content = message["content"] as? String {
-            return content
-        }
-        if let contentParts = message["content"] as? [[String: Any]] {
-            return contentParts.compactMap { $0["text"] as? String }.joined()
-        }
-        return nil
-    }
-
-    private static func jsonDataFromModelContent(_ content: String) -> Data? {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let data = trimmed.data(using: .utf8),
-           (try? JSONSerialization.jsonObject(with: data)) != nil
-        {
-            return data
-        }
-        let unfenced = trimmed
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return unfenced.data(using: .utf8)
-    }
-
-    private static func serverMessage(from data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = root["error"] as? [String: Any],
-              let message = error["message"] as? String
-        else {
-            return nil
-        }
-        return message
-    }
-}
-
-private extension ScreenshotTranslationService {
-    struct TranslationResponse: Decodable {
-        let translations: [TranslationItem]
-    }
-
-    struct TranslationItem: Decodable {
-        let id: String
-        let translation: String
-    }
-}
-
-final class ScreenshotTranslationKeychain: @unchecked Sendable {
-    static let shared = ScreenshotTranslationKeychain()
-
-    private let service = "com.jarvis.mac.screenshot-translation"
-    private let account = "api-key"
-
-    func read() throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound {
-            return nil
-        }
-        guard status == errSecSuccess,
-              let data = result as? Data
-        else {
-            throw KeychainError(status: status)
-        }
-        return String(data: data, encoding: .utf8)
-    }
-
-    func write(_ value: String) throws {
-        let data = Data(value.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var insert = query
-            insert[kSecValueData as String] = data
-            let insertStatus = SecItemAdd(insert as CFDictionary, nil)
-            guard insertStatus == errSecSuccess else { throw KeychainError(status: insertStatus) }
-        } else if status != errSecSuccess {
-            throw KeychainError(status: status)
-        }
-    }
-
-    func delete() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError(status: status)
-        }
-    }
-}
-
-private struct KeychainError: LocalizedError {
-    let status: OSStatus
-
-    var errorDescription: String? {
-        "Keychain 操作失败（(status)）"
     }
 }

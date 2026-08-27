@@ -72,6 +72,18 @@ final class ScreenshotRenderPipeline {
         context.draw(baseImage, in: canvasRect)
         context.restoreGState()
 
+        if request.showsTranslation {
+            for translation in request.translations {
+                drawTranslation(
+                    translation,
+                    in: context,
+                    canvasSize: request.canvasSize,
+                    pixelHeight: pixelHeight,
+                    scale: scale
+                )
+            }
+        }
+
         for annotation in request.annotations {
             guard annotation.kind != .text else { continue }
             context.saveGState()
@@ -101,18 +113,6 @@ final class ScreenshotRenderPipeline {
 
         for annotation in request.annotations where annotation.kind == .text {
             drawText(annotation, in: context, canvasSize: request.canvasSize, scale: scale)
-        }
-
-        if request.showsTranslation {
-            for translation in request.translations {
-                drawTranslation(
-                    translation,
-                    in: context,
-                    canvasSize: request.canvasSize,
-                    pixelHeight: pixelHeight,
-                    scale: scale
-                )
-            }
         }
 
         guard let renderedImage = context.makeImage() else { return nil }

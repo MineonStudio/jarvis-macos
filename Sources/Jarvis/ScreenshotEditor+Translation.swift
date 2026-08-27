@@ -50,7 +50,7 @@ extension ScreenshotEditorModel {
     func startTranslation() {
         guard !translationState.isRunning else { return }
         guard translationConfiguration.isConfigured else {
-            translationState = .failed(ScreenshotTranslationError.missingConfiguration.localizedDescription)
+            translationState = .failed(AIAPIError.missingConfiguration.localizedDescription)
             return
         }
 

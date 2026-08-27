@@ -150,18 +150,20 @@ struct ScreenshotTranslationSettingsCard: View {
                     )
                     .textFieldStyle(.roundedBorder)
                     .disabled(app.screenshotTranslationSettingsLocked)
+                    Button("保存") {
+                        guard app.saveScreenshotTranslationAPIKey(apiKey) else { return }
+                        apiKey = ""
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(
+                        app.screenshotTranslationSettingsLocked
+                            || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
                     if app.screenshotTranslationSettingsLocked {
                         Button("编辑") {
                             app.editScreenshotTranslationSettings()
                         }
                         .buttonStyle(JarvisSecondaryButtonStyle())
-                    } else {
-                        Button("保存") {
-                            guard app.saveScreenshotTranslationAPIKey(apiKey) else { return }
-                            apiKey = ""
-                        }
-                        .buttonStyle(JarvisSecondaryButtonStyle())
-                        .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }

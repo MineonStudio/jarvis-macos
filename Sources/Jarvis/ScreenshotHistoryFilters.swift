@@ -22,16 +22,6 @@ enum ScreenshotTimeFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: String {
-        switch self {
-        case .all: "square.grid.2x2"
-        case .threeDays: "clock"
-        case .sevenDays: "calendar"
-        case .oneMonth: "calendar.badge.clock"
-        case .halfYear: "calendar"
-        }
-    }
-
     func matches(
         _ item: ScreenshotHistoryItem,
         now: Date = Date(),
@@ -81,43 +71,15 @@ struct ScreenshotTimeFilterBar: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
+            HStack(spacing: HistoryGridMetrics.filterChipSpacing) {
                 ForEach(ScreenshotTimeFilter.allCases) { filter in
-                    Button {
+                    HistoryFilterChip(
+                        title: filter.title,
+                        count: ScreenshotTimeFilterLogic.count(for: filter, in: items),
+                        isSelected: selectedFilter == filter
+                    ) {
                         selectedFilter = filter
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: filter.icon)
-                                .font(.system(size: 10, weight: .semibold))
-                            Text("\(filter.title)（\(ScreenshotTimeFilterLogic.count(for: filter, in: items))）")
-                        }
-                        .font(JarvisTypography.control)
-                        .foregroundStyle(
-                            selectedFilter == filter
-                                ? Color.accentColor
-                                : Color.jarvisTextSecondary
-                        )
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .frame(minHeight: HistoryGridMetrics.screenshotFilterBarHeight)
-                        .background(
-                            selectedFilter == filter
-                                ? Color.accentColor.opacity(0.16)
-                                : Color.primary.opacity(0.045),
-                            in: Capsule()
-                        )
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(
-                                    Color.primary.opacity(selectedFilter == filter ? 0.16 : 0.08),
-                                    lineWidth: 0.75
-                                )
-                        }
-                        .contentShape(Capsule())
                     }
-                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))
-                    .contentShape(Capsule())
-                    .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
                 }
             }
         }

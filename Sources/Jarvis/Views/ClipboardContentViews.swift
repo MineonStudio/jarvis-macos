@@ -86,10 +86,10 @@ struct ClipboardFilterBar: View {
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
+            HStack(spacing: HistoryGridMetrics.filterChipSpacing) {
                 ForEach(ClipboardViewFilter.allCases) { filter in
-                    ClipboardFilterChip(
-                        filter: filter,
+                    HistoryFilterChip(
+                        title: filter.title,
                         count: filterCounts[filter, default: 0],
                         isSelected: selectedFilter == filter
                     ) {
@@ -98,7 +98,7 @@ struct ClipboardFilterBar: View {
                 }
             }
         }
-        .frame(height: 36, alignment: .leading)
+        .frame(height: HistoryGridMetrics.filterChipHeight, alignment: .leading)
     }
 
     private var regularLayout: some View {
@@ -226,42 +226,6 @@ struct ClipboardView: View {
         .onChange(of: app.clipboardItems.count) { _, _ in
             currentPage = min(currentPage, totalPages)
         }
-    }
-}
-
-struct ClipboardFilterChip: View {
-    let filter: ClipboardViewFilter
-    let count: Int
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                if let icon = filter.icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                Text("\(filter.title)（\(count)）")
-            }
-            .font(JarvisTypography.control)
-            .foregroundStyle(isSelected ? Color.accentColor : Color.jarvisTextSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(minHeight: 36)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.045),
-                in: Capsule()
-            )
-            .overlay {
-                Capsule()
-                    .strokeBorder(Color.primary.opacity(isSelected ? 0.16 : 0.08), lineWidth: 0.75)
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))
-        .contentShape(Capsule())
-        .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
     }
 }
 

@@ -3,6 +3,17 @@ import Foundation
 import XCTest
 
 final class ScreenshotHistoryFilterTests: XCTestCase {
+    func testHistoryFilterControlsShareTheirPresentationMetrics() {
+        XCTAssertEqual(HistoryGridMetrics.filterChipHeight, 36)
+        XCTAssertEqual(HistoryGridMetrics.filterChipSpacing, 7)
+        XCTAssertEqual(HistoryGridMetrics.filterChipHorizontalPadding, 10)
+        XCTAssertEqual(HistoryGridMetrics.filterChipVerticalPadding, 8)
+        XCTAssertEqual(
+            HistoryGridMetrics.screenshotFilterBarHeight,
+            HistoryGridMetrics.filterChipHeight
+        )
+    }
+
     func testTimeFiltersUseUpdatedAtAndCalendarBoundaries() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let calendar = Calendar(identifier: .gregorian)

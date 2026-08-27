@@ -47,8 +47,12 @@ enum HistoryGridMetrics {
     static let clipboardPreviewHoverScale: CGFloat = 1.08
     static let clipboardCornerRadius: CGFloat = 12
     static let clipboardGridSpacing: CGFloat = 14
+    static let filterChipHeight: CGFloat = 36
+    static let filterChipSpacing: CGFloat = 7
+    static let filterChipHorizontalPadding: CGFloat = 10
+    static let filterChipVerticalPadding: CGFloat = 8
     static let paginationControlHeight: CGFloat = 34
-    static let screenshotFilterBarHeight: CGFloat = 36
+    static let screenshotFilterBarHeight: CGFloat = filterChipHeight
     static let screenshotGridVerticalInset: CGFloat =
         JarvisMetrics.pageInset * 2 + screenshotFilterBarHeight + imageSpacing
     static let clipboardGridVerticalInset: CGFloat =

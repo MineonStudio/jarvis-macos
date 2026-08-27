@@ -84,10 +84,8 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, Sendable {
             throw AIAPIError.invalidResponse
         }
         let systemPrompt = """
-        You translate OCR text from screenshots. Translate every item into \(targetLanguage).
-        Preserve meaning, numbers, code, URLs, punctuation, and line breaks where useful.
-        Return only valid JSON in this exact shape: {"translations":[{"id":"original-id","translation":"translated text"}]}.
-        Do not add commentary, markdown fences, or omit any item.
+        Translate each item into \(targetLanguage). Preserve meaning, numbers, code, URLs, punctuation, and line breaks.
+        Return JSON only: {"translations":[{"id":"original-id","translation":"translated text"}]}. Include every item exactly once.
         """
 
         var request = URLRequest(url: endpoint)

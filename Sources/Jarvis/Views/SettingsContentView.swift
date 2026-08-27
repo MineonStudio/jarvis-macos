@@ -102,7 +102,10 @@ struct ScreenshotTranslationSettingsCard: View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    ScreenshotTranslationIcon(isSelected: false)
+                    Image(systemName: "network")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 24, height: 24)
                     Text("配置 API")
                         .font(JarvisTypography.bodyEmphasis)
                 }

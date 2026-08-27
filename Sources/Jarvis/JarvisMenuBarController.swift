@@ -9,7 +9,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let menuBarIconTintColor = NSColor.white
     static let menuBarIconPointSize = NSSize(width: 18, height: 18)
     static let menuBarAutosaveName = NSStatusItem.AutosaveName(
-        "com.jarvis.mac.primary-status-item"
+        "\(JarvisAppIdentity.bundleIdentifier).primary-status-item"
     )
 
     private var app: AppModel?

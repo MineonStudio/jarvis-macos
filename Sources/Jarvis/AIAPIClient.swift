@@ -191,7 +191,7 @@ private extension OpenAICompatibleAPIClient {
 final class AIAPIKeychain: @unchecked Sendable {
     static let shared = AIAPIKeychain()
 
-    private let service = "com.jarvis.mac.screenshot-translation"
+    private let service = "\(JarvisAppIdentity.bundleIdentifier).screenshot-translation"
     private let account = "api-key"
 
     func read() throws -> String? {

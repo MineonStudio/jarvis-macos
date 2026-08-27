@@ -3,7 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/release"
-APP_DIR="${JARVIS_APP_DIR:-$ROOT_DIR/dist/Jarvis.app}"
+JARVIS_DEV_BUILD="${JARVIS_DEV_BUILD:-0}"
+if [[ "$JARVIS_DEV_BUILD" == "1" ]]; then
+  DEFAULT_APP_DIR="$ROOT_DIR/dist/Jarvis-Dev.app"
+  DEFAULT_BUNDLE_IDENTIFIER="com.jarvis.mac.dev"
+  DEFAULT_DISPLAY_NAME="贾维斯开发版"
+  DEFAULT_BUNDLE_NAME="Jarvis-Dev"
+else
+  DEFAULT_APP_DIR="$ROOT_DIR/dist/Jarvis.app"
+  DEFAULT_BUNDLE_IDENTIFIER="com.jarvis.mac"
+  DEFAULT_DISPLAY_NAME="贾维斯"
+  DEFAULT_BUNDLE_NAME="Jarvis"
+fi
+APP_DIR="${JARVIS_APP_DIR:-$DEFAULT_APP_DIR}"
+JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER}"
+JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
+JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
 JARVIS_VERSION="${JARVIS_VERSION:-0.9.9}"
 JARVIS_BUILD="${JARVIS_BUILD:-223}"
 
@@ -26,8 +41,12 @@ if [[ -d "$ROOT_DIR/Resources/AIProviderIcons" ]]; then
      "$APP_DIR/Contents/Resources/AIProviderIcons/"
 fi
 
-# Keep the same bundle identity and install path while allowing normal
-# version/build-number upgrades for future releases.
+# Keep production builds compatible with the installed app. Development
+# builds opt into a separate identity so LaunchServices, TCC, preferences,
+# Keychain entries, and application data remain isolated from production.
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $JARVIS_BUNDLE_IDENTIFIER" "$APP_DIR/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $JARVIS_DISPLAY_NAME" "$APP_DIR/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $JARVIS_BUNDLE_NAME" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $JARVIS_VERSION" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $JARVIS_BUILD" "$APP_DIR/Contents/Info.plist"
 

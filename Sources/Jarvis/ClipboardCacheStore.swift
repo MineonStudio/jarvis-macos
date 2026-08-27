@@ -492,7 +492,10 @@ final class ClipboardCacheStore: @unchecked Sendable {
             appropriateFor: nil,
             create: true
         )) ?? fileManager.temporaryDirectory
-        return support.appendingPathComponent("Jarvis/Clipboard", isDirectory: true)
+        return support.appendingPathComponent(
+            "\(JarvisAppIdentity.dataDirectoryName)/Clipboard",
+            isDirectory: true
+        )
     }
 
     static func normalizedMaximumBytes(_ value: Int64) -> Int64 {

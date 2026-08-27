@@ -25,7 +25,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             create: true
         )) ?? fileManager.temporaryDirectory
         let directory = supportDirectory
-            .appendingPathComponent("Jarvis", isDirectory: true)
+            .appendingPathComponent(JarvisAppIdentity.dataDirectoryName, isDirectory: true)
             .appendingPathComponent("ScreenshotHistory", isDirectory: true)
         directoryURL = directory
         metadataURL = directory.appendingPathComponent("metadata.json")

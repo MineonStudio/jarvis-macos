@@ -16,7 +16,10 @@ final class ScreenshotCacheStore: @unchecked Sendable {
             appropriateFor: nil,
             create: true
         )) ?? fileManager.temporaryDirectory
-        let directory = support.appendingPathComponent("Jarvis/Cache", isDirectory: true)
+        let directory = support.appendingPathComponent(
+            "\(JarvisAppIdentity.dataDirectoryName)/Cache",
+            isDirectory: true
+        )
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent("latest-screenshot.png")
     }

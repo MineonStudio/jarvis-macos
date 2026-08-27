@@ -196,7 +196,7 @@ enum ScreenshotShortcutValidation: Equatable {
 }
 
 final class ScreenshotShortcutManager {
-    private static let logger = Logger(subsystem: "com.jarvis.mac", category: "shortcuts")
+    private static let logger = Logger(subsystem: JarvisAppIdentity.bundleIdentifier, category: "shortcuts")
     private let handler: () -> Void
     private let hotKeyID: UInt32
     private var binding: ScreenshotShortcut

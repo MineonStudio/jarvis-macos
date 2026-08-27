@@ -118,7 +118,9 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         fileUTI = try container.decodeIfPresent(String.self, forKey: .fileUTI)
         fingerprintValue = try container.decodeIfPresent(String.self, forKey: .fingerprintValue)
         isStoredCopy = try container.decodeIfPresent(Bool.self, forKey: .isStoredCopy)
-            ?? (kind == .image && imagePath?.contains("/Jarvis/Clipboard/") == true)
+            ?? (kind == .image && imagePath?.contains(
+                "/\(JarvisAppIdentity.dataDirectoryName)/Clipboard/"
+            ) == true)
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 
@@ -389,7 +391,10 @@ final class ClipboardStore {
             appropriateFor: nil,
             create: true
         )) ?? FileManager.default.temporaryDirectory
-        let directory = support.appendingPathComponent("Jarvis", isDirectory: true)
+        let directory = support.appendingPathComponent(
+            JarvisAppIdentity.dataDirectoryName,
+            isDirectory: true
+        )
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent("clipboard-history.json")
     }

@@ -1,5 +1,5 @@
 import OSLog
 
 enum JarvisPersistenceLog {
-    static let logger = Logger(subsystem: "com.jarvis.mac", category: "persistence")
+    static let logger = Logger(subsystem: JarvisAppIdentity.bundleIdentifier, category: "persistence")
 }

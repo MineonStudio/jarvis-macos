@@ -29,7 +29,10 @@ struct ClipboardSearchField: View {
             }
         }
         .padding(.horizontal, 15)
-        .frame(minHeight: 44)
+        .frame(
+            minHeight: HistoryGridMetrics.clipboardSearchFieldHeight,
+            maxHeight: HistoryGridMetrics.clipboardSearchFieldHeight
+        )
         .jarvisGlass(in: Capsule(), interactive: false)
         .contentShape(Capsule())
         .onTapGesture {
@@ -86,10 +89,10 @@ struct ClipboardFilterBar: View {
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
+            HStack(spacing: HistoryGridMetrics.filterChipSpacing) {
                 ForEach(ClipboardViewFilter.allCases) { filter in
-                    ClipboardFilterChip(
-                        filter: filter,
+                    HistoryFilterChip(
+                        title: filter.title,
                         count: filterCounts[filter, default: 0],
                         isSelected: selectedFilter == filter
                     ) {
@@ -98,11 +101,11 @@ struct ClipboardFilterBar: View {
                 }
             }
         }
-        .frame(height: 36, alignment: .leading)
+        .frame(height: HistoryGridMetrics.filterChipHeight, alignment: .leading)
     }
 
     private var regularLayout: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             filterChips
                 .fixedSize(horizontal: true, vertical: false)
 
@@ -145,6 +148,7 @@ struct ClipboardView: View {
     @State private var selectedFilter: ClipboardViewFilter = .all
     @State private var currentPage = 1
     @State private var availableGridWidth: CGFloat = 0
+    @State private var availableGridHeight: CGFloat = 0
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -155,7 +159,12 @@ struct ClipboardView: View {
     }
 
     private var pageSize: Int {
-        HistoryGridMetrics.pageSize(for: availableGridWidth)
+        HistoryGridMetrics.pageSize(
+            for: availableGridWidth,
+            availableHeight: availableGridHeight,
+            itemCount: filteredItems.count,
+            verticalInset: HistoryGridMetrics.clipboardGridVerticalInset
+        )
     }
 
     private var totalPages: Int {
@@ -171,7 +180,7 @@ struct ClipboardView: View {
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
+                VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
                     ClipboardFilterBar(
                         searchText: $searchText,
                         selectedFilter: $selectedFilter,
@@ -196,14 +205,16 @@ struct ClipboardView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, JarvisMetrics.pageInset)
-                .padding(.vertical, JarvisMetrics.pageInset)
+                .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                .padding(.vertical, HistoryGridMetrics.historyPanelInset)
             }
             .onAppear {
-                availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+                availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
+                availableGridHeight = max(0, proxy.size.height)
             }
-            .onChange(of: proxy.size.width) { _, width in
-                availableGridWidth = max(0, width - JarvisMetrics.pageInset * 2)
+            .onChange(of: proxy.size) { _, size in
+                availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
+                availableGridHeight = max(0, size.height)
             }
         }
         .onChange(of: pageSize) { _, _ in
@@ -218,42 +229,6 @@ struct ClipboardView: View {
         .onChange(of: app.clipboardItems.count) { _, _ in
             currentPage = min(currentPage, totalPages)
         }
-    }
-}
-
-struct ClipboardFilterChip: View {
-    let filter: ClipboardViewFilter
-    let count: Int
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                if let icon = filter.icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                Text("\(filter.title)（\(count)）")
-            }
-            .font(JarvisTypography.control)
-            .foregroundStyle(isSelected ? Color.accentColor : Color.jarvisTextSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(minHeight: 36)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.045),
-                in: Capsule()
-            )
-            .overlay {
-                Capsule()
-                    .strokeBorder(Color.primary.opacity(isSelected ? 0.16 : 0.08), lineWidth: 0.75)
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))
-        .contentShape(Capsule())
-        .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
     }
 }
 

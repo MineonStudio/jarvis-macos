@@ -199,4 +199,23 @@ final class ClipboardTests: XCTestCase {
         )
         XCTAssertEqual(ClipboardCacheStore.defaultMaximumBytes, 5 * 1024 * 1024 * 1024)
     }
+
+    func testClipboardCacheCategoriesMatchTheirMediaKinds() {
+        let image = ClipboardItem(kind: .image, imagePath: "/tmp/image.png", isStoredCopy: true)
+        let video = ClipboardItem(kind: .video, filePath: "/tmp/video.mov", isStoredCopy: true)
+        let file = ClipboardItem(kind: .file, filePath: "/tmp/file.pdf", isStoredCopy: true)
+
+        XCTAssertTrue(ClipboardCacheCategory.image.matches(image))
+        XCTAssertFalse(ClipboardCacheCategory.image.matches(video))
+        XCTAssertTrue(ClipboardCacheCategory.video.matches(video))
+        XCTAssertTrue(ClipboardCacheCategory.file.matches(file))
+        XCTAssertTrue(ClipboardCacheCategory.all.matches(image))
+    }
+
+    func testClipboardCacheCleanupPeriodsUseExpectedDurations() {
+        XCTAssertEqual(ClipboardCacheCleanupPeriod.threeDays.interval, 3 * 24 * 60 * 60)
+        XCTAssertEqual(ClipboardCacheCleanupPeriod.sevenDays.interval, 7 * 24 * 60 * 60)
+        XCTAssertEqual(ClipboardCacheCleanupPeriod.oneMonth.interval, 30 * 24 * 60 * 60)
+        XCTAssertEqual(ClipboardCacheCleanupPeriod.halfYear.interval, 182 * 24 * 60 * 60)
+    }
 }

@@ -85,6 +85,8 @@ final class AppModel: ObservableObject {
     @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
     @Published var clipboardCacheDirectoryURL: URL
     @Published var clipboardCacheMaximumBytes: Int64
+    @Published var clipboardCacheAutoCleanupEnabled = false
+    @Published var clipboardCacheAutoCleanupPeriod: ClipboardCacheCleanupPeriod = .sevenDays
     @Published var clipboardCacheUsage = ClipboardCacheUsage(
         usedBytes: 0,
         capacityBytes: ClipboardCacheStore.defaultMaximumBytes,
@@ -110,11 +112,14 @@ final class AppModel: ObservableObject {
     var windowLayoutController: WindowLayoutController?
     var systemAppearanceObservation: NSKeyValueObservation?
     var editingHistoryID: UUID?
+    var clipboardCacheCleanupTimer: Timer?
 
     let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     let clipboardShortcutKey = "jarvis.clipboard.shortcut"
     let themePreferenceKey = "jarvis.theme.preference"
+    let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
+    let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
     var toastDismissTask: Task<Void, Never>?
 
     func aiConversationController(for provider: AIConversationProvider) -> AIConversationWebController {
@@ -149,6 +154,7 @@ final class AppModel: ObservableObject {
             screenshotHistory = [migratedItem]
         }
         trimClipboardCacheIfNeeded()
+        loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadThemePreference()
@@ -208,6 +214,7 @@ final class AppModel: ObservableObject {
                 }
             }
         )
+        configureClipboardCacheAutoCleanup()
     }
 
     func loadLatestScreenshotIfNeeded() -> Data? {
@@ -222,6 +229,7 @@ final class AppModel: ObservableObject {
 
     deinit {
         toastDismissTask?.cancel()
+        clipboardCacheCleanupTimer?.invalidate()
     }
 }
 

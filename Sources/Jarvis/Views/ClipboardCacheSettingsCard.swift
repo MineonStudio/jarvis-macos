@@ -90,6 +90,80 @@ struct ClipboardCacheSettingsCard: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
+
+                Divider().overlay(Color.primary.opacity(0.12))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("清理缓存")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("所有清理均不包含已收藏内容")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+
+                    Text("按分类清理")
+                        .font(.system(size: 12, weight: .semibold))
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 90), spacing: 8)],
+                        spacing: 8
+                    ) {
+                        ForEach([
+                            ClipboardCacheCategory.image,
+                            .video,
+                            .file,
+                            .all
+                        ]) { category in
+                            cleanupButton(category.title) {
+                                app.clearClipboardCache(category: category)
+                            }
+                        }
+                    }
+
+                    Text("按时间清理")
+                        .font(.system(size: 12, weight: .semibold))
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 110), spacing: 8)],
+                        spacing: 8
+                    ) {
+                        ForEach(ClipboardCacheCleanupPeriod.allCases) { period in
+                            cleanupButton(period.title) {
+                                app.clearClipboardCache(olderThan: period.cutoffDate)
+                            }
+                        }
+                        cleanupButton("清理全部") {
+                            app.clearClipboardCache()
+                        }
+                    }
+
+                    Divider().overlay(Color.primary.opacity(0.12))
+
+                    Toggle(
+                        "按时间自动清理",
+                        isOn: Binding(
+                            get: { app.clipboardCacheAutoCleanupEnabled },
+                            set: { app.updateClipboardCacheAutoCleanupEnabled($0) }
+                        )
+                    )
+                    if app.clipboardCacheAutoCleanupEnabled {
+                        HStack {
+                            Text("自动清理周期")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Picker(
+                                "自动清理周期",
+                                selection: Binding(
+                                    get: { app.clipboardCacheAutoCleanupPeriod },
+                                    set: { app.updateClipboardCacheAutoCleanupPeriod($0) }
+                                )
+                            ) {
+                                ForEach(ClipboardCacheCleanupPeriod.allCases) { period in
+                                    Text(period.title).tag(period)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                        }
+                    }
+                }
             }
         }
         .onAppear {
@@ -126,5 +200,10 @@ struct ClipboardCacheSettingsCard: View {
             max(0, 0.08 - ((fraction - 0.8) / 0.2) * 0.08)
         }
         return Color(hue: hue, saturation: 0.82, brightness: 0.86)
+    }
+
+    private func cleanupButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(JarvisSecondaryButtonStyle())
     }
 }

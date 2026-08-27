@@ -149,6 +149,64 @@ extension AppModel {
         refreshClipboardCacheUsage()
     }
 
+    func updateClipboardCacheAutoCleanupEnabled(_ enabled: Bool) {
+        clipboardCacheAutoCleanupEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: clipboardCacheAutoCleanupEnabledKey)
+        configureClipboardCacheAutoCleanup()
+    }
+
+    func updateClipboardCacheAutoCleanupPeriod(_ period: ClipboardCacheCleanupPeriod) {
+        clipboardCacheAutoCleanupPeriod = period
+        UserDefaults.standard.set(period.rawValue, forKey: clipboardCacheAutoCleanupPeriodKey)
+        configureClipboardCacheAutoCleanup()
+    }
+
+    @discardableResult
+    func clearClipboardCache(
+        category: ClipboardCacheCategory = .all,
+        olderThan: Date? = nil,
+        automatically: Bool = false
+    ) -> Int {
+        let candidates = clipboardItems.filter { item in
+            let matchesAge = olderThan.map { item.createdAt < $0 } ?? true
+            return !item.isPinned
+                && item.isStoredCopy
+                && category.matches(item)
+                && matchesAge
+        }
+        let candidateIDs = Set(candidates.map(\.id))
+        for item in candidates {
+            clipboardStore.removeStoredFiles(for: [item])
+        }
+        clipboardItems.removeAll { candidateIDs.contains($0.id) }
+
+        var didChange = !candidates.isEmpty
+        if category == .all, olderThan == nil {
+            let referencedPaths = Set(
+                clipboardItems.flatMap { item in
+                    [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
+                }
+            )
+            didChange = clipboardCacheStore.removeOrphanedManagedFiles(referencedPaths: referencedPaths) || didChange
+        }
+
+        guard didChange else {
+            if !automatically {
+                showToast("没有符合条件的缓存")
+            }
+            return 0
+        }
+
+        if !clipboardStore.save(clipboardItems) {
+            showToast("缓存清理后历史记录保存失败")
+        }
+        refreshClipboardCacheUsage()
+        if !automatically {
+            showToast("已清理 \(candidates.count) 条缓存")
+        }
+        return candidates.count
+    }
+
     func chooseClipboardCacheDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -230,5 +288,32 @@ extension AppModel {
         formatter.includesUnit = true
         formatter.includesCount = true
         return formatter.string(fromByteCount: bytes)
+    }
+
+    func loadClipboardCacheCleanupSettings() {
+        let defaults = UserDefaults.standard
+        clipboardCacheAutoCleanupEnabled = defaults.bool(forKey: clipboardCacheAutoCleanupEnabledKey)
+        if let rawValue = defaults.string(forKey: clipboardCacheAutoCleanupPeriodKey),
+           let period = ClipboardCacheCleanupPeriod(rawValue: rawValue)
+        {
+            clipboardCacheAutoCleanupPeriod = period
+        }
+    }
+
+    func configureClipboardCacheAutoCleanup() {
+        clipboardCacheCleanupTimer?.invalidate()
+        clipboardCacheCleanupTimer = nil
+        guard clipboardCacheAutoCleanupEnabled else { return }
+
+        clearClipboardCache(olderThan: clipboardCacheAutoCleanupPeriod.cutoffDate, automatically: true)
+        clipboardCacheCleanupTimer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.clearClipboardCache(
+                    olderThan: self.clipboardCacheAutoCleanupPeriod.cutoffDate,
+                    automatically: true
+                )
+            }
+        }
     }
 }

@@ -1,5 +1,67 @@
 import Foundation
 
+enum ClipboardCacheCategory: String, CaseIterable, Identifiable {
+    case all
+    case image
+    case video
+    case file
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .all: "全部"
+        case .image: "图片"
+        case .video: "视频"
+        case .file: "文件"
+        }
+    }
+
+    func matches(_ item: ClipboardItem) -> Bool {
+        switch self {
+        case .all: true
+        case .image: item.kind == .image
+        case .video: item.kind == .video
+        case .file: item.kind == .file
+        }
+    }
+}
+
+enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
+    case threeDays
+    case sevenDays
+    case oneMonth
+    case halfYear
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .threeDays: "超过 3 天"
+        case .sevenDays: "超过 7 天"
+        case .oneMonth: "超过 1 个月"
+        case .halfYear: "超过半年"
+        }
+    }
+
+    var interval: TimeInterval {
+        switch self {
+        case .threeDays: 3 * 24 * 60 * 60
+        case .sevenDays: 7 * 24 * 60 * 60
+        case .oneMonth: 30 * 24 * 60 * 60
+        case .halfYear: 182 * 24 * 60 * 60
+        }
+    }
+
+    var cutoffDate: Date {
+        Date().addingTimeInterval(-interval)
+    }
+}
+
 struct ClipboardCacheUsage: Equatable {
     let usedBytes: Int64
     let capacityBytes: Int64

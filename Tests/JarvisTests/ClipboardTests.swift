@@ -176,6 +176,8 @@ final class ClipboardTests: XCTestCase {
 
         let store = ClipboardCacheStore(defaults: defaults)
         XCTAssertEqual(store.currentDirectoryURL, directory)
+        store.updateMaximumBytes(1_073_741_824 + 70_000_000)
+        XCTAssertEqual(store.currentMaximumBytes, 1_073_741_824)
         store.updateMaximumBytes(ClipboardCacheStore.minimumMaximumBytes)
         XCTAssertNotNil(store.storeData(Data(repeating: 1, count: 128), fileExtension: "png"))
 

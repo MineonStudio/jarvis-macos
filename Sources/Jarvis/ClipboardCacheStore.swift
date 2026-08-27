@@ -24,6 +24,8 @@ final class ClipboardCacheStore: @unchecked Sendable {
     static let defaultMaximumBytes: Int64 = 1024 * 1024 * 1024
     static let minimumMaximumBytes: Int64 = 256 * 1024 * 1024
     static let maximumMaximumBytes: Int64 = 10 * 1024 * 1024 * 1024
+    static let supportedMaximumBytes: [Int64] = [minimumMaximumBytes]
+        + (1 ... 10).map { Int64($0) * 1024 * 1024 * 1024 }
 
     private static let directoryKey = "jarvis.clipboard.cache.directory"
     private static let maximumBytesKey = "jarvis.clipboard.cache.maximum-bytes"
@@ -47,7 +49,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
         directoryURL = storedDirectory ?? defaultDirectory
 
         let storedMaximum = defaults.object(forKey: Self.maximumBytesKey) as? NSNumber
-        maximumBytes = Self.clampMaximumBytes(storedMaximum?.int64Value ?? Self.defaultMaximumBytes)
+        maximumBytes = Self.normalizeMaximumBytes(storedMaximum?.int64Value ?? Self.defaultMaximumBytes)
 
         try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     }
@@ -61,7 +63,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
     }
 
     func updateMaximumBytes(_ value: Int64) {
-        let clamped = Self.clampMaximumBytes(value)
+        let clamped = Self.normalizeMaximumBytes(value)
         lock.withLock {
             maximumBytes = clamped
             defaults.set(clamped, forKey: Self.maximumBytesKey)
@@ -306,8 +308,11 @@ final class ClipboardCacheStore: @unchecked Sendable {
         return support.appendingPathComponent("Jarvis/Clipboard", isDirectory: true)
     }
 
-    private static func clampMaximumBytes(_ value: Int64) -> Int64 {
-        min(max(value, minimumMaximumBytes), maximumMaximumBytes)
+    private static func normalizeMaximumBytes(_ value: Int64) -> Int64 {
+        let clamped = min(max(value, minimumMaximumBytes), maximumMaximumBytes)
+        return supportedMaximumBytes.min { lhs, rhs in
+            abs(lhs - clamped) < abs(rhs - clamped)
+        } ?? defaultMaximumBytes
     }
 }
 

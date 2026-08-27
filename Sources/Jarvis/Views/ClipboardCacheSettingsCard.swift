@@ -3,7 +3,7 @@ import SwiftUI
 struct ClipboardCacheSettingsCard: View {
     @EnvironmentObject private var app: AppModel
 
-    private let megabyte: Double = 1024 * 1024
+    private let capacityOptions = ClipboardCacheStore.supportedMaximumBytes
 
     var body: some View {
         JarvisCard {
@@ -35,18 +35,25 @@ struct ClipboardCacheSettingsCard: View {
                         Text("缓存空间上限")
                             .font(.system(size: 12, weight: .semibold))
                         Spacer()
-                        Text(byteDescription(app.clipboardCacheMaximumBytes))
+                        Text(capacityDescription(app.clipboardCacheMaximumBytes))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.jarvisTextSecondary)
                     }
                     Slider(
                         value: Binding(
-                            get: { Double(app.clipboardCacheMaximumBytes) / megabyte },
-                            set: { app.updateClipboardCacheMaximumBytes(Int64($0 * megabyte)) }
+                            get: {
+                                Double(capacityOptions.firstIndex(of: app.clipboardCacheMaximumBytes) ?? 1)
+                            },
+                            set: { index in
+                                let optionIndex = min(
+                                    max(Int(index.rounded()), 0),
+                                    capacityOptions.count - 1
+                                )
+                                app.updateClipboardCacheMaximumBytes(capacityOptions[optionIndex])
+                            }
                         ),
-                        in: Double(ClipboardCacheStore.minimumMaximumBytes) / megabyte ...
-                            Double(ClipboardCacheStore.maximumMaximumBytes) / megabyte,
-                        step: 256
+                        in: 0 ... Double(capacityOptions.count - 1),
+                        step: 1
                     )
                     HStack {
                         Text("256 MB")
@@ -62,16 +69,16 @@ struct ClipboardCacheSettingsCard: View {
                         Text("当前占用")
                             .font(.system(size: 12, weight: .semibold))
                         Spacer()
-                        Text("\(byteDescription(app.clipboardCacheUsage.usedBytes)) / \(byteDescription(app.clipboardCacheUsage.capacityBytes))")
+                        Text("\(byteDescription(app.clipboardCacheUsage.usedBytes)) / \(capacityDescription(app.clipboardCacheUsage.capacityBytes))")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(app.clipboardCacheUsage.isOverCapacity ? .red : Color.jarvisTextSecondary)
+                            .foregroundStyle(usageColor(for: app.clipboardCacheUsage))
                     }
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
                             Capsule()
                                 .fill(Color.primary.opacity(0.10))
                             Capsule()
-                                .fill(app.clipboardCacheUsage.isOverCapacity ? Color.red : Color.accentColor)
+                                .fill(usageColor(for: app.clipboardCacheUsage))
                                 .frame(width: proxy.size.width * app.clipboardCacheUsage.fraction)
                         }
                     }
@@ -93,5 +100,28 @@ struct ClipboardCacheSettingsCard: View {
         formatter.includesUnit = true
         formatter.includesCount = true
         return formatter.string(fromByteCount: bytes)
+    }
+
+    private func capacityDescription(_ bytes: Int64) -> String {
+        if bytes == ClipboardCacheStore.minimumMaximumBytes {
+            return "256 MB"
+        }
+        let gigabyte: Int64 = 1024 * 1024 * 1024
+        if bytes % gigabyte == 0 {
+            return "\(bytes / gigabyte) GB"
+        }
+        return byteDescription(bytes)
+    }
+
+    private func usageColor(for usage: ClipboardCacheUsage) -> Color {
+        let fraction = min(max(Double(usage.usedBytes) / Double(max(usage.capacityBytes, 1)), 0), 1)
+        let hue: Double = if fraction < 0.5 {
+            0.33 - (fraction / 0.5) * 0.17
+        } else if fraction < 0.8 {
+            0.16 - ((fraction - 0.5) / 0.3) * 0.08
+        } else {
+            max(0, 0.08 - ((fraction - 0.8) / 0.2) * 0.08)
+        }
+        return Color(hue: hue, saturation: 0.82, brightness: 0.86)
     }
 }

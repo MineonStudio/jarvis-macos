@@ -55,9 +55,9 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     let createdAt: Date
     let kind: ClipboardKind
     let text: String?
-    let imagePath: String?
-    let filePath: String?
-    let thumbnailPath: String?
+    var imagePath: String?
+    var filePath: String?
+    var thumbnailPath: String?
     let fileName: String?
     let fileSize: Int64?
     let fileUTI: String?
@@ -182,9 +182,14 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
 }
 
 final class ClipboardService {
+    private let cacheStore: ClipboardCacheStore
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var onChange: ((ClipboardItem) -> Void)?
+
+    init(cacheStore: ClipboardCacheStore = ClipboardCacheStore()) {
+        self.cacheStore = cacheStore
+    }
 
     func start(onChange: @escaping (ClipboardItem) -> Void) {
         self.onChange = onChange
@@ -206,16 +211,20 @@ final class ClipboardService {
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
+        let capturedAt = Date()
 
         let fileURLs = Self.fileURLs(from: pasteboard)
         if !fileURLs.isEmpty {
-            fileURLs.forEach(captureFile)
+            for (index, url) in fileURLs.enumerated() {
+                captureFile(url, createdAt: capturedAt.addingTimeInterval(Double(index) * 0.000001))
+            }
             return
         }
 
         if let text = pasteboard.string(forType: .string), !text.isEmpty {
             let fingerprint = digest(Data(text.utf8))
             onChange?(ClipboardItem(
+                createdAt: capturedAt,
                 kind: .text,
                 text: text,
                 fingerprintValue: fingerprint
@@ -223,18 +232,8 @@ final class ClipboardService {
             return
         }
 
-        if let imageData = imageData(from: pasteboard),
-           let path = saveData(imageData, fileExtension: "png")
-        {
-            onChange?(ClipboardItem(
-                kind: .image,
-                imagePath: path,
-                fileName: "图片.png",
-                fileSize: Int64(imageData.count),
-                fileUTI: UTType.png.identifier,
-                fingerprintValue: digest(imageData),
-                isStoredCopy: true
-            ))
+        if let imageData = imageData(from: pasteboard) {
+            captureImage(imageData, createdAt: capturedAt)
             return
         }
     }
@@ -259,7 +258,7 @@ final class ClipboardService {
         return bitmap.representation(using: .png, properties: [:])
     }
 
-    private func captureFile(_ url: URL) {
+    private func captureFile(_ url: URL, createdAt: Date) {
         let callback = onChange
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self,
@@ -276,6 +275,7 @@ final class ClipboardService {
             let finishCapture: (String?) -> Void = { thumbnailPath in
                 let fingerprint = "\(url.path)|\(fileSize)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
                 let item = ClipboardItem(
+                    createdAt: createdAt,
                     kind: kind,
                     filePath: path,
                     thumbnailPath: thumbnailPath,
@@ -308,6 +308,27 @@ final class ClipboardService {
         }
     }
 
+    private func captureImage(_ data: Data, createdAt: Date) {
+        let callback = onChange
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let path = self.saveData(data, fileExtension: "png")
+            let item = ClipboardItem(
+                createdAt: createdAt,
+                kind: .image,
+                imagePath: path,
+                fileName: "图片.png",
+                fileSize: Int64(data.count),
+                fileUTI: UTType.png.identifier,
+                fingerprintValue: self.digest(data),
+                isStoredCopy: path != nil
+            )
+            DispatchQueue.main.async {
+                callback?(item)
+            }
+        }
+    }
+
     private static func kind(for url: URL, contentType: UTType?) -> ClipboardKind {
         if contentType?.conforms(to: .movie) == true {
             return .video
@@ -320,38 +341,11 @@ final class ClipboardService {
         // Keep very large files as references so copying a movie never blocks
         // the app or silently fills the user's disk.
         guard fileSize <= ClipboardLimits.maximumStoredFileSize else { return nil }
-        do {
-            let directory = try storageDirectory()
-            let extensionPart = sourceURL.pathExtension.isEmpty ? "" : ".\(sourceURL.pathExtension)"
-            let destination = directory.appendingPathComponent("file-\(UUID().uuidString)\(extensionPart)")
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-            return destination.path
-        } catch {
-            return nil
-        }
+        return cacheStore.storeFile(sourceURL, fileSize: fileSize)
     }
 
     private func saveData(_ data: Data, fileExtension: String) -> String? {
-        do {
-            let directory = try storageDirectory()
-            let path = directory.appendingPathComponent("item-\(UUID().uuidString).\(fileExtension)")
-            try data.write(to: path, options: .atomic)
-            return path.path
-        } catch {
-            return nil
-        }
-    }
-
-    private func storageDirectory() throws -> URL {
-        let support = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let directory = support.appendingPathComponent("Jarvis/Clipboard", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+        cacheStore.storeData(data, fileExtension: fileExtension)
     }
 
     private func digest(_ data: Data) -> String {

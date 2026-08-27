@@ -11,13 +11,16 @@ extension AppModel {
         var item = item
         item.isPinned = wasPinned
         clipboardItems.removeAll { $0.fingerprint == item.fingerprint }
-        clipboardItems.insert(item, at: 0)
+        clipboardItems.append(item)
+        clipboardItems = ClipboardOrdering.newestFirst(clipboardItems)
         let removedItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
         clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
         clipboardStore.removeStoredFiles(for: removedItems)
+        trimClipboardCacheIfNeeded()
         if !clipboardStore.save(clipboardItems) {
             showToast("剪贴板历史保存失败")
         }
+        refreshClipboardCacheUsage()
     }
 
     func copyClipboard(_ item: ClipboardItem) {
@@ -106,6 +109,7 @@ extension AppModel {
             showToast("剪贴板历史保存失败")
             return
         }
+        refreshClipboardCacheUsage()
         showToast("已删除剪贴板记录")
     }
 
@@ -113,9 +117,84 @@ extension AppModel {
         clipboardStore.removeStoredFiles(for: clipboardItems)
         clipboardItems.removeAll()
         if clipboardStore.save(clipboardItems) {
+            refreshClipboardCacheUsage()
             showToast("剪贴板历史已清空")
         } else {
             showToast("剪贴板历史清空后保存失败")
+        }
+    }
+
+    func refreshClipboardCacheUsage() {
+        let cacheStore = clipboardCacheStore
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let usage = cacheStore.usage()
+            DispatchQueue.main.async {
+                self?.clipboardCacheUsage = usage
+            }
+        }
+    }
+
+    func updateClipboardCacheMaximumBytes(_ value: Int64) {
+        clipboardCacheStore.updateMaximumBytes(value)
+        clipboardCacheMaximumBytes = clipboardCacheStore.currentMaximumBytes
+        trimClipboardCacheIfNeeded()
+        refreshClipboardCacheUsage()
+    }
+
+    func chooseClipboardCacheDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        panel.message = "选择用于保存剪贴板文件和图片的缓存文件夹"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let oldDirectoryURL = clipboardCacheStore.currentDirectoryURL
+            let migration = try clipboardCacheStore.migrateManagedFiles(
+                for: clipboardItems,
+                to: url
+            )
+            clipboardItems = migration.items
+            clipboardCacheDirectoryURL = clipboardCacheStore.currentDirectoryURL
+            if !clipboardStore.save(clipboardItems) {
+                if let rollback = try? clipboardCacheStore.migrateManagedFiles(
+                    for: clipboardItems,
+                    to: oldDirectoryURL
+                ) {
+                    clipboardItems = rollback.items
+                    clipboardCacheStore.removeLegacyFiles(atPaths: rollback.legacyPaths)
+                    clipboardCacheDirectoryURL = clipboardCacheStore.currentDirectoryURL
+                }
+                showToast("缓存目录已切换，但历史记录保存失败")
+            } else {
+                clipboardCacheStore.removeLegacyFiles(atPaths: migration.legacyPaths)
+                showToast("剪贴板缓存目录已更新")
+            }
+            refreshClipboardCacheUsage()
+        } catch {
+            showToast("缓存目录切换失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func trimClipboardCacheIfNeeded() {
+        var usage = clipboardCacheStore.usage()
+        guard usage.isOverCapacity else { return }
+
+        let candidates = clipboardItems
+            .filter { !$0.isPinned && $0.isStoredCopy }
+            .sorted { $0.createdAt < $1.createdAt }
+        var changed = false
+        for item in candidates where usage.isOverCapacity {
+            clipboardStore.removeStoredFiles(for: [item])
+            clipboardItems.removeAll { $0.id == item.id }
+            usage = clipboardCacheStore.usage()
+            changed = true
+        }
+        if changed {
+            _ = clipboardStore.save(clipboardItems)
         }
     }
 }

@@ -2,7 +2,7 @@ import Foundation
 
 /// Persists the most recently finalized screenshot so the screenshot skill can
 /// restore its working context after Jarvis is relaunched.
-final class ScreenshotCacheStore {
+final class ScreenshotCacheStore: @unchecked Sendable {
     private let fileURL: URL
 
     init(fileURL: URL) {

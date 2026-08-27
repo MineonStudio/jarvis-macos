@@ -1,3 +1,4 @@
+import CryptoKit
 @testable import Jarvis
 import XCTest
 
@@ -18,6 +19,31 @@ final class AppVersionTests: XCTestCase {
 
     func testUpdateLogUsesUserLibraryLogsDirectory() {
         XCTAssertTrue(JarvisUpdateService.updateLogURL.path.hasSuffix("Library/Logs/Jarvis/update.log"))
+    }
+
+    func testUpdateDigestIsRequiredAndVerified() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-update-digest-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let data = Data("Jarvis 0.9.0".utf8)
+        try data.write(to: fileURL)
+
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        XCTAssertNoThrow(try service.verifyDigest(of: fileURL, expected: "sha256:\(digest)"))
+        XCTAssertThrowsError(try service.verifyDigest(of: fileURL, expected: nil)) { error in
+            guard let updateError = error as? JarvisUpdateError,
+                  case .checksumUnavailable = updateError
+            else {
+                return XCTFail("Expected missing digest error, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(try service.verifyDigest(of: fileURL, expected: "sha256:\(String(repeating: "0", count: 64))")) { error in
+            guard let updateError = error as? JarvisUpdateError,
+                  case .checksumMismatch = updateError
+            else {
+                return XCTFail("Expected digest mismatch error, got \(error)")
+            }
+        }
     }
 
     func testPrivacyPermissionResetCommandsUseBundleIdentity() {

@@ -10,7 +10,7 @@ struct ScreenshotHistoryItem: Codable, Identifiable, Equatable {
 /// Stores screenshot history as PNG files plus a small JSON index. Keeping the
 /// image data out of UserDefaults makes history durable without making the
 /// app's preferences file grow with every screenshot.
-final class ScreenshotHistoryStore {
+final class ScreenshotHistoryStore: @unchecked Sendable {
     private let fileManager: FileManager
     private let directoryURL: URL
     private let metadataURL: URL
@@ -48,7 +48,10 @@ final class ScreenshotHistoryStore {
             let data = try Data(contentsOf: metadataURL)
             let items = try JSONDecoder().decode([ScreenshotHistoryItem].self, from: data)
             return items
-                .filter { fileManager.fileExists(atPath: directoryURL.appendingPathComponent($0.fileName).path) }
+                .filter { item in
+                    guard let url = safeFileURL(for: item.fileName) else { return false }
+                    return fileManager.fileExists(atPath: url.path)
+                }
                 .sorted { $0.updatedAt > $1.updatedAt }
         } catch {
             JarvisPersistenceLog.logger.error(
@@ -59,8 +62,12 @@ final class ScreenshotHistoryStore {
     }
 
     func data(for item: ScreenshotHistoryItem) -> Data? {
+        guard let url = safeFileURL(for: item.fileName) else {
+            JarvisPersistenceLog.logger.error("拒绝读取越界的截图历史路径")
+            return nil
+        }
         do {
-            return try Data(contentsOf: fileURL(for: item))
+            return try Data(contentsOf: url)
         } catch {
             JarvisPersistenceLog.logger.error(
                 "读取历史截图失败：\(error.localizedDescription, privacy: .public)"
@@ -70,7 +77,8 @@ final class ScreenshotHistoryStore {
     }
 
     func fileURL(for item: ScreenshotHistoryItem) -> URL {
-        directoryURL.appendingPathComponent(item.fileName)
+        safeFileURL(for: item.fileName)
+            ?? directoryURL.appendingPathComponent(".invalid-history-file", isDirectory: false)
     }
 
     func fileSize(for item: ScreenshotHistoryItem) -> Int64? {
@@ -118,7 +126,11 @@ final class ScreenshotHistoryStore {
     @discardableResult
     func delete(_ item: ScreenshotHistoryItem) -> Bool {
         do {
-            try fileManager.removeItem(at: directoryURL.appendingPathComponent(item.fileName))
+            guard let url = safeFileURL(for: item.fileName) else {
+                JarvisPersistenceLog.logger.error("拒绝删除越界的截图历史路径")
+                return false
+            }
+            try fileManager.removeItem(at: url)
         } catch CocoaError.fileNoSuchFile {
             // The metadata index still needs to be cleaned when the PNG was
             // already removed by an earlier failed cleanup.
@@ -134,11 +146,12 @@ final class ScreenshotHistoryStore {
     }
 
     private func write(_ data: Data, for item: ScreenshotHistoryItem) -> Bool {
+        guard let url = safeFileURL(for: item.fileName) else {
+            JarvisPersistenceLog.logger.error("拒绝写入越界的截图历史路径")
+            return false
+        }
         do {
-            try data.write(
-                to: directoryURL.appendingPathComponent(item.fileName),
-                options: .atomic
-            )
+            try data.write(to: url, options: .atomic)
             return true
         } catch {
             JarvisPersistenceLog.logger.error(
@@ -170,7 +183,8 @@ final class ScreenshotHistoryStore {
         let keptIDs = Set(kept.map(\.id))
         for removed in sorted where !keptIDs.contains(removed.id) {
             do {
-                try fileManager.removeItem(at: directoryURL.appendingPathComponent(removed.fileName))
+                guard let url = safeFileURL(for: removed.fileName) else { continue }
+                try fileManager.removeItem(at: url)
             } catch CocoaError.fileNoSuchFile {
                 continue
             } catch {
@@ -180,5 +194,24 @@ final class ScreenshotHistoryStore {
             }
         }
         return kept
+    }
+
+    private func safeFileURL(for fileName: String) -> URL? {
+        let prefix = "screenshot-"
+        let suffix = ".png"
+        guard fileName.hasPrefix(prefix), fileName.hasSuffix(suffix) else { return nil }
+        let uuidString = String(fileName.dropFirst(prefix.count).dropLast(suffix.count))
+        guard UUID(uuidString: uuidString) != nil else { return nil }
+
+        let url = directoryURL.appendingPathComponent(fileName, isDirectory: false)
+        guard url.deletingLastPathComponent().standardizedFileURL == directoryURL.standardizedFileURL else {
+            return nil
+        }
+        if let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]),
+           values.isSymbolicLink == true
+        {
+            return nil
+        }
+        return url
     }
 }

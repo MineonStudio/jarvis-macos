@@ -83,8 +83,16 @@ final class AppModel: ObservableObject {
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
     @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
+    @Published var clipboardCacheDirectoryURL: URL
+    @Published var clipboardCacheMaximumBytes: Int64
+    @Published var clipboardCacheUsage = ClipboardCacheUsage(
+        usedBytes: 0,
+        capacityBytes: ClipboardCacheStore.defaultMaximumBytes,
+        fileCount: 0
+    )
 
-    let clipboardService = ClipboardService()
+    let clipboardCacheStore: ClipboardCacheStore
+    let clipboardService: ClipboardService
     let clipboardStore = ClipboardStore()
     let clipboardPanelController = ClipboardPanelController()
     let screenshotCacheStore = ScreenshotCacheStore()
@@ -122,7 +130,13 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        let cacheStore = ClipboardCacheStore()
+        clipboardCacheStore = cacheStore
+        clipboardService = ClipboardService(cacheStore: cacheStore)
+        clipboardCacheDirectoryURL = cacheStore.currentDirectoryURL
+        clipboardCacheMaximumBytes = cacheStore.currentMaximumBytes
         clipboardItems = clipboardStore.load()
+        clipboardCacheUsage = cacheStore.usage()
         screenshotHistory = screenshotHistoryStore.load()
         // Preserve the cache created by older builds as the first history item
         // when upgrading to the persistent history format.
@@ -468,19 +482,28 @@ extension AppModel {
     }
 
     private func finalizeScreenshot(_ data: Data, historyID: UUID?) {
-        let cacheSaved = setLatestScreenshot(data)
-        var historySaved = true
-        if let historyID,
-           let item = screenshotHistory.first(where: { $0.id == historyID })
-        {
-            historySaved = screenshotHistoryStore.update(item, data: data) != nil
-        } else {
-            historySaved = screenshotHistoryStore.add(data: data) != nil
+        let historyItem = historyID.flatMap { id in
+            screenshotHistory.first(where: { $0.id == id })
         }
-        screenshotHistory = screenshotHistoryStore.load()
-        editingHistoryID = nil
-        if !cacheSaved || !historySaved {
-            showToast("截图已完成，但历史记录保存失败")
+        let cacheStore = screenshotCacheStore
+        let historyStore = screenshotHistoryStore
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let cacheSaved = cacheStore.save(data)
+            let historySaved: Bool = if let historyItem {
+                historyStore.update(historyItem, data: data) != nil
+            } else {
+                historyStore.add(data: data) != nil
+            }
+            let history = historyStore.load()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.latestScreenshotData = cacheSaved ? data : self.latestScreenshotData
+                self.screenshotHistory = history
+                self.editingHistoryID = nil
+                if !cacheSaved || !historySaved {
+                    self.showToast("截图已完成，但历史记录保存失败")
+                }
+            }
         }
     }
 

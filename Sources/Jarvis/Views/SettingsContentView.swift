@@ -105,6 +105,7 @@ struct SettingsView: View {
                 themeSettingsCard
 
                 launchAtLoginSettingsCard
+                ClipboardCacheSettingsCard()
 
                 ShortcutSettingsCard()
             }

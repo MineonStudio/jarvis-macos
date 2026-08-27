@@ -50,6 +50,26 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
         XCTAssertEqual(history.load().map(\.id), [first.id])
     }
 
+    func testScreenshotHistoryRejectsPathTraversalMetadata() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-history-path-test-\(UUID().uuidString)", isDirectory: true)
+        let history = ScreenshotHistoryStore(directoryURL: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let item = ScreenshotHistoryItem(
+            id: UUID(),
+            createdAt: Date(),
+            updatedAt: Date(),
+            fileName: "../../outside.png"
+        )
+        let metadata = try JSONEncoder().encode([item])
+        try metadata.write(to: directory.appendingPathComponent("metadata.json"))
+
+        XCTAssertTrue(history.load().isEmpty)
+        XCTAssertNil(history.data(for: item))
+        XCTAssertFalse(history.fileURL(for: item).path.contains("outside.png"))
+    }
+
     func testCanvasAndOutputRectRoundTrip() {
         let space = ScreenshotCoordinateSpace(
             screenFrame: CGRect(x: 20, y: 30, width: 1440, height: 900),

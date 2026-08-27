@@ -7,8 +7,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "0.8.10"
-    private static let fallbackBuild = "194"
+    private static let fallbackShortVersion = "0.9.0"
+    private static let fallbackBuild = "214"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -76,6 +76,7 @@ enum JarvisUpdateError: LocalizedError {
     case invalidApplication
     case unsupportedInstallLocation
     case toolFailed(String)
+    case checksumUnavailable
     case checksumMismatch
     case privacyPermissionResetFailed(String)
 
@@ -91,6 +92,8 @@ enum JarvisUpdateError: LocalizedError {
             "当前应用位于只读磁盘映像或临时转移路径，无法自动更新。请先将贾维斯复制到“应用程序”文件夹后重试"
         case let .toolFailed(message):
             "解压更新包失败：\(message)"
+        case .checksumUnavailable:
+            "更新包缺少 SHA-256 校验信息，未进行安装"
         case .checksumMismatch:
             "更新包校验失败，未进行安装"
         case let .privacyPermissionResetFailed(message):
@@ -113,7 +116,7 @@ struct JarvisUpdateService {
         request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await updateSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ..< 300).contains(httpResponse.statusCode)
         else {
@@ -196,13 +199,12 @@ struct JarvisUpdateService {
             }
         }
 
-        // Keep the download path aligned with the verified v0.7.1 release:
-        // URLSession.shared follows the GitHub Release redirect and owns the
+        // URLSession follows the GitHub Release redirect and owns the
         // temporary download file until the request completes.
         var request = URLRequest(url: downloadURL)
         request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-        let (downloadedURL, response) = try await URLSession.shared.download(for: request)
+        let (downloadedURL, response) = try await updateSession.download(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ..< 300).contains(httpResponse.statusCode)
         else {
@@ -307,16 +309,36 @@ struct JarvisUpdateService {
         return originalURL
     }
 
-    private func verifyDigest(of fileURL: URL, expected: String?) throws {
-        guard let expected, expected.hasPrefix("sha256:") else { return }
-        let data = try Data(contentsOf: fileURL)
-        let digest = SHA256.hash(data: data)
+    func verifyDigest(of fileURL: URL, expected: String?) throws {
+        guard let expected, expected.lowercased().hasPrefix("sha256:") else {
+            throw JarvisUpdateError.checksumUnavailable
+        }
+
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        let digest = hasher.finalize()
             .map { String(format: "%02x", $0) }
             .joined()
-        guard digest.caseInsensitiveCompare(String(expected.dropFirst("sha256:".count))) == .orderedSame else {
+        let expectedDigest = String(expected.dropFirst("sha256:".count))
+        guard digest.caseInsensitiveCompare(expectedDigest) == .orderedSame else {
             throw JarvisUpdateError.checksumMismatch
         }
     }
+
+    private var updateSession: URLSession {
+        Self.updateSession
+    }
+
+    private static let updateSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 10 * 60
+        return URLSession(configuration: configuration)
+    }()
 
     private func findApplication(in directory: URL) -> URL? {
         guard let enumerator = FileManager.default.enumerator(

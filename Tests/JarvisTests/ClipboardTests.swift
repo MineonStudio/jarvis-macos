@@ -162,4 +162,26 @@ final class ClipboardTests: XCTestCase {
             ) != nil
         )
     }
+
+    func testClipboardCacheStoreUsesConfiguredDirectoryAndReportsUsage() throws {
+        let suiteName = "jarvis-clipboard-cache-defaults-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-cache-test-\(UUID().uuidString)", isDirectory: true)
+        defaults.set(directory.path, forKey: "jarvis.clipboard.cache.directory")
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = ClipboardCacheStore(defaults: defaults)
+        XCTAssertEqual(store.currentDirectoryURL, directory)
+        store.updateMaximumBytes(ClipboardCacheStore.minimumMaximumBytes)
+        XCTAssertNotNil(store.storeData(Data(repeating: 1, count: 128), fileExtension: "png"))
+
+        let usage = store.usage()
+        XCTAssertEqual(usage.usedBytes, 128)
+        XCTAssertEqual(usage.fileCount, 1)
+        XCTAssertEqual(usage.capacityBytes, ClipboardCacheStore.minimumMaximumBytes)
+    }
 }

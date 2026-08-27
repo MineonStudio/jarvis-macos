@@ -55,6 +55,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     let createdAt: Date
     let kind: ClipboardKind
     let text: String?
+    var textPath: String?
     var imagePath: String?
     var filePath: String?
     var thumbnailPath: String?
@@ -62,7 +63,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     let fileSize: Int64?
     let fileUTI: String?
     let fingerprintValue: String?
-    let isStoredCopy: Bool
+    var isStoredCopy: Bool
     var isPinned: Bool
 
     init(
@@ -70,6 +71,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         createdAt: Date = Date(),
         kind: ClipboardKind,
         text: String? = nil,
+        textPath: String? = nil,
         imagePath: String? = nil,
         filePath: String? = nil,
         thumbnailPath: String? = nil,
@@ -84,6 +86,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         self.createdAt = createdAt
         self.kind = kind
         self.text = text
+        self.textPath = textPath
         self.imagePath = imagePath
         self.filePath = filePath
         self.thumbnailPath = thumbnailPath
@@ -96,7 +99,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, createdAt, kind, text, imagePath, filePath, thumbnailPath, fileName
+        case id, createdAt, kind, text, textPath, imagePath, filePath, thumbnailPath, fileName
         case fileSize, fileUTI, fingerprintValue, isStoredCopy, isPinned
     }
 
@@ -106,6 +109,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         kind = try container.decode(ClipboardKind.self, forKey: .kind)
         text = try container.decodeIfPresent(String.self, forKey: .text)
+        textPath = try container.decodeIfPresent(String.self, forKey: .textPath)
         imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
         filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
         thumbnailPath = try container.decodeIfPresent(String.self, forKey: .thumbnailPath)
@@ -132,6 +136,10 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
             return "\(kind.rawValue):\(filePath)"
         }
         return id.uuidString
+    }
+
+    var cachePaths: [String] {
+        [textPath, imagePath, filePath, thumbnailPath].compactMap { $0 }
     }
 
     var preview: String {
@@ -227,13 +235,24 @@ final class ClipboardService {
         }
 
         if let text = pasteboard.string(forType: .string), !text.isEmpty {
-            let fingerprint = digest(Data(text.utf8))
-            onChange?(ClipboardItem(
-                createdAt: capturedAt,
-                kind: .text,
-                text: text,
-                fingerprintValue: fingerprint
-            ))
+            let callback = onChange
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let data = Data(text.utf8)
+                let path = self.saveData(data, fileExtension: "txt")
+                let item = ClipboardItem(
+                    createdAt: capturedAt,
+                    kind: .text,
+                    text: text,
+                    textPath: path,
+                    fileSize: Int64(data.count),
+                    fingerprintValue: self.digest(data),
+                    isStoredCopy: path != nil
+                )
+                DispatchQueue.main.async {
+                    callback?(item)
+                }
+            }
             return
         }
 

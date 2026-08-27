@@ -3,6 +3,33 @@ import AppKit
 extension AppModel {
     // MARK: - Clipboard workflow
 
+    func migrateClipboardTextCache() {
+        var didChange = false
+        for index in clipboardItems.indices {
+            let item = clipboardItems[index]
+            guard item.kind == .text,
+                  item.textPath == nil,
+                  let text = item.text,
+                  !text.isEmpty
+            else {
+                continue
+            }
+
+            let data = Data(text.utf8)
+            trimClipboardCacheIfNeeded(forAdditionalBytes: Int64(data.count))
+            guard let path = clipboardCacheStore.storeData(data, fileExtension: "txt") else {
+                continue
+            }
+            clipboardItems[index].textPath = path
+            clipboardItems[index].isStoredCopy = true
+            didChange = true
+        }
+
+        if didChange, !clipboardStore.save(clipboardItems) {
+            JarvisPersistenceLog.logger.error("迁移文本剪贴板缓存失败：无法保存历史记录")
+        }
+    }
+
     func receiveClipboardItem(_ item: ClipboardItem) {
         let matchingItems = clipboardItems.filter { $0.fingerprint == item.fingerprint }
         let wasPinned = matchingItems.contains(where: \.isPinned)
@@ -197,7 +224,7 @@ extension AppModel {
         if category == .all {
             let referencedPaths = Set(
                 clipboardItems.flatMap { item in
-                    [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
+                    item.cachePaths
                 }
             )
             didChange = clipboardCacheStore.removeOrphanedManagedFiles(
@@ -291,7 +318,7 @@ extension AppModel {
         if needsRoom(usage) {
             let referencedPaths = Set(
                 clipboardItems.flatMap { item in
-                    [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
+                    item.cachePaths
                 }
             )
             if clipboardCacheStore.removeOrphanedManagedFiles(referencedPaths: referencedPaths) {

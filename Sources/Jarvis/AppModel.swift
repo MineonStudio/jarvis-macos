@@ -143,6 +143,8 @@ final class AppModel: ObservableObject {
         clipboardCacheMaximumBytes = cacheStore.currentMaximumBytes
         clipboardItems = clipboardStore.load()
         clipboardCacheUsage = cacheStore.usage()
+        migrateClipboardTextCache()
+        clipboardCacheUsage = cacheStore.usage()
         screenshotHistory = screenshotHistoryStore.load()
         // Preserve the cache created by older builds as the first history item
         // when upgrading to the persistent history format.

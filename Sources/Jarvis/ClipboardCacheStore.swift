@@ -297,7 +297,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
     }
 
     private func managedFileURLsLocked(for item: ClipboardItem) -> [URL] {
-        let paths: [String] = [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
+        let paths = item.cachePaths
         let rootPath = directoryURL.standardizedFileURL.path + "/"
         return paths.compactMap { (path: String) -> URL? in
             let url = URL(fileURLWithPath: path).standardizedFileURL
@@ -340,6 +340,19 @@ final class ClipboardCacheStore: @unchecked Sendable {
             do {
                 for index in migratedItems.indices {
                     var item = migratedItems[index]
+                    if let textPath = item.textPath,
+                       let migration = try copyManagedFile(
+                           textPath,
+                           from: oldDirectoryURL,
+                           to: destinationDirectoryURL
+                       )
+                    {
+                        item.textPath = migration.path
+                        if migration.didCopy {
+                            copiedPaths.append(migration.path)
+                        }
+                        oldPaths.append(textPath)
+                    }
                     if let imagePath = item.imagePath,
                        let migration = try copyManagedFile(
                            imagePath,

@@ -59,7 +59,25 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(item.kind, .image)
         XCTAssertFalse(item.isPinned)
         XCTAssertFalse(item.isStoredCopy)
+        XCTAssertNil(item.textPath)
         XCTAssertNil(item.thumbnailPath)
+    }
+
+    func testClipboardTextCacheMetadataRoundTrips() throws {
+        let item = ClipboardItem(
+            kind: .text,
+            text: "缓存文本",
+            textPath: "/tmp/item-text.txt",
+            fileSize: 15,
+            isStoredCopy: true
+        )
+
+        let encoded = try JSONEncoder().encode(item)
+        let decoded = try JSONDecoder().decode(ClipboardItem.self, from: encoded)
+
+        XCTAssertEqual(decoded.textPath, item.textPath)
+        XCTAssertEqual(decoded.cachePaths, ["/tmp/item-text.txt"])
+        XCTAssertTrue(decoded.isStoredCopy)
     }
 
     func testClipboardOrderingKeepsNewestFirstRegardlessOfPinState() {
@@ -241,6 +259,34 @@ final class ClipboardTests: XCTestCase {
 
         XCTAssertTrue(store.hasManagedFiles(for: legacyItem))
         XCTAssertTrue(store.removeManagedFiles(for: [legacyItem]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertEqual(store.usage().usedBytes, 0)
+    }
+
+    func testClipboardCacheRemovalHandlesTextCache() throws {
+        let suiteName = "jarvis-clipboard-cache-text-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-cache-text-\(UUID().uuidString)", isDirectory: true)
+        defaults.set(directory.path, forKey: "jarvis.clipboard.cache.directory")
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = ClipboardCacheStore(defaults: defaults)
+        let text = "缓存文本"
+        let path = try XCTUnwrap(store.storeData(Data(text.utf8), fileExtension: "txt"))
+        let item = ClipboardItem(
+            kind: .text,
+            text: text,
+            textPath: path,
+            isStoredCopy: true
+        )
+
+        XCTAssertTrue(store.hasManagedFiles(for: item))
+        XCTAssertEqual(store.usage().usedBytes, Int64(Data(text.utf8).count))
+        XCTAssertTrue(store.removeManagedFiles(for: [item]))
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
         XCTAssertEqual(store.usage().usedBytes, 0)
     }

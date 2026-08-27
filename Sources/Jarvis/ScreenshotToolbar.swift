@@ -130,14 +130,18 @@ extension ScreenshotToolbar {
             editor.enterTranslationMode()
             onAction(.translation)
         } label: {
-            ScreenshotTranslationIcon(isSelected: editor.translationMode)
-                .frame(width: 24, height: 24)
-                .frame(width: 42, height: 42)
-                .contentShape(Rectangle())
+            if editor.translationState.isRunning {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                ScreenshotTranslationIcon(isSelected: editor.translationMode)
+            }
         }
+        .frame(width: 42, height: 42)
+        .contentShape(Rectangle())
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(editor.translationState.isRunning)
-        .help("截图翻译")
+        .help(editor.translationState.isRunning ? "正在翻译" : "截图翻译")
     }
 
     private struct MosaicToolIcon: View {

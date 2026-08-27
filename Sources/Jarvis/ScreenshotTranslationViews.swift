@@ -4,30 +4,11 @@ struct ScreenshotTranslationIcon: View {
     let isSelected: Bool
 
     var body: some View {
-        let accent = isSelected ? Color.accentColor : Color.secondary
-        ZStack {
-            Image(systemName: "bubble.left.fill")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(isSelected ? accent : Color.primary)
-                .offset(x: -3, y: 3)
-
-            Image(systemName: "bubble.right")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(accent)
-                .offset(x: 3, y: -3)
-
-            Text("A")
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.white)
-                .offset(x: -4, y: 4)
-
-            Text("文")
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .foregroundStyle(accent)
-                .offset(x: 4, y: -4)
-        }
-        .frame(width: 24, height: 24)
-        .accessibilityLabel("截图翻译")
+        Image(systemName: isSelected ? "character.bubble.fill" : "character.bubble")
+            .font(.system(size: 21, weight: .medium))
+            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+            .frame(width: 24, height: 24)
+            .accessibilityLabel("截图翻译")
     }
 }
 
@@ -42,9 +23,8 @@ struct ScreenshotTranslationBlockView: View {
             .lineLimit(maxLineCount)
             .minimumScaleFactor(0.55)
             .multilineTextAlignment(.leading)
-            .lineSpacing(1)
+            .lineSpacing(0)
             .padding(.horizontal, 6)
-            .padding(.vertical, 4)
             .frame(
                 width: max(8, bounds.width),
                 height: max(8, bounds.height),
@@ -59,7 +39,7 @@ struct ScreenshotTranslationBlockView: View {
     }
 
     private var fontSize: CGFloat {
-        max(11, min(28, block.bounds.height * 0.62))
+        max(1, block.bounds.height - 2)
     }
 
     private var maxLineCount: Int {

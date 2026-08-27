@@ -303,18 +303,18 @@ final class ScreenshotRenderPipeline {
         let bounds = translation.bounds.integral
         guard bounds.width > 4, bounds.height > 4 else { return }
 
-        let fontSize = max(11, min(28, bounds.height * 0.62))
+        let fontSize = max(1, bounds.height - 2)
         let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white
         ]
-        let padding: CGFloat = 6
+        let horizontalPadding: CGFloat = 6
         let textRect = CGRect(
-            x: bounds.minX + padding,
-            y: bounds.minY + padding,
-            width: max(1, bounds.width - padding * 2),
-            height: max(1, bounds.height - padding * 2)
+            x: bounds.minX + horizontalPadding,
+            y: bounds.minY,
+            width: max(1, bounds.width - horizontalPadding * 2),
+            height: max(1, bounds.height)
         )
 
         context.saveGState()
@@ -335,18 +335,23 @@ final class ScreenshotRenderPipeline {
         let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphicsContext
+        let attributedText = NSAttributedString(string: translation.translatedText, attributes: attributes)
+        let measuredText = attributedText.boundingRect(
+            with: textRect.size,
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let verticalInset = max(0, (textRect.height - measuredText.height) / 2)
         let flippedTextRect = NSRect(
             x: textRect.minX,
-            y: canvasSize.height - textRect.maxY,
+            y: canvasSize.height - textRect.maxY + verticalInset,
             width: textRect.width,
-            height: textRect.height
+            height: min(textRect.height, max(1, measuredText.height))
         )
-        NSAttributedString(string: translation.translatedText, attributes: attributes)
-            .draw(
-                with: flippedTextRect,
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            )
+        attributedText.draw(
+            with: flippedTextRect,
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        )
         NSGraphicsContext.restoreGraphicsState()
         context.restoreGState()
     }

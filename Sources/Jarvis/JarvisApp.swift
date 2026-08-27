@@ -23,7 +23,7 @@ struct JarvisApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(JarvisAppIdentity.displayName) {
+        WindowGroup(JarvisAppIdentity.displayName, id: JarvisAppIdentity.mainWindowSceneID) {
             JarvisRootView(appModel: appModel)
         }
         .defaultSize(
@@ -36,6 +36,7 @@ struct JarvisApp: App {
 
 private struct JarvisRootView: View {
     @ObservedObject var appModel: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     @StateObject private var mainWindowController = JarvisMainWindowController()
 
@@ -57,6 +58,11 @@ private struct JarvisRootView: View {
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .toolbar(removing: .title)
             .background(JarvisMainWindowAccessor(controller: mainWindowController))
+            .onAppear {
+                JarvisMenuBarController.shared.bind {
+                    openWindow(id: JarvisAppIdentity.mainWindowSceneID)
+                }
+            }
     }
 }
 

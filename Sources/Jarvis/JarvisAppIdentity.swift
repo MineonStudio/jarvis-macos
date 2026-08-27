@@ -1,6 +1,7 @@
 import Foundation
 
 enum JarvisAppIdentity {
+    static let mainWindowSceneID = "main"
     static let productionBundleIdentifier = "com.jarvis.mac"
     static let developmentBundleIdentifier = "com.jarvis.mac.dev"
 

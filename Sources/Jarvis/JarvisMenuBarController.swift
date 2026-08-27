@@ -13,6 +13,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     )
 
     private var app: AppModel?
+    private var openMainWindowAction: (() -> Void)?
     private var statusItem: NSStatusItem?
     private var appearanceObservation: NSKeyValueObservation?
     private var menuConfigured = false
@@ -34,6 +35,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     func bind(app: AppModel) {
         self.app = app
+    }
+
+    func bind(openMainWindowAction: @escaping () -> Void) {
+        self.openMainWindowAction = openMainWindowAction
     }
 
     func install() {
@@ -174,14 +179,26 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     @objc private func openMainWindow() {
         app?.selectedSection = .overview
         NSApp.activate(ignoringOtherApps: true)
+
         if let window = NSApp.windows.first(where: { window in
-            window.canBecomeKey && !window.isMiniaturized
-        }) ?? NSApp.windows.first {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
+            window.canBecomeKey && window.isVisible && !window.isMiniaturized
+        }) {
             window.makeKeyAndOrderFront(nil)
+            return
         }
+
+        if let window = NSApp.windows.first(where: { window in
+            window.canBecomeKey && window.isMiniaturized
+        }) {
+            window.deminiaturize(nil)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // WindowGroup removes its NSWindow after the user closes the last
+        // window. Recreate the scene through SwiftUI instead of trying to
+        // front a stale AppKit window reference.
+        openMainWindowAction?()
     }
 
     @objc private func openClipboardPanel() {

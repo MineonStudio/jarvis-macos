@@ -23,6 +23,7 @@ extension AppModel {
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
+        JarvisDockIconController.shared.apply(theme: preference)
     }
 
     func updateLaunchAtLogin(_ enabled: Bool) {

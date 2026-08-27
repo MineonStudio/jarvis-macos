@@ -138,6 +138,7 @@ final class AppModel: ObservableObject {
         loadThemePreference()
         loadLaunchAtLoginPreference()
         refreshSystemColorScheme()
+        JarvisDockIconController.shared.apply(theme: themePreference)
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.refreshSystemColorScheme()

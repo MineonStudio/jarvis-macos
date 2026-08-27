@@ -48,6 +48,7 @@ fi
 # of Info.plist: that legacy key makes Dock prefer the static jarvis.icns and
 # bypass the light/dark Icon Composer specialization.
 ICON_COMPOSER_DIR="$ROOT_DIR/Resources/jarvis.icon"
+DOCK_ICON_DIR="$APP_DIR/Contents/Resources/DockIcons"
 ASSET_PARTIAL_INFO="$APP_DIR/Contents/assetcatalog-info.plist"
 rm -f "$APP_DIR/Contents/Resources/Assets.car" \
       "$APP_DIR/Contents/Resources/AppIcon.icns" \
@@ -56,6 +57,51 @@ rm -f "$APP_DIR/Contents/Resources/Assets.car" \
       "$ASSET_PARTIAL_INFO"
 
 if [[ -d "$ICON_COMPOSER_DIR" ]]; then
+  # Build deterministic light/dark ICNS files from the same Icon Composer
+  # source. These retain the native rounded icon treatment while allowing
+  # the running app to honor its own manual theme preference.
+  mkdir -p "$DOCK_ICON_DIR"
+  for staleDockIcon in "$DOCK_ICON_DIR"/*.icns(N); do
+    rm -f "$staleDockIcon"
+  done
+  for staleDockIcon in "$DOCK_ICON_DIR"/*.png(N); do
+    rm -f "$staleDockIcon"
+  done
+
+  ICON_VARIANT_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-icon-variants.XXXXXX")"
+  trap 'rm -rf "$ICON_VARIANT_TEMP"' EXIT
+  LIGHT_ICON_SOURCE="Codex 图像 2026年8月26日 15_31_01.png"
+  DARK_ICON_SOURCE="Codex 图像 2026年8月26日 15_31_01-dark.png"
+
+  for iconVariant in light dark; do
+    VARIANT_ROOT="$ICON_VARIANT_TEMP/$iconVariant"
+    VARIANT_ICON_DIR="$VARIANT_ROOT/jarvis.icon"
+    VARIANT_OUTPUT_DIR="$VARIANT_ROOT/output"
+    mkdir -p "$VARIANT_ICON_DIR/Assets" "$VARIANT_OUTPUT_DIR"
+    cp "$ICON_COMPOSER_DIR/Assets"/*.png "$VARIANT_ICON_DIR/Assets/"
+    cp "$ICON_COMPOSER_DIR/icon.json" "$VARIANT_ICON_DIR/icon.json"
+
+    # Keep one default image specialization. The dark package points that
+    # default to the dark source; the light package keeps the original.
+    perl -0pi -e 's/,\s*\{\s*"appearance"\s*:\s*"dark"\s*,\s*"value"\s*:\s*"[^"]+"\s*\}//s' \
+      "$VARIANT_ICON_DIR/icon.json"
+    if [[ "$iconVariant" == "dark" ]]; then
+      perl -0pi -e "s/\Q$LIGHT_ICON_SOURCE\E/$DARK_ICON_SOURCE/g" \
+        "$VARIANT_ICON_DIR/icon.json"
+    fi
+
+    xcrun actool \
+      "$VARIANT_ICON_DIR" \
+      --compile "$VARIANT_OUTPUT_DIR" \
+      --platform macosx \
+      --minimum-deployment-target 26.0 \
+      --app-icon jarvis \
+      --output-partial-info-plist "$VARIANT_ROOT/assetcatalog-info.plist" \
+      --notices \
+      --warnings >/dev/null
+    cp "$VARIANT_OUTPUT_DIR/jarvis.icns" "$DOCK_ICON_DIR/jarvis-$iconVariant.icns"
+  done
+
   xcrun actool \
     "$ICON_COMPOSER_DIR" \
     --compile "$APP_DIR/Contents/Resources" \
@@ -66,6 +112,9 @@ if [[ -d "$ICON_COMPOSER_DIR" ]]; then
     --notices \
     --warnings >/dev/null
   rm -f "$ASSET_PARTIAL_INFO"
+  # actool also emits a standalone jarvis.icns. Keep only Assets.car so the
+  # bundle's CFBundleIconName resolves to the adaptive Icon Composer asset.
+  rm -f "$APP_DIR/Contents/Resources/jarvis.icns"
 fi
 
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then

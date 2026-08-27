@@ -102,7 +102,7 @@ struct ClipboardFilterBar: View {
     }
 
     private var regularLayout: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             filterChips
                 .fixedSize(horizontal: true, vertical: false)
 

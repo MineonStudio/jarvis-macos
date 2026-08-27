@@ -159,11 +159,38 @@ final class ClipboardTests: XCTestCase {
     func testHistoryGridPaginationKeepsEachPageToCompleteRows() {
         let fiveColumnWidth = HistoryGridMetrics.clipboardGridWidth(for: 5)
         XCTAssertEqual(HistoryGridMetrics.columnCount(for: fiveColumnWidth), 5)
-        XCTAssertEqual(HistoryGridMetrics.pageSize(for: fiveColumnWidth), 15)
+        XCTAssertEqual(
+            HistoryGridMetrics.pageSize(
+                for: fiveColumnWidth,
+                availableHeight: 700,
+                itemCount: 100,
+                verticalInset: 0
+            ),
+            25
+        )
 
         let fourColumnWidth = HistoryGridMetrics.clipboardGridWidth(for: 4)
         XCTAssertEqual(HistoryGridMetrics.columnCount(for: fourColumnWidth), 4)
-        XCTAssertEqual(HistoryGridMetrics.pageSize(for: fourColumnWidth), 12)
+        XCTAssertEqual(
+            HistoryGridMetrics.pageSize(
+                for: fourColumnWidth,
+                availableHeight: 500,
+                itemCount: 100,
+                verticalInset: 0
+            ),
+            12
+        )
+    }
+
+    func testHistoryGridRowsAdaptToAvailableHeight() {
+        let rowHeight = HistoryGridMetrics.clipboardCardHeight
+        let rowSpacing = HistoryGridMetrics.clipboardGridSpacing
+
+        XCTAssertEqual(HistoryGridMetrics.rowCount(for: rowHeight), 1)
+        XCTAssertEqual(
+            HistoryGridMetrics.rowCount(for: rowHeight * 4 + rowSpacing * 3),
+            4
+        )
     }
 
     func testClipboardTimestampUsesSlashDateAndTimeFormat() {

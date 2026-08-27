@@ -15,15 +15,15 @@ struct ScreenshotView: View {
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, JarvisMetrics.pageInset)
-                .padding(.vertical, JarvisMetrics.pageInset)
+                .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                .padding(.vertical, HistoryGridMetrics.historyPanelInset)
             }
             .onAppear {
-                availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+                availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
                 availableGridHeight = max(0, proxy.size.height)
             }
             .onChange(of: proxy.size) { _, size in
-                availableGridWidth = max(0, size.width - JarvisMetrics.pageInset * 2)
+                availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
                 availableGridHeight = max(0, size.height)
             }
         }
@@ -32,6 +32,8 @@ struct ScreenshotView: View {
 
 enum HistoryGridMetrics {
     static let imageSpacing: CGFloat = 7
+    static let historyPanelInset: CGFloat = 24
+    static let historyFilterToGridSpacing: CGFloat = 14
 
     // Both history galleries use the same 16:9 landscape panel and controls.
     static let historyCardBaseWidth: CGFloat = 192
@@ -54,10 +56,10 @@ enum HistoryGridMetrics {
     static let paginationControlHeight: CGFloat = 34
     static let screenshotFilterBarHeight: CGFloat = filterChipHeight
     static let screenshotGridVerticalInset: CGFloat =
-        JarvisMetrics.pageInset * 2 + screenshotFilterBarHeight + imageSpacing
+        historyPanelInset * 2 + screenshotFilterBarHeight + historyFilterToGridSpacing
     static let clipboardGridVerticalInset: CGFloat =
-        JarvisMetrics.pageInset * 2 + JarvisWindowLayoutMetrics.clipboardCompactFilterBarHeight
-            + imageSpacing
+        historyPanelInset * 2 + JarvisWindowLayoutMetrics.clipboardCompactFilterBarHeight
+            + historyFilterToGridSpacing
 
     static func clipboardGridWidth(for columnCount: Int) -> CGFloat {
         guard columnCount > 0 else { return 0 }
@@ -131,7 +133,7 @@ struct ScreenshotHistorySection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
             ScreenshotTimeFilterBar(
                 selectedFilter: $selectedTimeFilter,
                 items: app.screenshotHistory

@@ -177,7 +177,7 @@ struct ClipboardView: View {
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
+                VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
                     ClipboardFilterBar(
                         searchText: $searchText,
                         selectedFilter: $selectedFilter,
@@ -202,15 +202,15 @@ struct ClipboardView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, JarvisMetrics.pageInset)
-                .padding(.vertical, JarvisMetrics.pageInset)
+                .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                .padding(.vertical, HistoryGridMetrics.historyPanelInset)
             }
             .onAppear {
-                availableGridWidth = max(0, proxy.size.width - JarvisMetrics.pageInset * 2)
+                availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
                 availableGridHeight = max(0, proxy.size.height)
             }
             .onChange(of: proxy.size) { _, size in
-                availableGridWidth = max(0, size.width - JarvisMetrics.pageInset * 2)
+                availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
                 availableGridHeight = max(0, size.height)
             }
         }

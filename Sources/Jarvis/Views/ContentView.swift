@@ -302,35 +302,6 @@ struct DashboardView: View {
                     Spacer()
                 }
 
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("快捷操作")
-                            .font(JarvisTypography.cardTitle)
-                        Spacer()
-                        Text(app.statusMessage)
-                            .font(JarvisTypography.secondary)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                    }
-
-                    HStack(spacing: 10) {
-                        QuickActionButton(title: "框选截图", icon: "viewfinder", tint: .accentColor) {
-                            // This is an in-window action, so it may move the
-                            // main window to the screenshot tab explicitly.
-                            app.selectedSection = .skill(.screenshot)
-                            app.captureScreenshot()
-                        }
-                        QuickActionButton(title: "打开剪贴板", icon: "clipboard", tint: .accentColor) {
-                            app.selectedSection = .skill(.clipboard)
-                        }
-                        QuickActionButton(title: "窗口布局", icon: "macwindow.on.rectangle", tint: .accentColor) {
-                            app.selectedSection = .skill(.windowLayout)
-                        }
-                    }
-                }
-
-                Divider()
-                    .overlay(Color.primary.opacity(0.10))
-
                 HStack(spacing: 0) {
                     DashboardMetric(title: "截图", value: "\(app.screenshotHistory.count)", detail: "历史记录", icon: "photo")
                     dashboardDivider

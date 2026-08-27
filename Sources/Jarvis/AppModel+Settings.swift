@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 extension AppModel {
     // MARK: - Shared UI state
@@ -23,7 +24,10 @@ extension AppModel {
     func updateThemePreference(_ preference: JarvisTheme) {
         themePreference = preference
         UserDefaults.standard.set(preference.rawValue, forKey: themePreferenceKey)
-        JarvisDockIconController.shared.apply(theme: preference)
+        JarvisDockIconController.shared.apply(
+            theme: preference,
+            isSystemDark: systemColorScheme == .dark
+        )
     }
 
     func updateLaunchAtLogin(_ enabled: Bool) {
@@ -101,7 +105,12 @@ extension AppModel {
     func refreshSystemColorScheme() {
         let appearance = NSApp.effectiveAppearance
         let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
-        systemColorScheme = bestMatch == .darkAqua ? .dark : .light
+        let newColorScheme: ColorScheme = bestMatch == .darkAqua ? .dark : .light
+        systemColorScheme = newColorScheme
+        JarvisDockIconController.shared.apply(
+            theme: themePreference,
+            isSystemDark: newColorScheme == .dark
+        )
     }
 
     func loadThemePreference() {

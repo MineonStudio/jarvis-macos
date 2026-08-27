@@ -29,7 +29,7 @@ struct ClipboardSearchField: View {
             }
         }
         .padding(.horizontal, 15)
-        .frame(minHeight: 44)
+        .frame(minHeight: HistoryGridMetrics.clipboardSearchFieldHeight)
         .jarvisGlass(in: Capsule(), interactive: false)
         .contentShape(Capsule())
         .onTapGesture {
@@ -177,7 +177,7 @@ struct ClipboardView: View {
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
+                VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
                     ClipboardFilterBar(
                         searchText: $searchText,
                         selectedFilter: $selectedFilter,

@@ -6,6 +6,12 @@ final class ScreenshotHistoryFilterTests: XCTestCase {
     func testHistoryFilterControlsShareTheirPresentationMetrics() {
         XCTAssertEqual(HistoryGridMetrics.historyPanelInset, 24)
         XCTAssertEqual(HistoryGridMetrics.historyFilterToGridSpacing, 14)
+        XCTAssertEqual(HistoryGridMetrics.clipboardSearchFieldHeight, 44)
+        XCTAssertEqual(
+            HistoryGridMetrics.clipboardFilterToGridSpacing
+                + (HistoryGridMetrics.clipboardSearchFieldHeight - HistoryGridMetrics.filterChipHeight),
+            HistoryGridMetrics.historyFilterToGridSpacing
+        )
         XCTAssertEqual(HistoryGridMetrics.filterChipHeight, 36)
         XCTAssertEqual(HistoryGridMetrics.filterChipSpacing, 7)
         XCTAssertEqual(HistoryGridMetrics.filterChipHorizontalPadding, 10)

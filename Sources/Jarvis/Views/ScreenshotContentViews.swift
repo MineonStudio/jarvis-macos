@@ -42,6 +42,7 @@ enum HistoryGridMetrics {
     static let clipboardCardHeight: CGFloat = clipboardCardWidth * 9 / 16
     static let clipboardCardPadding: CGFloat = historyCardBasePadding * 0.6
     static let clipboardPreviewHeight: CGFloat = clipboardCardHeight
+    static let clipboardSearchFieldHeight: CGFloat = 44
     static let clipboardContentSpacing: CGFloat = 4
     static let clipboardMetadataHeight: CGFloat = 16
     static let clipboardSearchFieldWidth: CGFloat = 320
@@ -53,6 +54,8 @@ enum HistoryGridMetrics {
     static let filterChipSpacing: CGFloat = 7
     static let filterChipHorizontalPadding: CGFloat = 10
     static let filterChipVerticalPadding: CGFloat = 8
+    static let clipboardFilterToGridSpacing: CGFloat =
+        historyFilterToGridSpacing - (clipboardSearchFieldHeight - filterChipHeight)
     static let paginationControlHeight: CGFloat = 34
     static let screenshotFilterBarHeight: CGFloat = filterChipHeight
     static let screenshotGridVerticalInset: CGFloat =

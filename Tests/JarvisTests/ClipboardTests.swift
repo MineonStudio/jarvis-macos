@@ -201,15 +201,75 @@ final class ClipboardTests: XCTestCase {
     }
 
     func testClipboardCacheCategoriesMatchTheirMediaKinds() {
+        let text = ClipboardItem(kind: .text, text: "text")
         let image = ClipboardItem(kind: .image, imagePath: "/tmp/image.png", isStoredCopy: true)
         let video = ClipboardItem(kind: .video, filePath: "/tmp/video.mov", isStoredCopy: true)
         let file = ClipboardItem(kind: .file, filePath: "/tmp/file.pdf", isStoredCopy: true)
+        let favorite = ClipboardItem(kind: .text, text: "favorite", isPinned: true)
 
+        XCTAssertTrue(ClipboardCacheCategory.text.matches(text))
         XCTAssertTrue(ClipboardCacheCategory.image.matches(image))
         XCTAssertFalse(ClipboardCacheCategory.image.matches(video))
         XCTAssertTrue(ClipboardCacheCategory.video.matches(video))
         XCTAssertTrue(ClipboardCacheCategory.file.matches(file))
         XCTAssertTrue(ClipboardCacheCategory.all.matches(image))
+        XCTAssertTrue(ClipboardCacheCategory.favorites.matches(favorite))
+        XCTAssertEqual(
+            ClipboardCacheCategory.allCases.map(\.rawValue),
+            ["all", "favorites", "text", "image", "file", "video"]
+        )
+    }
+
+    func testClipboardCacheRemovalHandlesLegacyStoredPathWithoutStoredCopyFlag() throws {
+        let suiteName = "jarvis-clipboard-cache-removal-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-cache-removal-\(UUID().uuidString)", isDirectory: true)
+        defaults.set(directory.path, forKey: "jarvis.clipboard.cache.directory")
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = ClipboardCacheStore(defaults: defaults)
+        let path = try XCTUnwrap(store.storeData(Data(repeating: 1, count: 16), fileExtension: "png"))
+        let legacyItem = ClipboardItem(
+            kind: .image,
+            imagePath: path,
+            isStoredCopy: false
+        )
+
+        XCTAssertTrue(store.hasManagedFiles(for: legacyItem))
+        XCTAssertTrue(store.removeManagedFiles(for: [legacyItem]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertEqual(store.usage().usedBytes, 0)
+    }
+
+    func testClipboardCacheRemovalDoesNotDeleteExternalSourceFile() throws {
+        let suiteName = "jarvis-clipboard-cache-external-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-cache-external-\(UUID().uuidString)", isDirectory: true)
+        defaults.set(directory.path, forKey: "jarvis.clipboard.cache.directory")
+        let externalURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-external-\(UUID().uuidString).png")
+        try Data(repeating: 1, count: 16).write(to: externalURL)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: externalURL)
+        }
+
+        let store = ClipboardCacheStore(defaults: defaults)
+        let externalItem = ClipboardItem(
+            kind: .image,
+            imagePath: externalURL.path,
+            isStoredCopy: false
+        )
+
+        XCTAssertFalse(store.hasManagedFiles(for: externalItem))
+        XCTAssertTrue(store.removeManagedFiles(for: [externalItem]))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: externalURL.path))
     }
 
     func testClipboardCacheCleanupPeriodsUseExpectedDurations() {

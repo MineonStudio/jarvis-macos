@@ -6,7 +6,7 @@ extension AppModel {
     func receiveClipboardItem(_ item: ClipboardItem) {
         let matchingItems = clipboardItems.filter { $0.fingerprint == item.fingerprint }
         let wasPinned = matchingItems.contains(where: \.isPinned)
-        clipboardStore.removeStoredFiles(for: matchingItems)
+        _ = clipboardCacheStore.removeManagedFiles(for: matchingItems)
 
         var item = item
         item.isPinned = wasPinned
@@ -15,7 +15,7 @@ extension AppModel {
         clipboardItems = ClipboardOrdering.newestFirst(clipboardItems)
         let removedItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
         clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
-        clipboardStore.removeStoredFiles(for: removedItems)
+        _ = clipboardCacheStore.removeManagedFiles(for: removedItems)
         trimClipboardCacheIfNeeded()
         if !clipboardStore.save(clipboardItems) {
             showToast("剪贴板历史保存失败")
@@ -103,7 +103,7 @@ extension AppModel {
     }
 
     func deleteClipboardItem(_ item: ClipboardItem) {
-        clipboardStore.removeStoredFiles(for: [item])
+        _ = clipboardCacheStore.removeManagedFiles(for: [item])
         clipboardItems.removeAll { $0.id == item.id }
         if !clipboardStore.save(clipboardItems) {
             showToast("剪贴板历史保存失败")
@@ -114,7 +114,7 @@ extension AppModel {
     }
 
     func clearClipboardHistory() {
-        clipboardStore.removeStoredFiles(for: clipboardItems)
+        _ = clipboardCacheStore.removeManagedFiles(for: clipboardItems)
         clipboardItems.removeAll()
         if clipboardStore.save(clipboardItems) {
             refreshClipboardCacheUsage()
@@ -167,31 +167,49 @@ extension AppModel {
         olderThan: Date? = nil,
         automatically: Bool = false
     ) -> Int {
+        guard category != .favorites else {
+            if !automatically {
+                showToast("已收藏内容只能在剪贴板模块中手动清理")
+            }
+            return 0
+        }
+
         let candidates = clipboardItems.filter { item in
             let matchesAge = olderThan.map { item.createdAt < $0 } ?? true
             return !item.isPinned
-                && item.isStoredCopy
                 && category.matches(item)
                 && matchesAge
+                && clipboardCacheStore.hasManagedFiles(for: item)
         }
-        let candidateIDs = Set(candidates.map(\.id))
-        for item in candidates {
-            clipboardStore.removeStoredFiles(for: [item])
-        }
-        clipboardItems.removeAll { candidateIDs.contains($0.id) }
 
-        var didChange = !candidates.isEmpty
-        if category == .all, olderThan == nil {
+        var removedIDs = Set<UUID>()
+        var failedCount = 0
+        for item in candidates {
+            if clipboardCacheStore.removeManagedFiles(for: [item]) {
+                removedIDs.insert(item.id)
+            } else {
+                failedCount += 1
+            }
+        }
+        clipboardItems.removeAll { removedIDs.contains($0.id) }
+
+        var didChange = !removedIDs.isEmpty
+        if category == .all {
             let referencedPaths = Set(
                 clipboardItems.flatMap { item in
                     [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
                 }
             )
-            didChange = clipboardCacheStore.removeOrphanedManagedFiles(referencedPaths: referencedPaths) || didChange
+            didChange = clipboardCacheStore.removeOrphanedManagedFiles(
+                referencedPaths: referencedPaths,
+                olderThan: olderThan
+            ) || didChange
         }
 
         guard didChange else {
-            if !automatically {
+            if !automatically, failedCount > 0 {
+                showToast("有 \(failedCount) 条缓存无法清理，请检查文件权限或占用情况")
+            } else if !automatically {
                 showToast("没有符合条件的缓存")
             }
             return 0
@@ -202,9 +220,13 @@ extension AppModel {
         }
         refreshClipboardCacheUsage()
         if !automatically {
-            showToast("已清理 \(candidates.count) 条缓存")
+            if failedCount > 0 {
+                showToast("已清理 \(removedIDs.count) 条缓存，\(failedCount) 条无法清理")
+            } else {
+                showToast("已清理 \(removedIDs.count) 条缓存")
+            }
         }
-        return candidates.count
+        return removedIDs.count
     }
 
     func chooseClipboardCacheDirectory() {
@@ -256,11 +278,11 @@ extension AppModel {
         guard additionalBytes <= usage.capacityBytes || usage.isOverCapacity else { return }
 
         let candidates = clipboardItems
-            .filter { !$0.isPinned && $0.isStoredCopy }
+            .filter { !$0.isPinned && clipboardCacheStore.hasManagedFiles(for: $0) }
             .sorted { $0.createdAt < $1.createdAt }
         var changed = false
         for item in candidates where needsRoom(usage) {
-            clipboardStore.removeStoredFiles(for: [item])
+            guard clipboardCacheStore.removeManagedFiles(for: [item]) else { continue }
             clipboardItems.removeAll { $0.id == item.id }
             usage = clipboardCacheStore.usage()
             changed = true

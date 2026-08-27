@@ -1,51 +1,7 @@
 import AppKit
 import SwiftUI
 
-enum ClipboardViewFilter: String, CaseIterable, Identifiable {
-    case all
-    case favorites
-    case text
-    case image
-    case file
-    case video
-
-    var id: String {
-        rawValue
-    }
-
-    var title: String {
-        switch self {
-        case .all: "全部"
-        case .favorites: "收藏"
-        case .text: "文本"
-        case .image: "图片"
-        case .file: "文件"
-        case .video: "视频"
-        }
-    }
-
-    var icon: String? {
-        switch self {
-        case .all: "square.grid.2x2"
-        case .favorites: "star.fill"
-        case .text: ClipboardKind.text.icon
-        case .image: ClipboardKind.image.icon
-        case .file: ClipboardKind.file.icon
-        case .video: ClipboardKind.video.icon
-        }
-    }
-
-    func matches(_ item: ClipboardItem) -> Bool {
-        switch self {
-        case .all: true
-        case .favorites: item.isPinned
-        case .text: item.kind == .text
-        case .image: item.kind == .image
-        case .file: item.kind == .file
-        case .video: item.kind == .video
-        }
-    }
-}
+typealias ClipboardViewFilter = ClipboardCacheCategory
 
 struct ClipboardSearchField: View {
     @Binding var text: String

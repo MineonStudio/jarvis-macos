@@ -1,7 +1,61 @@
 import SwiftUI
 
+private enum ClipboardCacheCleanupTimeOption: String, CaseIterable, Identifiable {
+    case all
+    case threeDays
+    case sevenDays
+    case oneMonth
+    case halfYear
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .all: "全部"
+        case .threeDays: ClipboardCacheCleanupPeriod.threeDays.title
+        case .sevenDays: ClipboardCacheCleanupPeriod.sevenDays.title
+        case .oneMonth: ClipboardCacheCleanupPeriod.oneMonth.title
+        case .halfYear: ClipboardCacheCleanupPeriod.halfYear.title
+        }
+    }
+
+    var period: ClipboardCacheCleanupPeriod? {
+        switch self {
+        case .all: nil
+        case .threeDays: .threeDays
+        case .sevenDays: .sevenDays
+        case .oneMonth: .oneMonth
+        case .halfYear: .halfYear
+        }
+    }
+}
+
+private enum ClipboardCacheCleanupRequest: Identifiable {
+    case category(ClipboardCacheCategory)
+    case time(ClipboardCacheCleanupTimeOption)
+
+    var id: String {
+        switch self {
+        case let .category(category): "category-\(category.rawValue)"
+        case let .time(option): "time-\(option.rawValue)"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case let .category(category): "将清理所有未收藏的\(category.title)缓存，是否继续？"
+        case let .time(option): "将清理所有未收藏且\(option.title == "全部" ? "符合条件的" : option.title)缓存，是否继续？"
+        }
+    }
+}
+
 struct ClipboardCacheSettingsCard: View {
     @EnvironmentObject private var app: AppModel
+    @State private var selectedCleanupCategory: ClipboardCacheCategory = .all
+    @State private var selectedCleanupTime: ClipboardCacheCleanupTimeOption = .all
+    @State private var pendingCleanup: ClipboardCacheCleanupRequest?
 
     private let capacityOptions = ClipboardCacheStore.supportedMaximumBytes
 
@@ -96,42 +150,41 @@ struct ClipboardCacheSettingsCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("清理缓存")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("所有清理均不包含已收藏内容")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.jarvisTextSecondary)
 
-                    Text("按分类清理")
-                        .font(.system(size: 12, weight: .semibold))
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 90), spacing: 8)],
-                        spacing: 8
-                    ) {
-                        ForEach([
-                            ClipboardCacheCategory.image,
-                            .video,
-                            .file,
-                            .all
-                        ]) { category in
-                            cleanupButton(category.title) {
-                                app.clearClipboardCache(category: category)
+                    HStack {
+                        Text("分类")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Picker("分类", selection: $selectedCleanupCategory) {
+                            ForEach(ClipboardCacheCategory.allCases) { category in
+                                Text(category.title).tag(category)
                             }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        Button("清理") {
+                            guard selectedCleanupCategory != .favorites else { return }
+                            pendingCleanup = .category(selectedCleanupCategory)
+                        }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
+                        .disabled(selectedCleanupCategory == .favorites)
                     }
 
-                    Text("按时间清理")
-                        .font(.system(size: 12, weight: .semibold))
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 110), spacing: 8)],
-                        spacing: 8
-                    ) {
-                        ForEach(ClipboardCacheCleanupPeriod.allCases) { period in
-                            cleanupButton(period.title) {
-                                app.clearClipboardCache(olderThan: period.cutoffDate)
+                    HStack {
+                        Text("时间")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Picker("时间", selection: $selectedCleanupTime) {
+                            ForEach(ClipboardCacheCleanupTimeOption.allCases) { option in
+                                Text(option.title).tag(option)
                             }
                         }
-                        cleanupButton("清理全部") {
-                            app.clearClipboardCache()
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        Button("清理") {
+                            pendingCleanup = .time(selectedCleanupTime)
                         }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
                     }
 
                     Divider().overlay(Color.primary.opacity(0.12))
@@ -145,8 +198,6 @@ struct ClipboardCacheSettingsCard: View {
                     )
                     if app.clipboardCacheAutoCleanupEnabled {
                         HStack {
-                            Text("自动清理周期")
-                                .font(.system(size: 12, weight: .semibold))
                             Spacer()
                             Picker(
                                 "自动清理周期",
@@ -168,6 +219,16 @@ struct ClipboardCacheSettingsCard: View {
         }
         .onAppear {
             app.refreshClipboardCacheUsage()
+        }
+        .alert(item: $pendingCleanup) { request in
+            Alert(
+                title: Text("确认清理缓存"),
+                message: Text(request.message),
+                primaryButton: .destructive(Text("清理")) {
+                    performCleanup(request)
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
         }
     }
 
@@ -202,8 +263,12 @@ struct ClipboardCacheSettingsCard: View {
         return Color(hue: hue, saturation: 0.82, brightness: 0.86)
     }
 
-    private func cleanupButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .buttonStyle(JarvisSecondaryButtonStyle())
+    private func performCleanup(_ request: ClipboardCacheCleanupRequest) {
+        switch request {
+        case let .category(category):
+            app.clearClipboardCache(category: category)
+        case let .time(option):
+            app.clearClipboardCache(olderThan: option.period?.cutoffDate)
+        }
     }
 }

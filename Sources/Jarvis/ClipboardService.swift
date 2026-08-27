@@ -405,32 +405,4 @@ final class ClipboardStore {
             return false
         }
     }
-
-    func removeStoredFiles(for items: [ClipboardItem]) {
-        for item in items {
-            if let thumbnailPath = item.thumbnailPath {
-                removeStoredFile(atPath: thumbnailPath)
-            }
-
-            let path: String? = switch item.kind {
-            case .image: item.imagePath
-            case .file, .video: item.filePath
-            case .text: nil
-            }
-            guard item.isStoredCopy, let path else { continue }
-            removeStoredFile(atPath: path)
-        }
-    }
-
-    private func removeStoredFile(atPath path: String) {
-        do {
-            try FileManager.default.removeItem(atPath: path)
-        } catch CocoaError.fileNoSuchFile {
-            return
-        } catch {
-            JarvisPersistenceLog.logger.error(
-                "删除剪贴板本地文件失败：\(error.localizedDescription, privacy: .public)"
-            )
-        }
-    }
 }

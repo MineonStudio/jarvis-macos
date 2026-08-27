@@ -2,9 +2,11 @@ import Foundation
 
 enum ClipboardCacheCategory: String, CaseIterable, Identifiable {
     case all
+    case favorites
+    case text
     case image
-    case video
     case file
+    case video
 
     var id: String {
         rawValue
@@ -13,18 +15,33 @@ enum ClipboardCacheCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .all: "全部"
+        case .favorites: "收藏"
+        case .text: "文本"
         case .image: "图片"
-        case .video: "视频"
         case .file: "文件"
+        case .video: "视频"
+        }
+    }
+
+    var icon: String? {
+        switch self {
+        case .all: "square.grid.2x2"
+        case .favorites: "star.fill"
+        case .text: ClipboardKind.text.icon
+        case .image: ClipboardKind.image.icon
+        case .file: ClipboardKind.file.icon
+        case .video: ClipboardKind.video.icon
         }
     }
 
     func matches(_ item: ClipboardItem) -> Bool {
         switch self {
         case .all: true
+        case .favorites: item.isPinned
+        case .text: item.kind == .text
         case .image: item.kind == .image
-        case .video: item.kind == .video
         case .file: item.kind == .file
+        case .video: item.kind == .video
         }
     }
 }
@@ -206,12 +223,45 @@ final class ClipboardCacheStore: @unchecked Sendable {
         }
     }
 
+    /// Removes only files owned by the configured cache directory.
+    /// External source files referenced by clipboard history are never touched.
     @discardableResult
-    func removeOrphanedManagedFiles(referencedPaths: Set<String>) -> Bool {
+    func removeManagedFiles(for items: [ClipboardItem]) -> Bool {
+        lock.withLock {
+            var succeeded = true
+            for item in items {
+                for url in managedFileURLsLocked(for: item) {
+                    guard fileManager.fileExists(atPath: url.path) else { continue }
+                    do {
+                        try fileManager.removeItem(at: url)
+                    } catch {
+                        succeeded = false
+                        JarvisPersistenceLog.logger.error(
+                            "删除剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
+            }
+            return succeeded
+                && items.allSatisfy { managedFileURLsLocked(for: $0).allSatisfy { !fileManager.fileExists(atPath: $0.path) } }
+        }
+    }
+
+    func hasManagedFiles(for item: ClipboardItem) -> Bool {
+        lock.withLock {
+            managedFileURLsLocked(for: item).contains { fileManager.fileExists(atPath: $0.path) }
+        }
+    }
+
+    @discardableResult
+    func removeOrphanedManagedFiles(
+        referencedPaths: Set<String>,
+        olderThan: Date? = nil
+    ) -> Bool {
         lock.withLock {
             guard let enumerator = fileManager.enumerator(
                 at: directoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             ) else {
                 return false
@@ -222,9 +272,13 @@ final class ClipboardCacheStore: @unchecked Sendable {
             for case let url as URL in enumerator {
                 let standardizedURL = url.standardizedFileURL
                 guard
-                    standardizedURL.lastPathComponent.hasPrefix("item-"),
+                    Self.isManagedFilename(standardizedURL.lastPathComponent),
                     !referenced.contains(standardizedURL.path),
-                    (try? standardizedURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                    let values = try? standardizedURL.resourceValues(
+                        forKeys: [.isRegularFileKey, .contentModificationDateKey]
+                    ),
+                    values.isRegularFile == true,
+                    (olderThan.map { (values.contentModificationDate ?? .distantFuture) < $0 } ?? true)
                 else {
                     continue
                 }
@@ -240,6 +294,27 @@ final class ClipboardCacheStore: @unchecked Sendable {
             }
             return removed
         }
+    }
+
+    private func managedFileURLsLocked(for item: ClipboardItem) -> [URL] {
+        let paths: [String] = [item.imagePath, item.filePath, item.thumbnailPath].compactMap { $0 }
+        let rootPath = directoryURL.standardizedFileURL.path + "/"
+        return paths.compactMap { (path: String) -> URL? in
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard url.path.hasPrefix(rootPath) else { return nil }
+            guard item.isStoredCopy || Self.isManagedFilename(url.lastPathComponent) else {
+                return nil
+            }
+            return url
+        }.reduce(into: [URL]()) { (result: inout [URL], url: URL) in
+            if !result.contains(url) {
+                result.append(url)
+            }
+        }
+    }
+
+    private static func isManagedFilename(_ filename: String) -> Bool {
+        filename.hasPrefix("item-") || filename.hasPrefix("migrated-")
     }
 
     func migrateManagedFiles(

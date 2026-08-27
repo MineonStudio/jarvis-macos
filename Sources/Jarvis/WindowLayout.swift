@@ -106,22 +106,28 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    /// The menu bar keeps these bindings so its menu items remain keyboard
-    /// accessible. The shortcut shown in the in-app cards is presentation
-    /// metadata only; no global shortcut is registered for this feature.
-    var menuKeyEquivalent: String {
+    /// The menu bar and global shortcut manager share this binding so the
+    /// shortcut shown in the cards always matches the actual action.
+    var shortcut: ScreenshotShortcut {
+        ScreenshotShortcut(
+            keyCode: keyCode,
+            modifiers: Self.menuShortcutModifierFlags.rawValue
+        )
+    }
+
+    private var keyCode: UInt16 {
         switch self {
-        case .halfLeft: Self.functionKey(0xF702)
-        case .halfRight: Self.functionKey(0xF703)
-        case .upperLeft: "u"
-        case .upperRight: "i"
-        case .lowerLeft: "j"
-        case .lowerRight: "k"
+        case .halfLeft: 123
+        case .halfRight: 124
+        case .upperLeft: 32
+        case .upperRight: 34
+        case .lowerLeft: 38
+        case .lowerRight: 40
         }
     }
 
-    private static func functionKey(_ value: UInt32) -> String {
-        String(decoding: [UInt16(value)], as: UTF16.self)
+    var menuKeyEquivalent: String {
+        shortcut.menuKeyEquivalent
     }
 
     static let menuShortcutModifierFlags: NSEvent.ModifierFlags = [.command, .shift]

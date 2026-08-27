@@ -100,7 +100,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
                 action: #selector(applyWindowLayout(_:)),
                 keyEquivalent: layout.menuKeyEquivalent
             )
-            item.keyEquivalentModifierMask = WindowLayout.menuShortcutModifierFlags
+            item.keyEquivalentModifierMask = layout.shortcut.modifierFlags
             item.representedObject = layout.rawValue
             item.image = layout.menuIcon
             addMenuItem(item)

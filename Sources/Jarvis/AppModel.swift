@@ -106,6 +106,7 @@ final class AppModel: ObservableObject {
     private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
+    var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]
     var windowLayoutController: WindowLayoutController?
     var systemAppearanceObservation: NSKeyValueObservation?
     var editingHistoryID: UUID?
@@ -180,6 +181,16 @@ final class AppModel: ObservableObject {
 
         windowLayoutController = WindowLayoutController { [weak self] message in
             self?.showToast(message)
+        }
+        for (index, layout) in WindowLayout.allCases.enumerated() {
+            windowLayoutShortcutManagers[layout] = ScreenshotShortcutManager(
+                binding: layout.shortcut,
+                hotKeyID: UInt32(index + 3)
+            ) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.applyWindowLayout(layout)
+                }
+            }
         }
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()

@@ -29,9 +29,24 @@ final class WindowLayoutTests: XCTestCase {
         XCTAssertNil(WindowLayout.layout(for: [.up]))
     }
 
-    func testInAppShortcutLabelsAreDisplayOnly() {
+    func testInAppShortcutLabelsUseTheExpectedPresentation() {
         XCTAssertEqual(WindowLayout.halfLeft.shortcutDisplay, "⇧⌘←")
         XCTAssertEqual(WindowLayout.upperRight.shortcutDisplay, "⇧⌘I")
+    }
+
+    func testLayoutShortcutBindingsMatchDisplayedShortcuts() {
+        XCTAssertEqual(WindowLayout.halfLeft.shortcut.keyCode, 123)
+        XCTAssertEqual(WindowLayout.halfRight.shortcut.keyCode, 124)
+        XCTAssertEqual(WindowLayout.upperLeft.shortcut.keyCode, 32)
+        XCTAssertEqual(WindowLayout.upperRight.shortcut.keyCode, 34)
+        XCTAssertEqual(WindowLayout.lowerLeft.shortcut.keyCode, 38)
+        XCTAssertEqual(WindowLayout.lowerRight.shortcut.keyCode, 40)
+
+        for layout in WindowLayout.allCases {
+            XCTAssertEqual(layout.shortcut.displayString, layout.shortcutDisplay)
+            XCTAssertEqual(layout.shortcut.modifierFlags, WindowLayout.menuShortcutModifierFlags)
+            XCTAssertEqual(layout.menuKeyEquivalent, layout.shortcut.menuKeyEquivalent)
+        }
     }
 
     func testScreenshotGalleryUsesClipboardGridMetrics() {

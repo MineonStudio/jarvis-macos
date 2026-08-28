@@ -2,31 +2,141 @@ import AppKit
 import SwiftUI
 
 struct ScreenshotView: View {
-    @State private var availableGridWidth: CGFloat = 0
-    @State private var availableGridHeight: CGFloat = 0
+    @EnvironmentObject private var app: AppModel
+    @State private var selectedTimeFilter: ScreenshotTimeFilter = .threeDays
+    @State private var selectedItemID: UUID?
 
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
+            HStack(alignment: .center, spacing: 14) {
+                ScreenshotTimeFilterBar(
+                    selectedFilter: $selectedTimeFilter
+                )
+
+                Spacer(minLength: 0)
+
+                ScreenshotHistoryActionToolbar(
+                    selectedItem: selectedItem,
+                    onClearSelection: { selectedItemID = nil }
+                )
+            }
+
+            GeometryReader { proxy in
+                ScrollView {
                     ScreenshotHistorySection(
-                        availableGridWidth: availableGridWidth,
-                        availableGridHeight: availableGridHeight
+                        selectedTimeFilter: $selectedTimeFilter,
+                        selectedItemID: $selectedItemID,
+                        availableGridWidth: max(
+                            0,
+                            proxy.size.width - HistoryGridMetrics.historyPanelInset * 2
+                        ),
+                        availableGridHeight: max(0, proxy.size.height)
                     )
+                    .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                    .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                .padding(.vertical, HistoryGridMetrics.historyPanelInset)
-            }
-            .onAppear {
-                availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
-                availableGridHeight = max(0, proxy.size.height)
-            }
-            .onChange(of: proxy.size) { _, size in
-                availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
-                availableGridHeight = max(0, size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .jarvisFloatingPanel(cornerRadius: 16)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var selectedItem: ScreenshotHistoryItem? {
+        guard let selectedItemID else { return nil }
+        return app.screenshotHistory.first { $0.id == selectedItemID }
+    }
+}
+
+struct ScreenshotHistoryActionToolbar: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let selectedItem: ScreenshotHistoryItem?
+    let onClearSelection: () -> Void
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            actionButton(
+                systemName: "eye",
+                help: "查看",
+                isEnabled: selectedItem != nil
+            ) {
+                guard let selectedItem else { return }
+                app.showScreenshotHistoryPreview(selectedItem)
+            }
+            actionButton(
+                systemName: "pencil",
+                help: "编辑",
+                isEnabled: selectedItem != nil
+            ) {
+                guard let selectedItem else { return }
+                app.editScreenshotHistory(selectedItem)
+            }
+            actionButton(
+                systemName: "doc.on.doc",
+                help: "复制",
+                isEnabled: selectedItem != nil
+            ) {
+                guard let selectedItem else { return }
+                app.copyScreenshotHistory(selectedItem)
+            }
+            actionButton(
+                systemName: "trash",
+                help: "删除",
+                tint: .red.opacity(0.82),
+                isEnabled: selectedItem != nil
+            ) {
+                showingDeleteConfirmation = true
+            }
+        }
+        .padding(4)
+        .frame(height: HistoryGridMetrics.topControlHeight)
+        .jarvisGlass(in: Capsule(), interactive: true)
+        .confirmationDialog(
+            "删除这张截图？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                guard let selectedItem else { return }
+                app.deleteScreenshotHistory(selectedItem)
+                onClearSelection()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后无法恢复。")
+        }
+    }
+
+    private func actionButton(
+        systemName: String,
+        help: String,
+        tint: Color = .secondary,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(
+                    isEnabled
+                        ? tint
+                        : Color.secondary.opacity(0.30)
+                )
+                .frame(
+                    width: HistoryGridMetrics.clipboardActionButtonSize,
+                    height: HistoryGridMetrics.clipboardActionButtonSize
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .disabled(!isEnabled)
+        .jarvisHoverHighlight(
+            in: Circle(),
+            scale: 1.06
+        )
+        .help(help)
     }
 }
 
@@ -42,7 +152,6 @@ enum HistoryGridMetrics {
     static let clipboardCardHeight: CGFloat = clipboardCardWidth * 9 / 16
     static let clipboardCardPadding: CGFloat = historyCardBasePadding * 0.6
     static let clipboardPreviewHeight: CGFloat = clipboardCardHeight
-    static let clipboardSearchFieldHeight: CGFloat = filterChipHeight
     static let clipboardContentSpacing: CGFloat = 4
     static let clipboardMetadataHeight: CGFloat = 16
     static let clipboardSearchFieldWidth: CGFloat = 320
@@ -54,15 +163,15 @@ enum HistoryGridMetrics {
     static let filterChipSpacing: CGFloat = 7
     static let filterChipHorizontalPadding: CGFloat = 10
     static let filterChipVerticalPadding: CGFloat = 8
+    static let topControlHeight: CGFloat =
+        filterChipHeight + JarvisMetrics.segmentedControlPadding * 2
+    static let clipboardSearchFieldHeight: CGFloat = topControlHeight
     static let clipboardFilterToGridSpacing: CGFloat =
         historyFilterToGridSpacing - (clipboardSearchFieldHeight - filterChipHeight)
     static let paginationControlHeight: CGFloat = 34
-    static let screenshotFilterBarHeight: CGFloat = filterChipHeight
-    static let screenshotGridVerticalInset: CGFloat =
-        historyPanelInset * 2 + screenshotFilterBarHeight + historyFilterToGridSpacing
-    static let clipboardGridVerticalInset: CGFloat =
-        historyPanelInset * 2 + JarvisWindowLayoutMetrics.clipboardCompactFilterBarHeight
-            + historyFilterToGridSpacing
+    static let screenshotFilterBarHeight: CGFloat = topControlHeight
+    static let screenshotGridVerticalInset: CGFloat = historyPanelInset * 2
+    static let clipboardGridVerticalInset: CGFloat = historyPanelInset * 2
 
     static func clipboardGridWidth(for columnCount: Int) -> CGFloat {
         guard columnCount > 0 else { return 0 }
@@ -106,7 +215,8 @@ struct ScreenshotHistorySection: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var currentPage = 1
-    @State private var selectedTimeFilter: ScreenshotTimeFilter = .all
+    @Binding var selectedTimeFilter: ScreenshotTimeFilter
+    @Binding var selectedItemID: UUID?
     let availableGridWidth: CGFloat
     let availableGridHeight: CGFloat
 
@@ -138,11 +248,6 @@ struct ScreenshotHistorySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
-            ScreenshotTimeFilterBar(
-                selectedFilter: $selectedTimeFilter,
-                items: app.screenshotHistory
-            )
-
             if filteredItems.isEmpty {
                 JarvisEmptyState(
                     icon: "photo.on.rectangle",
@@ -166,7 +271,10 @@ struct ScreenshotHistorySection: View {
                 ) {
                     ForEach(pageItems) { item in
                         ScreenshotHistoryCard(
-                            item: item
+                            item: item,
+                            isSelected: selectedItemID == item.id,
+                            onSelect: { selectedItemID = item.id },
+                            onDoubleClick: { app.showScreenshotHistoryPreview(item) }
                         )
                         .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                     }
@@ -244,7 +352,9 @@ struct ScreenshotHistoryCard: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ScreenshotHistoryItem
-    @State private var showingDeleteConfirmation = false
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onDoubleClick: () -> Void
     @State private var isHovered = false
 
     private var fileSizeDescription: String? {
@@ -326,64 +436,8 @@ struct ScreenshotHistoryCard: View {
         )
     }
 
-    private var actionOverlay: some View {
-        HStack(spacing: 5) {
-            screenshotActionButton(
-                systemName: "eye",
-                help: "查看大图",
-                action: { app.showScreenshotHistoryPreview(item) }
-            )
-            screenshotActionButton(
-                systemName: "doc.on.doc",
-                help: "复制",
-                action: { app.copyScreenshotHistory(item) }
-            )
-            screenshotActionButton(
-                systemName: "pencil",
-                help: "二次编辑",
-                action: { app.editScreenshotHistory(item) }
-            )
-            screenshotActionButton(
-                systemName: "trash",
-                help: "删除",
-                tint: .red.opacity(0.72),
-                action: { showingDeleteConfirmation = true }
-            )
-        }
-        .font(.system(size: 14, weight: .semibold))
-        .opacity(isHovered ? 1 : 0)
-        .scaleEffect(isHovered || reduceMotion ? 1 : 0.94)
-        .allowsHitTesting(isHovered)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-            value: isHovered
-        )
-    }
-
-    private func screenshotActionButton(
-        systemName: String,
-        help: String,
-        tint: Color = .secondary,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .frame(
-                    width: HistoryGridMetrics.clipboardActionButtonSize,
-                    height: HistoryGridMetrics.clipboardActionButtonSize
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
-        .foregroundStyle(tint)
-        .font(.system(size: 13, weight: .medium))
-        .jarvisGlass(in: Circle(), interactive: true)
-        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
-    }
-
     private var cardBody: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             previewArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .scaleEffect(
@@ -395,10 +449,6 @@ struct ScreenshotHistoryCard: View {
                     JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
                     value: isHovered
                 )
-
-            actionOverlay
-                .padding(.horizontal, 6)
-                .padding(.bottom, 8)
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,
@@ -415,6 +465,17 @@ struct ScreenshotHistoryCard: View {
             cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
             interactive: false
         )
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+            .stroke(
+                isSelected ? Color.accentColor : .clear,
+                lineWidth: isSelected ? 2 : 0
+            )
+            .allowsHitTesting(false)
+        }
         .onHover { isHovered = $0 }
     }
 
@@ -429,18 +490,8 @@ struct ScreenshotHistoryCard: View {
                 style: .continuous
             )
         )
-        .confirmationDialog(
-            "删除这张截图？",
-            isPresented: $showingDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("删除", role: .destructive) {
-                app.deleteScreenshotHistory(item)
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后无法恢复。")
-        }
+        .onTapGesture(count: 2, perform: onDoubleClick)
+        .onTapGesture(perform: onSelect)
     }
 }
 

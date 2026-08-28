@@ -15,6 +15,11 @@ struct ContentView: View {
                 selection: selectedSectionBinding,
                 title: { $0.title },
                 icon: { $0.icon },
+                secondaryParent: .skillLibrary,
+                secondaryItems: SkillID.allCases,
+                secondarySelection: selectedSkillBinding,
+                secondaryTitle: { $0.navigationTitle },
+                secondaryIcon: { $0.icon },
                 footerTitle: "设置",
                 footerIcon: "gearshape",
                 footerIsSelected: navigationSelection == .settings,
@@ -96,7 +101,8 @@ struct ContentView: View {
         navigationSelection = section
         switch section {
         case .skillLibrary:
-            app.selectedSection = .skill(selectedSkill)
+            selectedSkill = .screenshot
+            app.selectedSection = .skill(.screenshot)
         case .overview, .aiConversation, .settings:
             app.selectedSection = section.appSection
         }
@@ -189,11 +195,7 @@ struct ContentView: View {
         switch loadedSection {
         case .aiConversation:
             AIConversationTopBar()
-        case .skill:
-            JarvisTopBarContainer {
-                SkillNavigationBar(selection: selectedSkillBinding)
-            }
-        case .overview, .settings:
+        case .overview, .skill, .settings:
             EmptyView()
         }
     }
@@ -204,8 +206,6 @@ struct ContentView: View {
         case .skill:
             detailView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
         case .overview, .aiConversation, .settings:
             detailView
         }
@@ -270,31 +270,6 @@ private enum TopLevelSection: Hashable, Identifiable {
         case .skillLibrary: .skill(.screenshot)
         case .settings: .settings
         }
-    }
-}
-
-private struct SkillNavigationBar: View {
-    @Binding var selection: SkillID
-
-    var body: some View {
-        JarvisSegmentedControl(items: Array(SkillID.allCases), selection: $selection) { skill, isSelected in
-            HStack(spacing: 7) {
-                Image(systemName: skill.icon)
-                    .font(.system(size: 12, weight: .medium))
-                Text(skill.navigationTitle)
-            }
-            .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
-            .foregroundStyle(isSelected ? Color.white : Color.secondary)
-            .frame(
-                minHeight: JarvisMetrics.segmentedItemHeight,
-                maxHeight: JarvisMetrics.segmentedItemHeight
-            )
-            .padding(.horizontal, 12)
-            .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
-            .help(skill.navigationTitle)
-        }
-        .shadow(color: Color.black.opacity(0.10), radius: 20, y: 9)
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

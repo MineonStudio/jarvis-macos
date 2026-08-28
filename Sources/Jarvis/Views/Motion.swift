@@ -70,6 +70,30 @@ struct JarvisHoverModifier<HoverShape: Shape>: ViewModifier {
     }
 }
 
+struct JarvisHoverHighlightModifier<HoverShape: Shape>: ViewModifier {
+    let shape: HoverShape
+    let scale: CGFloat
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                shape
+                    .fill(Color.accentColor.opacity(isHovered ? 0.12 : 0))
+                    .allowsHitTesting(false)
+            }
+            .scaleEffect(isHovered && !reduceMotion ? scale : 1)
+            .zIndex(isHovered ? 1 : 0)
+            .animation(
+                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                value: isHovered
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
 struct JarvisHoverPanelModifier: ViewModifier {
     let scale: CGFloat
 
@@ -100,6 +124,13 @@ extension View {
         modifier(JarvisHoverModifier(shape: shape, scale: scale))
     }
 
+    func jarvisHoverHighlight(
+        in shape: some Shape,
+        scale: CGFloat = 1.01
+    ) -> some View {
+        modifier(JarvisHoverHighlightModifier(shape: shape, scale: scale))
+    }
+
     func jarvisHoverPanelFeedback(
         scale: CGFloat = 1.03
     ) -> some View {
@@ -125,6 +156,7 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var itemFrames: [AnyHashable: CGRect] = [:]
+    @State private var hoveredItemID: AnyHashable?
 
     init(
         items: [Item],
@@ -150,6 +182,21 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
                     )
             }
 
+            if let hoveredItemID,
+               hoveredItemID != AnyHashable(selection.id),
+               let hoveredFrame = itemFrames[hoveredItemID]
+            {
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: hoveredFrame.width, height: hoveredFrame.height)
+                    .offset(x: hoveredFrame.minX, y: hoveredFrame.minY)
+                    .allowsHitTesting(false)
+                    .animation(
+                        JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                        value: hoveredItemID
+                    )
+            }
+
             HStack(spacing: 2) {
                 ForEach(items) { item in
                     Button {
@@ -172,6 +219,14 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
                     }
                     .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.9))
                     .contentShape(Capsule())
+                    .onHover { isHovered in
+                        let itemID = AnyHashable(item.id)
+                        if isHovered {
+                            hoveredItemID = itemID
+                        } else if hoveredItemID == itemID {
+                            hoveredItemID = nil
+                        }
+                    }
                 }
             }
             .animation(

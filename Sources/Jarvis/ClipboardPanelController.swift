@@ -61,6 +61,7 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         panel.contentView = NSHostingView(
             rootView: ClipboardPanelView()
                 .environmentObject(app)
+                .tint(.accentColor)
         )
         self.panel = panel
     }

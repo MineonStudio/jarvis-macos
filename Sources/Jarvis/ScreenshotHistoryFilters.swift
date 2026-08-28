@@ -14,13 +14,15 @@ enum ScreenshotTimeFilter: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: "全部"
-        case .threeDays: "近3天"
-        case .sevenDays: "近7天"
-        case .oneMonth: "近1个月"
+        case .all: "全部时间"
+        case .threeDays: "3天"
+        case .sevenDays: "7天"
+        case .oneMonth: "1个月"
         case .halfYear: "近半年"
         }
     }
+
+    static let displayCases: [Self] = [.threeDays, .sevenDays, .oneMonth, .all]
 
     func matches(
         _ item: ScreenshotHistoryItem,
@@ -67,22 +69,25 @@ enum ScreenshotTimeFilterLogic {
 
 struct ScreenshotTimeFilterBar: View {
     @Binding var selectedFilter: ScreenshotTimeFilter
-    let items: [ScreenshotHistoryItem]
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: HistoryGridMetrics.filterChipSpacing) {
-                ForEach(ScreenshotTimeFilter.allCases) { filter in
-                    HistoryFilterChip(
-                        title: filter.title,
-                        count: ScreenshotTimeFilterLogic.count(for: filter, in: items),
-                        isSelected: selectedFilter == filter
-                    ) {
-                        selectedFilter = filter
-                    }
-                }
+            JarvisSegmentedControl(
+                items: ScreenshotTimeFilter.displayCases,
+                selection: $selectedFilter
+            ) { filter, isSelected in
+                Text(filter.title)
+                    .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                    .foregroundStyle(isSelected ? Color.white : Color.jarvisTextSecondary)
+                    .frame(height: HistoryGridMetrics.filterChipHeight)
+                    .padding(.horizontal, 14)
+                    .contentShape(Capsule())
             }
         }
-        .frame(height: HistoryGridMetrics.screenshotFilterBarHeight, alignment: .leading)
+        // The glass projection extends beyond the scroll content bounds. Keep
+        // that projection visible so the capsule's shadow is not cut into a
+        // hard rectangular edge by ScrollView's default clipping.
+        .scrollClipDisabled()
+        .frame(height: HistoryGridMetrics.topControlHeight, alignment: .leading)
     }
 }

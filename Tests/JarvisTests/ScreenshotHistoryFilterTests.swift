@@ -8,7 +8,7 @@ final class ScreenshotHistoryFilterTests: XCTestCase {
         XCTAssertEqual(HistoryGridMetrics.historyFilterToGridSpacing, 14)
         XCTAssertEqual(
             HistoryGridMetrics.clipboardSearchFieldHeight,
-            HistoryGridMetrics.filterChipHeight
+            HistoryGridMetrics.topControlHeight
         )
         XCTAssertEqual(
             HistoryGridMetrics.clipboardFilterToGridSpacing
@@ -16,13 +16,30 @@ final class ScreenshotHistoryFilterTests: XCTestCase {
             HistoryGridMetrics.historyFilterToGridSpacing
         )
         XCTAssertEqual(HistoryGridMetrics.filterChipHeight, 36)
+        XCTAssertEqual(
+            HistoryGridMetrics.topControlHeight,
+            HistoryGridMetrics.filterChipHeight + JarvisMetrics.segmentedControlPadding * 2
+        )
+        XCTAssertEqual(
+            HistoryGridMetrics.topControlHeight,
+            HistoryGridMetrics.clipboardActionButtonSize + 8
+        )
         XCTAssertEqual(HistoryGridMetrics.filterChipSpacing, 7)
         XCTAssertEqual(HistoryGridMetrics.filterChipHorizontalPadding, 10)
         XCTAssertEqual(HistoryGridMetrics.filterChipVerticalPadding, 8)
         XCTAssertEqual(
             HistoryGridMetrics.screenshotFilterBarHeight,
-            HistoryGridMetrics.filterChipHeight
+            HistoryGridMetrics.topControlHeight
         )
+        XCTAssertEqual(
+            ScreenshotTimeFilter.displayCases,
+            [.threeDays, .sevenDays, .oneMonth, .all]
+        )
+        XCTAssertEqual(
+            ClipboardTimeFilter.allCases,
+            [.threeDays, .sevenDays, .oneMonth, .all]
+        )
+        XCTAssertEqual(ScreenshotTimeFilter.all.title, "全部时间")
     }
 
     func testTimeFiltersUseUpdatedAtAndCalendarBoundaries() throws {

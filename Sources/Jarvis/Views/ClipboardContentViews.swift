@@ -3,6 +3,65 @@ import SwiftUI
 
 typealias ClipboardViewFilter = ClipboardCacheCategory
 
+enum ClipboardTimeFilter: String, CaseIterable, Identifiable {
+    case threeDays
+    case sevenDays
+    case oneMonth
+    case all
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .all: "全部时间"
+        case .threeDays: "3天"
+        case .sevenDays: "7天"
+        case .oneMonth: "1个月"
+        }
+    }
+
+    func matches(
+        _ item: ClipboardItem,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let components else { return true }
+        guard let startDate = calendar.date(byAdding: components, to: now) else { return false }
+        return item.createdAt >= startDate
+    }
+
+    private var components: DateComponents? {
+        switch self {
+        case .all: nil
+        case .threeDays: DateComponents(day: -3)
+        case .sevenDays: DateComponents(day: -7)
+        case .oneMonth: DateComponents(month: -1)
+        }
+    }
+}
+
+enum ClipboardTimeFilterLogic {
+    static func filteredItems(
+        from items: [ClipboardItem],
+        filter: ClipboardTimeFilter,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [ClipboardItem] {
+        items.filter { filter.matches($0, now: now, calendar: calendar) }
+    }
+
+    static func count(
+        for filter: ClipboardTimeFilter,
+        in items: [ClipboardItem],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        filteredItems(from: items, filter: filter, now: now, calendar: calendar).count
+    }
+}
+
 struct ClipboardSearchField: View {
     @Binding var text: String
     let placeholder: String
@@ -30,8 +89,8 @@ struct ClipboardSearchField: View {
         }
         .padding(.horizontal, 15)
         .frame(
-            minHeight: HistoryGridMetrics.clipboardSearchFieldHeight,
-            maxHeight: HistoryGridMetrics.clipboardSearchFieldHeight
+            minHeight: HistoryGridMetrics.topControlHeight,
+            maxHeight: HistoryGridMetrics.topControlHeight
         )
         .jarvisGlass(in: Capsule(), interactive: false)
         .contentShape(Capsule())
@@ -47,6 +106,22 @@ struct ClipboardSearchField: View {
 }
 
 enum ClipboardFilterLogic {
+    static func filteredItems(
+        from items: [ClipboardItem],
+        searchText: String,
+        timeFilter: ClipboardTimeFilter,
+        category: ClipboardViewFilter,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [ClipboardItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return items.filter { item in
+            timeFilter.matches(item, now: now, calendar: calendar)
+                && category.matches(item)
+                && (query.isEmpty || item.preview.localizedCaseInsensitiveContains(query))
+        }
+    }
+
     static func filteredItems(
         from items: [ClipboardItem],
         searchText: String,
@@ -78,38 +153,20 @@ enum ClipboardFilterLogic {
 
 struct ClipboardFilterBar: View {
     @Binding var searchText: String
-    @Binding var selectedFilter: ClipboardViewFilter
+    @Binding var selectedTimeFilter: ClipboardTimeFilter
+    @Binding var selectedCategory: ClipboardViewFilter
     let placeholder: String
     let focusesOnAppear: Bool
-    let items: [ClipboardItem]
-
-    private var filterCounts: [ClipboardViewFilter: Int] {
-        ClipboardFilterLogic.counts(in: items)
-    }
-
-    private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: HistoryGridMetrics.filterChipSpacing) {
-                ForEach(ClipboardViewFilter.allCases) { filter in
-                    HistoryFilterChip(
-                        title: filter.title,
-                        count: filterCounts[filter, default: 0],
-                        isSelected: selectedFilter == filter
-                    ) {
-                        selectedFilter = filter
-                    }
-                }
-            }
-        }
-        .frame(height: HistoryGridMetrics.filterChipHeight, alignment: .leading)
-    }
 
     private var regularLayout: some View {
-        HStack(alignment: .top, spacing: 14) {
-            filterChips
+        HStack(alignment: .center, spacing: 14) {
+            ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
                 .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
 
             Spacer(minLength: 0)
+
+            ClipboardCategoryFilterSelector(selection: $selectedCategory)
 
             ClipboardSearchField(
                 text: $searchText,
@@ -122,8 +179,15 @@ struct ClipboardFilterBar: View {
 
     private var compactLayout: some View {
         VStack(alignment: .leading, spacing: 10) {
-            filterChips
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .center, spacing: HistoryGridMetrics.filterChipSpacing) {
+                ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Spacer(minLength: 0)
+
+                ClipboardCategoryFilterSelector(selection: $selectedCategory)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             ClipboardSearchField(
                 text: $searchText,
@@ -142,11 +206,68 @@ struct ClipboardFilterBar: View {
     }
 }
 
+struct ClipboardTimeFilterSelector: View {
+    @Binding var selection: ClipboardTimeFilter
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            JarvisSegmentedControl(
+                items: Array(ClipboardTimeFilter.allCases),
+                selection: $selection
+            ) { filter, isSelected in
+                Text(filter.title)
+                    // Keep every tab's metrics stable while the selection pill
+                    // moves, avoiding a width re-layout during the animation.
+                    .font(JarvisTypography.control)
+                    .foregroundStyle(isSelected ? Color.white : Color.jarvisTextSecondary)
+                    .frame(height: HistoryGridMetrics.filterChipHeight)
+                    .padding(.horizontal, 14)
+                    .contentShape(Capsule())
+            }
+        }
+        .scrollClipDisabled()
+        .frame(height: HistoryGridMetrics.topControlHeight, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+struct ClipboardCategoryFilterSelector: View {
+    @Binding var selection: ClipboardViewFilter
+
+    private func categoryTitle(_ filter: ClipboardViewFilter) -> String {
+        filter == .all ? "全部类型" : filter.title
+    }
+
+    var body: some View {
+        Picker(
+            "内容类型",
+            selection: $selection
+        ) {
+            ForEach(ClipboardViewFilter.allCases) { filter in
+                Text(categoryTitle(filter)).tag(filter)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .buttonStyle(.plain)
+        .font(JarvisTypography.control)
+        .padding(.horizontal, 14)
+        .frame(height: HistoryGridMetrics.filterChipHeight)
+        .padding(JarvisMetrics.segmentedControlPadding)
+        .frame(height: HistoryGridMetrics.topControlHeight)
+        .jarvisGlass(in: Capsule(), interactive: true)
+        .contentShape(Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 struct ClipboardView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searchText = ""
-    @State private var selectedFilter: ClipboardViewFilter = .all
+    @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
+    @State private var selectedCategory: ClipboardViewFilter = .all
+    @State private var selectedItemID: UUID?
     @State private var currentPage = 1
     @State private var availableGridWidth: CGFloat = 0
     @State private var availableGridHeight: CGFloat = 0
@@ -155,7 +276,8 @@ struct ClipboardView: View {
         ClipboardFilterLogic.filteredItems(
             from: app.clipboardItems,
             searchText: searchText,
-            filter: selectedFilter
+            timeFilter: selectedTimeFilter,
+            category: selectedCategory
         )
     }
 
@@ -178,70 +300,199 @@ struct ClipboardView: View {
         return Array(filteredItems.dropFirst(startIndex).prefix(pageSize))
     }
 
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
-                    ClipboardFilterBar(
-                        searchText: $searchText,
-                        selectedFilter: $selectedFilter,
-                        placeholder: "搜索文本、文件名…",
-                        focusesOnAppear: false,
-                        items: app.clipboardItems
-                    )
-                    if filteredItems.isEmpty {
-                        ClipboardEmptyState(
-                            hasQuery: !searchText.isEmpty || selectedFilter != .all
-                        )
-                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-                    } else {
-                        VStack(spacing: 0) {
-                            ClipboardGrid(items: pageItems, presentation: .main)
+    private var selectedItem: ClipboardItem? {
+        guard let selectedItemID else { return nil }
+        return app.clipboardItems.first { $0.id == selectedItemID }
+    }
 
-                            if totalPages > 1 {
-                                PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
-                                    currentPage = max(1, currentPage - 1)
-                                } onNext: {
-                                    currentPage = min(totalPages, currentPage + 1)
+    var body: some View {
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
+            HStack(alignment: .top, spacing: 14) {
+                ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
+
+                Spacer(minLength: 0)
+
+                ClipboardCategoryFilterSelector(selection: $selectedCategory)
+                ClipboardHistoryActionToolbar(
+                    selectedItem: selectedItem,
+                    onClearSelection: { selectedItemID = nil }
+                )
+                ClipboardSearchField(
+                    text: $searchText,
+                    placeholder: "搜索文本、文件名…",
+                    focusesOnAppear: false
+                )
+                .frame(
+                    width: HistoryGridMetrics.clipboardSearchFieldWidth,
+                    height: HistoryGridMetrics.topControlHeight
+                )
+            }
+
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if filteredItems.isEmpty {
+                            ClipboardEmptyState(
+                                hasQuery: !searchText.isEmpty
+                                    || selectedTimeFilter != .all
+                                    || selectedCategory != .all
+                            )
+                            .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+                        } else {
+                            VStack(spacing: 0) {
+                                ClipboardGrid(
+                                    items: pageItems,
+                                    presentation: .main,
+                                    selectedItemID: selectedItemID,
+                                    onSelect: { selectedItemID = $0.id },
+                                    onDoubleClick: { item in
+                                        guard item.kind == .image || item.kind == .video else { return }
+                                        app.showClipboardMediaPreview(item)
+                                    }
+                                )
+
+                                if totalPages > 1 {
+                                    PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
+                                        currentPage = max(1, currentPage - 1)
+                                    } onNext: {
+                                        currentPage = min(totalPages, currentPage + 1)
+                                    }
                                 }
                             }
+                            .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                         }
-                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                    .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                .padding(.vertical, HistoryGridMetrics.historyPanelInset)
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-                    value: selectedFilter
-                )
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-                    value: currentPage
-                )
-            }
-            .onAppear {
-                availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
-                availableGridHeight = max(0, proxy.size.height)
-            }
-            .onChange(of: proxy.size) { _, size in
-                availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
-                availableGridHeight = max(0, size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .jarvisFloatingPanel(cornerRadius: 16)
+                .onAppear {
+                    availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
+                    availableGridHeight = max(0, proxy.size.height)
+                }
+                .onChange(of: proxy.size) { _, size in
+                    availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
+                    availableGridHeight = max(0, size.height)
+                }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: pageSize) { _, _ in
             currentPage = min(currentPage, totalPages)
         }
         .onChange(of: searchText) { _, _ in
             currentPage = 1
         }
-        .onChange(of: selectedFilter) { _, _ in
+        .onChange(of: selectedTimeFilter) { _, _ in
+            currentPage = 1
+        }
+        .onChange(of: selectedCategory) { _, _ in
             currentPage = 1
         }
         .onChange(of: app.clipboardItems.count) { _, _ in
             currentPage = min(currentPage, totalPages)
+            if let selectedItemID,
+               !app.clipboardItems.contains(where: { $0.id == selectedItemID })
+            {
+                self.selectedItemID = nil
+            }
         }
+    }
+}
+
+struct ClipboardHistoryActionToolbar: View {
+    @EnvironmentObject private var app: AppModel
+    let selectedItem: ClipboardItem?
+    let onClearSelection: () -> Void
+    @State private var showingDeleteConfirmation = false
+
+    private var canPreview: Bool {
+        guard let selectedItem else { return false }
+        return selectedItem.kind == .image || selectedItem.kind == .video
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            actionButton(
+                systemName: "eye",
+                help: "查看",
+                isEnabled: canPreview
+            ) {
+                guard let selectedItem else { return }
+                app.showClipboardMediaPreview(selectedItem)
+            }
+            actionButton(
+                systemName: "doc.on.doc",
+                help: "复制",
+                isEnabled: selectedItem != nil
+            ) {
+                guard let selectedItem else { return }
+                app.copyClipboard(selectedItem)
+            }
+            actionButton(
+                systemName: selectedItem?.isPinned == true ? "star.slash" : "star",
+                help: selectedItem?.isPinned == true ? "取消收藏" : "收藏",
+                tint: selectedItem?.isPinned == true ? .yellow : .secondary,
+                isEnabled: selectedItem != nil
+            ) {
+                guard let selectedItem else { return }
+                app.toggleClipboardPin(selectedItem)
+            }
+            actionButton(
+                systemName: "trash",
+                help: "删除",
+                tint: .red.opacity(0.82),
+                isEnabled: selectedItem != nil
+            ) {
+                showingDeleteConfirmation = true
+            }
+        }
+        .padding(4)
+        .frame(height: HistoryGridMetrics.topControlHeight)
+        .jarvisGlass(in: Capsule(), interactive: true)
+        .confirmationDialog(
+            "删除这条剪贴板记录？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                guard let selectedItem else { return }
+                app.deleteClipboardItem(selectedItem)
+                onClearSelection()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后无法恢复。")
+        }
+    }
+
+    private func actionButton(
+        systemName: String,
+        help: String,
+        tint: Color = .secondary,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(
+                    isEnabled
+                        ? tint
+                        : Color.secondary.opacity(0.30)
+                )
+                .frame(
+                    width: HistoryGridMetrics.clipboardActionButtonSize,
+                    height: HistoryGridMetrics.clipboardActionButtonSize
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .disabled(!isEnabled)
+        .jarvisHoverHighlight(in: Circle(), scale: 1.06)
+        .help(help)
     }
 }
 
@@ -269,13 +520,22 @@ struct ClipboardCard: View {
     @State private var isHovered = false
     let item: ClipboardItem
     let presentation: ClipboardCardPresentation
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onDoubleClick: () -> Void
 
     init(
         item: ClipboardItem,
-        presentation: ClipboardCardPresentation
+        presentation: ClipboardCardPresentation,
+        isSelected: Bool = false,
+        onSelect: @escaping () -> Void = {},
+        onDoubleClick: @escaping () -> Void = {}
     ) {
         self.item = item
         self.presentation = presentation
+        self.isSelected = isSelected
+        self.onSelect = onSelect
+        self.onDoubleClick = onDoubleClick
     }
 
     private var previewContent: some View {
@@ -350,91 +610,8 @@ struct ClipboardCard: View {
         )
     }
 
-    private var actionOverlay: some View {
-        HStack(spacing: 5) {
-            if item.kind == .image || item.kind == .video {
-                Button {
-                    app.showClipboardMediaPreview(item)
-                } label: {
-                    Image(systemName: "eye")
-                        .frame(
-                            width: HistoryGridMetrics.clipboardActionButtonSize,
-                            height: HistoryGridMetrics.clipboardActionButtonSize
-                        )
-                        .contentShape(Circle())
-                }
-                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
-                .foregroundStyle(Color.secondary)
-                .font(.system(size: 13, weight: .medium))
-                .jarvisGlass(in: Circle(), interactive: true)
-                .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-                .help("查看大图")
-            }
-
-            Button {
-                app.copyClipboard(item)
-            } label: {
-                Image(systemName: "doc.on.doc")
-                    .frame(
-                        width: HistoryGridMetrics.clipboardActionButtonSize,
-                        height: HistoryGridMetrics.clipboardActionButtonSize
-                    )
-                    .contentShape(Circle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
-            .foregroundStyle(Color.secondary)
-            .font(.system(size: 13, weight: .medium))
-            .disabled(presentation == .panel && !item.hasLocalContent)
-            .jarvisGlass(in: Circle(), interactive: true)
-            .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-            .help("复制")
-
-            Button {
-                app.toggleClipboardPin(item)
-            } label: {
-                Image(systemName: item.isPinned ? "star.slash" : "star")
-                    .frame(
-                        width: HistoryGridMetrics.clipboardActionButtonSize,
-                        height: HistoryGridMetrics.clipboardActionButtonSize
-                    )
-                    .contentShape(Circle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
-            .foregroundStyle(item.isPinned ? .yellow : Color.jarvisTextSecondary)
-            .font(.system(size: 13, weight: .medium))
-            .jarvisGlass(in: Circle(), interactive: true)
-            .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-            .help(item.isPinned ? "取消收藏" : "收藏")
-
-            Button {
-                showingDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .frame(
-                        width: HistoryGridMetrics.clipboardActionButtonSize,
-                        height: HistoryGridMetrics.clipboardActionButtonSize
-                    )
-                    .contentShape(Circle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.90, pressedOpacity: 0.76))
-            .foregroundStyle(.red.opacity(0.72))
-            .font(.system(size: 13, weight: .medium))
-            .jarvisGlass(in: Circle(), interactive: true)
-            .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-            .help("删除")
-        }
-        .font(.system(size: 14, weight: .semibold))
-        .opacity(isHovered ? 1 : 0)
-        .scaleEffect(isHovered || reduceMotion ? 1 : 0.94)
-        .allowsHitTesting(isHovered)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-            value: isHovered
-        )
-    }
-
     private var cardBody: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             previewArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .scaleEffect(
@@ -446,10 +623,6 @@ struct ClipboardCard: View {
                     JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
                     value: isHovered
                 )
-
-            actionOverlay
-                .padding(.horizontal, 6)
-                .padding(.bottom, 8)
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,
@@ -466,6 +639,17 @@ struct ClipboardCard: View {
             cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
             interactive: false
         )
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+            .stroke(
+                isSelected ? Color.accentColor : .clear,
+                lineWidth: isSelected ? 2 : 0
+            )
+            .allowsHitTesting(false)
+        }
         .onHover { isHovered = $0 }
     }
 
@@ -480,6 +664,8 @@ struct ClipboardCard: View {
                 style: .continuous
             )
         )
+        .onTapGesture(count: 2, perform: onDoubleClick)
+        .onTapGesture(perform: onSelect)
         .contextMenu {
             if presentation == .main {
                 Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
@@ -509,7 +695,24 @@ struct ClipboardCard: View {
 struct ClipboardGrid: View {
     let items: [ClipboardItem]
     let presentation: ClipboardCardPresentation
+    let selectedItemID: UUID?
+    let onSelect: (ClipboardItem) -> Void
+    let onDoubleClick: (ClipboardItem) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        items: [ClipboardItem],
+        presentation: ClipboardCardPresentation,
+        selectedItemID: UUID? = nil,
+        onSelect: @escaping (ClipboardItem) -> Void = { _ in },
+        onDoubleClick: @escaping (ClipboardItem) -> Void = { _ in }
+    ) {
+        self.items = items
+        self.presentation = presentation
+        self.selectedItemID = selectedItemID
+        self.onSelect = onSelect
+        self.onDoubleClick = onDoubleClick
+    }
 
     var body: some View {
         LazyVGrid(
@@ -526,7 +729,10 @@ struct ClipboardGrid: View {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
-                    presentation: presentation
+                    presentation: presentation,
+                    isSelected: selectedItemID == item.id,
+                    onSelect: { onSelect(item) },
+                    onDoubleClick: { onDoubleClick(item) }
                 )
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
@@ -543,13 +749,15 @@ struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searchText = ""
-    @State private var selectedFilter: ClipboardViewFilter = .all
+    @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
+    @State private var selectedCategory: ClipboardViewFilter = .all
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
             from: app.clipboardItems,
             searchText: searchText,
-            filter: selectedFilter
+            timeFilter: selectedTimeFilter,
+            category: selectedCategory
         )
     }
 
@@ -557,10 +765,10 @@ struct ClipboardPanelView: View {
         VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
             ClipboardFilterBar(
                 searchText: $searchText,
-                selectedFilter: $selectedFilter,
+                selectedTimeFilter: $selectedTimeFilter,
+                selectedCategory: $selectedCategory,
                 placeholder: "搜索文本或文件名…",
-                focusesOnAppear: true,
-                items: app.clipboardItems
+                focusesOnAppear: false
             )
 
             Divider()
@@ -569,7 +777,9 @@ struct ClipboardPanelView: View {
 
             if filteredItems.isEmpty {
                 ClipboardEmptyState(
-                    hasQuery: !searchText.isEmpty || selectedFilter != .all
+                    hasQuery: !searchText.isEmpty
+                        || selectedTimeFilter != .all
+                        || selectedCategory != .all
                 )
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             } else {
@@ -601,11 +811,20 @@ struct ClipboardPanelView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .onAppear {
-            selectedFilter = .all
+            selectedTimeFilter = .threeDays
+            selectedCategory = .all
         }
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: selectedFilter
+            value: selectedTimeFilter
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: selectedCategory
+        )
+        .jarvisTheme(
+            app.themePreference,
+            systemColorScheme: app.systemColorScheme
         )
     }
 }

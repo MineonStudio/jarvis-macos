@@ -141,6 +141,44 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(counts[.video], 1)
     }
 
+    func testClipboardTimeFilterUsesCreatedAtAndCombinesWithCategory() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let recentText = ClipboardItem(
+            createdAt: now.addingTimeInterval(-2 * 24 * 60 * 60),
+            kind: .text,
+            text: "recent"
+        )
+        let oldText = ClipboardItem(
+            createdAt: now.addingTimeInterval(-8 * 24 * 60 * 60),
+            kind: .text,
+            text: "old"
+        )
+        let recentImage = ClipboardItem(
+            createdAt: now.addingTimeInterval(-2 * 24 * 60 * 60),
+            kind: .image,
+            imagePath: "/tmp/recent.png"
+        )
+
+        XCTAssertEqual(
+            ClipboardTimeFilterLogic.filteredItems(
+                from: [recentText, oldText, recentImage],
+                filter: .sevenDays,
+                now: now
+            ),
+            [recentText, recentImage]
+        )
+        XCTAssertEqual(
+            ClipboardFilterLogic.filteredItems(
+                from: [recentText, oldText, recentImage],
+                searchText: "",
+                timeFilter: .sevenDays,
+                category: .text,
+                now: now
+            ),
+            [recentText]
+        )
+    }
+
     func testClipboardGridUsesOneUniformCardSize() {
         XCTAssertEqual(HistoryGridMetrics.clipboardCardWidth, 211.2, accuracy: 0.001)
         XCTAssertEqual(HistoryGridMetrics.clipboardCardHeight, 118.8, accuracy: 0.001)

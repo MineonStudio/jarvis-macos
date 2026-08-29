@@ -19,7 +19,7 @@ final class ResumeTests: XCTestCase {
             [.minimal, .editorial, .timeline]
         )
         XCTAssertEqual(ResumeDocument.blank().template, .minimal)
-        XCTAssertTrue(ResumeTemplate.allCases.dropFirst().allSatisfy { !$0.subtitle.isEmpty })
+        XCTAssertEqual(ResumeTemplate.allCases.map(\.title), ["现代极简", "编辑风格", "时间轴"])
     }
 
     func testTemplateSelectionIsShownOnlyUntilAChoiceIsMade() {

@@ -41,14 +41,6 @@ enum ResumeTemplate: String, CaseIterable, Codable, Equatable, Identifiable, Sen
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .minimal: "轻盈留白，突出核心信息"
-        case .editorial: "优雅有辨识度，适合创意岗位"
-        case .timeline: "按时间线呈现成长轨迹"
-        }
-    }
-
     var icon: String {
         switch self {
         case .minimal: "text.alignleft"

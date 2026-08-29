@@ -151,57 +151,36 @@ enum ClipboardFilterLogic {
     }
 }
 
-struct ClipboardFilterBar: View {
+struct ClipboardHistoryTopBar: View {
     @Binding var searchText: String
     @Binding var selectedTimeFilter: ClipboardTimeFilter
     @Binding var selectedCategory: ClipboardViewFilter
     let placeholder: String
     let focusesOnAppear: Bool
+    let selectedItem: ClipboardItem?
+    let onClearSelection: () -> Void
 
-    private var regularLayout: some View {
-        HStack(alignment: .center, spacing: 14) {
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
             ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
                 .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
 
             Spacer(minLength: 0)
 
             ClipboardCategoryFilterSelector(selection: $selectedCategory)
-
+            ClipboardHistoryActionToolbar(
+                selectedItem: selectedItem,
+                onClearSelection: onClearSelection
+            )
             ClipboardSearchField(
                 text: $searchText,
                 placeholder: placeholder,
                 focusesOnAppear: focusesOnAppear
             )
-            .frame(width: HistoryGridMetrics.clipboardSearchFieldWidth)
-        }
-    }
-
-    private var compactLayout: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: HistoryGridMetrics.filterChipSpacing) {
-                ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
-                    .fixedSize(horizontal: true, vertical: false)
-
-                Spacer(minLength: 0)
-
-                ClipboardCategoryFilterSelector(selection: $selectedCategory)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            ClipboardSearchField(
-                text: $searchText,
-                placeholder: placeholder,
-                focusesOnAppear: focusesOnAppear
+            .frame(
+                width: HistoryGridMetrics.clipboardSearchFieldWidth,
+                height: HistoryGridMetrics.topControlHeight
             )
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            regularLayout
-            compactLayout
         }
     }
 }
@@ -307,26 +286,15 @@ struct ClipboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
-            HStack(alignment: .top, spacing: 14) {
-                ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
-
-                Spacer(minLength: 0)
-
-                ClipboardCategoryFilterSelector(selection: $selectedCategory)
-                ClipboardHistoryActionToolbar(
-                    selectedItem: selectedItem,
-                    onClearSelection: { selectedItemID = nil }
-                )
-                ClipboardSearchField(
-                    text: $searchText,
-                    placeholder: "搜索文本、文件名…",
-                    focusesOnAppear: false
-                )
-                .frame(
-                    width: HistoryGridMetrics.clipboardSearchFieldWidth,
-                    height: HistoryGridMetrics.topControlHeight
-                )
-            }
+            ClipboardHistoryTopBar(
+                searchText: $searchText,
+                selectedTimeFilter: $selectedTimeFilter,
+                selectedCategory: $selectedCategory,
+                placeholder: "搜索文本、文件名…",
+                focusesOnAppear: false,
+                selectedItem: selectedItem,
+                onClearSelection: { selectedItemID = nil }
+            )
 
             GeometryReader { proxy in
                 ScrollView {
@@ -667,15 +635,13 @@ struct ClipboardCard: View {
         .onTapGesture(count: 2, perform: onDoubleClick)
         .onTapGesture(perform: onSelect)
         .contextMenu {
-            if presentation == .main {
-                Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
-                Button("一键复制") { app.copyClipboard(item) }
-                if item.kind != .text {
-                    Button("在 Finder 中显示") { app.revealClipboardItem(item) }
-                }
-                Divider()
-                Button("删除", role: .destructive) { showingDeleteConfirmation = true }
+            Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
+            Button("一键复制") { app.copyClipboard(item) }
+            if item.kind != .text {
+                Button("在 Finder 中显示") { app.revealClipboardItem(item) }
             }
+            Divider()
+            Button("删除", role: .destructive) { showingDeleteConfirmation = true }
         }
         .confirmationDialog(
             "删除这条剪贴板记录？",
@@ -751,6 +717,7 @@ struct ClipboardPanelView: View {
     @State private var searchText = ""
     @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
     @State private var selectedCategory: ClipboardViewFilter = .all
+    @State private var selectedItemID: UUID?
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -761,14 +728,21 @@ struct ClipboardPanelView: View {
         )
     }
 
+    private var selectedItem: ClipboardItem? {
+        guard let selectedItemID else { return nil }
+        return app.clipboardItems.first { $0.id == selectedItemID }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
-            ClipboardFilterBar(
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
+            ClipboardHistoryTopBar(
                 searchText: $searchText,
                 selectedTimeFilter: $selectedTimeFilter,
                 selectedCategory: $selectedCategory,
                 placeholder: "搜索文本或文件名…",
-                focusesOnAppear: false
+                focusesOnAppear: false,
+                selectedItem: selectedItem,
+                onClearSelection: { selectedItemID = nil }
             )
 
             Divider()
@@ -786,7 +760,13 @@ struct ClipboardPanelView: View {
                 ScrollView {
                     ClipboardGrid(
                         items: filteredItems,
-                        presentation: .panel
+                        presentation: .panel,
+                        selectedItemID: selectedItemID,
+                        onSelect: { selectedItemID = $0.id },
+                        onDoubleClick: { item in
+                            guard item.kind == .image || item.kind == .video else { return }
+                            app.showClipboardMediaPreview(item)
+                        }
                     )
                 }
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
@@ -813,6 +793,13 @@ struct ClipboardPanelView: View {
         .onAppear {
             selectedTimeFilter = .threeDays
             selectedCategory = .all
+        }
+        .onChange(of: app.clipboardItems.count) { _, _ in
+            if let selectedItemID,
+               !app.clipboardItems.contains(where: { $0.id == selectedItemID })
+            {
+                self.selectedItemID = nil
+            }
         }
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),

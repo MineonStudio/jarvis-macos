@@ -4,35 +4,29 @@ struct ResumeTemplateSelectionView: View {
     let onSelect: (ResumeTemplate) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("选择简历模板")
-                    .font(JarvisTypography.pageTitle)
-                Text("选择一个版式开始编辑，之后可在编辑器中继续完善内容。")
-                    .font(JarvisTypography.body)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
+        VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
+            Text("选择简历模板")
+                .font(JarvisTypography.pageTitle)
 
             GeometryReader { proxy in
                 ScrollView {
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 232), spacing: 16)],
+                        columns: [GridItem(.adaptive(minimum: 232), spacing: HistoryGridMetrics.clipboardGridSpacing)],
                         alignment: .leading,
-                        spacing: 16
+                        spacing: HistoryGridMetrics.clipboardGridSpacing
                     ) {
                         ForEach(ResumeTemplate.allCases) { template in
                             ResumeTemplateCard(template: template, onSelect: onSelect)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(22)
+                    .padding(HistoryGridMetrics.historyPanelInset)
                     .frame(minHeight: max(proxy.size.height, 430), alignment: .topLeading)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 18)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .jarvisFloatingPanel(cornerRadius: 16)
             }
         }
-        .padding(26)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.jarvisBackground)
     }
@@ -68,10 +62,6 @@ private struct ResumeTemplateCard: View {
                                     .background(Color.accentColor.opacity(0.11), in: Capsule())
                             }
                         }
-                        Text(template.subtitle)
-                            .font(JarvisTypography.caption)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                            .lineLimit(1)
                     }
 
                     Spacer(minLength: 0)
@@ -104,7 +94,6 @@ private struct ResumeTemplateCard: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .accessibilityLabel("选择\(template.title)模板")
-        .accessibilityHint(template.subtitle)
     }
 }
 

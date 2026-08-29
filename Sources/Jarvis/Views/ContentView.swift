@@ -172,6 +172,7 @@ struct ContentView: View {
         case .skill(.screenshot): ScreenshotView()
         case .skill(.clipboard): ClipboardView()
         case .skill(.windowLayout): WindowLayoutView()
+        case .skill(.resume): ResumeContentView()
         case .settings: SettingsView()
         }
     }

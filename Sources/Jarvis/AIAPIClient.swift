@@ -47,27 +47,129 @@ protocol AITranslationAPI: Sendable {
     ) async throws -> [AITranslationOutput]
 }
 
+protocol AITextCompletionAPI: Sendable {
+    func complete(
+        systemPrompt: String,
+        userPrompt: String,
+        configuration: AIAPIConfiguration
+    ) async throws -> String
+}
+
 enum AIAPIError: LocalizedError, Equatable {
     case missingConfiguration
     case invalidEndpoint
-    case invalidResponse
+    case invalidTransportResponse
+    case invalidCompletionEnvelope(String)
+    case invalidJSON(context: String, reason: String)
+    case invalidSchema(context: String, reason: String)
+    case incompleteTranslation(expected: Int, actual: Int)
+    case emptyGeneratedContent(context: String)
+    case duplicateGeneratedContent(context: String)
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .missingConfiguration:
-            "请先在设置中配置 AI 翻译服务"
+            "请先在设置中配置 AI 服务"
         case .invalidEndpoint:
-            "AI 翻译服务地址无效"
-        case .invalidResponse:
-            "AI 翻译服务返回了无法解析的结果"
+            "AI 服务地址无效"
+        case .invalidTransportResponse:
+            "AI 服务响应异常：未收到有效的 HTTP 响应"
+        case let .invalidCompletionEnvelope(reason):
+            "AI 服务响应格式错误：\(reason)"
+        case let .invalidJSON(context, reason):
+            "\(context)结果不是有效 JSON：\(reason)"
+        case let .invalidSchema(context, reason):
+            "\(context)字段结构不符合要求：\(reason)"
+        case let .incompleteTranslation(expected, actual):
+            "AI 翻译结果不完整：应返回 \(expected) 条，实际 \(actual) 条"
+        case let .emptyGeneratedContent(context):
+            "\(context)没有生成有效内容"
+        case let .duplicateGeneratedContent(context):
+            "\(context)没有生成新的内容，请稍后再试"
         case let .server(message):
             message
         }
     }
+
+    static func decodingError(_ error: Error, context: String) -> Self {
+        guard let decodingError = error as? DecodingError else {
+            return .invalidJSON(context: context, reason: error.localizedDescription)
+        }
+
+        switch decodingError {
+        case let .dataCorrupted(decodingContext):
+            return .invalidJSON(
+                context: context,
+                reason: "\(codingPathDescription(decodingContext.codingPath))：\(decodingContext.debugDescription)"
+            )
+        case let .keyNotFound(key, decodingContext):
+            return .invalidSchema(
+                context: context,
+                reason: "缺少字段 \(codingPathDescription(decodingContext.codingPath, appending: key))"
+            )
+        case let .typeMismatch(type, decodingContext):
+            return .invalidSchema(
+                context: context,
+                reason: "字段 \(codingPathDescription(decodingContext.codingPath)) 应为 \(String(describing: type))"
+            )
+        case let .valueNotFound(type, decodingContext):
+            return .invalidSchema(
+                context: context,
+                reason: "字段 \(codingPathDescription(decodingContext.codingPath)) 为空，期望 \(String(describing: type))"
+            )
+        @unknown default:
+            return .invalidSchema(context: context, reason: "字段结构无法识别")
+        }
+    }
+
+    private static func codingPathDescription(
+        _ codingPath: [any CodingKey],
+        appending key: (any CodingKey)? = nil
+    ) -> String {
+        let keys = codingPath.map(\.stringValue) + (key.map { [$0.stringValue] } ?? [])
+        return keys.isEmpty ? "根对象" : keys.joined(separator: ".")
+    }
 }
 
-struct OpenAICompatibleAPIClient: AITranslationAPI, Sendable {
+struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, Sendable {
+    func complete(
+        systemPrompt: String,
+        userPrompt: String,
+        configuration: AIAPIConfiguration
+    ) async throws -> String {
+        guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
+        guard let endpoint = endpointURL(from: configuration.endpoint) else {
+            throw AIAPIError.invalidEndpoint
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 90
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": configuration.model,
+            "temperature": 0.7,
+            "response_format": ["type": "json_object"],
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ]
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIAPIError.invalidTransportResponse
+        }
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let message = Self.serverMessage(from: data)
+                ?? "AI 服务请求失败（\(httpResponse.statusCode)）"
+            throw AIAPIError.server(message)
+        }
+        return try Self.chatCompletionContent(from: data)
+    }
+
     func translate(
         _ items: [AITranslationInput],
         targetLanguage: String,
@@ -81,7 +183,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, Sendable {
 
         let sourceData = try JSONEncoder().encode(items)
         guard let sourceText = String(data: sourceData, encoding: .utf8) else {
-            throw AIAPIError.invalidResponse
+            throw AIAPIError.invalidJSON(context: "翻译", reason: "请求内容无法转换为 UTF-8")
         }
         let systemPrompt = """
         Translate each item into \(targetLanguage). Preserve meaning, numbers, code, URLs, punctuation, and line breaks.
@@ -104,7 +206,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, Sendable {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIAPIError.invalidResponse
+            throw AIAPIError.invalidTransportResponse
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let message = Self.serverMessage(from: data)
@@ -112,13 +214,15 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, Sendable {
             throw AIAPIError.server(message)
         }
 
-        guard let content = Self.chatCompletionContent(from: data),
-              let responseData = Self.jsonDataFromModelContent(content),
-              let result = try? JSONDecoder().decode(TranslationResponse.self, from: responseData)
-        else {
-            throw AIAPIError.invalidResponse
+        let content = try Self.chatCompletionContent(from: data)
+        guard let responseData = Self.jsonDataFromModelContent(content) else {
+            throw AIAPIError.invalidJSON(context: "翻译", reason: "返回内容无法转换为 UTF-8")
         }
-        return result.translations
+        do {
+            return try JSONDecoder().decode(TranslationResponse.self, from: responseData).translations
+        } catch {
+            throw AIAPIError.decodingError(error, context: "翻译")
+        }
     }
 
     private func endpointURL(from rawValue: String) -> URL? {
@@ -139,20 +243,30 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, Sendable {
         return components.url
     }
 
-    private static func chatCompletionContent(from data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = root["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any]
-        else {
-            return nil
+    private static func chatCompletionContent(from data: Data) throws -> String {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIAPIError.invalidCompletionEnvelope("响应正文不是 JSON 对象")
+        }
+        guard let choices = root["choices"] as? [[String: Any]], !choices.isEmpty else {
+            throw AIAPIError.invalidCompletionEnvelope("缺少 choices 数组或 choices 为空")
+        }
+        guard let message = choices[0]["message"] as? [String: Any] else {
+            throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message")
         }
         if let content = message["content"] as? String {
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AIAPIError.invalidCompletionEnvelope("choices[0].message.content 为空")
+            }
             return content
         }
         if let contentParts = message["content"] as? [[String: Any]] {
-            return contentParts.compactMap { $0["text"] as? String }.joined()
+            let content = contentParts.compactMap { $0["text"] as? String }.joined()
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AIAPIError.invalidCompletionEnvelope("choices[0].message.content 文本片段为空")
+            }
+            return content
         }
-        return nil
+        throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message.content，或 content 类型不受支持")
     }
 
     private static func jsonDataFromModelContent(_ content: String) -> Data? {

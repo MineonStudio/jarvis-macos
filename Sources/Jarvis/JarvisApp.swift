@@ -43,6 +43,7 @@ private struct JarvisRootView: View {
     var body: some View {
         ContentView()
             .environmentObject(appModel)
+            .environmentObject(appModel.resumeWorkspace)
             .tint(.accentColor)
             .jarvisTheme(
                 appModel.themePreference,

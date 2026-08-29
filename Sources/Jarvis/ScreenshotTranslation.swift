@@ -229,7 +229,9 @@ struct ScreenshotTranslationService: Sendable {
                 confidence: block.confidence
             )
         }
-        guard result.count == blocks.count else { throw AIAPIError.invalidResponse }
+        guard result.count == blocks.count else {
+            throw AIAPIError.incompleteTranslation(expected: blocks.count, actual: result.count)
+        }
         return result
     }
 }

@@ -35,6 +35,7 @@ enum AppSection: Hashable, Identifiable {
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
         case .skill(.windowLayout): "窗口布局"
+        case .skill(.resume): "简历制作"
         case .settings: "设置"
         }
     }
@@ -109,6 +110,7 @@ final class AppModel: ObservableObject {
     let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     let updateService = JarvisUpdateService()
     let aiConversationDownloadManager = AIConversationDownloadManager()
+    let resumeWorkspace = ResumeWorkspace()
     let launchAtLoginService = JarvisLaunchAtLoginService.shared
     private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?

@@ -62,44 +62,101 @@ extension AppModel {
         screenshotTranslationSettingsLocked = hasAPIKey
     }
 
-    func updateScreenshotTranslationEndpoint(_ endpoint: String) {
-        screenshotTranslationEndpoint = endpoint
-        UserDefaults.standard.set(endpoint, forKey: ScreenshotTranslationConfiguration.endpointKey)
-    }
-
-    func updateScreenshotTranslationModel(_ model: String) {
-        screenshotTranslationModel = model
-        UserDefaults.standard.set(model, forKey: ScreenshotTranslationConfiguration.modelKey)
-    }
-
     @discardableResult
-    func saveScreenshotTranslationAPIKey(_ apiKey: String) -> Bool {
+    func saveScreenshotTranslationSettings(
+        endpoint: String,
+        model: String,
+        apiKey: String
+    ) -> Bool {
         do {
-            let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                try AIAPIKeychain.shared.delete()
-            } else {
-                try AIAPIKeychain.shared.write(trimmed)
+            let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedEndpoint.isEmpty, !trimmedModel.isEmpty else {
+                showToast("请填写接口地址和模型")
+                return false
             }
-            let hasAPIKey = !trimmed.isEmpty
-            screenshotTranslationAPIKeyConfigured = hasAPIKey
-            screenshotTranslationAPIKeyMask = String(repeating: "•", count: trimmed.count)
-            screenshotTranslationSettingsLocked = hasAPIKey
-            showToast(trimmed.isEmpty ? "已清除截图翻译 API Key" : "截图翻译 API Key 已保存")
+
+            let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
+            let resolvedAPIKey = trimmedAPIKey.isEmpty ? storedAPIKey : trimmedAPIKey
+            guard !resolvedAPIKey.isEmpty else {
+                showToast("请输入 API Key")
+                return false
+            }
+
+            if !trimmedAPIKey.isEmpty {
+                try AIAPIKeychain.shared.write(trimmedAPIKey)
+            }
+            UserDefaults.standard.set(
+                trimmedEndpoint,
+                forKey: ScreenshotTranslationConfiguration.endpointKey
+            )
+            UserDefaults.standard.set(
+                trimmedModel,
+                forKey: ScreenshotTranslationConfiguration.modelKey
+            )
+            screenshotTranslationEndpoint = trimmedEndpoint
+            screenshotTranslationModel = trimmedModel
+            screenshotTranslationAPIKeyConfigured = true
+            screenshotTranslationAPIKeyMask = String(repeating: "•", count: resolvedAPIKey.count)
+            screenshotTranslationSettingsLocked = true
+            showToast("AI API 配置已保存")
             return true
         } catch {
-            showToast("保存截图翻译 API Key 失败：\(error.localizedDescription)")
+            showToast("保存 AI API 配置失败：\(error.localizedDescription)")
             return false
         }
     }
 
     @discardableResult
     func clearScreenshotTranslationAPIKey() -> Bool {
-        saveScreenshotTranslationAPIKey("")
+        do {
+            try AIAPIKeychain.shared.delete()
+            screenshotTranslationAPIKeyConfigured = false
+            screenshotTranslationAPIKeyMask = ""
+            screenshotTranslationSettingsLocked = false
+            showToast("已清除 AI API Key")
+            return true
+        } catch {
+            showToast("清除 AI API Key 失败：\(error.localizedDescription)")
+            return false
+        }
     }
 
     func editScreenshotTranslationSettings() {
         screenshotTranslationSettingsLocked = false
+    }
+
+    func testScreenshotTranslationConnection(
+        endpoint: String,
+        model: String,
+        apiKey: String
+    ) async {
+        guard !screenshotTranslationConnectionTesting else { return }
+
+        let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        do {
+            let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
+            let configuration = AIAPIConfiguration(
+                endpoint: trimmedEndpoint,
+                model: trimmedModel,
+                apiKey: trimmedAPIKey.isEmpty ? storedAPIKey : trimmedAPIKey
+            )
+            guard configuration.isConfigured else {
+                showToast("请先填写接口地址、模型和 API Key")
+                return
+            }
+
+            screenshotTranslationConnectionTesting = true
+            defer { screenshotTranslationConnectionTesting = false }
+            try await aiAPIConnectionTester.testConnection(configuration: configuration)
+            showToast("API 连接成功")
+        } catch {
+            showToast("API 连接失败：\(error.localizedDescription)")
+        }
     }
 
     func refreshSystemColorScheme() {

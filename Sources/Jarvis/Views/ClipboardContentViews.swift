@@ -157,6 +157,36 @@ struct ClipboardFilterBar: View {
     @Binding var selectedCategory: ClipboardViewFilter
     let placeholder: String
     let focusesOnAppear: Bool
+    let selectedItem: ClipboardItem?
+    let onClearSelection: (() -> Void)?
+
+    init(
+        searchText: Binding<String>,
+        selectedTimeFilter: Binding<ClipboardTimeFilter>,
+        selectedCategory: Binding<ClipboardViewFilter>,
+        placeholder: String,
+        focusesOnAppear: Bool,
+        selectedItem: ClipboardItem? = nil,
+        onClearSelection: (() -> Void)? = nil
+    ) {
+        _searchText = searchText
+        _selectedTimeFilter = selectedTimeFilter
+        _selectedCategory = selectedCategory
+        self.placeholder = placeholder
+        self.focusesOnAppear = focusesOnAppear
+        self.selectedItem = selectedItem
+        self.onClearSelection = onClearSelection
+    }
+
+    @ViewBuilder
+    private var actionToolbar: some View {
+        if let onClearSelection {
+            ClipboardHistoryActionToolbar(
+                selectedItem: selectedItem,
+                onClearSelection: onClearSelection
+            )
+        }
+    }
 
     private var regularLayout: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -167,6 +197,7 @@ struct ClipboardFilterBar: View {
             Spacer(minLength: 0)
 
             ClipboardCategoryFilterSelector(selection: $selectedCategory)
+            actionToolbar
 
             ClipboardSearchField(
                 text: $searchText,
@@ -181,13 +212,20 @@ struct ClipboardFilterBar: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: HistoryGridMetrics.filterChipSpacing) {
                 ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer(minLength: 0)
 
                 ClipboardCategoryFilterSelector(selection: $selectedCategory)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if onClearSelection != nil {
+                HStack(alignment: .center, spacing: HistoryGridMetrics.filterChipSpacing) {
+                    actionToolbar
+                    Spacer(minLength: 0)
+                }
+            }
 
             ClipboardSearchField(
                 text: $searchText,
@@ -227,7 +265,6 @@ struct ClipboardTimeFilterSelector: View {
         }
         .scrollClipDisabled()
         .frame(height: HistoryGridMetrics.topControlHeight, alignment: .leading)
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -307,26 +344,15 @@ struct ClipboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
-            HStack(alignment: .top, spacing: 14) {
-                ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
-
-                Spacer(minLength: 0)
-
-                ClipboardCategoryFilterSelector(selection: $selectedCategory)
-                ClipboardHistoryActionToolbar(
-                    selectedItem: selectedItem,
-                    onClearSelection: { selectedItemID = nil }
-                )
-                ClipboardSearchField(
-                    text: $searchText,
-                    placeholder: "搜索文本、文件名…",
-                    focusesOnAppear: false
-                )
-                .frame(
-                    width: HistoryGridMetrics.clipboardSearchFieldWidth,
-                    height: HistoryGridMetrics.topControlHeight
-                )
-            }
+            ClipboardFilterBar(
+                searchText: $searchText,
+                selectedTimeFilter: $selectedTimeFilter,
+                selectedCategory: $selectedCategory,
+                placeholder: "搜索文本、文件名…",
+                focusesOnAppear: false,
+                selectedItem: selectedItem,
+                onClearSelection: { selectedItemID = nil }
+            )
 
             GeometryReader { proxy in
                 ScrollView {

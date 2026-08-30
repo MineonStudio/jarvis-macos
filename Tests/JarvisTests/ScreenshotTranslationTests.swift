@@ -39,6 +39,50 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(configured.isConfigured)
     }
 
+    func testAPIConnectionTestRejectsMissingConfigurationBeforeNetworkCall() async {
+        do {
+            try await OpenAICompatibleAPIClient().testConnection(
+                configuration: AIAPIConfiguration(endpoint: "", model: "", apiKey: "")
+            )
+            XCTFail("Expected missing configuration error")
+        } catch let error as AIAPIError {
+            XCTAssertEqual(error, .missingConfiguration)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testAPIConnectionTestRejectsMalformedEndpointBeforeNetworkCall() async {
+        do {
+            try await OpenAICompatibleAPIClient().testConnection(
+                configuration: AIAPIConfiguration(
+                    endpoint: "not an endpoint",
+                    model: "test-model",
+                    apiKey: "test-key"
+                )
+            )
+            XCTFail("Expected invalid endpoint error")
+        } catch let error as AIAPIError {
+            XCTAssertEqual(error, .invalidEndpoint)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testAPIConnectionTestAcceptsSuccessfulEnvelopeWithoutTextContent() throws {
+        let response: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "role": "assistant",
+                    "content": NSNull()
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: response)
+
+        XCTAssertNoThrow(try OpenAICompatibleAPIClient.validateConnectionEnvelope(from: data))
+    }
+
     func testVisionOCRRejectsInvalidImageData() async {
         do {
             _ = try await ScreenshotTranslationService().recognizeText(in: Data([1, 2, 3]))

@@ -142,8 +142,8 @@ struct ScreenshotHistoryActionToolbar: View {
 
 enum HistoryGridMetrics {
     static let imageSpacing: CGFloat = 7
-    static let historyPanelInset: CGFloat = 24
-    static let historyFilterToGridSpacing: CGFloat = 14
+    static let historyPanelInset: CGFloat = 10
+    static let historyFilterToGridSpacing: CGFloat = 10
 
     // Both history galleries use the same 16:9 landscape panel and controls.
     static let historyCardBaseWidth: CGFloat = 192
@@ -158,7 +158,7 @@ enum HistoryGridMetrics {
     static let clipboardActionButtonSize: CGFloat = 32
     static let clipboardPreviewHoverScale: CGFloat = 1.08
     static let clipboardCornerRadius: CGFloat = 12
-    static let clipboardGridSpacing: CGFloat = 14
+    static let clipboardGridSpacing: CGFloat = 10
     static let filterChipHeight: CGFloat = 36
     static let filterChipSpacing: CGFloat = 7
     static let filterChipHorizontalPadding: CGFloat = 10
@@ -166,8 +166,7 @@ enum HistoryGridMetrics {
     static let topControlHeight: CGFloat =
         filterChipHeight + JarvisMetrics.segmentedControlPadding * 2
     static let clipboardSearchFieldHeight: CGFloat = topControlHeight
-    static let clipboardFilterToGridSpacing: CGFloat =
-        historyFilterToGridSpacing - (clipboardSearchFieldHeight - filterChipHeight)
+    static let clipboardFilterToGridSpacing: CGFloat = 10
     static let paginationControlHeight: CGFloat = 34
     static let screenshotFilterBarHeight: CGFloat = topControlHeight
     static let screenshotGridVerticalInset: CGFloat = historyPanelInset * 2

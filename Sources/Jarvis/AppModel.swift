@@ -86,6 +86,7 @@ final class AppModel: ObservableObject {
     @Published var screenshotTranslationAPIKeyConfigured = false
     @Published var screenshotTranslationAPIKeyMask = ""
     @Published var screenshotTranslationSettingsLocked = false
+    @Published var screenshotTranslationConnectionTesting = false
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
     @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
@@ -112,6 +113,7 @@ final class AppModel: ObservableObject {
     let aiConversationDownloadManager = AIConversationDownloadManager()
     let resumeWorkspace = ResumeWorkspace()
     let launchAtLoginService = JarvisLaunchAtLoginService.shared
+    let aiAPIConnectionTester: any AIAPIConnectionTesting
     private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
@@ -142,7 +144,8 @@ final class AppModel: ObservableObject {
         return controller
     }
 
-    init() {
+    init(aiAPIConnectionTester: any AIAPIConnectionTesting = OpenAICompatibleAPIClient()) {
+        self.aiAPIConnectionTester = aiAPIConnectionTester
         let cacheStore = ClipboardCacheStore()
         clipboardCacheStore = cacheStore
         clipboardService = ClipboardService(cacheStore: cacheStore)
@@ -565,7 +568,7 @@ extension AppModel {
             reloadScreenshotHistory()
             return
         }
-        screenshotHistoryPreviewController.show(item: item, data: data, app: self)
+        screenshotHistoryPreviewController.show(data: data)
     }
 
     func editScreenshotHistory(_ item: ScreenshotHistoryItem) {

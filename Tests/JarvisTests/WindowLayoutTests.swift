@@ -57,7 +57,7 @@ final class WindowLayoutTests: XCTestCase {
         )
         XCTAssertEqual(HistoryGridMetrics.clipboardActionButtonSize, 32)
         XCTAssertEqual(HistoryGridMetrics.clipboardCornerRadius, 12)
-        XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 14)
+        XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 10)
     }
 
     func testLowerLayoutsStayAboveBottomDock() {

@@ -58,11 +58,13 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
         panel.minSize = Self.minimumPanelSize
         panel.delegate = self
-        panel.contentView = NSHostingView(
+        let hostingView = NSHostingView(
             rootView: ClipboardPanelView()
                 .environmentObject(app)
                 .tint(.accentColor)
         )
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
         self.panel = panel
     }
 

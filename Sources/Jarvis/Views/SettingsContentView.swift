@@ -96,7 +96,16 @@ struct ShortcutSettingsCard: View {
 
 struct ScreenshotTranslationSettingsCard: View {
     @EnvironmentObject private var app: AppModel
+    @State private var endpoint = ScreenshotTranslationConfiguration.defaultEndpoint
+    @State private var model = ScreenshotTranslationConfiguration.defaultModel
     @State private var apiKey = ""
+
+    private var canUseConfiguration: Bool {
+        !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (app.screenshotTranslationAPIKeyConfigured
+                || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 
     var body: some View {
         JarvisCard {
@@ -116,13 +125,10 @@ struct ScreenshotTranslationSettingsCard: View {
                         .frame(width: 70, alignment: .leading)
                     TextField(
                         ScreenshotTranslationConfiguration.defaultEndpoint,
-                        text: Binding(
-                            get: { app.screenshotTranslationEndpoint },
-                            set: { app.updateScreenshotTranslationEndpoint($0) }
-                        )
+                        text: $endpoint
                     )
                     .textFieldStyle(.roundedBorder)
-                    .disabled(app.screenshotTranslationSettingsLocked)
+                    .disabled(isLocked)
                 }
 
                 HStack(spacing: 10) {
@@ -131,13 +137,10 @@ struct ScreenshotTranslationSettingsCard: View {
                         .frame(width: 70, alignment: .leading)
                     TextField(
                         ScreenshotTranslationConfiguration.defaultModel,
-                        text: Binding(
-                            get: { app.screenshotTranslationModel },
-                            set: { app.updateScreenshotTranslationModel($0) }
-                        )
+                        text: $model
                     )
                     .textFieldStyle(.roundedBorder)
-                    .disabled(app.screenshotTranslationSettingsLocked)
+                    .disabled(isLocked)
                     Spacer(minLength: 0)
                 }
 
@@ -152,25 +155,69 @@ struct ScreenshotTranslationSettingsCard: View {
                         text: $apiKey
                     )
                     .textFieldStyle(.roundedBorder)
-                    .disabled(app.screenshotTranslationSettingsLocked)
-                    Button("保存") {
-                        guard app.saveScreenshotTranslationAPIKey(apiKey) else { return }
-                        apiKey = ""
+                    .disabled(isLocked)
+
+                    if isLocked {
+                        Button("编辑", action: beginEditing)
+                            .buttonStyle(JarvisSecondaryButtonStyle())
+                    } else {
+                        Button("保存", action: saveSettings)
+                            .buttonStyle(JarvisSecondaryButtonStyle())
+                            .disabled(!canUseConfiguration)
+                    }
+
+                    Button {
+                        Task {
+                            await app.testScreenshotTranslationConnection(
+                                endpoint: endpoint,
+                                model: model,
+                                apiKey: apiKey
+                            )
+                        }
+                    } label: {
+                        if app.screenshotTranslationConnectionTesting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(minWidth: 56)
+                        } else {
+                            Text("测试连接")
+                        }
                     }
                     .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(
-                        app.screenshotTranslationSettingsLocked
-                            || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                    if app.screenshotTranslationSettingsLocked {
-                        Button("编辑") {
-                            app.editScreenshotTranslationSettings()
-                        }
-                        .buttonStyle(JarvisSecondaryButtonStyle())
-                    }
+                    .disabled(!canUseConfiguration || app.screenshotTranslationConnectionTesting)
                 }
             }
         }
+        .onAppear(perform: loadDraft)
+        .onChange(of: app.screenshotTranslationSettingsLocked) { _, isLocked in
+            if isLocked {
+                loadDraft()
+            }
+        }
+    }
+
+    private var isLocked: Bool {
+        app.screenshotTranslationSettingsLocked
+    }
+
+    private func loadDraft() {
+        endpoint = app.screenshotTranslationEndpoint
+        model = app.screenshotTranslationModel
+        apiKey = ""
+    }
+
+    private func beginEditing() {
+        loadDraft()
+        app.editScreenshotTranslationSettings()
+    }
+
+    private func saveSettings() {
+        guard app.saveScreenshotTranslationSettings(
+            endpoint: endpoint,
+            model: model,
+            apiKey: apiKey
+        ) else { return }
+        apiKey = ""
     }
 }
 

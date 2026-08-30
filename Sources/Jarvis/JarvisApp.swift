@@ -30,6 +30,11 @@ struct JarvisApp: App {
             width: JarvisMainWindowController.launchWindowSize.width,
             height: JarvisMainWindowController.launchWindowSize.height
         )
+        .commands {
+            CommandGroup(replacing: .sidebar) {
+                EmptyView()
+            }
+        }
         .windowToolbarStyle(.unified)
     }
 }

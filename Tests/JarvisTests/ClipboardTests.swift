@@ -191,7 +191,7 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(HistoryGridMetrics.clipboardActionButtonSize, 32)
         XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHoverScale, 1.08)
         XCTAssertEqual(HistoryGridMetrics.clipboardCornerRadius, 12)
-        XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 14)
+        XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 10)
     }
 
     func testHistoryGridPaginationKeepsEachPageToCompleteRows() {

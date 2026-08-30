@@ -68,7 +68,7 @@ final class JarvisMainWindowControllerTests: XCTestCase {
             JarvisWindowLayoutMetrics.clipboardPanelMinimumHeight,
             ceil(
                 JarvisWindowLayoutMetrics.clipboardPanelTopPadding
-                    + JarvisWindowLayoutMetrics.clipboardCompactFilterBarHeight
+                    + JarvisWindowLayoutMetrics.clipboardPanelCompactFilterBarHeight
                     + HistoryGridMetrics.imageSpacing
                     + JarvisWindowLayoutMetrics.clipboardPanelDividerHeight
                     + HistoryGridMetrics.imageSpacing
@@ -83,6 +83,23 @@ final class JarvisMainWindowControllerTests: XCTestCase {
                     + JarvisWindowLayoutMetrics.clipboardPanelBottomPadding
                     + JarvisWindowLayoutMetrics.contentSafetyMargin
             )
+        )
+    }
+
+    func testClipboardCompactHeightsMatchTheirResponsiveHeaderRows() {
+        XCTAssertEqual(
+            JarvisWindowLayoutMetrics.clipboardMainCompactFilterBarHeight,
+            HistoryGridMetrics.topControlHeight * 3
+                + HistoryGridMetrics.clipboardFilterToGridSpacing * 2
+        )
+        XCTAssertEqual(
+            JarvisWindowLayoutMetrics.clipboardPanelCompactFilterBarHeight,
+            HistoryGridMetrics.topControlHeight * 2
+                + HistoryGridMetrics.clipboardFilterToGridSpacing
+        )
+        XCTAssertGreaterThan(
+            JarvisWindowLayoutMetrics.clipboardMainCompactFilterBarHeight,
+            JarvisWindowLayoutMetrics.clipboardPanelCompactFilterBarHeight
         )
     }
 }

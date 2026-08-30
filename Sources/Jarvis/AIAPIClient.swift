@@ -55,6 +55,10 @@ protocol AITextCompletionAPI: Sendable {
     ) async throws -> String
 }
 
+protocol AIAPIConnectionTesting: Sendable {
+    func testConnection(configuration: AIAPIConfiguration) async throws
+}
+
 enum AIAPIError: LocalizedError, Equatable {
     case missingConfiguration
     case invalidEndpoint
@@ -132,7 +136,39 @@ enum AIAPIError: LocalizedError, Equatable {
     }
 }
 
-struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, Sendable {
+struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPIConnectionTesting, Sendable {
+    func testConnection(configuration: AIAPIConfiguration) async throws {
+        guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
+        guard let endpoint = endpointURL(from: configuration.endpoint) else {
+            throw AIAPIError.invalidEndpoint
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": configuration.model,
+            "temperature": 0,
+            "messages": [
+                ["role": "user", "content": "Reply with OK only."]
+            ]
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIAPIError.invalidTransportResponse
+        }
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let message = Self.serverMessage(from: data)
+                ?? "AI 服务请求失败（\(httpResponse.statusCode)）"
+            throw AIAPIError.server(message)
+        }
+
+        try Self.validateConnectionEnvelope(from: data)
+    }
+
     func complete(
         systemPrompt: String,
         userPrompt: String,
@@ -267,6 +303,18 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, Sendabl
             return content
         }
         throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message.content，或 content 类型不受支持")
+    }
+
+    static func validateConnectionEnvelope(from data: Data) throws {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIAPIError.invalidCompletionEnvelope("响应正文不是 JSON 对象")
+        }
+        guard let choices = root["choices"] as? [[String: Any]], !choices.isEmpty else {
+            throw AIAPIError.invalidCompletionEnvelope("缺少 choices 数组或 choices 为空")
+        }
+        guard choices[0]["message"] is [String: Any] else {
+            throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message")
+        }
     }
 
     private static func jsonDataFromModelContent(_ content: String) -> Data? {

@@ -151,36 +151,94 @@ enum ClipboardFilterLogic {
     }
 }
 
-struct ClipboardHistoryTopBar: View {
+struct ClipboardFilterBar: View {
     @Binding var searchText: String
     @Binding var selectedTimeFilter: ClipboardTimeFilter
     @Binding var selectedCategory: ClipboardViewFilter
     let placeholder: String
     let focusesOnAppear: Bool
     let selectedItem: ClipboardItem?
-    let onClearSelection: () -> Void
+    let onClearSelection: (() -> Void)?
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
-                .fixedSize(horizontal: true, vertical: false)
+    init(
+        searchText: Binding<String>,
+        selectedTimeFilter: Binding<ClipboardTimeFilter>,
+        selectedCategory: Binding<ClipboardViewFilter>,
+        placeholder: String,
+        focusesOnAppear: Bool,
+        selectedItem: ClipboardItem? = nil,
+        onClearSelection: (() -> Void)? = nil
+    ) {
+        _searchText = searchText
+        _selectedTimeFilter = selectedTimeFilter
+        _selectedCategory = selectedCategory
+        self.placeholder = placeholder
+        self.focusesOnAppear = focusesOnAppear
+        self.selectedItem = selectedItem
+        self.onClearSelection = onClearSelection
+    }
 
-            Spacer(minLength: 0)
-
-            ClipboardCategoryFilterSelector(selection: $selectedCategory)
+    @ViewBuilder
+    private var actionToolbar: some View {
+        if let onClearSelection {
             ClipboardHistoryActionToolbar(
                 selectedItem: selectedItem,
                 onClearSelection: onClearSelection
             )
+        }
+    }
+
+    private var regularLayout: some View {
+        HStack(alignment: .center, spacing: 14) {
+            ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+
+            Spacer(minLength: 0)
+
+            ClipboardCategoryFilterSelector(selection: $selectedCategory)
+            actionToolbar
             ClipboardSearchField(
                 text: $searchText,
                 placeholder: placeholder,
                 focusesOnAppear: focusesOnAppear
             )
-            .frame(
-                width: HistoryGridMetrics.clipboardSearchFieldWidth,
-                height: HistoryGridMetrics.topControlHeight
+            .frame(width: HistoryGridMetrics.clipboardSearchFieldWidth)
+        }
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: HistoryGridMetrics.filterChipSpacing) {
+                ClipboardTimeFilterSelector(selection: $selectedTimeFilter)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 0)
+
+                ClipboardCategoryFilterSelector(selection: $selectedCategory)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if onClearSelection != nil {
+                HStack(alignment: .center, spacing: HistoryGridMetrics.filterChipSpacing) {
+                    actionToolbar
+                    Spacer(minLength: 0)
+                }
+            }
+
+            ClipboardSearchField(
+                text: $searchText,
+                placeholder: placeholder,
+                focusesOnAppear: focusesOnAppear
             )
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            regularLayout
+            compactLayout
         }
     }
 }
@@ -206,7 +264,6 @@ struct ClipboardTimeFilterSelector: View {
         }
         .scrollClipDisabled()
         .frame(height: HistoryGridMetrics.topControlHeight, alignment: .leading)
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -286,7 +343,7 @@ struct ClipboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
-            ClipboardHistoryTopBar(
+            ClipboardFilterBar(
                 searchText: $searchText,
                 selectedTimeFilter: $selectedTimeFilter,
                 selectedCategory: $selectedCategory,
@@ -310,7 +367,6 @@ struct ClipboardView: View {
                             VStack(spacing: 0) {
                                 ClipboardGrid(
                                     items: pageItems,
-                                    presentation: .main,
                                     selectedItemID: selectedItemID,
                                     onSelect: { selectedItemID = $0.id },
                                     onDoubleClick: { item in
@@ -476,31 +532,23 @@ struct ClipboardEmptyState: View {
     }
 }
 
-enum ClipboardCardPresentation {
-    case main
-    case panel
-}
-
 struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDeleteConfirmation = false
     @State private var isHovered = false
     let item: ClipboardItem
-    let presentation: ClipboardCardPresentation
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
 
     init(
         item: ClipboardItem,
-        presentation: ClipboardCardPresentation,
         isSelected: Bool = false,
         onSelect: @escaping () -> Void = {},
         onDoubleClick: @escaping () -> Void = {}
     ) {
         self.item = item
-        self.presentation = presentation
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -660,7 +708,6 @@ struct ClipboardCard: View {
 
 struct ClipboardGrid: View {
     let items: [ClipboardItem]
-    let presentation: ClipboardCardPresentation
     let selectedItemID: UUID?
     let onSelect: (ClipboardItem) -> Void
     let onDoubleClick: (ClipboardItem) -> Void
@@ -668,13 +715,11 @@ struct ClipboardGrid: View {
 
     init(
         items: [ClipboardItem],
-        presentation: ClipboardCardPresentation,
         selectedItemID: UUID? = nil,
         onSelect: @escaping (ClipboardItem) -> Void = { _ in },
         onDoubleClick: @escaping (ClipboardItem) -> Void = { _ in }
     ) {
         self.items = items
-        self.presentation = presentation
         self.selectedItemID = selectedItemID
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -695,7 +740,6 @@ struct ClipboardGrid: View {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
-                    presentation: presentation,
                     isSelected: selectedItemID == item.id,
                     onSelect: { onSelect(item) },
                     onDoubleClick: { onDoubleClick(item) }
@@ -713,105 +757,16 @@ struct ClipboardGrid: View {
 
 struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var searchText = ""
-    @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
-    @State private var selectedCategory: ClipboardViewFilter = .all
-    @State private var selectedItemID: UUID?
-
-    private var filteredItems: [ClipboardItem] {
-        ClipboardFilterLogic.filteredItems(
-            from: app.clipboardItems,
-            searchText: searchText,
-            timeFilter: selectedTimeFilter,
-            category: selectedCategory
-        )
-    }
-
-    private var selectedItem: ClipboardItem? {
-        guard let selectedItemID else { return nil }
-        return app.clipboardItems.first { $0.id == selectedItemID }
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.clipboardFilterToGridSpacing) {
-            ClipboardHistoryTopBar(
-                searchText: $searchText,
-                selectedTimeFilter: $selectedTimeFilter,
-                selectedCategory: $selectedCategory,
-                placeholder: "搜索文本或文件名…",
-                focusesOnAppear: false,
-                selectedItem: selectedItem,
-                onClearSelection: { selectedItemID = nil }
+        ClipboardView()
+            .padding(.horizontal, JarvisMetrics.shellHorizontalPadding)
+            .padding(.vertical, JarvisMetrics.shellVerticalPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.jarvisBackground)
+            .jarvisTheme(
+                app.themePreference,
+                systemColorScheme: app.systemColorScheme
             )
-
-            Divider()
-                .overlay(Color.primary.opacity(0.10))
-                .padding(.vertical, 2)
-
-            if filteredItems.isEmpty {
-                ClipboardEmptyState(
-                    hasQuery: !searchText.isEmpty
-                        || selectedTimeFilter != .all
-                        || selectedCategory != .all
-                )
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-            } else {
-                ScrollView {
-                    ClipboardGrid(
-                        items: filteredItems,
-                        presentation: .panel,
-                        selectedItemID: selectedItemID,
-                        onSelect: { selectedItemID = $0.id },
-                        onDoubleClick: { item in
-                            guard item.kind == .image || item.kind == .video else { return }
-                            app.showClipboardMediaPreview(item)
-                        }
-                    )
-                }
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-            }
-
-            HStack(spacing: 7) {
-                Image(systemName: "info.circle")
-                Text("拖动卡片主体导出内容 · 拖动标题栏移动窗口")
-                Spacer()
-            }
-            .font(JarvisTypography.caption)
-            .foregroundStyle(Color.jarvisTextSecondary)
-        }
-        .padding(.top, 32)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.jarvisBackground)
-        .overlay(alignment: .bottom) {
-            JarvisToastHost(message: app.toastMessage)
-                .padding(.bottom, 20)
-        }
-        .ignoresSafeArea(.container, edges: .top)
-        .onAppear {
-            selectedTimeFilter = .threeDays
-            selectedCategory = .all
-        }
-        .onChange(of: app.clipboardItems.count) { _, _ in
-            if let selectedItemID,
-               !app.clipboardItems.contains(where: { $0.id == selectedItemID })
-            {
-                self.selectedItemID = nil
-            }
-        }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: selectedTimeFilter
-        )
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: selectedCategory
-        )
-        .jarvisTheme(
-            app.themePreference,
-            systemColorScheme: app.systemColorScheme
-        )
     }
 }

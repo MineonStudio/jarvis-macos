@@ -568,7 +568,7 @@ extension AppModel {
             reloadScreenshotHistory()
             return
         }
-        screenshotHistoryPreviewController.show(item: item, data: data, app: self)
+        screenshotHistoryPreviewController.show(data: data)
     }
 
     func editScreenshotHistory(_ item: ScreenshotHistoryItem) {

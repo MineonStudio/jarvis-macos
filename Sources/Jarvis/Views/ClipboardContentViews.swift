@@ -368,7 +368,6 @@ struct ClipboardView: View {
                             VStack(spacing: 0) {
                                 ClipboardGrid(
                                     items: pageItems,
-                                    presentation: .main,
                                     selectedItemID: selectedItemID,
                                     onSelect: { selectedItemID = $0.id },
                                     onDoubleClick: { item in
@@ -534,31 +533,23 @@ struct ClipboardEmptyState: View {
     }
 }
 
-enum ClipboardCardPresentation {
-    case main
-    case panel
-}
-
 struct ClipboardCard: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDeleteConfirmation = false
     @State private var isHovered = false
     let item: ClipboardItem
-    let presentation: ClipboardCardPresentation
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
 
     init(
         item: ClipboardItem,
-        presentation: ClipboardCardPresentation,
         isSelected: Bool = false,
         onSelect: @escaping () -> Void = {},
         onDoubleClick: @escaping () -> Void = {}
     ) {
         self.item = item
-        self.presentation = presentation
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -693,15 +684,13 @@ struct ClipboardCard: View {
         .onTapGesture(count: 2, perform: onDoubleClick)
         .onTapGesture(perform: onSelect)
         .contextMenu {
-            if presentation == .main {
-                Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
-                Button("一键复制") { app.copyClipboard(item) }
-                if item.kind != .text {
-                    Button("在 Finder 中显示") { app.revealClipboardItem(item) }
-                }
-                Divider()
-                Button("删除", role: .destructive) { showingDeleteConfirmation = true }
+            Button(item.isPinned ? "取消收藏" : "收藏") { app.toggleClipboardPin(item) }
+            Button("一键复制") { app.copyClipboard(item) }
+            if item.kind != .text {
+                Button("在 Finder 中显示") { app.revealClipboardItem(item) }
             }
+            Divider()
+            Button("删除", role: .destructive) { showingDeleteConfirmation = true }
         }
         .confirmationDialog(
             "删除这条剪贴板记录？",
@@ -720,7 +709,6 @@ struct ClipboardCard: View {
 
 struct ClipboardGrid: View {
     let items: [ClipboardItem]
-    let presentation: ClipboardCardPresentation
     let selectedItemID: UUID?
     let onSelect: (ClipboardItem) -> Void
     let onDoubleClick: (ClipboardItem) -> Void
@@ -728,13 +716,11 @@ struct ClipboardGrid: View {
 
     init(
         items: [ClipboardItem],
-        presentation: ClipboardCardPresentation,
         selectedItemID: UUID? = nil,
         onSelect: @escaping (ClipboardItem) -> Void = { _ in },
         onDoubleClick: @escaping (ClipboardItem) -> Void = { _ in }
     ) {
         self.items = items
-        self.presentation = presentation
         self.selectedItemID = selectedItemID
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -755,7 +741,6 @@ struct ClipboardGrid: View {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
-                    presentation: presentation,
                     isSelected: selectedItemID == item.id,
                     onSelect: { onSelect(item) },
                     onDoubleClick: { onDoubleClick(item) }
@@ -773,84 +758,16 @@ struct ClipboardGrid: View {
 
 struct ClipboardPanelView: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var searchText = ""
-    @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
-    @State private var selectedCategory: ClipboardViewFilter = .all
-
-    private var filteredItems: [ClipboardItem] {
-        ClipboardFilterLogic.filteredItems(
-            from: app.clipboardItems,
-            searchText: searchText,
-            timeFilter: selectedTimeFilter,
-            category: selectedCategory
-        )
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.imageSpacing) {
-            ClipboardFilterBar(
-                searchText: $searchText,
-                selectedTimeFilter: $selectedTimeFilter,
-                selectedCategory: $selectedCategory,
-                placeholder: "搜索文本或文件名…",
-                focusesOnAppear: false
+        ClipboardView()
+            .padding(.horizontal, JarvisMetrics.shellHorizontalPadding)
+            .padding(.vertical, JarvisMetrics.shellVerticalPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.jarvisBackground)
+            .jarvisTheme(
+                app.themePreference,
+                systemColorScheme: app.systemColorScheme
             )
-
-            Divider()
-                .overlay(Color.primary.opacity(0.10))
-                .padding(.vertical, 2)
-
-            if filteredItems.isEmpty {
-                ClipboardEmptyState(
-                    hasQuery: !searchText.isEmpty
-                        || selectedTimeFilter != .all
-                        || selectedCategory != .all
-                )
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-            } else {
-                ScrollView {
-                    ClipboardGrid(
-                        items: filteredItems,
-                        presentation: .panel
-                    )
-                }
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-            }
-
-            HStack(spacing: 7) {
-                Image(systemName: "info.circle")
-                Text("拖动卡片主体导出内容 · 拖动标题栏移动窗口")
-                Spacer()
-            }
-            .font(JarvisTypography.caption)
-            .foregroundStyle(Color.jarvisTextSecondary)
-        }
-        .padding(.top, 32)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.jarvisBackground)
-        .overlay(alignment: .bottom) {
-            JarvisToastHost(message: app.toastMessage)
-                .padding(.bottom, 20)
-        }
-        .ignoresSafeArea(.container, edges: .top)
-        .onAppear {
-            selectedTimeFilter = .threeDays
-            selectedCategory = .all
-        }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: selectedTimeFilter
-        )
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: selectedCategory
-        )
-        .jarvisTheme(
-            app.themePreference,
-            systemColorScheme: app.systemColorScheme
-        )
     }
 }

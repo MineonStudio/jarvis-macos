@@ -12,14 +12,14 @@ final class ScreenshotHistoryFilterTests: XCTestCase {
             HistoryGridMetrics.clipboardSearchFieldHeight,
             HistoryGridMetrics.topControlHeight
         )
-        XCTAssertEqual(HistoryGridMetrics.filterChipHeight, 36)
+        XCTAssertEqual(HistoryGridMetrics.filterChipHeight, 28)
         XCTAssertEqual(
             HistoryGridMetrics.topControlHeight,
             HistoryGridMetrics.filterChipHeight + JarvisMetrics.segmentedControlPadding * 2
         )
         XCTAssertEqual(
             HistoryGridMetrics.topControlHeight,
-            HistoryGridMetrics.clipboardActionButtonSize + 8
+            HistoryGridMetrics.clipboardActionButtonSize
         )
         XCTAssertEqual(HistoryGridMetrics.filterChipSpacing, 7)
         XCTAssertEqual(HistoryGridMetrics.filterChipHorizontalPadding, 10)

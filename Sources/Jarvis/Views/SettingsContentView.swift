@@ -226,21 +226,35 @@ struct SettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                versionAndUpdateCard
+        JarvisContentArea(
+            leadingToolbar: {
+                ToolbarItem(placement: .navigation) {
+                    JarvisPageTopBar(title: "设置")
+                }
+            },
+            trailingToolbar: {
+                ToolbarItem(placement: .automatic) {
+                    EmptyView()
+                }
+            },
+            content: {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        versionAndUpdateCard
 
-                themeSettingsCard
+                        themeSettingsCard
 
-                launchAtLoginSettingsCard
-                ClipboardCacheSettingsCard()
+                        launchAtLoginSettingsCard
+                        ClipboardCacheSettingsCard()
 
-                ScreenshotTranslationSettingsCard()
+                        ScreenshotTranslationSettingsCard()
 
-                ShortcutSettingsCard()
+                        ShortcutSettingsCard()
+                    }
+                    .padding(JarvisMetrics.pageInset)
+                }
             }
-            .padding(JarvisMetrics.pageInset)
-        }
+        )
     }
 
     private var themeSettingsCard: some View {

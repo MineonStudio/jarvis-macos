@@ -89,24 +89,71 @@ enum JarvisMetrics {
     static let segmentedItemHeight: CGFloat = 28
     static let segmentedControlPadding: CGFloat = 2
     static let segmentedItemVerticalPadding: CGFloat = 4
-    static let topNavigationVerticalPadding: CGFloat = 6
     static let sidebarMinimumWidth: CGFloat = 152
     static let sidebarWidth: CGFloat = 168
     static let sidebarMaximumWidth: CGFloat = 220
     static let sidebarContentPadding: CGFloat = 8
 }
 
-struct JarvisTopBarContainer<Content: View>: View {
+/// Metrics shared by every control rendered in the native window toolbar.
+///
+/// The chat toolbar is the reference implementation: controls occupy one
+/// 32-point row, use an 8-point rhythm, and do not draw a parent surface.
+enum JarvisToolbarMetrics {
+    static let controlSize: CGFloat = 32
+    static let controlSpacing: CGFloat = 8
+    static let iconSize: CGFloat = 13
+}
+
+/// Shared content-area shell for every module in the main window.
+///
+/// The shell owns the window toolbar and the body inset. Modules provide only
+/// leading and trailing toolbar content plus their body, so the system can
+/// place the operation bar alongside the native sidebar control and reflow it
+/// when the split view changes width.
+struct JarvisContentArea<LeadingToolbar: ToolbarContent, TrailingToolbar: ToolbarContent, Content: View>: View {
+    private let leadingToolbar: LeadingToolbar
+    private let trailingToolbar: TrailingToolbar
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(
+        @ToolbarContentBuilder leadingToolbar: () -> LeadingToolbar,
+        @ToolbarContentBuilder trailingToolbar: () -> TrailingToolbar,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.leadingToolbar = leadingToolbar()
+        self.trailingToolbar = trailingToolbar()
         self.content = content()
     }
 
     var body: some View {
         content
-            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
-            .padding(.bottom, JarvisMetrics.shellContentSpacing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, JarvisMetrics.shellContentSpacing)
+            .padding(.horizontal, JarvisMetrics.shellHorizontalPadding)
+            .padding(.bottom, JarvisMetrics.shellVerticalPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.jarvisBackground)
+            .toolbar {
+                leadingToolbar
+                ToolbarSpacer(.flexible, placement: .automatic)
+                trailingToolbar
+            }
+    }
+}
+
+struct JarvisPageTopBar: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(JarvisTypography.cardTitle)
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -209,7 +256,10 @@ struct JarvisFloatingPanelModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .jarvisGlass(cornerRadius: cornerRadius, interactive: false)
+            .background(
+                Color.jarvisPanel,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
@@ -277,6 +327,63 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
                 JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
                 value: configuration.isPressed
             )
+    }
+}
+
+/// Text-first action style for module operation bars. The operation bar owns
+/// placement and spacing; individual actions provide only their label and
+/// hover/press feedback, so no control can grow into a toolbar background.
+struct JarvisToolbarButtonStyle: ButtonStyle {
+    let tint: Color?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(tint: Color? = nil) {
+        self.tint = tint
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(tint == nil ? JarvisTypography.control : JarvisTypography.controlEmphasis)
+            .foregroundStyle(tint ?? Color.primary)
+            .padding(.horizontal, 10)
+            .frame(height: JarvisToolbarMetrics.controlSize)
+            .opacity(configuration.isPressed ? 0.68 : 1)
+            .contentShape(Capsule())
+            .jarvisHoverFeedback(in: Capsule(), scale: 1.03)
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
+            .animation(
+                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
+    }
+}
+
+/// A single selection control for the native toolbar. Selection is rendered
+/// by the button itself; there is intentionally no parent capsule or group
+/// surface around a row of options.
+struct JarvisToolbarSelectionButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                .foregroundStyle(isSelected ? Color.white : Color.jarvisTextSecondary)
+                .padding(.horizontal, 10)
+                .frame(height: JarvisToolbarMetrics.controlSize)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(JarvisMotion.selectionPillTint)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))
+        .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
     }
 }
 

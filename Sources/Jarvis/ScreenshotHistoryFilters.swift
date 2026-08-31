@@ -67,27 +67,30 @@ enum ScreenshotTimeFilterLogic {
     }
 }
 
-struct ScreenshotTimeFilterBar: View {
+struct ScreenshotTimeFilterBar: ToolbarContent {
     @Binding var selectedFilter: ScreenshotTimeFilter
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            JarvisSegmentedControl(
-                items: ScreenshotTimeFilter.displayCases,
-                selection: $selectedFilter
-            ) { filter, isSelected in
-                Text(filter.title)
-                    .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
-                    .foregroundStyle(isSelected ? Color.white : Color.jarvisTextSecondary)
-                    .frame(height: HistoryGridMetrics.filterChipHeight)
-                    .padding(.horizontal, 14)
-                    .contentShape(Capsule())
-            }
+    var body: some ToolbarContent {
+        ToolbarItem(id: "screenshot.time.three-days", placement: .navigation) {
+            selectionButton(for: .threeDays)
         }
-        // The glass projection extends beyond the scroll content bounds. Keep
-        // that projection visible so the capsule's shadow is not cut into a
-        // hard rectangular edge by ScrollView's default clipping.
-        .scrollClipDisabled()
-        .frame(height: HistoryGridMetrics.topControlHeight, alignment: .leading)
+        ToolbarItem(id: "screenshot.time.seven-days", placement: .navigation) {
+            selectionButton(for: .sevenDays)
+        }
+        ToolbarItem(id: "screenshot.time.one-month", placement: .navigation) {
+            selectionButton(for: .oneMonth)
+        }
+        ToolbarItem(id: "screenshot.time.all", placement: .navigation) {
+            selectionButton(for: .all)
+        }
+    }
+
+    private func selectionButton(for filter: ScreenshotTimeFilter) -> some View {
+        JarvisToolbarSelectionButton(
+            title: filter.title,
+            isSelected: selectedFilter == filter
+        ) {
+            selectedFilter = filter
+        }
     }
 }

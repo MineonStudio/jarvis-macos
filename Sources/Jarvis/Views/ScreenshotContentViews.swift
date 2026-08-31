@@ -7,39 +7,38 @@ struct ScreenshotView: View {
     @State private var selectedItemID: UUID?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
-            HStack(alignment: .center, spacing: 14) {
-                ScreenshotTimeFilterBar(
-                    selectedFilter: $selectedTimeFilter
-                )
-
-                Spacer(minLength: 0)
-
-                ScreenshotHistoryActionToolbar(
-                    selectedItem: selectedItem,
-                    onClearSelection: { selectedItemID = nil }
-                )
-            }
-
-            GeometryReader { proxy in
-                ScrollView {
-                    ScreenshotHistorySection(
-                        selectedTimeFilter: $selectedTimeFilter,
-                        selectedItemID: $selectedItemID,
-                        availableGridWidth: max(
-                            0,
-                            proxy.size.width - HistoryGridMetrics.historyPanelInset * 2
-                        ),
-                        availableGridHeight: max(0, proxy.size.height)
+        JarvisContentArea(
+            leadingToolbar: {
+                ScreenshotTimeFilterBar(selectedFilter: $selectedTimeFilter)
+            },
+            trailingToolbar: {
+                ToolbarItem(id: "screenshot.actions", placement: .automatic) {
+                    ScreenshotHistoryActionToolbar(
+                        selectedItem: selectedItem,
+                        onClearSelection: { selectedItemID = nil }
                     )
-                    .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                    .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
+            },
+            content: {
+                GeometryReader { proxy in
+                    ScrollView {
+                        ScreenshotHistorySection(
+                            selectedTimeFilter: $selectedTimeFilter,
+                            selectedItemID: $selectedItemID,
+                            availableGridWidth: max(
+                                0,
+                                proxy.size.width - HistoryGridMetrics.historyPanelInset * 2
+                            ),
+                            availableGridHeight: max(0, proxy.size.height)
+                        )
+                        .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                        .padding(.vertical, HistoryGridMetrics.historyPanelInset)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .jarvisFloatingPanel(cornerRadius: 16)
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        )
     }
 
     private var selectedItem: ScreenshotHistoryItem? {
@@ -50,7 +49,6 @@ struct ScreenshotView: View {
 
 struct ScreenshotHistoryActionToolbar: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let selectedItem: ScreenshotHistoryItem?
     let onClearSelection: () -> Void
     @State private var showingDeleteConfirmation = false
@@ -92,7 +90,6 @@ struct ScreenshotHistoryActionToolbar: View {
         }
         .padding(4)
         .frame(height: HistoryGridMetrics.topControlHeight)
-        .jarvisGlass(in: Capsule(), interactive: true)
         .confirmationDialog(
             "删除这张截图？",
             isPresented: $showingDeleteConfirmation,
@@ -118,21 +115,13 @@ struct ScreenshotHistoryActionToolbar: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(
-                    isEnabled
-                        ? tint
-                        : Color.secondary.opacity(0.30)
-                )
-                .frame(
-                    width: HistoryGridMetrics.clipboardActionButtonSize,
-                    height: HistoryGridMetrics.clipboardActionButtonSize
-                )
-                .contentShape(Circle())
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
+                .foregroundStyle(tint)
         }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .buttonStyle(JarvisToolbarIconButtonStyle())
+        .opacity(isEnabled ? 1 : 0.38)
         .disabled(!isEnabled)
-        .jarvisHoverHighlight(
+        .jarvisHoverFeedback(
             in: Circle(),
             scale: 1.06
         )
@@ -155,16 +144,15 @@ enum HistoryGridMetrics {
     static let clipboardContentSpacing: CGFloat = 4
     static let clipboardMetadataHeight: CGFloat = 16
     static let clipboardSearchFieldWidth: CGFloat = 320
-    static let clipboardActionButtonSize: CGFloat = 32
+    static let clipboardActionButtonSize = JarvisToolbarMetrics.controlSize
     static let clipboardPreviewHoverScale: CGFloat = 1.08
     static let clipboardCornerRadius: CGFloat = 12
     static let clipboardGridSpacing: CGFloat = 10
-    static let filterChipHeight: CGFloat = 36
+    static let filterChipHeight = JarvisMetrics.segmentedItemHeight
     static let filterChipSpacing: CGFloat = 7
     static let filterChipHorizontalPadding: CGFloat = 10
     static let filterChipVerticalPadding: CGFloat = 8
-    static let topControlHeight: CGFloat =
-        filterChipHeight + JarvisMetrics.segmentedControlPadding * 2
+    static let topControlHeight = JarvisToolbarMetrics.controlSize
     static let clipboardSearchFieldHeight: CGFloat = topControlHeight
     static let clipboardFilterToGridSpacing: CGFloat = 10
     static let paginationControlHeight: CGFloat = 34

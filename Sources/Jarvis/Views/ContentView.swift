@@ -6,25 +6,27 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationSelection: TopLevelSection = .overview
     @State private var selectedSkill: SkillID = .screenshot
+    @State private var selectedSidebarSecondary: SidebarSecondaryItem = .skill(.screenshot)
     @State private var loadedSection: AppSection = .overview
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             JarvisSidebarNavigation(
                 items: primaryNavigationItems,
                 selection: selectedSectionBinding,
                 title: { $0.title },
                 icon: { $0.icon },
-                secondaryParent: .skillLibrary,
-                secondaryItems: SkillID.allCases,
-                secondarySelection: selectedSkillBinding,
-                secondaryTitle: { $0.navigationTitle },
-                secondaryIcon: { $0.icon },
+                secondaryMenus: secondaryMenus,
+                secondarySelection: selectedSidebarSecondaryBinding,
+                secondaryTitle: { $0.title },
+                secondaryIcon: sidebarSecondaryIcon,
                 footerTitle: "设置",
                 footerIcon: "gearshape",
                 footerIsSelected: navigationSelection == .settings,
                 footerAction: { selectSection(.settings) }
             )
+            .background(Color.jarvisBackground)
             .navigationSplitViewColumnWidth(
                 min: JarvisMetrics.sidebarMinimumWidth,
                 ideal: JarvisMetrics.sidebarWidth,
@@ -34,14 +36,6 @@ struct ContentView: View {
             loadedSectionView
                 .id(loadedSection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.leading, JarvisMetrics.shellContentSpacing)
-                .padding(.trailing, JarvisMetrics.shellHorizontalPadding)
-                .padding(.vertical, JarvisMetrics.shellVerticalPadding)
-                .background(Color.jarvisBackground)
-                .ignoresSafeArea(
-                    .container,
-                    edges: detailExtendsIntoTitlebar ? .top : []
-                )
         }
         .overlay(alignment: .bottom) {
             JarvisToastHost(message: app.toastMessage)
@@ -59,10 +53,12 @@ struct ContentView: View {
             switch newSection {
             case let .skill(skill):
                 selectedSkill = skill
+                selectedSidebarSecondary = .skill(skill)
                 navigationSelection = .skillLibrary
             case .overview:
                 navigationSelection = .overview
             case .aiConversation:
+                selectedSidebarSecondary = .aiProvider(app.selectedAIProvider)
                 navigationSelection = .aiConversation
             case .settings:
                 navigationSelection = .settings
@@ -77,7 +73,7 @@ struct ContentView: View {
             // AI WebView. The tab selection itself is already committed.
             if !reduceMotion {
                 do {
-                    try await Task.sleep(nanoseconds: 240_000_000)
+                    try await Task.sleep(nanoseconds: 180_000_000)
                 } catch {
                     return
                 }
@@ -86,13 +82,14 @@ struct ContentView: View {
             if reduceMotion {
                 loadedSection = nextSection
             } else {
-                // Replace the top bar and its page atomically. A cross-fade
-                // would keep the old and new mutually exclusive tab sets
-                // composited together for part of the transition.
-                withAnimation(JarvisMotion.pageTransition) {
-                    loadedSection = nextSection
-                }
+                // The sidebar indicator has settled. Replace the page in one
+                // transaction so old and new module hierarchies never overlap.
+                loadedSection = nextSection
             }
+        }
+        .onChange(of: app.selectedAIProvider) { _, provider in
+            guard navigationSelection == .aiConversation else { return }
+            selectedSidebarSecondary = .aiProvider(provider)
         }
     }
 
@@ -102,17 +99,14 @@ struct ContentView: View {
         switch section {
         case .skillLibrary:
             selectedSkill = .screenshot
+            selectedSidebarSecondary = .skill(.screenshot)
             app.selectedSection = .skill(.screenshot)
-        case .overview, .aiConversation, .settings:
+        case .aiConversation:
+            selectedSidebarSecondary = .aiProvider(app.selectedAIProvider)
+            app.selectedSection = section.appSection
+        case .overview, .settings:
             app.selectedSection = section.appSection
         }
-    }
-
-    private func selectSkill(_ skill: SkillID) {
-        guard selectedSkill != skill else { return }
-        selectedSkill = skill
-        guard navigationSelection == .skillLibrary else { return }
-        app.selectedSection = .skill(skill)
     }
 
     private var selectedSectionBinding: Binding<TopLevelSection> {
@@ -131,24 +125,56 @@ struct ContentView: View {
         [.overview, .aiConversation, .skillLibrary]
     }
 
-    private var selectedSkillBinding: Binding<SkillID> {
+    private var secondaryMenus: [JarvisSidebarSecondaryMenu<TopLevelSection, SidebarSecondaryItem>] {
+        [
+            JarvisSidebarSecondaryMenu(
+                parent: .aiConversation,
+                items: AIConversationProvider.allCases.map { .aiProvider($0) }
+            ),
+            JarvisSidebarSecondaryMenu(
+                parent: .skillLibrary,
+                items: SkillID.allCases.map { .skill($0) }
+            )
+        ]
+    }
+
+    private var selectedSidebarSecondaryBinding: Binding<SidebarSecondaryItem> {
         Binding(
-            get: { selectedSkill },
-            set: { selectSkill($0) }
+            get: { selectedSidebarSecondary },
+            set: { selectSidebarSecondary($0) }
         )
+    }
+
+    private func sidebarSecondaryIcon(
+        _ item: SidebarSecondaryItem,
+        isSelected: Bool
+    ) -> AnyView {
+        switch item {
+        case let .skill(skill):
+            AnyView(Image(systemName: skill.icon))
+        case let .aiProvider(provider):
+            AnyView(AIConversationProviderIcon(provider: provider, isSelected: isSelected))
+        }
+    }
+
+    private func selectSidebarSecondary(_ item: SidebarSecondaryItem) {
+        guard selectedSidebarSecondary != item else { return }
+        selectedSidebarSecondary = item
+
+        switch item {
+        case let .skill(skill):
+            selectedSkill = skill
+            navigationSelection = .skillLibrary
+            app.selectedSection = .skill(skill)
+        case let .aiProvider(provider):
+            navigationSelection = .aiConversation
+            app.selectedAIProvider = provider
+            app.selectedSection = .aiConversation
+        }
     }
 
     private var navigationTargetID: String {
         "\(navigationSelection.id)|\(selectedSkill.id)"
-    }
-
-    private var detailExtendsIntoTitlebar: Bool {
-        switch loadedSection {
-        case .aiConversation, .skill:
-            true
-        case .overview, .settings:
-            false
-        }
     }
 
     private func contentSection(for section: TopLevelSection) -> AppSection {
@@ -178,38 +204,13 @@ struct ContentView: View {
     }
 
     private var loadedSectionView: some View {
-        VStack(spacing: 0) {
-            topNavigationBar
-
-            selectedContentView
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-        .animation(
-            JarvisMotion.animation(JarvisMotion.pageTransition, reduceMotion: reduceMotion),
-            value: loadedSection
-        )
+        selectedContentView
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ViewBuilder
-    private var topNavigationBar: some View {
-        switch loadedSection {
-        case .aiConversation:
-            AIConversationTopBar()
-        case .overview, .skill, .settings:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
     private var selectedContentView: some View {
-        switch loadedSection {
-        case .skill:
-            detailView
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .overview, .aiConversation, .settings:
-            detailView
-        }
+        detailView
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -228,6 +229,25 @@ struct JarvisToastHost: View {
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
             value: message
         )
+    }
+}
+
+enum SidebarSecondaryItem: Hashable, Identifiable {
+    case skill(SkillID)
+    case aiProvider(AIConversationProvider)
+
+    var id: String {
+        switch self {
+        case let .skill(skill): "skill.\(skill.id)"
+        case let .aiProvider(provider): "ai.\(provider.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case let .skill(skill): skill.navigationTitle
+        case let .aiProvider(provider): provider.title
+        }
     }
 }
 
@@ -278,27 +298,41 @@ struct DashboardView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                JarvisOrbView()
-
-                HStack(spacing: 0) {
-                    DashboardMetric(title: "截图", value: "\(app.screenshotHistory.count)", detail: "历史记录", icon: "photo")
-                    dashboardDivider
-                    DashboardMetric(title: "剪贴板", value: "\(app.clipboardItems.count)", detail: "本地记录", icon: "clipboard")
-                    dashboardDivider
-                    DashboardMetric(title: "技能", value: "\(SkillID.allCases.count)", detail: "已启用", icon: "puzzlepiece.extension")
+        JarvisContentArea(
+            leadingToolbar: {
+                ToolbarItem(placement: .navigation) {
+                    EmptyView()
                 }
+            },
+            trailingToolbar: {
+                ToolbarItem(placement: .automatic) {
+                    EmptyView()
+                }
+            },
+            content: {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        JarvisOrbView()
 
-                Divider()
-                    .overlay(Color.primary.opacity(0.10))
+                        HStack(spacing: 0) {
+                            DashboardMetric(title: "截图", value: "\(app.screenshotHistory.count)", detail: "历史记录", icon: "photo")
+                            dashboardDivider
+                            DashboardMetric(title: "剪贴板", value: "\(app.clipboardItems.count)", detail: "本地记录", icon: "clipboard")
+                            dashboardDivider
+                            DashboardMetric(title: "技能", value: "\(SkillID.allCases.count)", detail: "已启用", icon: "puzzlepiece.extension")
+                        }
 
-                permissionCard
+                        Divider()
+                            .overlay(Color.primary.opacity(0.10))
+
+                        permissionCard
+                    }
+                    .frame(maxWidth: 980, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(JarvisMetrics.pageInset)
+                }
             }
-            .frame(maxWidth: 980, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(JarvisMetrics.pageInset)
-        }
+        )
         .onAppear {
             app.refreshPermissionStatus()
         }

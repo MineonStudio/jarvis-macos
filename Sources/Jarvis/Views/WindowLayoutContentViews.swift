@@ -39,17 +39,29 @@ struct WindowLayoutView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                SectionHeader(title: "窗口布局")
-
-                introductionCard
-                layoutGrid
+        JarvisContentArea(
+            leadingToolbar: {
+                ToolbarItem(placement: .navigation) {
+                    EmptyView()
+                }
+            },
+            trailingToolbar: {
+                ToolbarItem(placement: .automatic) {
+                    EmptyView()
+                }
+            },
+            content: {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        introductionCard
+                        layoutGrid
+                    }
+                    .frame(maxWidth: 980, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(JarvisMetrics.pageInset)
+                }
             }
-            .frame(maxWidth: 980, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(JarvisMetrics.pageInset)
-        }
+        )
     }
 
     private var introductionCard: some View {

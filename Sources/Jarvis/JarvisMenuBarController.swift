@@ -6,7 +6,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let menuBarTitle = "JARVIS"
     static let menuBarIconResourceName = "JarvisMenuBarIcon"
     static let menuBarIconFileExtension = "png"
-    static let menuBarIconTintColor = NSColor.white
     static let menuBarIconPointSize = NSSize(width: 18, height: 18)
     static let menuBarAutosaveName = NSStatusItem.AutosaveName(
         "\(JarvisAppIdentity.bundleIdentifier).primary-status-item"
@@ -139,7 +138,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func styleStatusItemButton(_ button: NSStatusBarButton) {
-        button.contentTintColor = Self.menuBarIconTintColor
+        // Leave the tint to the status bar. With a template image, AppKit
+        // derives the foreground from the status item's current menu-bar
+        // material, including wallpaper-driven contrast changes.
+        button.contentTintColor = nil
         button.isBordered = false
 
         if let icon = Self.makeMenuBarIcon() {
@@ -167,9 +169,74 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             return nil
         }
 
-        image.isTemplate = false
-        image.size = Self.menuBarIconPointSize
+        return makeTemplateIcon(from: image, pointSize: menuBarIconPointSize.width)
+    }
+
+    private static func makeTemplateIcon(from base: NSImage, pointSize: CGFloat) -> NSImage {
+        guard let representation = rasterize(base, pointSize: pointSize) else {
+            let fallback = base.copy() as? NSImage ?? base
+            fallback.size = NSSize(width: pointSize, height: pointSize)
+            fallback.isTemplate = true
+            return fallback
+        }
+
+        // Preserve the source alpha as the shape and discard its fixed RGB
+        // color. AppKit then applies the correct light/dark menu-bar tint.
+        monochromeMask(representation)
+        let image = NSImage(size: NSSize(width: pointSize, height: pointSize))
+        image.addRepresentation(representation)
+        image.isTemplate = true
         return image
+    }
+
+    private static func rasterize(_ base: NSImage, pointSize: CGFloat) -> NSBitmapImageRep? {
+        let scale = max(NSScreen.main?.backingScaleFactor ?? 2, 2)
+        let pixelSize = Int((pointSize * scale).rounded())
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+
+        representation.size = NSSize(width: pointSize, height: pointSize)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: representation)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: pointSize, height: pointSize).fill()
+        base.draw(
+            in: NSRect(x: 0, y: 0, width: pointSize, height: pointSize),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+        return representation
+    }
+
+    private static func monochromeMask(_ representation: NSBitmapImageRep) {
+        guard let data = representation.bitmapData else { return }
+        let bytesPerPixel = max(representation.bitsPerPixel / 8, 4)
+        for y in 0 ..< representation.pixelsHigh {
+            let row = data.advanced(by: y * representation.bytesPerRow)
+            for x in 0 ..< representation.pixelsWide {
+                let pixel = row.advanced(by: x * bytesPerPixel)
+                let alpha = pixel[3]
+                pixel[0] = 0
+                pixel[1] = 0
+                pixel[2] = 0
+                pixel[3] = alpha
+            }
+        }
     }
 
     @objc private func captureScreenshot() {

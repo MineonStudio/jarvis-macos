@@ -50,7 +50,6 @@ final class MenuBarConfigurationTests: XCTestCase {
     func testMenuBarUsesConfiguredIconResourceWithAccessibleTitle() {
         XCTAssertEqual(JarvisMenuBarController.menuBarIconResourceName, "JarvisMenuBarIcon")
         XCTAssertEqual(JarvisMenuBarController.menuBarIconFileExtension, "png")
-        XCTAssertEqual(JarvisMenuBarController.menuBarIconTintColor, .white)
         XCTAssertEqual(
             JarvisMenuBarController.menuBarIconPointSize,
             NSSize(width: 18, height: 18)

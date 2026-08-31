@@ -69,8 +69,8 @@ struct JarvisSidebarNavigation<
                 ForEach(items) { item in
                     primaryRow(item)
 
-                    if let secondaryItems = secondaryItems(for: item), selection == item {
-                        secondaryMenu(items: secondaryItems)
+                    if let secondaryItems = secondaryItems(for: item) {
+                        secondaryMenu(items: secondaryItems, parent: item)
                     }
                 }
             }
@@ -167,10 +167,10 @@ struct JarvisSidebarNavigation<
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private func secondaryMenu(items: [SecondaryItem]) -> some View {
+    private func secondaryMenu(items: [SecondaryItem], parent: Item) -> some View {
         VStack(spacing: 3) {
             ForEach(items) { item in
-                let isSelected = secondarySelection == item
+                let isSelected = selection == parent && secondarySelection == item
 
                 Button {
                     withAnimation(
@@ -213,9 +213,6 @@ struct JarvisSidebarNavigation<
         .padding(.leading, 20)
         .padding(.top, 1)
         .padding(.bottom, 2)
-        // Replace the submenu in place. Animating its insertion and removal
-        // would keep the outgoing and incoming menus composited together.
-        .transition(.identity)
     }
 
     private func secondaryItems(for parent: Item) -> [SecondaryItem]? {

@@ -6,6 +6,7 @@ enum JarvisMotion {
     static let buttonPress = Animation.spring(response: 0.16, dampingFraction: 0.78, blendDuration: 0.02)
     static let hover = Animation.spring(response: 0.24, dampingFraction: 0.82, blendDuration: 0.03)
     static let selection = Animation.spring(response: 0.30, dampingFraction: 0.82, blendDuration: 0.04)
+    static let sidebarSelection = Animation.easeOut(duration: 0.18)
     static let content = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.03)
     static let feedback = Animation.spring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.03)
     static let pageTransition = Animation.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.05)
@@ -35,6 +36,32 @@ struct JarvisPressButtonStyle: ButtonStyle {
                 reduceMotion
                     ? 1
                     : (configuration.isPressed ? pressedScale : 1)
+            )
+            .animation(
+                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
+    }
+}
+
+/// The icon-button treatment used by the chat toolbar and shared by all
+/// module toolbars. The button itself owns the 32-point hit target; callers
+/// only provide the icon, tint, action, and hover feedback shape.
+struct JarvisToolbarIconButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(
+                width: JarvisToolbarMetrics.controlSize,
+                height: JarvisToolbarMetrics.controlSize
+            )
+            .contentShape(Circle())
+            .opacity(configuration.isPressed ? 0.76 : 1)
+            .scaleEffect(
+                reduceMotion
+                    ? 1
+                    : (configuration.isPressed ? 0.94 : 1)
             )
             .animation(
                 JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),

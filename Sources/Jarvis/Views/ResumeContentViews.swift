@@ -16,18 +16,44 @@ struct ResumeContentView: View {
     @FocusState private var isPreviewScaleInputFocused: Bool
 
     var body: some View {
-        Group {
-            if workspace.needsTemplateSelection {
-                ResumeTemplateSelectionView { template in
-                    workspace.chooseTemplate(template)
-                    expandedSection = .basicInfo
+        JarvisContentArea(
+            leadingToolbar: {
+                if workspace.needsTemplateSelection {
+                    ToolbarItem(placement: .navigation) {
+                        EmptyView()
+                    }
+                } else {
+                    ToolbarItem(placement: .navigation) {
+                        resumeToolbarLeading
+                    }
                 }
-            } else {
-                resumeEditorLayout
+            },
+            trailingToolbar: {
+                if workspace.needsTemplateSelection {
+                    ToolbarItem(placement: .automatic) {
+                        EmptyView()
+                    }
+                } else {
+                    ToolbarItem(placement: .automatic) {
+                        resumeToolbarTrailing
+                    }
+                }
+            },
+            content: {
+                Group {
+                    if workspace.needsTemplateSelection {
+                        ResumeTemplateSelectionView { template in
+                            workspace.chooseTemplate(template)
+                            expandedSection = .basicInfo
+                        }
+                    } else {
+                        resumeEditorLayout
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.jarvisBackground)
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.jarvisBackground)
+        )
         .onChange(of: workspace.document) { _, _ in
             normalizeSelection()
         }
@@ -51,31 +77,6 @@ struct ResumeContentView: View {
         } message: {
             Text("直接新建会丢弃当前未保存内容。")
         }
-    }
-}
-
-struct ResumeCapsuleButtonStyle: ButtonStyle {
-    let tint: Color?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(tint: Color? = nil) {
-        self.tint = tint
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(tint == nil ? JarvisTypography.control : JarvisTypography.controlEmphasis)
-            .foregroundStyle(tint == nil ? Color.primary : Color.white)
-            .padding(.horizontal, 16)
-            .frame(minHeight: 38)
-            .opacity(configuration.isPressed ? 0.76 : 1)
-            .jarvisGlass(tint: tint, in: Capsule(), interactive: true)
-            .contentShape(Capsule())
-            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
-            .animation(
-                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
-                value: configuration.isPressed
-            )
     }
 }
 
@@ -150,56 +151,52 @@ private struct ResumeZoomButton: View {
 
 private extension ResumeContentView {
     var resumeEditorLayout: some View {
-        VStack(spacing: 0) {
-            resumeToolbar
+        HStack(spacing: 0) {
+            documentCanvas
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             Divider()
-            HStack(spacing: 0) {
-                documentCanvas
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Divider()
-
-                ResumeInspector(
-                    draft: $workspace.document,
-                    expandedSection: $expandedSection
-                )
-                .frame(width: 348)
-            }
+            ResumeInspector(
+                draft: $workspace.document,
+                expandedSection: $expandedSection
+            )
+            .frame(width: 348)
         }
     }
 
-    var resumeToolbar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 9) {
-                TextField("未命名简历", text: $workspace.document.title)
-                    .textFieldStyle(.plain)
-                    .font(JarvisTypography.cardTitle)
-                    .frame(width: filenameWidth, height: 30)
-                    .padding(.horizontal, 12)
-                    .background(Color.primary.opacity(0.08), in: Capsule())
-                    .focused($isFilenameFocused)
-                    .onSubmit { finishFilenameEditing() }
-                    .help("点击修改文件名")
+    var resumeToolbarLeading: some View {
+        HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
+            TextField("未命名简历", text: $workspace.document.title)
+                .textFieldStyle(.plain)
+                .font(JarvisTypography.cardTitle)
+                .frame(width: filenameWidth, height: JarvisToolbarMetrics.controlSize)
+                .padding(.horizontal, 12)
+                .background(Color.primary.opacity(0.08), in: Capsule())
+                .focused($isFilenameFocused)
+                .onSubmit { finishFilenameEditing() }
+                .help("点击修改文件名")
 
-                HStack(spacing: 5) {
-                    Image(systemName: workspace.isSaved ? "checkmark.circle.fill" : "circle.dashed")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(workspace.isSaved ? .green : Color.jarvisTextSecondary)
-                    Text(saveStatusText)
-                        .font(JarvisTypography.caption)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
+            HStack(spacing: 5) {
+                Image(systemName: workspace.isSaved ? "checkmark.circle.fill" : "circle.dashed")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(workspace.isSaved ? .green : Color.jarvisTextSecondary)
+                Text(saveStatusText)
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
             }
+            .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
+        }
+    }
 
-            Spacer(minLength: 4)
-
+    var resumeToolbarTrailing: some View {
+        HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
             Button {
                 requestNewResume()
             } label: {
                 Text("新建简历")
             }
-            .buttonStyle(ResumeCapsuleButtonStyle())
+            .buttonStyle(JarvisToolbarButtonStyle())
             .help("直接打开一份全新的空白简历")
 
             Button {
@@ -208,7 +205,7 @@ private extension ResumeContentView {
             } label: {
                 Text("导入简历")
             }
-            .buttonStyle(ResumeCapsuleButtonStyle())
+            .buttonStyle(JarvisToolbarButtonStyle())
             .help("打开一份 JSON 简历作为当前文档")
 
             Menu {
@@ -221,12 +218,9 @@ private extension ResumeContentView {
             } label: {
                 Text("保存简历")
             }
-            .buttonStyle(ResumeCapsuleButtonStyle(tint: .accentColor))
+            .buttonStyle(JarvisToolbarButtonStyle(tint: .accentColor))
             .help("选择 PDF、RTF、Markdown 或 JSON 保存简历")
         }
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
-        .background(Color.jarvisBackground)
     }
 
     var documentCanvas: some View {

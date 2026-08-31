@@ -33,7 +33,7 @@ enum JarvisWindowLayoutMetrics {
     static let clipboardPanelCompactFilterBarHeight: CGFloat =
         HistoryGridMetrics.topControlHeight * 2
             + HistoryGridMetrics.clipboardFilterToGridSpacing
-    static let skillTopBarHeight: CGFloat = 54
+    static let contentBodyTopSpacing: CGFloat = JarvisMetrics.shellContentSpacing
     static let emptyStateMinimumHeight: CGFloat = 190
 
     private static var clipboardMinimumRowHeight: CGFloat {
@@ -73,7 +73,7 @@ enum JarvisWindowLayoutMetrics {
             + clipboardMinimumContentHeight
             + (JarvisMetrics.pageInset * 2)
         return ceil(
-            skillTopBarHeight
+            contentBodyTopSpacing
                 + (JarvisMetrics.shellVerticalPadding * 2)
                 + clipboardPageHeight
                 + contentSafetyMargin

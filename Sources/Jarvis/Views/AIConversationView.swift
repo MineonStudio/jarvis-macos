@@ -56,32 +56,10 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
 }
 
 enum AIConversationLayoutMetrics {
-    static let providerIconWidth: CGFloat = 18
-    static let providerItemSpacing: CGFloat = 7
-    static let providerItemHorizontalPadding: CGFloat = 24
-    static let providerNavigationItemSpacing: CGFloat = 2
-    static let providerNavigationPadding: CGFloat = 4
     static let topBarSpacing: CGFloat = 12
-    static let browserControlSize: CGFloat = 32
-    static let browserControlSpacing: CGFloat = 8
+    static let browserControlSize = JarvisToolbarMetrics.controlSize
+    static let browserControlSpacing = JarvisToolbarMetrics.controlSpacing
     static let browserControlCount = 4
-
-    static var providerNavigationMinimumWidth: CGFloat {
-        let font = NSFont.systemFont(ofSize: 13)
-        let itemWidth = AIConversationProvider.allCases.reduce(CGFloat.zero) { width, provider in
-            let titleWidth = (provider.title as NSString)
-                .size(withAttributes: [.font: font])
-                .width
-            return width
-                + providerIconWidth
-                + providerItemSpacing
-                + titleWidth
-                + providerItemHorizontalPadding
-        }
-        let itemSpacing = providerNavigationItemSpacing
-            * CGFloat(max(0, AIConversationProvider.allCases.count - 1))
-        return ceil(itemWidth + itemSpacing + providerNavigationPadding + 8)
-    }
 
     static var browserControlsMinimumWidth: CGFloat {
         (browserControlSize * CGFloat(browserControlCount))
@@ -90,7 +68,7 @@ enum AIConversationLayoutMetrics {
     }
 
     static var minimumTopBarWidth: CGFloat {
-        providerNavigationMinimumWidth + topBarSpacing + browserControlsMinimumWidth
+        browserControlsMinimumWidth + topBarSpacing + browserControlSize + 8
     }
 }
 
@@ -134,6 +112,11 @@ final class AIConversationWebController: NSObject, ObservableObject {
                 self?.updateNavigationState()
             }
         }
+        webView.load(URLRequest(url: provider.url))
+    }
+
+    func goHome() {
+        loadError = nil
         webView.load(URLRequest(url: provider.url))
     }
 
@@ -285,41 +268,32 @@ extension AIConversationWebController: WKUIDelegate {
 
 struct AIConversationView: View {
     @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        AIConversationBrowserPage(
-            controller: currentController
-        )
-        .id(app.selectedAIProvider)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var currentController: AIConversationWebController {
-        app.aiConversationController(for: app.selectedAIProvider)
-    }
-}
-
-struct AIConversationTopBar: View {
-    @EnvironmentObject private var app: AppModel
     @State private var showsDownloadManager = false
 
     var body: some View {
-        JarvisTopBarContainer {
-            HStack(spacing: AIConversationLayoutMetrics.topBarSpacing) {
-                Spacer(minLength: 0)
-                AIConversationBrowserControls(
-                    controller: currentController,
-                    showsDownloadManager: $showsDownloadManager
+        JarvisContentArea(
+            leadingToolbar: {
+                ToolbarItem(placement: .navigation) {
+                    AIConversationBrowserControls(
+                        controller: currentController
+                    )
+                }
+            },
+            trailingToolbar: {
+                ToolbarItem(placement: .automatic) {
+                    AIConversationDownloadButton(
+                        controller: currentController,
+                        showsDownloadManager: $showsDownloadManager
+                    )
+                }
+            },
+            content: {
+                AIConversationBrowserPage(
+                    controller: currentController
                 )
+                .id(app.selectedAIProvider)
             }
-            .frame(
-                minWidth: AIConversationLayoutMetrics.minimumTopBarWidth,
-                maxWidth: .infinity
-            )
-            .overlay {
-                AIConversationProviderNavigation(selection: $app.selectedAIProvider)
-            }
-        }
+        )
     }
 
     private var currentController: AIConversationWebController {
@@ -327,34 +301,7 @@ struct AIConversationTopBar: View {
     }
 }
 
-private struct AIConversationProviderNavigation: View {
-    @Binding var selection: AIConversationProvider
-
-    var body: some View {
-        JarvisSegmentedControl(
-            items: Array(AIConversationProvider.allCases),
-            selection: $selection
-        ) { provider, isSelected in
-            HStack(spacing: 7) {
-                AIConversationProviderIcon(provider: provider, isSelected: isSelected)
-                Text(provider.title)
-            }
-            .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
-            .foregroundStyle(isSelected ? Color.white : Color.secondary)
-            .frame(
-                minHeight: JarvisMetrics.segmentedItemHeight,
-                maxHeight: JarvisMetrics.segmentedItemHeight
-            )
-            .padding(.horizontal, 12)
-            .padding(.vertical, JarvisMetrics.topNavigationVerticalPadding)
-            .help(provider.title)
-        }
-        .shadow(color: Color.black.opacity(0.10), radius: 20, y: 9)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-private struct AIConversationProviderIcon: View {
+struct AIConversationProviderIcon: View {
     let provider: AIConversationProvider
     let isSelected: Bool
 
@@ -393,11 +340,15 @@ private struct AIConversationProviderIcon: View {
 
 private struct AIConversationBrowserControls: View {
     @ObservedObject var controller: AIConversationWebController
-    @Binding var showsDownloadManager: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
+            browserControlButton(
+                systemName: "house",
+                action: controller.goHome,
+                help: "主页"
+            )
             browserControlButton(
                 systemName: "chevron.left",
                 action: controller.goBack,
@@ -415,23 +366,26 @@ private struct AIConversationBrowserControls: View {
                 action: controller.reloadOrStop,
                 help: controller.isLoading ? "停止加载" : "刷新"
             )
-            downloadManagerButton
         }
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: controller.isLoading
         )
     }
+}
 
-    private var downloadManagerButton: some View {
+private struct AIConversationDownloadButton: View {
+    @ObservedObject var controller: AIConversationWebController
+    @Binding var showsDownloadManager: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
         Button {
             showsDownloadManager.toggle()
         } label: {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
+                Image(systemName: "arrow.down")
+                    .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
 
                 if controller.downloadManager.activeDownloadCount > 0 {
                     Text("\(controller.downloadManager.activeDownloadCount)")
@@ -444,10 +398,9 @@ private struct AIConversationBrowserControls: View {
                 }
             }
         }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
         .foregroundStyle(Color.secondary)
-        .jarvisGlass(in: Circle(), interactive: true)
-        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help("下载管理")
         .animation(
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
@@ -458,8 +411,10 @@ private struct AIConversationBrowserControls: View {
                 .frame(width: 390, height: 390)
         }
     }
+}
 
-    private func browserControlButton(
+private extension AIConversationBrowserControls {
+    func browserControlButton(
         systemName: String,
         action: @escaping () -> Void,
         isDisabled: Bool = false,
@@ -467,15 +422,12 @@ private struct AIConversationBrowserControls: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 32, height: 32)
-                .contentShape(Circle())
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
         }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .buttonStyle(JarvisToolbarIconButtonStyle())
         .foregroundStyle(Color.secondary)
         .opacity(isDisabled ? 0.38 : 1)
         .disabled(isDisabled)
-        .jarvisGlass(in: Circle(), interactive: true)
         .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help(help)
     }

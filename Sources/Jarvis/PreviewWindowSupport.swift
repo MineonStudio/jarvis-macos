@@ -136,10 +136,6 @@ private final class PreviewDimmingOverlayView: NSView {
         onClick?()
     }
 
-    override func rightMouseDown(with _: NSEvent) {}
-
-    override func rightMouseUp(with _: NSEvent) {}
-
     override func otherMouseDown(with _: NSEvent) {}
 
     override func otherMouseUp(with _: NSEvent) {}

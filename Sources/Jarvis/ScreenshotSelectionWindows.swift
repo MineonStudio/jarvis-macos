@@ -349,7 +349,6 @@ final class PinnedScreenshotContainerView: NSView {
     private let contentInset: CGFloat
     private let editor: ScreenshotEditorModel
     private let onActivate: (() -> Void)?
-    private let makeContextMenu: (() -> NSMenu?)?
     var isSelected = false {
         didSet {
             needsDisplay = true
@@ -368,14 +367,12 @@ final class PinnedScreenshotContainerView: NSView {
         imageSize: CGSize,
         contentInset: CGFloat,
         editor: ScreenshotEditorModel,
-        onActivate: (() -> Void)?,
-        makeContextMenu: (() -> NSMenu?)?
+        onActivate: (() -> Void)?
     ) {
         self.imageSize = imageSize
         self.contentInset = contentInset
         self.editor = editor
         self.onActivate = onActivate
-        self.makeContextMenu = makeContextMenu
         super.init(frame: frameRect)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -438,12 +435,6 @@ final class PinnedScreenshotContainerView: NSView {
         if editor.selectedTool != nil {
             super.mouseUp(with: event)
         }
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        onActivate?()
-        guard let menu = makeContextMenu?() else { return }
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -526,7 +517,6 @@ final class PinnedScreenshotItem {
     var toolbarLayout: ScreenshotToolbarLayoutModel?
     var editorObservation: AnyCancellable?
     var onAction: ((ScreenshotAction) -> Void)?
-    var contextMenuTarget: PinnedScreenshotContextMenuTarget?
     var showsToolbar = false
     var showsShadow = true
 
@@ -564,27 +554,5 @@ final class PinnedScreenshotItem {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = false
-    }
-}
-
-final class PinnedScreenshotContextMenuTarget: NSObject {
-    private let onToggleToolbar: () -> Void
-    private let onToggleShadow: () -> Void
-
-    init(
-        onToggleToolbar: @escaping () -> Void,
-        onToggleShadow: @escaping () -> Void
-    ) {
-        self.onToggleToolbar = onToggleToolbar
-        self.onToggleShadow = onToggleShadow
-        super.init()
-    }
-
-    @objc func toggleToolbar(_: NSMenuItem) {
-        onToggleToolbar()
-    }
-
-    @objc func toggleShadow(_: NSMenuItem) {
-        onToggleShadow()
     }
 }

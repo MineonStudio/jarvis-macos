@@ -36,6 +36,7 @@ enum AppSection: Hashable, Identifiable {
         case .skill(.clipboard): "剪贴板"
         case .skill(.windowLayout): "窗口布局"
         case .skill(.resume): "简历制作"
+        case .skill(.wallpaper): "桌面壁纸"
         case .settings: "设置"
         }
     }

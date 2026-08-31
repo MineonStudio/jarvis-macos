@@ -74,10 +74,6 @@ extension ScreenshotCaptureController {
             onActivate: { [weak self, weak item] in
                 guard let self, let item else { return }
                 selectPinnedScreenshot(item)
-            },
-            makeContextMenu: { [weak self, weak item] in
-                guard let self, let item else { return nil }
-                return makePinnedContextMenu(for: item)
             }
         )
         hostingView.frame = NSRect(
@@ -128,58 +124,6 @@ extension ScreenshotCaptureController {
         // The visible halo is rendered by the transparent inset container;
         // keep AppKit from adding a second window-level shadow.
         item.window.hasShadow = false
-    }
-
-    private func makePinnedContextMenu(for item: PinnedScreenshotItem) -> NSMenu {
-        let target = PinnedScreenshotContextMenuTarget(
-            onToggleToolbar: { [weak self, weak item] in
-                guard let self, let item else { return }
-                togglePinnedToolbar(for: item)
-            },
-            onToggleShadow: { [weak self, weak item] in
-                guard let self, let item else { return }
-                togglePinnedShadow(for: item)
-            }
-        )
-        item.contextMenuTarget = target
-
-        let menu = NSMenu()
-        let toolbarItem = NSMenuItem(
-            title: "显示操作栏",
-            action: #selector(PinnedScreenshotContextMenuTarget.toggleToolbar(_:)),
-            keyEquivalent: ""
-        )
-        toolbarItem.target = target
-        toolbarItem.state = item.showsToolbar ? .on : .off
-        menu.addItem(toolbarItem)
-
-        let shadowItem = NSMenuItem(
-            title: "显示阴影",
-            action: #selector(PinnedScreenshotContextMenuTarget.toggleShadow(_:)),
-            keyEquivalent: ""
-        )
-        shadowItem.target = target
-        shadowItem.state = item.showsShadow ? .on : .off
-        menu.addItem(shadowItem)
-        return menu
-    }
-
-    private func togglePinnedToolbar(for item: PinnedScreenshotItem) {
-        guard pinnedItems[item.id] != nil else { return }
-        item.showsToolbar.toggle()
-        if selectedPinnedID != item.id {
-            selectPinnedScreenshot(item)
-        } else if item.showsToolbar {
-            showPinnedToolbar(for: item)
-        } else {
-            hidePinnedToolbar(for: item)
-        }
-    }
-
-    private func togglePinnedShadow(for item: PinnedScreenshotItem) {
-        guard pinnedItems[item.id] != nil else { return }
-        item.showsShadow.toggle()
-        item.containerView?.showsShadow = item.showsShadow
     }
 
     private func showPinnedToolbar(for item: PinnedScreenshotItem) {

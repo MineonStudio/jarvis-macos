@@ -8,7 +8,7 @@ final class WallpaperTests: XCTestCase {
         XCTAssertEqual(WallpaperSource.local.title, "本地")
     }
 
-    func testWallpaperFiltersExposeWallhavenResolutionAndCategoryOptions() {
+    func testWallpaperFiltersExposeWallhavenResolutionOptions() {
         XCTAssertEqual(WallpaperResolution.hd.minimumResolution, "1280x720")
         XCTAssertEqual(WallpaperResolution.fullHD.minimumResolution, "1920x1080")
         XCTAssertEqual(WallpaperResolution.wuxga.minimumResolution, "1920x1200")
@@ -20,13 +20,6 @@ final class WallpaperTests: XCTestCase {
         XCTAssertEqual(WallpaperResolution.superUltrawide.minimumResolution, "5120x1440")
         XCTAssertEqual(WallpaperResolution.eightK.minimumResolution, "7680x4320")
         XCTAssertNil(WallpaperResolution.any.minimumResolution)
-        XCTAssertEqual(WallpaperCategory.all.apiValue, "111")
-        XCTAssertEqual(WallpaperCategory.general.apiValue, "100")
-        XCTAssertEqual(WallpaperCategory.anime.apiValue, "010")
-        XCTAssertEqual(WallpaperCategory.people.apiValue, "001")
-        XCTAssertEqual(WallpaperCategory.generalAnime.apiValue, "110")
-        XCTAssertEqual(WallpaperCategory.generalPeople.apiValue, "101")
-        XCTAssertEqual(WallpaperCategory.animePeople.apiValue, "011")
     }
 
     func testWallpaperRatioAndTagFiltersExposeWallhavenQueries() {
@@ -67,17 +60,14 @@ final class WallpaperTests: XCTestCase {
         let filters = WallpaperSearchFilters()
 
         XCTAssertEqual(filters.resolution, .any)
-        XCTAssertEqual(filters.category, .all)
         XCTAssertEqual(filters.ratio, .any)
         XCTAssertEqual(filters.resolution.title, "不限分辨率")
-        XCTAssertEqual(filters.category.title, "全部分类")
         XCTAssertEqual(filters.ratio.title, "不限比例")
     }
 
     func testWallhavenSearchURLContainsAllSelectedFilters() throws {
         let filters = WallpaperSearchFilters(
             resolution: .uwqhd,
-            category: .generalAnime,
             ratio: .twentyOneByNine,
             sorting: .dateAdded,
             tag: "cyberpunk"
@@ -86,7 +76,7 @@ final class WallpaperTests: XCTestCase {
         let queryItems = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         let query = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name, $0.value) })
 
-        XCTAssertEqual(query["categories"], "110")
+        XCTAssertFalse(query.keys.contains("categories"))
         XCTAssertEqual(query["atleast"], "3440x1440")
         XCTAssertEqual(query["ratios"], "21x9")
         XCTAssertEqual(query["sorting"], "date_added")
@@ -296,6 +286,92 @@ final class WallpaperTests: XCTestCase {
             }
         )
         XCTAssertTrue(calls.allSatisfy { ($0.2[.allowClipping] as? NSNumber)?.boolValue == true })
+    }
+
+    @MainActor
+    func testWallpaperSystemServiceSynchronizesDesktopIdleAndLoginRecords() throws {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-system-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: rootDirectory) }
+
+        let indexURL = rootDirectory.appendingPathComponent("Index.plist")
+        let sourceURL = rootDirectory.appendingPathComponent("source.png")
+        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+        try makeTestPNG().write(to: sourceURL)
+
+        let oldConfiguration = try PropertyListSerialization.data(
+            fromPropertyList: [
+                "type": "imageFile",
+                "url": ["relative": "file:///old-wallpaper.png"]
+            ],
+            format: .binary,
+            options: 0
+        )
+        let index: [String: Any] = [
+            "AllSpacesAndDisplays": [
+                "Idle": [
+                    "Content": ["Choices": [["Configuration": oldConfiguration]]]
+                ]
+            ],
+            "SystemDefault": [
+                "Idle": [
+                    "Content": ["Choices": [["Configuration": oldConfiguration]]]
+                ]
+            ]
+        ]
+        try PropertyListSerialization.data(
+            fromPropertyList: index,
+            format: .binary,
+            options: 0
+        ).write(to: indexURL)
+
+        var desktopCalls: [URL] = []
+        var loginWindowURL: URL?
+        var refreshCount = 0
+        let desktopService = DesktopWallpaperService(
+            screensProvider: { screens },
+            setImage: { url, _, _ in desktopCalls.append(url) }
+        )
+        let service = WallpaperSystemService(
+            desktopWallpaperService: desktopService,
+            wallpaperIndexURL: indexURL,
+            stableWallpaperDirectoryURL: rootDirectory.appendingPathComponent("SystemWallpaper"),
+            setLoginWindowWallpaper: { loginWindowURL = $0 },
+            refreshWallpaperAgent: { refreshCount += 1 }
+        )
+
+        try service.apply(imageURL: sourceURL, target: .both)
+
+        let stableURL = try XCTUnwrap(loginWindowURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stableURL.path))
+        XCTAssertEqual(try Data(contentsOf: stableURL), try Data(contentsOf: sourceURL))
+        XCTAssertEqual(desktopCalls, Array(repeating: stableURL, count: screens.count))
+        XCTAssertEqual(refreshCount, 1)
+
+        let updatedIndexValue = try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: indexURL),
+            options: [],
+            format: nil
+        )
+        let updatedIndex = try XCTUnwrap(updatedIndexValue as? [String: Any])
+        let allSpaces = try XCTUnwrap(updatedIndex["AllSpacesAndDisplays"] as? [String: Any])
+        let idle = try XCTUnwrap(allSpaces["Idle"] as? [String: Any])
+        let content = try XCTUnwrap(idle["Content"] as? [String: Any])
+        let choices = try XCTUnwrap(content["Choices"] as? [[String: Any]])
+        let firstChoice = try XCTUnwrap(choices.first)
+        let configuration = try XCTUnwrap(firstChoice["Configuration"] as? Data)
+        let decodedConfigurationValue = try PropertyListSerialization.propertyList(
+            from: configuration,
+            options: [],
+            format: nil
+        )
+        let decodedConfiguration = try XCTUnwrap(decodedConfigurationValue as? [String: Any])
+        let url = try XCTUnwrap(decodedConfiguration["url"] as? [String: Any])
+        let decodedURL = try XCTUnwrap(url["relative"] as? String)
+        XCTAssertEqual(decodedURL, stableURL.absoluteString)
     }
 
     private func makeTestPNG() throws -> Data {

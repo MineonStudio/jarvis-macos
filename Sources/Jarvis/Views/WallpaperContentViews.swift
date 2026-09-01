@@ -40,7 +40,6 @@ struct WallpaperView: View {
             leadingToolbar: {
                 WallpaperFilterToolbar(
                     selectedResolution: $model.selectedResolution,
-                    selectedCategory: $model.selectedCategory,
                     selectedRatio: $model.selectedRatio,
                     selectedSorting: $model.selectedSorting,
                     onFilterChange: applyOnlineFilters
@@ -145,7 +144,7 @@ struct WallpaperView: View {
         ) {
             Button("删除", role: .destructive) {
                 guard let deleteItem else { return }
-                model.delete(deleteItem)
+                deleteWallpaper(deleteItem)
                 self.deleteItem = nil
             }
             Button("取消", role: .cancel) {
@@ -184,7 +183,7 @@ struct WallpaperView: View {
             gallery(
                 items: model.items,
                 emptyTitle: "没有找到壁纸",
-                emptyMessage: "换一个分辨率、分类、比例或标签试试。"
+                emptyMessage: "换一个分辨率、比例或标签试试。"
             )
 
             if model.hasNextPage {
@@ -238,7 +237,7 @@ struct WallpaperView: View {
                 },
                 onSet: setWallpaper,
                 isApplied: { model.isApplied($0) },
-                onToggleFavorite: model.toggleFavorite,
+                onToggleFavorite: toggleFavorite,
                 showsDelete: showsDelete,
                 onDelete: onDelete
             )
@@ -295,9 +294,19 @@ struct WallpaperView: View {
 
     private func setWallpaper(_ item: WallpaperItem) {
         Task {
-            let message = await model.downloadAndApply(item, target: .desktop)
+            let message = await model.downloadAndApply(item, target: .both)
             app.showToast(message)
         }
+    }
+
+    private func toggleFavorite(_ item: WallpaperItem) {
+        guard let updatedItem = model.toggleFavorite(item) else { return }
+        app.showToast(updatedItem.isFavorite ? "收藏成功" : "已取消收藏")
+    }
+
+    private func deleteWallpaper(_ item: WallpaperItem) {
+        guard model.delete(item) else { return }
+        app.showToast("删除成功")
     }
 }
 
@@ -345,7 +354,6 @@ private struct WallpaperLibraryToolbar: ToolbarContent {
 
 private struct WallpaperFilterToolbar: ToolbarContent {
     @Binding var selectedResolution: WallpaperResolution
-    @Binding var selectedCategory: WallpaperCategory
     @Binding var selectedRatio: WallpaperRatio
     @Binding var selectedSorting: WallpaperSorting
     let onFilterChange: () -> Void
@@ -368,24 +376,6 @@ private struct WallpaperFilterToolbar: ToolbarContent {
                 wallpaperFilterMenuLabel(selectedResolution.title)
             }
             .help("按最低分辨率筛选")
-        }
-        ToolbarItem(id: "wallpaper.filter.category", placement: .navigation) {
-            Menu {
-                ForEach(WallpaperCategory.allCases) { category in
-                    Button {
-                        selectedCategory = category
-                        onFilterChange()
-                    } label: {
-                        wallpaperMenuItemLabel(
-                            category.title,
-                            isSelected: selectedCategory == category
-                        )
-                    }
-                }
-            } label: {
-                wallpaperFilterMenuLabel(selectedCategory.title)
-            }
-            .help("按 Wallhaven 分类组合筛选")
         }
         ToolbarItem(id: "wallpaper.filter.ratio", placement: .navigation) {
             Menu {
@@ -639,11 +629,13 @@ private struct WallpaperCard: View {
         .overlay {
             if isPreviewLoading {
                 ZStack {
-                    Color.black.opacity(0.28)
+                    Color.black.opacity(0.5)
                     ProgressView()
-                        .controlSize(.small)
+                        .controlSize(.large)
+                        .scaleEffect(1.35)
                         .tint(.white)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(
                     RoundedRectangle(
                         cornerRadius: HistoryGridMetrics.clipboardCornerRadius,

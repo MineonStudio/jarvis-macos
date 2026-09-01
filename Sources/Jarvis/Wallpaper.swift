@@ -93,56 +93,6 @@ enum WallpaperResolution: String, CaseIterable, Codable, Hashable, Identifiable 
     }
 }
 
-enum WallpaperCategory: String, CaseIterable, Codable, Hashable, Identifiable {
-    case all
-    case general
-    case anime
-    case people
-    case generalAnime
-    case generalPeople
-    case animePeople
-
-    var id: String {
-        rawValue
-    }
-
-    var title: String {
-        switch self {
-        case .all: "全部分类"
-        case .general: "通用"
-        case .anime: "动漫"
-        case .people: "人物"
-        case .generalAnime: "通用 + 动漫"
-        case .generalPeople: "通用 + 人物"
-        case .animePeople: "动漫 + 人物"
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .all: "全部"
-        case .general: "通用"
-        case .anime: "动漫"
-        case .people: "人物"
-        case .generalAnime: "通用 + 动漫"
-        case .generalPeople: "通用 + 人物"
-        case .animePeople: "动漫 + 人物"
-        }
-    }
-
-    var apiValue: String {
-        switch self {
-        case .all: "111"
-        case .general: "100"
-        case .anime: "010"
-        case .people: "001"
-        case .generalAnime: "110"
-        case .generalPeople: "101"
-        case .animePeople: "011"
-        }
-    }
-}
-
 enum WallpaperRatio: String, CaseIterable, Codable, Hashable, Identifiable {
     case any
     case landscape
@@ -271,7 +221,6 @@ enum WallpaperTags {
 
 struct WallpaperSearchFilters: Equatable {
     var resolution: WallpaperResolution = .any
-    var category: WallpaperCategory = .all
     var ratio: WallpaperRatio = .any
     var sorting: WallpaperSorting = .dateAdded
     var tag: String = ""
@@ -401,7 +350,6 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding {
     static func searchURL(page: Int, filters: WallpaperSearchFilters) throws -> URL {
         var components = URLComponents(string: "https://wallhaven.cc/api/v1/search")
         components?.queryItems = [
-            URLQueryItem(name: "categories", value: filters.category.apiValue),
             URLQueryItem(name: "purity", value: "100"),
             URLQueryItem(name: "sorting", value: filters.sorting.apiValue),
             URLQueryItem(name: "order", value: "desc"),
@@ -770,13 +718,299 @@ struct DesktopWallpaperService {
     }
 }
 
+enum WallpaperSystemServiceError: LocalizedError, Equatable {
+    case invalidWallpaper
+    case wallpaperStoreUnavailable
+    case loginWindowUnavailable
+    case failed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidWallpaper:
+            "壁纸文件不存在或不是有效图片"
+        case .wallpaperStoreUnavailable:
+            "无法更新 macOS 的锁屏壁纸记录"
+        case .loginWindowUnavailable:
+            "无法更新 macOS 的登录界面壁纸记录"
+        case let .failed(message):
+            "壁纸同步失败：\(message)"
+        }
+    }
+}
+
+/// Keeps the desktop, idle/lock-screen, and login-window records on one image.
+///
+/// macOS exposes the desktop image through NSWorkspace, but does not expose a
+/// public API for the other two records. The latter are still user-scoped
+/// system records, so we update them together and validate the writes.
+@MainActor
+struct WallpaperSystemService {
+    private let fileManager: FileManager
+    private let desktopWallpaperService: DesktopWallpaperService
+    private let wallpaperIndexURL: URL
+    private let stableWallpaperDirectoryURL: URL
+    private let setLoginWindowWallpaper: @MainActor (URL?) throws -> Void
+    private let refreshWallpaperAgent: @MainActor () throws -> Void
+
+    init(
+        desktopWallpaperService: DesktopWallpaperService? = nil,
+        fileManager: FileManager = .default,
+        wallpaperIndexURL: URL? = nil,
+        stableWallpaperDirectoryURL: URL? = nil,
+        setLoginWindowWallpaper: (@MainActor (URL?) throws -> Void)? = nil,
+        refreshWallpaperAgent: (@MainActor () throws -> Void)? = nil
+    ) {
+        self.fileManager = fileManager
+        self.desktopWallpaperService = desktopWallpaperService ?? DesktopWallpaperService()
+
+        let homeDirectory = fileManager.homeDirectoryForCurrentUser
+        self.wallpaperIndexURL = wallpaperIndexURL ?? homeDirectory
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("com.apple.wallpaper", isDirectory: true)
+            .appendingPathComponent("Store", isDirectory: true)
+            .appendingPathComponent("Index.plist", isDirectory: false)
+
+        let applicationSupportDirectory = (try? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? fileManager.temporaryDirectory
+        self.stableWallpaperDirectoryURL = stableWallpaperDirectoryURL ?? applicationSupportDirectory
+            .appendingPathComponent(JarvisAppIdentity.dataDirectoryName, isDirectory: true)
+            .appendingPathComponent("SystemWallpaper", isDirectory: true)
+
+        self.setLoginWindowWallpaper = setLoginWindowWallpaper ?? WallpaperSystemService.writeLoginWindowWallpaper
+        self.refreshWallpaperAgent = refreshWallpaperAgent ?? WallpaperSystemService.refreshWallpaperAgent
+    }
+
+    func apply(imageURL: URL, target: WallpaperSettingTarget) throws {
+        guard imageURL.isFileURL,
+              fileManager.fileExists(atPath: imageURL.path),
+              WallpaperImageValidation.isValidImage(at: imageURL)
+        else {
+            throw WallpaperSystemServiceError.invalidWallpaper
+        }
+
+        let stableURL = try makeStableWallpaperCopy(from: imageURL)
+        let previousWallpaperIndexData: Data?
+        let previousLoginWindowWallpaper: URL?
+
+        if target.requiresLockScreen {
+            do {
+                previousWallpaperIndexData = try Data(contentsOf: wallpaperIndexURL)
+            } catch {
+                throw WallpaperSystemServiceError.failed("无法读取原有锁屏壁纸记录：\(error.localizedDescription)")
+            }
+            previousLoginWindowWallpaper = Self.readLoginWindowWallpaper()
+        } else {
+            previousWallpaperIndexData = nil
+            previousLoginWindowWallpaper = nil
+        }
+
+        do {
+            if target.requiresLockScreen {
+                try updateIdleWallpaper(to: stableURL)
+                try setLoginWindowWallpaper(stableURL)
+            }
+
+            if target == .desktop || target == .both {
+                try desktopWallpaperService.apply(imageURL: stableURL, target: .desktop)
+            }
+
+            if target.requiresLockScreen {
+                try? refreshWallpaperAgent()
+            }
+        } catch {
+            if target.requiresLockScreen {
+                if let previousWallpaperIndexData {
+                    try? previousWallpaperIndexData.write(to: wallpaperIndexURL, options: .atomic)
+                }
+                try? setLoginWindowWallpaper(previousLoginWindowWallpaper)
+            }
+            throw error
+        }
+    }
+
+    private func makeStableWallpaperCopy(from sourceURL: URL) throws -> URL {
+        do {
+            try fileManager.createDirectory(
+                at: stableWallpaperDirectoryURL,
+                withIntermediateDirectories: true
+            )
+
+            let extensionName = sourceURL.pathExtension
+                .lowercased()
+                .filter { $0.isLetter || $0.isNumber }
+            let stableURL = stableWallpaperDirectoryURL
+                .appendingPathComponent(
+                    "active-wallpaper.\(extensionName.isEmpty ? "jpg" : extensionName)",
+                    isDirectory: false
+                )
+            let temporaryURL = stableWallpaperDirectoryURL
+                .appendingPathComponent(
+                    ".active-wallpaper-\(UUID().uuidString).tmp",
+                    isDirectory: false
+                )
+
+            try fileManager.copyItem(at: sourceURL, to: temporaryURL)
+            defer { try? fileManager.removeItem(at: temporaryURL) }
+
+            if fileManager.fileExists(atPath: stableURL.path) {
+                try fileManager.removeItem(at: stableURL)
+            }
+            try fileManager.moveItem(at: temporaryURL, to: stableURL)
+            return stableURL
+        } catch {
+            throw WallpaperSystemServiceError.failed("无法保存稳定的系统壁纸副本：\(error.localizedDescription)")
+        }
+    }
+
+    private func updateIdleWallpaper(to imageURL: URL) throws {
+        do {
+            let sourceData = try Data(contentsOf: wallpaperIndexURL)
+            guard let propertyList = try PropertyListSerialization.propertyList(
+                from: sourceData,
+                options: [],
+                format: nil
+            ) as? [String: Any] else {
+                throw WallpaperSystemServiceError.wallpaperStoreUnavailable
+            }
+
+            let configuration = try imageConfigurationData(for: imageURL)
+            let (updatedPropertyList, updateCount) = replacingIdleConfigurations(
+                in: propertyList,
+                with: configuration
+            )
+            guard updateCount > 0 else {
+                throw WallpaperSystemServiceError.wallpaperStoreUnavailable
+            }
+
+            let updatedData = try PropertyListSerialization.data(
+                fromPropertyList: updatedPropertyList,
+                format: .binary,
+                options: 0
+            )
+            try updatedData.write(to: wallpaperIndexURL, options: .atomic)
+        } catch let error as WallpaperSystemServiceError {
+            throw error
+        } catch {
+            throw WallpaperSystemServiceError.failed("无法写入锁屏壁纸记录：\(error.localizedDescription)")
+        }
+    }
+
+    private func imageConfigurationData(for imageURL: URL) throws -> Data {
+        let configuration: [String: Any] = [
+            "type": "imageFile",
+            "url": ["relative": imageURL.absoluteString]
+        ]
+        do {
+            return try PropertyListSerialization.data(
+                fromPropertyList: configuration,
+                format: .binary,
+                options: 0
+            )
+        } catch {
+            throw WallpaperSystemServiceError.failed("无法生成锁屏壁纸配置：\(error.localizedDescription)")
+        }
+    }
+
+    private func replacingIdleConfigurations(
+        in value: Any,
+        with configuration: Data
+    ) -> (Any, Int) {
+        if var dictionary = value as? [String: Any] {
+            var updateCount = 0
+
+            if var idle = dictionary["Idle"] as? [String: Any],
+               var content = idle["Content"] as? [String: Any],
+               var choices = content["Choices"] as? [[String: Any]],
+               !choices.isEmpty
+            {
+                for index in choices.indices {
+                    choices[index]["Configuration"] = configuration
+                }
+                content["Choices"] = choices
+                idle["Content"] = content
+                dictionary["Idle"] = idle
+                updateCount += choices.count
+            }
+
+            for key in dictionary.keys where key != "Idle" {
+                let (updatedValue, nestedUpdateCount) = replacingIdleConfigurations(
+                    in: dictionary[key] as Any,
+                    with: configuration
+                )
+                dictionary[key] = updatedValue
+                updateCount += nestedUpdateCount
+            }
+            return (dictionary, updateCount)
+        }
+
+        if var array = value as? [Any] {
+            var updateCount = 0
+            for index in array.indices {
+                let (updatedValue, nestedUpdateCount) = replacingIdleConfigurations(
+                    in: array[index],
+                    with: configuration
+                )
+                array[index] = updatedValue
+                updateCount += nestedUpdateCount
+            }
+            return (array, updateCount)
+        }
+
+        return (value, 0)
+    }
+
+    private static func writeLoginWindowWallpaper(_ imageURL: URL?) throws {
+        let applicationID = "com.apple.loginwindow" as CFString
+        let key = "DesktopPicture" as CFString
+        let value = imageURL.map { $0.path as CFString }
+        CFPreferencesSetAppValue(key, value, applicationID)
+        guard CFPreferencesAppSynchronize(applicationID) else {
+            throw WallpaperSystemServiceError.loginWindowUnavailable
+        }
+        let storedValue = CFPreferencesCopyAppValue(key, applicationID) as? String
+        guard storedValue == imageURL?.path else {
+            throw WallpaperSystemServiceError.loginWindowUnavailable
+        }
+    }
+
+    private static func readLoginWindowWallpaper() -> URL? {
+        let applicationID = "com.apple.loginwindow" as CFString
+        let key = "DesktopPicture" as CFString
+        guard let path = CFPreferencesCopyAppValue(key, applicationID) as? String,
+              !path.isEmpty
+        else {
+            return nil
+        }
+        return URL(fileURLWithPath: path)
+    }
+
+    private static func refreshWallpaperAgent() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = [
+            "kickstart",
+            "-k",
+            "gui/\(getuid())/com.apple.wallpaper.agent"
+        ]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw WallpaperSystemServiceError.failed("无法刷新 macOS 壁纸服务")
+        }
+    }
+}
+
 @MainActor
 final class WallpaperViewModel: ObservableObject {
     static let initialDisplayCount = 36
     private static let loadMoreDisplayCount = 24
 
     @Published var selectedResolution: WallpaperResolution = .any
-    @Published var selectedCategory: WallpaperCategory = .all
     @Published var selectedRatio: WallpaperRatio = .any
     @Published var selectedSorting: WallpaperSorting = .dateAdded
     @Published var selectedTag = ""
@@ -794,7 +1028,7 @@ final class WallpaperViewModel: ObservableObject {
     let store: WallpaperStore
     private let wallhavenSource: WallhavenWallpaperSource
     private let downloader: WallpaperDownloadService
-    private let desktopWallpaperService: DesktopWallpaperService
+    private let wallpaperSystemService: WallpaperSystemService
     private var currentPage = 1
     private var currentFilters = WallpaperSearchFilters()
     private var bufferedItems: [WallpaperItem] = []
@@ -804,12 +1038,20 @@ final class WallpaperViewModel: ObservableObject {
         store: WallpaperStore = WallpaperStore(),
         wallhavenSource: WallhavenWallpaperSource = WallhavenWallpaperSource(),
         downloader: WallpaperDownloadService = WallpaperDownloadService(),
-        desktopWallpaperService: DesktopWallpaperService? = nil
+        desktopWallpaperService: DesktopWallpaperService? = nil,
+        wallpaperSystemService: WallpaperSystemService? = nil
     ) {
         self.store = store
         self.wallhavenSource = wallhavenSource
         self.downloader = downloader
-        self.desktopWallpaperService = desktopWallpaperService ?? DesktopWallpaperService()
+        let desktopService = desktopWallpaperService ?? DesktopWallpaperService()
+        self.wallpaperSystemService = wallpaperSystemService ?? WallpaperSystemService(
+            desktopWallpaperService: desktopService,
+            stableWallpaperDirectoryURL: store.directoryURL.appendingPathComponent(
+                "SystemWallpaper",
+                isDirectory: true
+            )
+        )
         library = store.load()
         favorites = store.loadFavorites()
     }
@@ -822,7 +1064,6 @@ final class WallpaperViewModel: ObservableObject {
         currentPage = 1
         currentFilters = WallpaperSearchFilters(
             resolution: selectedResolution,
-            category: selectedCategory,
             ratio: selectedRatio,
             sorting: selectedSorting,
             tag: selectedTag
@@ -893,23 +1134,35 @@ final class WallpaperViewModel: ObservableObject {
         items = mergeWithSavedItems(items)
     }
 
-    func toggleFavorite(_ item: WallpaperItem) {
+    @discardableResult
+    func toggleFavorite(_ item: WallpaperItem) -> WallpaperItem? {
         var updated = item
         updated.isFavorite.toggle()
         do {
             try store.upsert(updated)
+            items = items.map { currentItem in
+                guard currentItem.id == updated.id else { return currentItem }
+                var refreshedItem = currentItem
+                refreshedItem.isFavorite = updated.isFavorite
+                return refreshedItem
+            }
             refreshLibrary()
+            return updated
         } catch {
             errorMessage = "收藏状态保存失败：\(error.localizedDescription)"
+            return nil
         }
     }
 
-    func delete(_ item: WallpaperItem) {
+    @discardableResult
+    func delete(_ item: WallpaperItem) -> Bool {
         do {
             try store.delete(item)
             refreshLibrary()
+            return true
         } catch {
             errorMessage = "删除壁纸失败：\(error.localizedDescription)"
+            return false
         }
     }
 
@@ -929,9 +1182,6 @@ final class WallpaperViewModel: ObservableObject {
         _ item: WallpaperItem,
         target: WallpaperSettingTarget
     ) async -> String {
-        guard !target.requiresLockScreen else {
-            return DesktopWallpaperServiceError.lockScreenUnavailable.localizedDescription
-        }
         guard !downloadingIDs.contains(item.id) else { return "正在处理这张壁纸…" }
 
         downloadingIDs.insert(item.id)
@@ -950,10 +1200,10 @@ final class WallpaperViewModel: ObservableObject {
             guard let localURL = store.localURL(for: savedItem) else {
                 return "壁纸已下载，但本地文件不可用"
             }
-            try desktopWallpaperService.apply(imageURL: localURL, target: target)
+            try wallpaperSystemService.apply(imageURL: localURL, target: target)
             appliedWallpaperID = savedItem.id
             refreshLibrary()
-            return "已替换当前桌面空间的壁纸（所有显示器）"
+            return "设置成功"
         } catch {
             return error.localizedDescription
         }
@@ -965,8 +1215,11 @@ final class WallpaperViewModel: ObservableObject {
             savedByID[favorite.id] = favorite
         }
         return incoming.map { item in
-            guard let saved = savedByID[item.id] else { return item }
             var merged = item
+            guard let saved = savedByID[item.id] else {
+                merged.isFavorite = false
+                return merged
+            }
             merged.isFavorite = saved.isFavorite
             merged.localFileName = saved.localFileName
             return merged

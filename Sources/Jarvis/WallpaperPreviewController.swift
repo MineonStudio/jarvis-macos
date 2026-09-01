@@ -18,10 +18,12 @@ final class WallpaperPreviewController: ObservableObject {
                 onFailure()
                 return
             }
-            guard !Task.isCancelled,
-                  image.size.width > 0,
-                  image.size.height > 0
-            else {
+            guard !Task.isCancelled else {
+                return
+            }
+            guard image.size.width > 0, image.size.height > 0 else {
+                self?.finishLoading(itemID: itemID)
+                onFailure()
                 return
             }
             self?.finishLoading(itemID: itemID)

@@ -101,6 +101,7 @@ extension AppModel {
             screenshotTranslationAPIKeyMask = String(repeating: "•", count: resolvedAPIKey.count)
             screenshotTranslationSettingsLocked = true
             showToast("AI API 配置已保存")
+            refreshDailyQuote(force: true)
             return true
         } catch {
             showToast("保存 AI API 配置失败：\(error.localizedDescription)")
@@ -116,6 +117,7 @@ extension AppModel {
             screenshotTranslationAPIKeyMask = ""
             screenshotTranslationSettingsLocked = false
             showToast("已清除 AI API Key")
+            refreshDailyQuote()
             return true
         } catch {
             showToast("清除 AI API Key 失败：\(error.localizedDescription)")

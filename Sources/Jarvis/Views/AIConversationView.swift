@@ -86,6 +86,12 @@ final class AIConversationWebController: NSObject, ObservableObject {
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
 
+    private static let mediaCaptureAllowedHosts: Set<String> = Set(
+        AIConversationProvider.allCases.compactMap { provider in
+            provider.url.host?.lowercased()
+        }
+    )
+
     init(
         provider: AIConversationProvider,
         downloadManager: AIConversationDownloadManager
@@ -263,6 +269,64 @@ extension AIConversationWebController: WKUIDelegate {
         panel.begin { response in
             completionHandler(response == .OK ? panel.urls : nil)
         }
+    }
+
+    func webView(
+        _: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame _: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        let protocolName = origin.protocol.lowercased()
+        let host = origin.host.lowercased()
+        guard protocolName == "https", Self.mediaCaptureAllowedHosts.contains(host) else {
+            NSLog("Jarvis denied media capture for untrusted origin: %@://%@", protocolName, host)
+            decisionHandler(.deny)
+            return
+        }
+
+        NSLog(
+            "Jarvis requesting media capture permission for provider=%@ origin=%@://%@ type=%@",
+            provider.rawValue,
+            protocolName,
+            host,
+            String(describing: type)
+        )
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                decisionHandler(.deny)
+                return
+            }
+
+            let granted = await requestSystemMediaAccess(for: type)
+            NSLog(
+                "Jarvis media capture permission result provider=%@ origin=%@://%@ granted=%@",
+                provider.rawValue,
+                protocolName,
+                host,
+                granted ? "true" : "false"
+            )
+            decisionHandler(granted ? .grant : .deny)
+        }
+    }
+
+    private func requestSystemMediaAccess(for type: WKMediaCaptureType) async -> Bool {
+        let requiresMicrophone = type == .microphone || type == .cameraAndMicrophone
+        let requiresCamera = type == .camera || type == .cameraAndMicrophone
+
+        var microphoneGranted = true
+        if requiresMicrophone {
+            microphoneGranted = await JarvisPrivacyPermissionAccess.requestMediaAccess(for: .audio)
+        }
+
+        var cameraGranted = true
+        if requiresCamera {
+            cameraGranted = await JarvisPrivacyPermissionAccess.requestMediaAccess(for: .video)
+        }
+
+        return microphoneGranted && cameraGranted
     }
 }
 

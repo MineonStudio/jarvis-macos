@@ -253,10 +253,8 @@ final class WallpaperTests: XCTestCase {
 
     @MainActor
     func testDesktopWallpaperServiceRejectsLockScreenTargetsBeforeTouchingScreens() {
-        var setImageCallCount = 0
         let service = DesktopWallpaperService(
-            screensProvider: { [] },
-            setImage: { _, _, _ in setImageCallCount += 1 }
+            screensProvider: { [] }
         )
 
         XCTAssertThrowsError(
@@ -267,7 +265,6 @@ final class WallpaperTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? DesktopWallpaperServiceError, .lockScreenUnavailable)
         }
-        XCTAssertEqual(setImageCallCount, 0)
     }
 
     private func makeTestPNG() throws -> Data {

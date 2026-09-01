@@ -79,12 +79,9 @@ struct JarvisHoverModifier<HoverShape: Shape>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay {
+            .background {
                 shape
-                    .stroke(
-                        Color.accentColor.opacity(isHovered ? 0.16 : 0),
-                        lineWidth: 1
-                    )
+                    .fill(Color.primary.opacity(isHovered ? 0.10 : 0))
                     .allowsHitTesting(false)
             }
             .scaleEffect(isHovered && !reduceMotion ? scale : 1)

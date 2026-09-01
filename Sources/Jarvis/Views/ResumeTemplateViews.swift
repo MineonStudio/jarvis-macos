@@ -78,15 +78,15 @@ private struct ResumeTemplateCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 isHovered
-                    ? Color.accentColor.opacity(0.08)
+                    ? Color.primary.opacity(0.10)
                     : Color.jarvisPanel.opacity(0.42),
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        isHovered ? Color.accentColor.opacity(0.48) : Color.primary.opacity(0.09),
-                        lineWidth: isHovered ? 1.1 : 0.75
+                        Color.primary.opacity(0.09),
+                        lineWidth: 0.75
                     )
             }
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

@@ -13,7 +13,7 @@ final class ClipboardMediaPreviewController {
     private let previewController = FullscreenMediaPreviewController()
     private var player: AVPlayer?
 
-    func show(item: ClipboardItem, app: AppModel) {
+    func show(item: ClipboardItem) {
         guard item.kind == .image || item.kind == .video,
               let path = item.kind == .image ? item.imagePath : item.filePath,
               FileManager.default.fileExists(atPath: path)
@@ -39,13 +39,9 @@ final class ClipboardMediaPreviewController {
                 image: image,
                 containerSize: screenFrame.size,
                 displaySize: displaySize,
-                app: app,
                 model: model,
                 player: mediaPlayer,
-                onCopy: { [weak app] in
-                    app?.copyClipboard(item)
-                },
-                onClose: { [weak self] in
+                onDismiss: { [weak self] in
                     self?.dismiss()
                 }
             )
@@ -93,11 +89,9 @@ struct ClipboardMediaPreview: View {
     let image: NSImage?
     let containerSize: CGSize
     let displaySize: CGSize
-    @ObservedObject var app: AppModel
     @ObservedObject var model: FullscreenMediaPreviewModel
     let player: AVPlayer?
-    let onCopy: () -> Void
-    let onClose: () -> Void
+    let onDismiss: () -> Void
 
     var body: some View {
         FullscreenMediaPreview(
@@ -105,7 +99,7 @@ struct ClipboardMediaPreview: View {
             mediaDisplaySize: displaySize,
             model: model,
             allowsMediaHitTesting: player != nil,
-            onMaskClick: onClose
+            onMaskClick: onDismiss
         ) {
             if let image {
                 Image(nsImage: image)
@@ -115,17 +109,6 @@ struct ClipboardMediaPreview: View {
             } else if let player {
                 ClipboardAVPlayerView(player: player)
             }
-        }
-        .overlay(alignment: .bottom) {
-            ClipboardMediaPreviewToolbar(
-                onCopy: onCopy,
-                onClose: onClose
-            )
-            .padding(.bottom, 18)
-        }
-        .overlay(alignment: .top) {
-            JarvisToastHost(message: app.toastMessage)
-                .padding(.top, 18)
         }
     }
 }
@@ -158,52 +141,5 @@ private struct ClipboardAVPlayerView: NSViewRepresentable {
     static func dismantleNSView(_ view: AVPlayerView, coordinator _: ()) {
         view.player?.pause()
         view.player = nil
-    }
-}
-
-struct ClipboardMediaPreviewToolbar: View {
-    static let preferredWidth: CGFloat = 180
-    static let preferredHeight: CGFloat = 70
-
-    let onCopy: () -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            actionButton(icon: "doc.on.doc", help: "一键复制", action: onCopy)
-            toolbarDivider
-            actionButton(icon: "xmark", help: "关闭", action: onClose)
-        }
-        .padding(.horizontal, 11)
-        .padding(.bottom, 6)
-        .frame(width: Self.preferredWidth, height: Self.preferredHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .jarvisGlass(cornerRadius: 16)
-        .shadow(color: Color.black.opacity(0.18), radius: 18, y: 8)
-    }
-
-    private var toolbarDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.16))
-            .frame(width: 1, height: 30)
-            .padding(.horizontal, 8)
-    }
-
-    private func actionButton(
-        icon: String,
-        help: String,
-        enabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 21, weight: .medium))
-                .frame(width: 34, height: 42)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-        .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.35))
-        .disabled(!enabled)
-        .help(help)
     }
 }

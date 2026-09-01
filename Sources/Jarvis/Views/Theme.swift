@@ -312,15 +312,19 @@ extension View {
 
 struct JarvisPrimaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(JarvisTypography.controlEmphasis)
-            .foregroundStyle(.white)
+            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
             .padding(.horizontal, 15)
             .padding(.vertical, 8)
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .jarvisGlass(tint: .accentColor, cornerRadius: JarvisMetrics.controlRadius)
+            .opacity(configuration.isPressed ? 0.78 : (isEnabled ? 1 : 0.78))
+            .jarvisGlass(
+                tint: isEnabled ? .accentColor : Color.primary.opacity(0.12),
+                cornerRadius: JarvisMetrics.controlRadius
+            )
             .contentShape(RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous))
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.98 : 1))
             .animation(

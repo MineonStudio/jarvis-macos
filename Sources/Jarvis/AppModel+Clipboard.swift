@@ -68,7 +68,7 @@ extension AppModel {
             showToast("媒体文件已不可用")
             return
         }
-        clipboardMediaPreviewController.show(item: item, app: self)
+        clipboardMediaPreviewController.show(item: item)
     }
 
     func showClipboardPanel() {

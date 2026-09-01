@@ -1,6 +1,18 @@
 import AppKit
 import SwiftUI
 
+private enum WallpaperScrollSpace {
+    static let name = "wallpaper-scroll"
+}
+
+private struct WallpaperLoadMoreTriggerPreferenceKey: PreferenceKey {
+    static let defaultValue = CGFloat.infinity
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct WallpaperView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -25,39 +37,51 @@ struct WallpaperView: View {
                 WallpaperLibraryToolbar(libraryMode: $libraryMode)
             },
             content: {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        if libraryMode == .online {
-                            WallpaperFilterBar(
-                                tagInput: $tagInput,
-                                onSubmitTag: submitTag,
-                                onSelectTag: selectTag,
-                                onClearTag: clearTag
-                            )
-                        }
+                GeometryReader { viewport in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            if libraryMode == .online {
+                                WallpaperFilterBar(
+                                    tagInput: $tagInput,
+                                    onSubmitTag: submitTag,
+                                    onSelectTag: selectTag,
+                                    onClearTag: clearTag
+                                )
+                            }
 
-                        switch libraryMode {
-                        case .online:
-                            onlineGallery
-                        case .downloaded:
-                            gallery(
-                                items: model.library,
-                                emptyTitle: "还没有已下载壁纸",
-                                emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
-                                showsDelete: true,
-                                onDelete: { deleteItem = $0 }
-                            )
-                        case .favorites:
-                            gallery(
-                                items: model.favorites,
-                                emptyTitle: "还没有收藏壁纸",
-                                emptyMessage: "在壁纸卡片上点击心形按钮，即可收藏壁纸。"
-                            )
+                            switch libraryMode {
+                            case .online:
+                                onlineGallery
+                            case .downloaded:
+                                gallery(
+                                    items: model.library,
+                                    emptyTitle: "还没有已下载壁纸",
+                                    emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
+                                    showsDelete: true,
+                                    onDelete: { deleteItem = $0 }
+                                )
+                            case .favorites:
+                                gallery(
+                                    items: model.favorites,
+                                    emptyTitle: "还没有收藏壁纸",
+                                    emptyMessage: "在壁纸卡片上点击心形按钮，即可收藏壁纸。"
+                                )
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                        .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                    .padding(.vertical, HistoryGridMetrics.historyPanelInset)
+                    .coordinateSpace(name: WallpaperScrollSpace.name)
+                    .onPreferenceChange(WallpaperLoadMoreTriggerPreferenceKey.self) { triggerY in
+                        guard model.hasNextPage,
+                              triggerY.isFinite,
+                              triggerY <= viewport.size.height + 160
+                        else {
+                            return
+                        }
+                        loadMore()
+                    }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .jarvisFloatingPanel(cornerRadius: 16)
@@ -113,8 +137,21 @@ struct WallpaperView: View {
             )
 
             if model.hasNextPage {
+                GeometryReader { proxy in
+                    Color.clear
+                        .preference(
+                            key: WallpaperLoadMoreTriggerPreferenceKey.self,
+                            value: proxy.frame(in: .named(WallpaperScrollSpace.name)).minY
+                        )
+                }
+                .frame(height: 1)
+                .padding(.bottom, 80)
+                .id("wallpaper-load-more-trigger-\(model.items.count)")
+                .accessibilityHidden(true)
+
                 WallpaperLoadMoreButton(
                     isLoading: model.isLoadingMore,
+                    errorMessage: model.loadMoreErrorMessage,
                     action: loadMore
                 )
             }
@@ -140,13 +177,16 @@ struct WallpaperView: View {
                 items: items,
                 imageURL: { model.localURL(for: $0) ?? $0.previewURL },
                 isDownloading: { model.isDownloading($0) },
+                isPreviewLoading: { previewController.isLoading(itemID: $0.id) },
                 onDoubleClick: { item in
                     previewController.show(
                         imageURL: model.localURL(for: item) ?? item.originalURL,
+                        itemID: item.id,
                         onFailure: { app.showToast("原图加载失败") }
                     )
                 },
                 onSet: setWallpaper,
+                isApplied: { model.isApplied($0) },
                 onToggleFavorite: model.toggleFavorite,
                 showsDelete: showsDelete,
                 onDelete: onDelete
@@ -353,6 +393,7 @@ private func wallpaperFilterMenuLabel(_ title: String) -> some View {
 
 private struct WallpaperLoadMoreButton: View {
     let isLoading: Bool
+    let errorMessage: String?
     let action: () -> Void
 
     var body: some View {
@@ -361,6 +402,8 @@ private struct WallpaperLoadMoreButton: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("正在加载…")
+            } else if errorMessage != nil {
+                Label("重试", systemImage: "arrow.clockwise")
             } else {
                 Label("加载更多", systemImage: "arrow.down.circle")
             }
@@ -369,7 +412,7 @@ private struct WallpaperLoadMoreButton: View {
         .disabled(isLoading)
         .frame(maxWidth: .infinity)
         .padding(.top, HistoryGridMetrics.clipboardGridSpacing)
-        .help("加载下一批壁纸")
+        .help(errorMessage ?? "加载下一批壁纸")
     }
 }
 
@@ -448,8 +491,10 @@ private struct WallpaperGrid: View {
     let items: [WallpaperItem]
     let imageURL: (WallpaperItem) -> URL
     let isDownloading: (WallpaperItem) -> Bool
+    let isPreviewLoading: (WallpaperItem) -> Bool
     let onDoubleClick: (WallpaperItem) -> Void
     let onSet: (WallpaperItem) -> Void
+    let isApplied: (WallpaperItem) -> Bool
     let onToggleFavorite: (WallpaperItem) -> Void
     let showsDelete: Bool
     let onDelete: (WallpaperItem) -> Void
@@ -472,8 +517,10 @@ private struct WallpaperGrid: View {
                     item: item,
                     imageURL: imageURL(item),
                     isDownloading: isDownloading(item),
+                    isPreviewLoading: isPreviewLoading(item),
                     onDoubleClick: { onDoubleClick(item) },
                     onSet: { onSet(item) },
+                    isApplied: isApplied(item),
                     onToggleFavorite: { onToggleFavorite(item) },
                     showsDelete: showsDelete,
                     onDelete: { onDelete(item) }
@@ -493,8 +540,10 @@ private struct WallpaperCard: View {
     let item: WallpaperItem
     let imageURL: URL
     let isDownloading: Bool
+    let isPreviewLoading: Bool
     let onDoubleClick: () -> Void
     let onSet: () -> Void
+    let isApplied: Bool
     let onToggleFavorite: () -> Void
     let showsDelete: Bool
     let onDelete: () -> Void
@@ -528,6 +577,24 @@ private struct WallpaperCard: View {
             cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
             interactive: false
         )
+        .overlay {
+            if isPreviewLoading {
+                ZStack {
+                    Color.black.opacity(0.28)
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                        style: .continuous
+                    )
+                )
+                .allowsHitTesting(false)
+                .accessibilityLabel("正在加载原图")
+            }
+        }
         .overlay(alignment: .top) {
             if isHovered {
                 HStack(spacing: 6) {
@@ -545,16 +612,27 @@ private struct WallpaperCard: View {
                     .help(item.isFavorite ? "取消收藏" : "收藏")
 
                     if showsDelete {
-                        Button("删除", role: .destructive, action: onDelete)
-                            .buttonStyle(JarvisToolbarButtonStyle(tint: .red))
-                            .help("从已下载壁纸中删除")
+                        Button(role: .destructive, action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
+                                .foregroundStyle(Color.red)
+                        }
+                        .buttonStyle(JarvisToolbarIconButtonStyle())
+                        .jarvisIconGlass(tint: .red, in: Circle(), interactive: true)
+                        .accessibilityLabel("删除")
+                        .help("从已下载壁纸中删除")
                     }
 
                     Spacer(minLength: 0)
 
-                    Button(isDownloading ? "正在设置…" : "设为壁纸", action: onSet)
-                        .buttonStyle(JarvisPrimaryButtonStyle())
-                        .disabled(isDownloading)
+                    Button(
+                        isApplied
+                            ? "已设为壁纸"
+                            : (isDownloading ? "正在设置…" : "设为壁纸"),
+                        action: onSet
+                    )
+                    .buttonStyle(JarvisPrimaryButtonStyle())
+                    .disabled(isDownloading || isApplied)
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .top)

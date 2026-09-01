@@ -779,7 +779,9 @@ final class WallpaperViewModel: ObservableObject {
     @Published private(set) var isLoadingMore = false
     @Published private(set) var hasNextPage = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var loadMoreErrorMessage: String?
     @Published private(set) var downloadingIDs: Set<String> = []
+    @Published private(set) var appliedWallpaperID: String?
 
     let store: WallpaperStore
     private let wallhavenSource: WallhavenWallpaperSource
@@ -808,6 +810,7 @@ final class WallpaperViewModel: ObservableObject {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
+        loadMoreErrorMessage = nil
         currentPage = 1
         currentFilters = WallpaperSearchFilters(
             resolution: selectedResolution,
@@ -844,29 +847,35 @@ final class WallpaperViewModel: ObservableObject {
     func loadMore() async {
         guard !isLoading, !isLoadingMore, hasNextPage else { return }
         isLoadingMore = true
+        loadMoreErrorMessage = nil
         defer { isLoadingMore = false }
 
         do {
             var nextItems = Array(bufferedItems.prefix(Self.loadMoreDisplayCount))
-            bufferedItems.removeFirst(nextItems.count)
+            var nextBufferedItems = Array(bufferedItems.dropFirst(nextItems.count))
+            var nextPage = currentPage
+            var nextCanFetchMorePages = canFetchMorePages
 
-            while nextItems.count < Self.loadMoreDisplayCount, canFetchMorePages {
+            while nextItems.count < Self.loadMoreDisplayCount, nextCanFetchMorePages {
                 let page = try await wallhavenSource.search(
-                    page: currentPage + 1,
+                    page: nextPage + 1,
                     filters: currentFilters
                 )
-                currentPage = page.page
+                nextPage = page.page
                 let pageItems = mergeWithSavedItems(page.items)
                 let remainingCount = Self.loadMoreDisplayCount - nextItems.count
                 nextItems.append(contentsOf: pageItems.prefix(remainingCount))
-                bufferedItems.append(contentsOf: pageItems.dropFirst(remainingCount))
-                canFetchMorePages = page.hasNextPage
+                nextBufferedItems.append(contentsOf: pageItems.dropFirst(remainingCount))
+                nextCanFetchMorePages = page.hasNextPage
             }
 
             items.append(contentsOf: nextItems)
+            bufferedItems = nextBufferedItems
+            currentPage = nextPage
+            canFetchMorePages = nextCanFetchMorePages
             hasNextPage = !bufferedItems.isEmpty || canFetchMorePages
         } catch {
-            errorMessage = error.localizedDescription
+            loadMoreErrorMessage = error.localizedDescription
         }
     }
 
@@ -904,6 +913,10 @@ final class WallpaperViewModel: ObservableObject {
         downloadingIDs.contains(item.id)
     }
 
+    func isApplied(_ item: WallpaperItem) -> Bool {
+        appliedWallpaperID == item.id
+    }
+
     func downloadAndApply(
         _ item: WallpaperItem,
         target: WallpaperSettingTarget
@@ -930,6 +943,7 @@ final class WallpaperViewModel: ObservableObject {
                 return "壁纸已下载，但本地文件不可用"
             }
             try desktopWallpaperService.apply(imageURL: localURL, target: target)
+            appliedWallpaperID = savedItem.id
             refreshLibrary()
             return "已替换桌面壁纸（所有显示器）"
         } catch {

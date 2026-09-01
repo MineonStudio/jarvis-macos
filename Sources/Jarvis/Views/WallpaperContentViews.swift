@@ -5,6 +5,14 @@ private enum WallpaperScrollSpace {
     static let name = "wallpaper-scroll"
 }
 
+private enum WallpaperScrollTarget {
+    static let top = "wallpaper-scroll-top"
+}
+
+private enum WallpaperScrollBehavior {
+    static let backToTopThreshold: CGFloat = 500
+}
+
 private struct WallpaperLoadMoreTriggerPreferenceKey: PreferenceKey {
     static let defaultValue = CGFloat.infinity
 
@@ -21,6 +29,11 @@ struct WallpaperView: View {
     @State private var libraryMode: WallpaperLibraryMode = .online
     @State private var deleteItem: WallpaperItem?
     @State private var tagInput = ""
+    @State private var wallpaperScrollOffset: CGFloat = 0
+
+    private var shouldShowScrollToTop: Bool {
+        wallpaperScrollOffset >= WallpaperScrollBehavior.backToTopThreshold
+    }
 
     var body: some View {
         JarvisContentArea(
@@ -38,49 +51,87 @@ struct WallpaperView: View {
             },
             content: {
                 GeometryReader { viewport in
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if libraryMode == .online {
-                                WallpaperFilterBar(
-                                    tagInput: $tagInput,
-                                    onSubmitTag: submitTag,
-                                    onSelectTag: selectTag,
-                                    onClearTag: clearTag
-                                )
-                            }
+                    ScrollViewReader { scrollProxy in
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id(WallpaperScrollTarget.top)
+                                    .accessibilityHidden(true)
 
-                            switch libraryMode {
-                            case .online:
-                                onlineGallery
-                            case .downloaded:
-                                gallery(
-                                    items: model.library,
-                                    emptyTitle: "还没有已下载壁纸",
-                                    emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
-                                    showsDelete: true,
-                                    onDelete: { deleteItem = $0 }
-                                )
-                            case .favorites:
-                                gallery(
-                                    items: model.favorites,
-                                    emptyTitle: "还没有收藏壁纸",
-                                    emptyMessage: "在壁纸卡片上点击心形按钮，即可收藏壁纸。"
-                                )
+                                if libraryMode == .online {
+                                    WallpaperFilterBar(
+                                        tagInput: $tagInput,
+                                        onSubmitTag: submitTag,
+                                        onSelectTag: selectTag,
+                                        onClearTag: clearTag
+                                    )
+                                }
+
+                                switch libraryMode {
+                                case .online:
+                                    onlineGallery
+                                case .downloaded:
+                                    gallery(
+                                        items: model.library,
+                                        emptyTitle: "还没有已下载壁纸",
+                                        emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
+                                        showsDelete: true,
+                                        onDelete: { deleteItem = $0 }
+                                    )
+                                case .favorites:
+                                    gallery(
+                                        items: model.favorites,
+                                        emptyTitle: "还没有收藏壁纸",
+                                        emptyMessage: "在壁纸卡片上点击心形按钮，即可收藏壁纸。"
+                                    )
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                            .padding(.vertical, HistoryGridMetrics.historyPanelInset)
+                        }
+                        .coordinateSpace(name: WallpaperScrollSpace.name)
+                        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                            geometry.visibleRect.minY
+                        } action: { _, offset in
+                            wallpaperScrollOffset = offset
+                        }
+                        .onPreferenceChange(WallpaperLoadMoreTriggerPreferenceKey.self) { triggerY in
+                            guard model.hasNextPage,
+                                  triggerY.isFinite,
+                                  triggerY <= viewport.size.height + 160
+                            else {
+                                return
+                            }
+                            loadMore()
+                        }
+                        .overlay(alignment: .bottomTrailing) {
+                            if shouldShowScrollToTop {
+                                Button {
+                                    withAnimation(
+                                        JarvisMotion.animation(
+                                            JarvisMotion.content,
+                                            reduceMotion: reduceMotion
+                                        )
+                                    ) {
+                                        scrollProxy.scrollTo(WallpaperScrollTarget.top, anchor: .top)
+                                    }
+                                } label: {
+                                    Label("返回顶部", systemImage: "arrow.up")
+                                }
+                                .buttonStyle(JarvisSecondaryButtonStyle())
+                                .accessibilityLabel("返回壁纸列表顶部")
+                                .help("返回壁纸列表顶部")
+                                .padding(.trailing, 18)
+                                .padding(.bottom, 18)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                        .padding(.vertical, HistoryGridMetrics.historyPanelInset)
-                    }
-                    .coordinateSpace(name: WallpaperScrollSpace.name)
-                    .onPreferenceChange(WallpaperLoadMoreTriggerPreferenceKey.self) { triggerY in
-                        guard model.hasNextPage,
-                              triggerY.isFinite,
-                              triggerY <= viewport.size.height + 160
-                        else {
-                            return
-                        }
-                        loadMore()
+                        .animation(
+                            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
+                            value: shouldShowScrollToTop
+                        )
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -280,6 +331,14 @@ private struct WallpaperLibraryToolbar: ToolbarContent {
                 libraryMode = .favorites
             }
             .help("查看我的收藏")
+        }
+        ToolbarItem(id: "wallpaper.system-settings", placement: .primaryAction) {
+            Button {
+                WallpaperSystemSettings.open()
+            } label: {
+                Label("系统设置", systemImage: "gearshape")
+            }
+            .help("在 macOS 系统设置中管理桌面、锁屏和墙纸记录")
         }
     }
 }

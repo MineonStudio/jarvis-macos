@@ -267,6 +267,37 @@ final class WallpaperTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testDesktopWallpaperServiceUsesThePublicDesktopImageAPIForEachScreen() throws {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+
+        let imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-public-wallpaper-test-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        try makeTestPNG().write(to: imageURL)
+
+        var calls: [(URL, NSScreen, [NSWorkspace.DesktopImageOptionKey: Any])] = []
+        let service = DesktopWallpaperService(
+            screensProvider: { screens },
+            setImage: { url, screen, options in
+                calls.append((url, screen, options))
+            }
+        )
+
+        try service.apply(imageURL: imageURL, target: .desktop)
+
+        XCTAssertEqual(calls.count, screens.count)
+        XCTAssertTrue(calls.allSatisfy { $0.0 == imageURL })
+        XCTAssertTrue(
+            calls.allSatisfy {
+                ($0.2[.imageScaling] as? NSNumber)?.intValue ?? -1
+                    == NSImageScaling.scaleProportionallyUpOrDown.rawValue
+            }
+        )
+        XCTAssertTrue(calls.allSatisfy { ($0.2[.allowClipping] as? NSNumber)?.boolValue == true })
+    }
+
     private func makeTestPNG() throws -> Data {
         let image = NSImage(size: NSSize(width: 4, height: 2))
         image.lockFocus()

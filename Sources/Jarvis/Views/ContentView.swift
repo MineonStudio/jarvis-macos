@@ -269,7 +269,7 @@ private enum TopLevelSection: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: "总览"
+        case .overview: "首页"
         case .aiConversation: "聊天"
         case .skillLibrary: "技能库"
         case .settings: "设置"
@@ -311,26 +311,25 @@ struct DashboardView: View {
                 }
             },
             content: {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        JarvisOrbView()
+                GeometryReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 28) {
+                            JarvisOrbView()
 
-                        HStack(spacing: 0) {
-                            DashboardMetric(title: "截图", value: "\(app.screenshotHistory.count)", detail: "历史记录", icon: "photo")
-                            dashboardDivider
-                            DashboardMetric(title: "剪贴板", value: "\(app.clipboardItems.count)", detail: "本地记录", icon: "clipboard")
-                            dashboardDivider
-                            DashboardMetric(title: "技能", value: "\(SkillID.allCases.count)", detail: "已启用", icon: "puzzlepiece.extension")
+                            dailyQuoteCard
+
+                            Spacer(minLength: 0)
+
+                            permissionStatusRow
                         }
-
-                        Divider()
-                            .overlay(Color.primary.opacity(0.10))
-
-                        permissionCard
+                        .frame(
+                            maxWidth: 980,
+                            minHeight: max(0, proxy.size.height - JarvisMetrics.pageInset * 2),
+                            alignment: .top
+                        )
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(JarvisMetrics.pageInset)
                     }
-                    .frame(maxWidth: 980, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(JarvisMetrics.pageInset)
                 }
             }
         )
@@ -342,112 +341,78 @@ struct DashboardView: View {
         }
     }
 
-    private var permissionCard: some View {
-        JarvisCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label("权限状态", systemImage: "lock.shield")
-                        .font(JarvisTypography.bodyEmphasis)
-                    Spacer()
-                    Text(app.screenCapturePermissionGranted && app.accessibilityPermissionGranted ? "已就绪" : "需要授权")
-                        .font(JarvisTypography.captionEmphasis)
-                        .foregroundStyle(
-                            app.screenCapturePermissionGranted && app.accessibilityPermissionGranted
-                                ? Color.green
-                                : Color.orange
-                        )
-                }
-
-                DashboardPermissionRow(
-                    title: "屏幕录制",
-                    message: "用于冻结屏幕画面并完成框选截图。",
-                    isGranted: app.screenCapturePermissionGranted,
-                    action: { _ = app.requestScreenCapturePermission() }
-                )
-                DashboardPermissionRow(
-                    title: "辅助功能",
-                    message: "用于读取并调整其他应用的窗口位置和大小。",
-                    isGranted: app.accessibilityPermissionGranted,
-                    action: app.requestAccessibilityPermission
-                )
+    private var dailyQuoteCard: some View {
+        Text("“\(app.dailyQuote.text)”")
+            .font(.system(size: 50, weight: .bold))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(Color.primary)
+            .frame(maxWidth: 820)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("每日语录，\(app.dailyQuote.text)")
+            .onAppear {
+                app.refreshDailyQuote()
             }
-        }
     }
 
-    private var dashboardDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.10))
-            .frame(width: 1, height: 44)
-            .padding(.horizontal, 22)
+    private var permissionStatusRow: some View {
+        HStack(spacing: 10) {
+            DashboardPermissionCapsule(
+                title: "屏幕录制",
+                isGranted: app.screenCapturePermissionGranted,
+                action: { _ = app.requestScreenCapturePermission() }
+            )
+            DashboardPermissionCapsule(
+                title: "辅助功能",
+                isGranted: app.accessibilityPermissionGranted,
+                action: app.requestAccessibilityPermission
+            )
+            DashboardPermissionCapsule(
+                title: "麦克风",
+                isGranted: app.microphonePermissionGranted,
+                action: app.requestMicrophonePermission
+            )
+            DashboardPermissionCapsule(
+                title: "摄像头",
+                isGranted: app.cameraPermissionGranted,
+                action: app.requestCameraPermission
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 
-private struct DashboardPermissionRow: View {
+private struct DashboardPermissionCapsule: View {
     let title: String
-    let message: String
     let isGranted: Bool
     let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(isGranted ? Color.green : Color.orange)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
+        Button(action: action) {
+            HStack(spacing: 8) {
                 Text(title)
-                    .font(JarvisTypography.bodyEmphasis)
-                Text(message)
-                    .font(JarvisTypography.secondary)
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(Color.primary)
+                Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isGranted ? Color.green : Color.orange)
             }
-
-            Spacer(minLength: 8)
-
-            if !isGranted {
-                Button(action: action) {
-                    Label("获取权限", systemImage: "arrow.up.forward.app")
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill((isGranted ? Color.green : Color.orange).opacity(0.08))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke((isGranted ? Color.green : Color.orange).opacity(0.20), lineWidth: 1)
+            )
         }
-    }
-}
-
-struct DashboardMetric: View {
-    let title: String
-    let value: String
-    let detail: String
-    let icon: String
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 26, height: 26)
-                .jarvisIconGlass(in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text(value)
-                        .font(JarvisTypography.metricValue)
-                        .contentTransition(.numericText())
-                        .animation(
-                            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-                            value: value
-                        )
-                    Text(title)
-                        .font(JarvisTypography.control)
-                }
-                Text(detail)
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+        .disabled(isGranted)
+        .accessibilityLabel("\(title)，\(isGranted ? "已授权" : "需要授权")")
+        .help(isGranted ? "\(title)已授权" : "点击获取\(title)权限")
     }
 }

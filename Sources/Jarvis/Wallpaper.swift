@@ -703,7 +703,7 @@ enum DesktopWallpaperServiceError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .noScreens: "没有找到可设置的显示器"
-        case .lockScreenUnavailable: "当前 macOS 不提供第三方直接设置锁屏壁纸的公开接口"
+        case .lockScreenUnavailable: "macOS 不支持通过公开接口直接设置锁屏壁纸，请在系统设置中完成"
         case let .failed(message): "桌面壁纸设置失败：\(message)"
         }
     }
@@ -712,14 +712,19 @@ enum DesktopWallpaperServiceError: LocalizedError, Equatable {
 @MainActor
 struct DesktopWallpaperService {
     private let screensProvider: () -> [NSScreen]
-    private let allSpacesStore: AllSpacesWallpaperStore
+    private let setImage: (URL, NSScreen, [NSWorkspace.DesktopImageOptionKey: Any]) throws -> Void
 
     init(
         screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens },
-        allSpacesStore: AllSpacesWallpaperStore = AllSpacesWallpaperStore()
+        setImage: @escaping (URL, NSScreen, [NSWorkspace.DesktopImageOptionKey: Any]) throws -> Void = {
+            imageURL,
+            screen,
+            options in
+            try NSWorkspace.shared.setDesktopImageURL(imageURL, for: screen, options: options)
+        }
     ) {
         self.screensProvider = screensProvider
-        self.allSpacesStore = allSpacesStore
+        self.setImage = setImage
     }
 
     func apply(imageURL: URL, target: WallpaperSettingTarget) throws {
@@ -732,9 +737,34 @@ struct DesktopWallpaperService {
             throw DesktopWallpaperServiceError.noScreens
         }
 
+        guard imageURL.isFileURL,
+              FileManager.default.fileExists(atPath: imageURL.path)
+        else {
+            throw DesktopWallpaperServiceError.failed("壁纸文件不存在或不是本地文件")
+        }
+
+        let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
+            .imageScaling: NSNumber(value: NSImageScaling.scaleProportionallyUpOrDown.rawValue),
+            .allowClipping: true
+        ]
+        var previous: [(screen: NSScreen, url: URL?, options: [NSWorkspace.DesktopImageOptionKey: Any])] = []
+
         do {
-            try allSpacesStore.apply(imageURL: imageURL)
+            for screen in screens {
+                previous.append(
+                    (
+                        screen: screen,
+                        url: NSWorkspace.shared.desktopImageURL(for: screen),
+                        options: NSWorkspace.shared.desktopImageOptions(for: screen) ?? [:]
+                    )
+                )
+                try setImage(imageURL, screen, options)
+            }
         } catch {
+            for item in previous {
+                guard let previousURL = item.url else { continue }
+                try? setImage(previousURL, item.screen, item.options)
+            }
             throw DesktopWallpaperServiceError.failed(error.localizedDescription)
         }
     }
@@ -923,7 +953,7 @@ final class WallpaperViewModel: ObservableObject {
             try desktopWallpaperService.apply(imageURL: localURL, target: target)
             appliedWallpaperID = savedItem.id
             refreshLibrary()
-            return "已替换桌面壁纸（所有显示器和空间）"
+            return "已替换当前桌面空间的壁纸（所有显示器）"
         } catch {
             return error.localizedDescription
         }

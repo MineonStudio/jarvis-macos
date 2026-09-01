@@ -21,7 +21,7 @@ enum AppSection: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: "总览"
+        case .overview: "首页"
         case .aiConversation: "聊天"
         case let .skill(skill): skill.title
         case .settings: "设置"
@@ -30,7 +30,7 @@ enum AppSection: Hashable, Identifiable {
 
     var navigationTitle: String {
         switch self {
-        case .overview: "总览"
+        case .overview: "首页"
         case .aiConversation: "聊天"
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
@@ -73,6 +73,7 @@ final class AppModel: ObservableObject {
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
     @Published var isCapturing = false
     @Published var statusMessage = "系统就绪"
+    @Published var dailyQuote = DailyQuote.builtIn()
     @Published var toastMessage: String?
     @Published var screenshotShortcut = ScreenshotShortcut.default
     @Published var screenshotShortcutConflictMessage = ""
@@ -90,6 +91,8 @@ final class AppModel: ObservableObject {
     @Published var screenshotTranslationConnectionTesting = false
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
+    @Published var microphonePermissionGranted = false
+    @Published var cameraPermissionGranted = false
     @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
     @Published var clipboardCacheDirectoryURL: URL
     @Published var clipboardCacheMaximumBytes: Int64
@@ -123,6 +126,7 @@ final class AppModel: ObservableObject {
     var systemAppearanceObservation: NSKeyValueObservation?
     var editingHistoryID: UUID?
     var clipboardCacheCleanupTimer: Timer?
+    var dailyQuoteTask: Task<Void, Never>?
 
     let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
@@ -131,6 +135,8 @@ final class AppModel: ObservableObject {
     let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
     var toastDismissTask: Task<Void, Never>?
+    let dailyQuoteStore = DailyQuoteStore()
+    let dailyQuoteService = DailyQuoteService()
 
     func aiConversationController(for provider: AIConversationProvider) -> AIConversationWebController {
         if let controller = aiConversationControllers[provider] {
@@ -241,6 +247,7 @@ final class AppModel: ObservableObject {
     }
 
     deinit {
+        dailyQuoteTask?.cancel()
         toastDismissTask?.cancel()
         clipboardCacheCleanupTimer?.invalidate()
     }

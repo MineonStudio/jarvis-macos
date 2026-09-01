@@ -712,16 +712,14 @@ enum DesktopWallpaperServiceError: LocalizedError, Equatable {
 @MainActor
 struct DesktopWallpaperService {
     private let screensProvider: () -> [NSScreen]
-    private let setImage: (URL, NSScreen, [NSWorkspace.DesktopImageOptionKey: Any]) throws -> Void
+    private let allSpacesStore: AllSpacesWallpaperStore
 
     init(
         screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens },
-        setImage: @escaping (URL, NSScreen, [NSWorkspace.DesktopImageOptionKey: Any]) throws -> Void = { url, screen, options in
-            try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: options)
-        }
+        allSpacesStore: AllSpacesWallpaperStore = AllSpacesWallpaperStore()
     ) {
         self.screensProvider = screensProvider
-        self.setImage = setImage
+        self.allSpacesStore = allSpacesStore
     }
 
     func apply(imageURL: URL, target: WallpaperSettingTarget) throws {
@@ -734,29 +732,9 @@ struct DesktopWallpaperService {
             throw DesktopWallpaperServiceError.noScreens
         }
 
-        let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
-            .imageScaling: NSNumber(value: NSImageScaling.scaleProportionallyUpOrDown.rawValue),
-            .allowClipping: true
-        ]
-        var previous: [(NSScreen, URL?, [NSWorkspace.DesktopImageOptionKey: Any])] = []
-        previous.reserveCapacity(screens.count)
-
         do {
-            for screen in screens {
-                previous.append(
-                    (
-                        screen,
-                        NSWorkspace.shared.desktopImageURL(for: screen),
-                        NSWorkspace.shared.desktopImageOptions(for: screen) ?? [:]
-                    )
-                )
-                try setImage(imageURL, screen, options)
-            }
+            try allSpacesStore.apply(imageURL: imageURL)
         } catch {
-            for (screen, previousURL, previousOptions) in previous {
-                guard let previousURL else { continue }
-                try? setImage(previousURL, screen, previousOptions)
-            }
             throw DesktopWallpaperServiceError.failed(error.localizedDescription)
         }
     }
@@ -945,7 +923,7 @@ final class WallpaperViewModel: ObservableObject {
             try desktopWallpaperService.apply(imageURL: localURL, target: target)
             appliedWallpaperID = savedItem.id
             refreshLibrary()
-            return "已替换桌面壁纸（所有显示器）"
+            return "已替换桌面壁纸（所有显示器和空间）"
         } catch {
             return error.localizedDescription
         }

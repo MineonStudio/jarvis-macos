@@ -122,6 +122,7 @@ final class AppModel: ObservableObject {
     let updateService = JarvisUpdateService()
     let aiConversationDownloadManager = AIConversationDownloadManager()
     let entertainmentDownloadManager = AIConversationDownloadManager()
+    let entertainmentVideoDownloads = EntertainmentVideoDownloadManager()
     let resumeWorkspace = ResumeWorkspace()
     let launchAtLoginService = JarvisLaunchAtLoginService.shared
     let aiAPIConnectionTester: any AIAPIConnectionTesting

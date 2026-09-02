@@ -175,6 +175,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     @Published private(set) var canGoForward = false
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
+    @Published private(set) var currentURL: URL?
 
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
@@ -245,6 +246,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     private func updateNavigationState() {
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
+        currentURL = webView.url
     }
 
     private func syncFullscreenLayout() {

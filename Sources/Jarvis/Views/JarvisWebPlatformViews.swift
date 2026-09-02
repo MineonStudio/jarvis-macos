@@ -42,10 +42,12 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
     }
 }
 
-struct JarvisWebPlatformActionCluster: View {
+struct JarvisWebPlatformActionCluster<DownloadPopover: View>: View {
     @ObservedObject var controller: JarvisWebPlatformController
     @Binding var showsDownloadManager: Bool
-    let emptyHint: String
+    var activeDownloadCount: Int
+    var downloadHelp: String = "下载管理"
+    @ViewBuilder var downloadPopover: () -> DownloadPopover
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -73,9 +75,10 @@ struct JarvisWebPlatformActionCluster: View {
                 help: controller.isLoading ? "停止加载" : "刷新"
             )
             JarvisWebPlatformDownloadButton(
-                controller: controller,
+                activeDownloadCount: activeDownloadCount,
                 showsDownloadManager: $showsDownloadManager,
-                emptyHint: emptyHint
+                help: downloadHelp,
+                popover: downloadPopover
             )
         }
         .padding(3)
@@ -106,10 +109,11 @@ struct JarvisWebPlatformActionCluster: View {
     }
 }
 
-struct JarvisWebPlatformDownloadButton: View {
-    @ObservedObject var controller: JarvisWebPlatformController
+struct JarvisWebPlatformDownloadButton<Popover: View>: View {
+    let activeDownloadCount: Int
     @Binding var showsDownloadManager: Bool
-    let emptyHint: String
+    var help: String = "下载管理"
+    @ViewBuilder var popover: () -> Popover
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -120,8 +124,8 @@ struct JarvisWebPlatformDownloadButton: View {
                 Image(systemName: "arrow.down")
                     .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
 
-                if controller.downloadManager.activeDownloadCount > 0 {
-                    Text("\(controller.downloadManager.activeDownloadCount)")
+                if activeDownloadCount > 0 {
+                    Text("\(activeDownloadCount)")
                         .font(JarvisTypography.badge)
                         .foregroundStyle(.white)
                         .frame(minWidth: 14, minHeight: 14)
@@ -134,22 +138,18 @@ struct JarvisWebPlatformDownloadButton: View {
         .buttonStyle(JarvisToolbarIconButtonStyle())
         .foregroundStyle(Color.secondary)
         .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help("下载管理")
+        .help(help)
         .animation(
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: controller.downloadManager.activeDownloadCount
+            value: activeDownloadCount
         )
         .popover(isPresented: $showsDownloadManager, arrowEdge: .top) {
-            JarvisWebPlatformDownloadManagerView(
-                manager: controller.downloadManager,
-                emptyHint: emptyHint
-            )
-            .frame(width: 390, height: 390)
+            popover()
         }
     }
 }
 
-private struct JarvisWebPlatformDownloadManagerView: View {
+struct JarvisWebPlatformDownloadManagerView: View {
     @ObservedObject var manager: AIConversationDownloadManager
     let emptyHint: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

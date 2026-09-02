@@ -462,6 +462,7 @@ extension ScreenshotCaptureController {
     }
 
     func dismissResult() {
+        activeEditor?.cancelTranslation()
         if let resultWindow, let toolbarWindow {
             resultWindow.removeChildWindow(toolbarWindow)
         }

@@ -282,6 +282,7 @@ extension ScreenshotCaptureController {
 
     private func destroyPinnedScreenshot(_ item: PinnedScreenshotItem) {
         guard pinnedItems.removeValue(forKey: item.id) != nil else { return }
+        item.editor.cancelTranslation()
         hidePinnedToolbar(for: item)
         item.window.onEscape = nil
         item.window.onDidResignKey = nil

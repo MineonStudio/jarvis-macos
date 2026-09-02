@@ -133,6 +133,82 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(ScreenshotTranslationService.needsTranslation("设置"))
     }
 
+    func testClassificationSkipsNumbersAndTextAlreadyInTheTargetLanguage() {
+        let number = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "12:30",
+            normalizedBounds: CGRect(x: 0.1, y: 0.1, width: 0.1, height: 0.04),
+            confidence: 0.9
+        )
+        let chinese = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "请打开设置窗口并选择你偏好的语言",
+            normalizedBounds: CGRect(x: 0.1, y: 0.2, width: 0.4, height: 0.04),
+            confidence: 0.9
+        )
+        let english = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Please open the Settings window and choose your preferred language.",
+            normalizedBounds: CGRect(x: 0.1, y: 0.3, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+
+        let plan = ScreenshotTranslationService.classify(
+            [number, chinese, english],
+            targetLanguage: .simplifiedChinese
+        )
+
+        XCTAssertEqual(plan.translatableCount, 1)
+        XCTAssertEqual(plan.groups.count, 1)
+        XCTAssertEqual(plan.groups[0].blocks.map(\.text), [english.text])
+        XCTAssertEqual(
+            plan.groups[0].source?.languageCode?.identifier,
+            "en"
+        )
+    }
+
+    func testClassificationGroupsMixedSourceLanguagesSeparately() {
+        let english = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Please open the Settings window and choose your preferred language.",
+            normalizedBounds: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+        let japanese = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "設定ウィンドウを開いて、希望する言語を選択してください。",
+            normalizedBounds: CGRect(x: 0.1, y: 0.3, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+
+        let plan = ScreenshotTranslationService.classify(
+            [english, japanese],
+            targetLanguage: .simplifiedChinese
+        )
+
+        XCTAssertEqual(plan.groups.count, 2)
+        let identifiers = Set(plan.groups.compactMap { $0.source?.languageCode?.identifier })
+        XCTAssertEqual(identifiers, ["en", "ja"])
+    }
+
+    func testTargetLanguageMatchingTreatsChineseScriptsSeparately() {
+        XCTAssertTrue(
+            ScreenshotTranslationLanguage.simplifiedChinese.matches(
+                Locale.Language(identifier: "zh-Hans")
+            )
+        )
+        XCTAssertFalse(
+            ScreenshotTranslationLanguage.simplifiedChinese.matches(
+                Locale.Language(identifier: "zh-Hant")
+            )
+        )
+        XCTAssertTrue(
+            ScreenshotTranslationLanguage.english.matches(
+                Locale.Language(identifier: "en-US")
+            )
+        )
+    }
+
     func testOCRLineMergingJoinsAdjacentFragmentsOnTheSameRow() {
         let left = ScreenshotOCRBlock(
             id: UUID(),

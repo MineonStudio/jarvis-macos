@@ -53,6 +53,29 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
             URL(string: "https://grok.com/")!
         }
     }
+
+    var allowedHosts: Set<String> {
+        switch self {
+        case .deepSeek:
+            ["chat.deepseek.com", "deepseek.com", "www.deepseek.com"]
+        case .gpt:
+            ["chatgpt.com", "www.chatgpt.com", "chat.openai.com", "openai.com", "www.openai.com"]
+        case .doubao:
+            ["www.doubao.com", "doubao.com", "www.volcengine.com"]
+        case .grok:
+            ["grok.com", "www.grok.com", "x.ai", "www.x.ai"]
+        }
+    }
+
+    func allowsHost(_ host: String) -> Bool {
+        let normalized = host.lowercased()
+        if allowedHosts.contains(normalized) {
+            return true
+        }
+        return allowedHosts.contains { allowed in
+            normalized == allowed || normalized.hasSuffix(".\(allowed)")
+        }
+    }
 }
 
 enum AIConversationLayoutMetrics {
@@ -85,12 +108,6 @@ final class AIConversationWebController: NSObject, ObservableObject {
 
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
-
-    private static let mediaCaptureAllowedHosts: Set<String> = Set(
-        AIConversationProvider.allCases.compactMap { provider in
-            provider.url.host?.lowercased()
-        }
-    )
 
     init(
         provider: AIConversationProvider,
@@ -166,8 +183,20 @@ extension AIConversationWebController: WKNavigationDelegate {
                 sourceURL: navigationAction.request.url
             )
             decisionHandler(.download)
-        } else {
+            return
+        }
+
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        if Self.isAllowedNavigation(url, for: provider) {
             decisionHandler(.allow)
+        } else if url.scheme == "http" || url.scheme == "https" {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+        } else {
+            decisionHandler(.cancel)
         }
     }
 
@@ -228,7 +257,9 @@ extension AIConversationWebController: WKNavigationDelegate {
         withError error: Error
     ) {
         isLoading = false
-        loadError = error.localizedDescription
+        if !Self.isCancellation(error) {
+            loadError = error.localizedDescription
+        }
         updateNavigationState()
     }
 
@@ -238,8 +269,27 @@ extension AIConversationWebController: WKNavigationDelegate {
         withError error: Error
     ) {
         isLoading = false
-        loadError = error.localizedDescription
+        if !Self.isCancellation(error) {
+            loadError = error.localizedDescription
+        }
         updateNavigationState()
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+            return true
+        }
+        return nsError.domain == "WebKitErrorDomain" && nsError.code == 102
+    }
+
+    private static func isAllowedNavigation(_ url: URL, for provider: AIConversationProvider) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        if scheme == "about" || scheme == "blob" || scheme == "data" {
+            return true
+        }
+        guard scheme == "https", let host = url.host else { return false }
+        return provider.allowsHost(host)
     }
 }
 
@@ -251,7 +301,12 @@ extension AIConversationWebController: WKUIDelegate {
         windowFeatures _: WKWindowFeatures
     ) -> WKWebView? {
         guard navigationAction.targetFrame == nil else { return nil }
-        webView.load(navigationAction.request)
+        guard let url = navigationAction.request.url else { return nil }
+        if Self.isAllowedNavigation(url, for: provider) {
+            webView.load(navigationAction.request)
+        } else if url.scheme == "http" || url.scheme == "https" {
+            NSWorkspace.shared.open(url)
+        }
         return nil
     }
 
@@ -280,7 +335,7 @@ extension AIConversationWebController: WKUIDelegate {
     ) {
         let protocolName = origin.protocol.lowercased()
         let host = origin.host.lowercased()
-        guard protocolName == "https", Self.mediaCaptureAllowedHosts.contains(host) else {
+        guard protocolName == "https", provider.allowsHost(host) else {
             NSLog("Jarvis denied media capture for untrusted origin: %@://%@", protocolName, host)
             decisionHandler(.deny)
             return

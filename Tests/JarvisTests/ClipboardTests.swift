@@ -3,6 +3,23 @@ import AppKit
 import XCTest
 
 final class ClipboardTests: XCTestCase {
+    func testClipboardIgnoresConcealedAndTransientPasteboardTypes() {
+        let pasteboard = NSPasteboard(
+            name: NSPasteboard.Name("JarvisClipboardPrivacy-\(UUID().uuidString)")
+        )
+        pasteboard.clearContents()
+        pasteboard.setString("secret-password", forType: .string)
+        XCTAssertFalse(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
+
+        pasteboard.setString("1", forType: ClipboardPasteboardPrivacy.concealedType)
+        XCTAssertTrue(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
+
+        pasteboard.clearContents()
+        pasteboard.setString("token", forType: .string)
+        pasteboard.setString("1", forType: ClipboardPasteboardPrivacy.transientType)
+        XCTAssertTrue(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
+    }
+
     func testClipboardServiceExtractsAllFileURLsFromPasteboard() {
         let pasteboard = NSPasteboard(
             name: NSPasteboard.Name("JarvisClipboardTests-\(UUID().uuidString)")

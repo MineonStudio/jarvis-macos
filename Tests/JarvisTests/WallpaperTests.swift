@@ -51,6 +51,29 @@ final class WallpaperTests: XCTestCase {
         )
     }
 
+    func testWallpaperDownloadsOnlyAllowWallhavenHTTPSHosts() throws {
+        XCTAssertTrue(
+            try WallpaperDownloadService.isAllowedDownloadURL(
+                XCTUnwrap(URL(string: "https://w.wallhaven.cc/full/ab/wallhaven-abc.png"))
+            )
+        )
+        XCTAssertTrue(
+            try WallpaperDownloadService.isAllowedDownloadURL(
+                XCTUnwrap(URL(string: "https://wallhaven.cc/image.png"))
+            )
+        )
+        XCTAssertFalse(
+            try WallpaperDownloadService.isAllowedDownloadURL(
+                XCTUnwrap(URL(string: "http://w.wallhaven.cc/full/ab/wallhaven-abc.png"))
+            )
+        )
+        XCTAssertFalse(
+            try WallpaperDownloadService.isAllowedDownloadURL(
+                XCTUnwrap(URL(string: "https://evil.example/payload.png"))
+            )
+        )
+    }
+
     func testWallpaperSkillUsesDesktopWallpaperName() {
         XCTAssertEqual(SkillID.wallpaper.title, "桌面壁纸技能")
         XCTAssertEqual(SkillID.wallpaper.navigationTitle, "桌面壁纸")

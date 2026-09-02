@@ -24,11 +24,7 @@ extension JarvisUpdateService {
                 .first
                 .map(String.init)?
                 .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"")))
-            guard let identifier,
-                  identifier == bundleIdentifier
-                  || identifier.hasPrefix("\(bundleIdentifier).")
-                  || identifier == "com.example.jarvis-status-probe"
-            else {
+            guard let identifier, identifier == bundleIdentifier else {
                 continue
             }
 

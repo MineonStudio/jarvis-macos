@@ -1,6 +1,10 @@
 .DS_Store
 .build/
 dist/
+.audit/
+audit-artifacts/
+design-qa.md
+.swiftpm/
 
 # Xcode / SwiftPM local state
 *.xcuserstate

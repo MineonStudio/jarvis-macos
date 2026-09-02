@@ -26,5 +26,15 @@ jobs:
       - name: Test
         run: swift test
 
+      - name: Package app bundle
+        run: ./build_app.sh
+
+      - name: Check packaged identity
+        run: |
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/Jarvis.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/Jarvis.app/Contents/Info.plist
+          test -f dist/Jarvis.app/Contents/Resources/Assets.car
+          codesign -d --entitlements - dist/Jarvis.app >/dev/null
+
       - name: Check diff whitespace
         run: git diff --check

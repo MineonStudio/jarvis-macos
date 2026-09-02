@@ -362,8 +362,10 @@ final class ResumeWorkspace: ObservableObject {
     @Published var document: ResumeDocument
     @Published private(set) var lastSavedAt: Date?
     @Published private(set) var hasChosenTemplate: Bool
+    @Published private(set) var generatingSection: ResumeSection?
 
     private var savedSignature: Data?
+    private var generationTask: Task<Void, Never>?
 
     init(document: ResumeDocument = .blank(), hasChosenTemplate: Bool? = nil) {
         self.document = document
@@ -391,6 +393,7 @@ final class ResumeWorkspace: ObservableObject {
     }
 
     func beginNewResume() {
+        cancelGeneration()
         document = ResumeDocument(template: .defaultTemplate)
         savedSignature = nil
         lastSavedAt = nil
@@ -398,6 +401,7 @@ final class ResumeWorkspace: ObservableObject {
     }
 
     func replace(with document: ResumeDocument) {
+        cancelGeneration()
         self.document = document
         hasChosenTemplate = true
         savedSignature = nil
@@ -407,6 +411,35 @@ final class ResumeWorkspace: ObservableObject {
     func markSaved(at date: Date = Date()) {
         savedSignature = ResumeDocumentCodec.signature(for: document)
         lastSavedAt = date
+    }
+
+    var isGenerating: Bool {
+        generatingSection != nil
+    }
+
+    func cancelGeneration() {
+        generationTask?.cancel()
+        generationTask = nil
+        generatingSection = nil
+    }
+
+    func startGeneration(
+        for section: ResumeSection,
+        work: @escaping @MainActor () async -> Void
+    ) {
+        guard generatingSection == nil, section != .basicInfo else { return }
+        generatingSection = section
+        generationTask = Task { @MainActor [weak self] in
+            defer {
+                if let self {
+                    if self.generatingSection == section {
+                        self.generatingSection = nil
+                    }
+                    self.generationTask = nil
+                }
+            }
+            await work()
+        }
     }
 }
 
@@ -425,6 +458,7 @@ enum ResumeDocumentCodec {
     private struct ExportDocument: Encodable {
         let id: UUID
         let title: String
+        let template: ResumeTemplate
         let basicInfo: ResumeBasicInfo
         let education: [ResumeEducation]
         let experience: [ResumeExperience]
@@ -434,6 +468,7 @@ enum ResumeDocumentCodec {
         init(_ document: ResumeDocument) {
             id = document.id
             title = document.title
+            template = document.template
             basicInfo = document.basicInfo
             education = document.education
             experience = document.experience

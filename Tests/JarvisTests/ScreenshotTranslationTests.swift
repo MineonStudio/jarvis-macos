@@ -67,9 +67,24 @@ final class ScreenshotTranslationTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+
+        do {
+            try await OpenAICompatibleAPIClient().testConnection(
+                configuration: AIAPIConfiguration(
+                    endpoint: "http://api.openai.com/v1",
+                    model: "test-model",
+                    apiKey: "test-key"
+                )
+            )
+            XCTFail("Expected invalid endpoint error")
+        } catch let error as AIAPIError {
+            XCTAssertEqual(error, .invalidEndpoint)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
-    func testAPIConnectionTestAcceptsSuccessfulEnvelopeWithoutTextContent() throws {
+    func testAPIConnectionTestRejectsEnvelopeWithoutTextContent() throws {
         let response: [String: Any] = [
             "choices": [[
                 "message": [
@@ -80,7 +95,45 @@ final class ScreenshotTranslationTests: XCTestCase {
         ]
         let data = try JSONSerialization.data(withJSONObject: response)
 
-        XCTAssertNoThrow(try OpenAICompatibleAPIClient.validateConnectionEnvelope(from: data))
+        XCTAssertThrowsError(try OpenAICompatibleAPIClient.validateConnectionEnvelope(from: data))
+    }
+
+    func testNormalizedEndpointRequiresHTTPSAndFillsOpenAICompletionsPath() {
+        XCTAssertNil(OpenAICompatibleAPIClient.normalizedEndpointURL(from: "http://api.openai.com/v1"))
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://api.openai.com")?.absoluteString,
+            "https://api.openai.com/v1/chat/completions"
+        )
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://api.openai.com/v1")?.absoluteString,
+            "https://api.openai.com/v1/chat/completions"
+        )
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://example.com/v1/chat/completions")?.absoluteString,
+            "https://example.com/v1/chat/completions"
+        )
+    }
+
+    func testJSONContentExtractorAcceptsFencedObjectsAndRejectsProse() {
+        let fenced = """
+        ```json
+        {"quote":"hello"}
+        ```
+        """
+        let data = OpenAICompatibleAPIClient.jsonData(fromModelContent: fenced)
+        XCTAssertNotNil(data)
+        XCTAssertNil(OpenAICompatibleAPIClient.jsonData(fromModelContent: "not json"))
+    }
+
+    func testTranslationBatchesSplitOversizedOCRPayloads() {
+        let small = (0 ..< 3).map { AITranslationInput(id: "\($0)", text: "hi") }
+        XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: small).count, 1)
+
+        let large = [
+            AITranslationInput(id: "a", text: String(repeating: "字", count: 4000)),
+            AITranslationInput(id: "b", text: String(repeating: "字", count: 4000))
+        ]
+        XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: large).count, 2)
     }
 
     func testVisionOCRRejectsInvalidImageData() async {

@@ -236,13 +236,11 @@ final class ScreenshotShortcutManager {
     func validate(_ candidate: ScreenshotShortcut) -> ScreenshotShortcutValidation {
         guard candidate != binding else { return .available }
 
-        let current = binding
-        unregisterHotKey()
-        let status = registerHotKey(for: candidate)
-        unregisterHotKey()
-
-        binding = current
-        _ = registerHotKey()
+        var probe: EventHotKeyRef?
+        let status = registerHotKey(for: candidate, id: hotKeyID &+ 1000, slot: &probe)
+        if let probe {
+            UnregisterEventHotKey(probe)
+        }
 
         if status == noErr {
             return .available
@@ -311,14 +309,23 @@ final class ScreenshotShortcutManager {
 
     @discardableResult
     private func registerHotKey(for binding: ScreenshotShortcut) -> OSStatus {
-        let hotKeyID = EventHotKeyID(signature: 0x4A41_5256, id: hotKeyID)
+        registerHotKey(for: binding, id: hotKeyID, slot: &hotKey)
+    }
+
+    @discardableResult
+    private func registerHotKey(
+        for binding: ScreenshotShortcut,
+        id: UInt32,
+        slot: inout EventHotKeyRef?
+    ) -> OSStatus {
+        let hotKeyID = EventHotKeyID(signature: 0x4A41_5256, id: id)
         return RegisterEventHotKey(
             UInt32(binding.keyCode),
             binding.carbonModifiers,
             hotKeyID,
             GetEventDispatcherTarget(),
             0,
-            &hotKey
+            &slot
         )
     }
 
@@ -337,7 +344,7 @@ final class ScreenshotShortcutManager {
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, binding.matches(event) else { return event }
             triggerOnce()
-            return event
+            return nil
         }
 
         // A MacBook with "Use F1, F2, etc. keys as standard function keys"
@@ -350,7 +357,7 @@ final class ScreenshotShortcutManager {
         localSystemDefinedMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] event in
             guard let self, binding.matches(event) else { return event }
             triggerOnce()
-            return event
+            return nil
         }
     }
 

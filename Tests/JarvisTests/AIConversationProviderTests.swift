@@ -18,5 +18,8 @@ final class AIConversationProviderTests: XCTestCase {
         )
         XCTAssertEqual(AIConversationProvider.deepSeek.selectedIconResourceName, "deepseek-selected")
         XCTAssertEqual(AIConversationProvider.doubao.selectedIconResourceName, nil)
+        XCTAssertTrue(AIConversationProvider.gpt.allowsHost("chat.openai.com"))
+        XCTAssertTrue(AIConversationProvider.doubao.allowsHost("doubao.com"))
+        XCTAssertFalse(AIConversationProvider.grok.allowsHost("evil.example"))
     }
 }

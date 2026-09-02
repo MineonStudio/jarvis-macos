@@ -243,12 +243,31 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         app?.captureScreenshot()
     }
 
+    func reopenMainWindow() {
+        openMainWindow()
+    }
+
     @objc private func openMainWindow() {
         app?.selectedSection = .overview
         NSApp.activate(ignoringOtherApps: true)
 
+        let mainWindow = NSApp.windows.first { window in
+            window.identifier?.rawValue == JarvisAppIdentity.mainWindowSceneID
+                || window.frameAutosaveName == JarvisMainWindowController.frameAutosaveName
+        }
+        if let mainWindow, mainWindow.isMiniaturized {
+            mainWindow.deminiaturize(nil)
+            mainWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+        if let mainWindow, mainWindow.isVisible {
+            mainWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
         if let window = NSApp.windows.first(where: { window in
             window.canBecomeKey && window.isVisible && !window.isMiniaturized
+                && !(window is NSPanel)
         }) {
             window.makeKeyAndOrderFront(nil)
             return

@@ -396,11 +396,12 @@ extension ScreenshotCaptureController {
     }
 
     func dismissSelectionWindows() {
-        selectionWindows.forEach { $0.orderOut(nil) }
-        selectionWindows.removeAll()
-        if NSCursor.current == NSCursor.crosshair {
-            NSCursor.pop()
+        for window in selectionWindows {
+            window.orderOut(nil)
+            window.close()
         }
+        selectionWindows.removeAll()
+        popCrosshairCursorIfNeeded()
     }
 
     func restorePreviousApplication() {
@@ -408,10 +409,12 @@ extension ScreenshotCaptureController {
         previousFrontmostApplication = nil
         guard !previousApplication.isTerminated else { return }
 
-        // The capture overlay activates Jarvis so it can receive Escape. Once
-        // the user cancels, hide Jarvis and hand focus back to the app that
-        // was in front instead of exposing Jarvis's main window.
-        NSApp.hide(nil)
         previousApplication.activate(options: [])
+    }
+
+    func popCrosshairCursorIfNeeded() {
+        guard didPushCrosshairCursor else { return }
+        NSCursor.pop()
+        didPushCrosshairCursor = false
     }
 }

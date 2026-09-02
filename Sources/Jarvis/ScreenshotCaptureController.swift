@@ -106,4 +106,5 @@ final class ScreenshotCaptureController {
     var previousFrontmostApplication: NSRunningApplication?
     var sessionPhase: ScreenshotSessionPhase = .idle
     var activeSessionID: UUID?
+    var didPushCrosshairCursor = false
 }

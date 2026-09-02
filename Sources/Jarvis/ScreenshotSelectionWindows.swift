@@ -98,7 +98,7 @@ enum WindowSelectionDetector {
             candidates.append(dockCandidate)
         } else if let dockGlobalRect {
             let localDockRect = localRect(
-                for: dockGlobalRect,
+                for: Self.quartzRect(fromAppKitRect: dockGlobalRect, desktopTop: desktopTop),
                 screenFrame: screenFrame,
                 desktopTop: desktopTop,
                 screenBounds: screenBounds
@@ -155,10 +155,16 @@ enum WindowSelectionDetector {
             return nil
         }
 
-        let globalRect = isDock ? context.dockGlobalRect : quartzBounds
-        guard let globalRect else { return nil }
+        let convertedBounds: CGRect? = if isDock {
+            context.dockGlobalRect.map {
+                Self.quartzRect(fromAppKitRect: $0, desktopTop: context.desktopTop)
+            }
+        } else {
+            quartzBounds
+        }
+        guard let convertedBounds else { return nil }
         let localRect = localRect(
-            for: globalRect,
+            for: convertedBounds,
             screenFrame: context.screenFrame,
             desktopTop: context.desktopTop,
             screenBounds: context.screenBounds
@@ -190,7 +196,16 @@ enum WindowSelectionDetector {
         )
     }
 
-    private static func localRect(
+    static func quartzRect(fromAppKitRect rect: CGRect, desktopTop: CGFloat) -> CGRect {
+        CGRect(
+            x: rect.minX,
+            y: desktopTop - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    static func localRect(
         for globalRect: CGRect,
         screenFrame: CGRect,
         desktopTop: CGFloat,

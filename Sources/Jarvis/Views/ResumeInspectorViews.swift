@@ -4,7 +4,6 @@ struct ResumeInspector: View {
     @EnvironmentObject private var app: AppModel
     @Binding var draft: ResumeDocument
     @Binding var expandedSection: ResumeSection?
-    @State private var generatingSection: ResumeSection?
     @State private var projectGenerationDomain = ""
     @State private var isProjectGenerationPromptPresented = false
 
@@ -36,7 +35,7 @@ struct ResumeInspector: View {
     }
 
     private var canStartAIRequest: Bool {
-        generatingSection == nil
+        !app.resumeWorkspace.isGenerating
     }
 
     private var aiGenerationDisabledMessage: String {
@@ -93,7 +92,7 @@ struct ResumeInspector: View {
         case .education:
             ResumeEducationEditor(
                 draft: $draft,
-                isGenerating: generatingSection == .education,
+                isGenerating: app.resumeWorkspace.generatingSection == .education,
                 canGenerate: canStartAIRequest,
                 disabledReason: aiGenerationDisabledMessage,
                 onGenerate: { generate(.education) }
@@ -101,7 +100,7 @@ struct ResumeInspector: View {
         case .experience:
             ResumeExperienceEditor(
                 draft: $draft,
-                isGenerating: generatingSection == .experience,
+                isGenerating: app.resumeWorkspace.generatingSection == .experience,
                 canGenerate: canStartAIRequest,
                 disabledReason: aiGenerationDisabledMessage,
                 onGenerate: { generate(.experience) }
@@ -109,7 +108,7 @@ struct ResumeInspector: View {
         case .skills:
             ResumeSkillsEditor(
                 draft: $draft,
-                isGenerating: generatingSection == .skills,
+                isGenerating: app.resumeWorkspace.generatingSection == .skills,
                 canGenerate: canStartAIRequest,
                 disabledReason: aiGenerationDisabledMessage,
                 onGenerate: { generate(.skills) }
@@ -117,7 +116,7 @@ struct ResumeInspector: View {
         case .projects:
             ResumeProjectsEditor(
                 draft: $draft,
-                isGenerating: generatingSection == .projects,
+                isGenerating: app.resumeWorkspace.generatingSection == .projects,
                 canGenerate: canStartAIRequest,
                 disabledReason: aiGenerationDisabledMessage,
                 onGenerate: showProjectGenerationPrompt
@@ -126,7 +125,7 @@ struct ResumeInspector: View {
     }
 
     private func generate(_ section: ResumeSection, projectDomain: String? = nil) {
-        guard generatingSection == nil, section != .basicInfo else { return }
+        guard canStartAIRequest, section != .basicInfo else { return }
         guard draft.basicInfo.isReadyForAIGeneration else {
             app.showToast(aiGenerationDisabledMessage)
             return
@@ -134,15 +133,9 @@ struct ResumeInspector: View {
         let documentID = draft.id
         let snapshot = draft
         let configuration = AIAPIConfiguration.load()
-        generatingSection = section
+        let workspace = app.resumeWorkspace
 
-        Task { @MainActor in
-            defer {
-                if generatingSection == section {
-                    generatingSection = nil
-                }
-            }
-
+        workspace.startGeneration(for: section) {
             do {
                 let service = ResumeAIService()
                 let content = try await generateContent(
@@ -152,11 +145,13 @@ struct ResumeInspector: View {
                     configuration: configuration,
                     projectDomain: projectDomain
                 )
-                guard draft.id == documentID else { return }
+                guard !Task.isCancelled, draft.id == documentID else { return }
                 append(content)
                 app.showToast("已生成 1 条\(section.title)")
+            } catch is CancellationError {
+                return
             } catch {
-                guard draft.id == documentID else { return }
+                guard !Task.isCancelled, draft.id == documentID else { return }
                 app.showToast(error.localizedDescription)
             }
         }

@@ -27,18 +27,20 @@ extension ScreenshotEditorModel {
 
     func startTranslation() {
         guard !translationState.isRunning else { return }
-        guard translationConfiguration.isConfigured else {
+        let configuration = ScreenshotTranslationConfiguration.load()
+        guard configuration.isConfigured else {
             translationState = .failed(AIAPIError.missingConfiguration.localizedDescription)
             return
         }
 
         translationTask?.cancel()
+        translationGeneration += 1
+        let generation = translationGeneration
         translationBlocks.removeAll()
         translationVisible = true
         translationState = .recognizing
         let sourceData = originalOutputData
         let targetLanguage = translationTargetLanguage
-        let configuration = translationConfiguration
 
         translationTask = Task { [weak self] in
             do {
@@ -46,7 +48,8 @@ extension ScreenshotEditorModel {
                 let ocrBlocks = try await service.recognizeText(in: sourceData)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.translationState = .translating(completed: 0, total: ocrBlocks.count)
+                    guard let self, self.translationGeneration == generation else { return }
+                    self.translationState = .translating(completed: 0, total: ocrBlocks.count)
                 }
                 let translatedBlocks = try await service.translate(
                     ocrBlocks,
@@ -55,25 +58,47 @@ extension ScreenshotEditorModel {
                 )
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.translationBlocks = translatedBlocks
-                    self?.translationState = .completed(count: translatedBlocks.count)
+                    guard let self, self.translationGeneration == generation else { return }
+                    self.translationBlocks = translatedBlocks
+                    self.translationState = .completed(count: translatedBlocks.count)
                 }
             } catch is CancellationError {
-                return
-            } catch {
                 await MainActor.run {
-                    self?.translationState = .failed(error.localizedDescription)
+                    guard let self, self.translationGeneration == generation else { return }
+                    if self.translationState.isRunning {
+                        self.translationState = .idle
+                    }
+                }
+            } catch {
+                if Self.isCancellation(error) {
+                    await MainActor.run {
+                        guard let self, self.translationGeneration == generation else { return }
+                        if self.translationState.isRunning {
+                            self.translationState = .idle
+                        }
+                    }
+                    return
+                }
+                await MainActor.run {
+                    guard let self, self.translationGeneration == generation else { return }
+                    self.translationState = .failed(error.localizedDescription)
                 }
             }
         }
     }
 
     func cancelTranslation() {
+        translationGeneration += 1
         translationTask?.cancel()
         translationTask = nil
         if translationState.isRunning {
             translationState = .idle
         }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 
     func clearTranslation() {

@@ -228,7 +228,7 @@ extension ScreenshotToolbar {
                 onAction(.startTranslation)
             }
             .buttonStyle(JarvisPrimaryButtonStyle())
-            .disabled(editor.translationState.isRunning || !editor.translationConfiguration.isConfigured)
+            .disabled(editor.translationState.isRunning || !editor.isTranslationAPIConfigured)
 
             Button(editor.translationVisible ? "显示原文" : "显示译文") {
                 onAction(.toggleTranslationVisibility)

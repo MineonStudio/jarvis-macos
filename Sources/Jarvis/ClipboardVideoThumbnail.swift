@@ -41,15 +41,17 @@ enum ClipboardVideoThumbnailGenerator {
         generator.generateCGImageAsynchronously(
             for: CMTime(seconds: seconds[index], preferredTimescale: 600)
         ) { image, _, _ in
-            if let image {
-                DispatchQueue.main.async { completion(image) }
-            } else {
-                generateFrame(
-                    with: generator,
-                    at: seconds,
-                    index: index + 1,
-                    completion: completion
-                )
+            withExtendedLifetime(generator) {
+                if let image {
+                    DispatchQueue.main.async { completion(image) }
+                } else {
+                    generateFrame(
+                        with: generator,
+                        at: seconds,
+                        index: index + 1,
+                        completion: completion
+                    )
+                }
             }
         }
     }

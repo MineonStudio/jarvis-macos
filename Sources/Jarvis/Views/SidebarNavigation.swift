@@ -9,7 +9,8 @@ struct JarvisSidebarNavigation<
     Item: Identifiable & Hashable,
     SecondaryItem: Identifiable & Hashable
 >: View {
-    let items: [Item]
+    let topItems: [Item]
+    let bottomItems: [Item]
     @Binding var selection: Item
     let title: (Item) -> String
     let icon: (Item) -> String
@@ -25,7 +26,8 @@ struct JarvisSidebarNavigation<
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
-        items: [Item],
+        topItems: [Item],
+        bottomItems: [Item] = [],
         selection: Binding<Item>,
         title: @escaping (Item) -> String,
         icon: @escaping (Item) -> String,
@@ -38,7 +40,8 @@ struct JarvisSidebarNavigation<
         footerIsSelected: Bool = false,
         footerAction: (() -> Void)? = nil
     ) {
-        self.items = items
+        self.topItems = topItems
+        self.bottomItems = bottomItems
         _selection = selection
         self.title = title
         self.icon = icon
@@ -65,19 +68,17 @@ struct JarvisSidebarNavigation<
             .padding(.top, 14)
             .padding(.bottom, 12)
 
-            VStack(spacing: 4) {
-                ForEach(items) { item in
-                    primaryRow(item)
-
-                    if let secondaryItems = secondaryItems(for: item) {
-                        secondaryMenu(items: secondaryItems, parent: item)
-                    }
-                }
-            }
-            .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
-            .padding(.top, JarvisMetrics.sidebarContentPadding)
+            itemGroup(topItems)
+                .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
+                .padding(.top, JarvisMetrics.sidebarContentPadding)
 
             Spacer(minLength: 0)
+
+            if !bottomItems.isEmpty {
+                itemGroup(bottomItems)
+                    .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
+                    .padding(.bottom, 4)
+            }
 
             if let footerTitle, let footerIcon, let footerAction {
                 Divider()
@@ -120,6 +121,18 @@ struct JarvisSidebarNavigation<
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.jarvisBackground)
+    }
+
+    private func itemGroup(_ items: [Item]) -> some View {
+        VStack(spacing: 4) {
+            ForEach(items) { item in
+                primaryRow(item)
+
+                if let secondaryItems = secondaryItems(for: item) {
+                    secondaryMenu(items: secondaryItems, parent: item)
+                }
+            }
+        }
     }
 
     private func primaryRow(_ item: Item) -> some View {

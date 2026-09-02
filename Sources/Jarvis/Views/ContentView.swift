@@ -13,7 +13,8 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             JarvisSidebarNavigation(
-                items: primaryNavigationItems,
+                topItems: topNavigationItems,
+                bottomItems: bottomNavigationItems,
                 selection: selectedSectionBinding,
                 title: { $0.title },
                 icon: { $0.icon },
@@ -58,8 +59,9 @@ struct ContentView: View {
             case .overview:
                 navigationSelection = .overview
             case .aiConversation:
-                selectedSidebarSecondary = .aiProvider(app.selectedAIProvider)
                 navigationSelection = .aiConversation
+            case .entertainment:
+                navigationSelection = .entertainment
             case .settings:
                 navigationSelection = .settings
             }
@@ -87,10 +89,6 @@ struct ContentView: View {
                 loadedSection = nextSection
             }
         }
-        .onChange(of: app.selectedAIProvider) { _, provider in
-            guard navigationSelection == .aiConversation else { return }
-            selectedSidebarSecondary = .aiProvider(provider)
-        }
     }
 
     private func selectSection(_ section: TopLevelSection) {
@@ -101,10 +99,7 @@ struct ContentView: View {
             selectedSkill = .screenshot
             selectedSidebarSecondary = .skill(.screenshot)
             app.selectedSection = .skill(.screenshot)
-        case .aiConversation:
-            selectedSidebarSecondary = .aiProvider(app.selectedAIProvider)
-            app.selectedSection = section.appSection
-        case .overview, .settings:
+        case .aiConversation, .entertainment, .overview, .settings:
             app.selectedSection = section.appSection
         }
     }
@@ -121,16 +116,16 @@ struct ContentView: View {
         )
     }
 
-    private var primaryNavigationItems: [TopLevelSection] {
-        [.overview, .aiConversation, .skillLibrary]
+    private var topNavigationItems: [TopLevelSection] {
+        [.overview, .skillLibrary]
+    }
+
+    private var bottomNavigationItems: [TopLevelSection] {
+        [.aiConversation, .entertainment]
     }
 
     private var secondaryMenus: [JarvisSidebarSecondaryMenu<TopLevelSection, SidebarSecondaryItem>] {
         [
-            JarvisSidebarSecondaryMenu(
-                parent: .aiConversation,
-                items: AIConversationProvider.allCases.map { .aiProvider($0) }
-            ),
             JarvisSidebarSecondaryMenu(
                 parent: .skillLibrary,
                 items: SkillID.allCases.map { .skill($0) }
@@ -147,13 +142,11 @@ struct ContentView: View {
 
     private func sidebarSecondaryIcon(
         _ item: SidebarSecondaryItem,
-        isSelected: Bool
+        isSelected _: Bool
     ) -> AnyView {
         switch item {
         case let .skill(skill):
             AnyView(Image(systemName: skill.icon))
-        case let .aiProvider(provider):
-            AnyView(AIConversationProviderIcon(provider: provider, isSelected: isSelected))
         }
     }
 
@@ -161,10 +154,6 @@ struct ContentView: View {
         let isAlreadyShowing: Bool = switch item {
         case let .skill(skill):
             navigationSelection == .skillLibrary && app.selectedSection == .skill(skill)
-        case let .aiProvider(provider):
-            navigationSelection == .aiConversation
-                && app.selectedSection == .aiConversation
-                && app.selectedAIProvider == provider
         }
         guard !isAlreadyShowing else { return }
 
@@ -175,10 +164,6 @@ struct ContentView: View {
             selectedSkill = skill
             navigationSelection = .skillLibrary
             app.selectedSection = .skill(skill)
-        case let .aiProvider(provider):
-            navigationSelection = .aiConversation
-            app.selectAIProvider(provider)
-            app.selectedSection = .aiConversation
         }
     }
 
@@ -188,6 +173,8 @@ struct ContentView: View {
             "skill-library|\(selectedSkill.id)"
         case .aiConversation:
             "ai-conversation|\(app.selectedAIProvider.id)"
+        case .entertainment:
+            "entertainment|\(app.selectedEntertainmentPlatform.id)"
         case .overview, .settings:
             navigationSelection.id
         }
@@ -199,6 +186,8 @@ struct ContentView: View {
             .overview
         case .aiConversation:
             .aiConversation
+        case .entertainment:
+            .entertainment
         case .skillLibrary:
             .skill(selectedSkill)
         case .settings:
@@ -211,6 +200,7 @@ struct ContentView: View {
         switch loadedSection {
         case .overview: DashboardView()
         case .aiConversation: AIConversationView()
+        case .entertainment: EntertainmentView()
         case .skill(.screenshot): ScreenshotView()
         case .skill(.clipboard): ClipboardView()
         case .skill(.windowLayout): WindowLayoutView()
@@ -251,19 +241,16 @@ struct JarvisToastHost: View {
 
 enum SidebarSecondaryItem: Hashable, Identifiable {
     case skill(SkillID)
-    case aiProvider(AIConversationProvider)
 
     var id: String {
         switch self {
         case let .skill(skill): "skill.\(skill.id)"
-        case let .aiProvider(provider): "ai.\(provider.id)"
         }
     }
 
     var title: String {
         switch self {
         case let .skill(skill): skill.navigationTitle
-        case let .aiProvider(provider): provider.title
         }
     }
 }
@@ -271,6 +258,7 @@ enum SidebarSecondaryItem: Hashable, Identifiable {
 private enum TopLevelSection: Hashable, Identifiable {
     case overview
     case aiConversation
+    case entertainment
     case skillLibrary
     case settings
 
@@ -278,6 +266,7 @@ private enum TopLevelSection: Hashable, Identifiable {
         switch self {
         case .overview: "overview"
         case .aiConversation: "ai-conversation"
+        case .entertainment: "entertainment"
         case .skillLibrary: "skill-library"
         case .settings: "settings"
         }
@@ -286,7 +275,8 @@ private enum TopLevelSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "首页"
-        case .aiConversation: "第三方AI平台"
+        case .aiConversation: "AI聚合"
+        case .entertainment: "娱乐广场"
         case .skillLibrary: "技能库"
         case .settings: "设置"
         }
@@ -295,7 +285,8 @@ private enum TopLevelSection: Hashable, Identifiable {
     var icon: String {
         switch self {
         case .overview: "rectangle.grid.2x2"
-        case .aiConversation: "bubble.left.and.bubble.right"
+        case .aiConversation: "sparkles"
+        case .entertainment: "play.rectangle"
         case .skillLibrary: "square.stack.3d.up"
         case .settings: "gearshape"
         }
@@ -305,6 +296,7 @@ private enum TopLevelSection: Hashable, Identifiable {
         switch self {
         case .overview: .overview
         case .aiConversation: .aiConversation
+        case .entertainment: .entertainment
         case .skillLibrary: .skill(.screenshot)
         case .settings: .settings
         }

@@ -22,4 +22,48 @@ final class AIConversationProviderTests: XCTestCase {
         XCTAssertTrue(AIConversationProvider.doubao.allowsHost("doubao.com"))
         XCTAssertFalse(AIConversationProvider.grok.allowsHost("evil.example"))
     }
+
+    func testEmbeddedStripeFramesStayInsideTheWebView() {
+        let stripe = URL(string: "https://js.stripe.com/v3/m-outer-3437aaddcdf6922d623e172c2d6f9278.html")
+        XCTAssertEqual(
+            AIConversationNavigationPolicy.decision(
+                url: stripe,
+                isMainFrame: false,
+                isPrimaryWebView: true,
+                shouldDownload: false,
+                provider: .grok
+            ),
+            .allow
+        )
+        XCTAssertEqual(
+            AIConversationNavigationPolicy.decision(
+                url: stripe,
+                isMainFrame: true,
+                isPrimaryWebView: false,
+                shouldDownload: false,
+                provider: .grok
+            ),
+            .allow
+        )
+        XCTAssertEqual(
+            AIConversationNavigationPolicy.decision(
+                url: URL(string: "https://grok.com/"),
+                isMainFrame: true,
+                isPrimaryWebView: true,
+                shouldDownload: false,
+                provider: .grok
+            ),
+            .allow
+        )
+        XCTAssertEqual(
+            AIConversationNavigationPolicy.decision(
+                url: URL(string: "https://evil.example/phish"),
+                isMainFrame: true,
+                isPrimaryWebView: true,
+                shouldDownload: false,
+                provider: .grok
+            ),
+            .openExternally
+        )
+    }
 }

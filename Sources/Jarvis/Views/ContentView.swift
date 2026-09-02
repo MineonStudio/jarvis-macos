@@ -158,7 +158,16 @@ struct ContentView: View {
     }
 
     private func selectSidebarSecondary(_ item: SidebarSecondaryItem) {
-        guard selectedSidebarSecondary != item else { return }
+        let isAlreadyShowing: Bool = switch item {
+        case let .skill(skill):
+            navigationSelection == .skillLibrary && app.selectedSection == .skill(skill)
+        case let .aiProvider(provider):
+            navigationSelection == .aiConversation
+                && app.selectedSection == .aiConversation
+                && app.selectedAIProvider == provider
+        }
+        guard !isAlreadyShowing else { return }
+
         selectedSidebarSecondary = item
 
         switch item {
@@ -174,7 +183,14 @@ struct ContentView: View {
     }
 
     private var navigationTargetID: String {
-        "\(navigationSelection.id)|\(selectedSkill.id)"
+        switch navigationSelection {
+        case .skillLibrary:
+            "skill-library|\(selectedSkill.id)"
+        case .aiConversation:
+            "ai-conversation|\(app.selectedAIProvider.id)"
+        case .overview, .settings:
+            navigationSelection.id
+        }
     }
 
     private func contentSection(for section: TopLevelSection) -> AppSection {

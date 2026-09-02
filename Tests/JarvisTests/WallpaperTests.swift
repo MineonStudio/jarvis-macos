@@ -310,15 +310,36 @@ final class WallpaperTests: XCTestCase {
             format: .binary,
             options: 0
         )
+        let oldDesktop = [
+            "Content": [
+                "Choices": [["Configuration": oldConfiguration]]
+            ]
+        ] as [String: Any]
+        let oldIdle = [
+            "Content": [
+                "Choices": [["Configuration": oldConfiguration]]
+            ]
+        ] as [String: Any]
         let index: [String: Any] = [
             "AllSpacesAndDisplays": [
-                "Idle": [
-                    "Content": ["Choices": [["Configuration": oldConfiguration]]]
-                ]
+                "Idle": oldIdle
             ],
             "SystemDefault": [
-                "Idle": [
-                    "Content": ["Choices": [["Configuration": oldConfiguration]]]
+                "Desktop": oldDesktop,
+                "Idle": oldIdle
+            ],
+            "Spaces": [
+                "space-1": [
+                    "Default": [
+                        "Desktop": oldDesktop,
+                        "Idle": oldIdle
+                    ]
+                ]
+            ],
+            "Displays": [
+                "display-1": [
+                    "Desktop": oldDesktop,
+                    "Idle": oldIdle
                 ]
             ]
         ]
@@ -327,13 +348,19 @@ final class WallpaperTests: XCTestCase {
             format: .binary,
             options: 0
         ).write(to: indexURL)
+        let staleIndexData = try Data(contentsOf: indexURL)
 
         var desktopCalls: [URL] = []
         var loginWindowURL: URL?
         var refreshCount = 0
         let desktopService = DesktopWallpaperService(
             screensProvider: { screens },
-            setImage: { url, _, _ in desktopCalls.append(url) }
+            setImage: { url, _, _ in
+                desktopCalls.append(url)
+                // NSWorkspace can rewrite the store after an earlier write.
+                // The service must write the unified state after this call.
+                try staleIndexData.write(to: indexURL, options: .atomic)
+            }
         )
         let service = WallpaperSystemService(
             desktopWallpaperService: desktopService,
@@ -358,20 +385,40 @@ final class WallpaperTests: XCTestCase {
         )
         let updatedIndex = try XCTUnwrap(updatedIndexValue as? [String: Any])
         let allSpaces = try XCTUnwrap(updatedIndex["AllSpacesAndDisplays"] as? [String: Any])
-        let idle = try XCTUnwrap(allSpaces["Idle"] as? [String: Any])
-        let content = try XCTUnwrap(idle["Content"] as? [String: Any])
-        let choices = try XCTUnwrap(content["Choices"] as? [[String: Any]])
-        let firstChoice = try XCTUnwrap(choices.first)
-        let configuration = try XCTUnwrap(firstChoice["Configuration"] as? Data)
-        let decodedConfigurationValue = try PropertyListSerialization.propertyList(
-            from: configuration,
-            options: [],
-            format: nil
-        )
-        let decodedConfiguration = try XCTUnwrap(decodedConfigurationValue as? [String: Any])
-        let url = try XCTUnwrap(decodedConfiguration["url"] as? [String: Any])
-        let decodedURL = try XCTUnwrap(url["relative"] as? String)
-        XCTAssertEqual(decodedURL, stableURL.absoluteString)
+
+        func configurationURL(in value: Any?) throws -> String {
+            let section = try XCTUnwrap(value as? [String: Any])
+            let content = try XCTUnwrap(section["Content"] as? [String: Any])
+            let choices = try XCTUnwrap(content["Choices"] as? [[String: Any]])
+            let firstChoice = try XCTUnwrap(choices.first)
+            let configuration = try XCTUnwrap(firstChoice["Configuration"] as? Data)
+            let decodedValue = try PropertyListSerialization.propertyList(
+                from: configuration,
+                options: [],
+                format: nil
+            )
+            let decoded = try XCTUnwrap(decodedValue as? [String: Any])
+            let url = try XCTUnwrap(decoded["url"] as? [String: Any])
+            return try XCTUnwrap(url["relative"] as? String)
+        }
+
+        XCTAssertEqual(try configurationURL(in: allSpaces["Desktop"]), stableURL.absoluteString)
+        XCTAssertEqual(try configurationURL(in: allSpaces["Idle"]), stableURL.absoluteString)
+
+        let systemDefault = try XCTUnwrap(updatedIndex["SystemDefault"] as? [String: Any])
+        XCTAssertEqual(try configurationURL(in: systemDefault["Desktop"]), stableURL.absoluteString)
+        XCTAssertEqual(try configurationURL(in: systemDefault["Idle"]), stableURL.absoluteString)
+
+        let spaces = try XCTUnwrap(updatedIndex["Spaces"] as? [String: Any])
+        let space = try XCTUnwrap(spaces["space-1"] as? [String: Any])
+        let defaultSpace = try XCTUnwrap(space["Default"] as? [String: Any])
+        XCTAssertEqual(try configurationURL(in: defaultSpace["Desktop"]), stableURL.absoluteString)
+        XCTAssertEqual(try configurationURL(in: defaultSpace["Idle"]), stableURL.absoluteString)
+
+        let displays = try XCTUnwrap(updatedIndex["Displays"] as? [String: Any])
+        let display = try XCTUnwrap(displays["display-1"] as? [String: Any])
+        XCTAssertEqual(try configurationURL(in: display["Desktop"]), stableURL.absoluteString)
+        XCTAssertEqual(try configurationURL(in: display["Idle"]), stableURL.absoluteString)
     }
 
     private func makeTestPNG() throws -> Data {

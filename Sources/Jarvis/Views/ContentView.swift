@@ -270,7 +270,7 @@ private enum TopLevelSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "首页"
-        case .aiConversation: "聊天"
+        case .aiConversation: "第三方AI平台"
         case .skillLibrary: "技能库"
         case .settings: "设置"
         }

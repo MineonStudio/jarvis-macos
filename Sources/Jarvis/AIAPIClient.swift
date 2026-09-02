@@ -224,8 +224,8 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
             throw AIAPIError.invalidJSON(context: "翻译", reason: "请求内容无法转换为 UTF-8")
         }
         let systemPrompt = """
-        Translate each item into \(targetLanguage). Preserve meaning, numbers, code, URLs, punctuation, and line breaks.
-        Return JSON only: {"translations":[{"id":"original-id","translation":"translated text"}]}. Include every item exactly once.
+        Translate each item into \(targetLanguage). Keep numbers, code, URLs and line breaks.
+        JSON only: {"translations":[{"id":"id","translation":"text"}]}. Every item once.
         """
 
         var request = URLRequest(url: endpoint)

@@ -167,18 +167,15 @@ struct ScreenshotTranslationService: Sendable {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                          let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-                    else {
+                    guard let image = Self.ocrImage(from: data) else {
                         throw ScreenshotTranslationError.invalidImage
                     }
 
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
-                    request.usesLanguageCorrection = true
-                    request.minimumTextHeight = 0.008
-                    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"]
-                    request.automaticallyDetectsLanguage = true
+                    request.usesLanguageCorrection = false
+                    request.minimumTextHeight = 0.012
+                    request.recognitionLanguages = ["zh-Hans", "en-US", "ja-JP", "ko-KR"]
 
                     let handler = VNImageRequestHandler(cgImage: image, options: [:])
                     try handler.perform([request])
@@ -202,10 +199,11 @@ struct ScreenshotTranslationService: Sendable {
                         )
                     }
 
-                    guard !blocks.isEmpty else {
+                    let merged = Self.mergedLineBlocks(from: blocks)
+                    guard !merged.isEmpty else {
                         throw ScreenshotTranslationError.noTextFound
                     }
-                    continuation.resume(returning: blocks)
+                    continuation.resume(returning: merged)
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -216,22 +214,40 @@ struct ScreenshotTranslationService: Sendable {
     func translate(
         _ blocks: [ScreenshotOCRBlock],
         targetLanguage: ScreenshotTranslationLanguage,
-        configuration: ScreenshotTranslationConfiguration
+        configuration: ScreenshotTranslationConfiguration,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> [ScreenshotTranslationBlock] {
         guard !blocks.isEmpty else { throw ScreenshotTranslationError.noTextFound }
-        let inputs = blocks.map { AITranslationInput(id: $0.id.uuidString, text: $0.text) }
-        var outputs: [AITranslationOutput] = []
-        for batch in Self.translationBatches(from: inputs) {
-            let batchOutputs = try await apiClient.translate(
-                batch,
+
+        var translationsByID: [String: String] = [:]
+        var translatable: [AITranslationInput] = []
+        for block in blocks {
+            if Self.needsTranslation(block.text) {
+                translatable.append(AITranslationInput(id: block.id.uuidString, text: block.text))
+            } else {
+                translationsByID[block.id.uuidString] = block.text
+            }
+        }
+
+        let total = translatable.count
+        if total == 0 {
+            onProgress?(0, 0)
+        } else {
+            onProgress?(0, total)
+            let batches = Self.translationBatches(from: translatable)
+            let batchOutputs = try await Self.translateBatches(
+                batches,
                 targetLanguage: targetLanguage.title,
-                configuration: configuration.api
+                configuration: configuration.api,
+                apiClient: apiClient,
+                onProgress: onProgress,
+                total: total
             )
-            outputs.append(contentsOf: batchOutputs)
+            for item in batchOutputs {
+                translationsByID[item.id] = item.translation
+            }
         }
-        let translationsByID = outputs.reduce(into: [String: String]()) { result, item in
-            result[item.id] = item.translation
-        }
+
         let result = blocks.compactMap { block -> ScreenshotTranslationBlock? in
             guard let translatedText = translationsByID[block.id.uuidString],
                   !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -253,6 +269,7 @@ struct ScreenshotTranslationService: Sendable {
     }
 
     private static let translationBatchCharacterLimit = 6000
+    private static let ocrMaxPixelDimension = 1600
 
     static func translationBatches(from inputs: [AITranslationInput]) -> [[AITranslationInput]] {
         guard !inputs.isEmpty else { return [] }
@@ -273,5 +290,107 @@ struct ScreenshotTranslationService: Sendable {
             batches.append(current)
         }
         return batches
+    }
+
+    static func needsTranslation(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.contains { character in
+            character.isLetter
+        }
+    }
+
+    static func mergedLineBlocks(from blocks: [ScreenshotOCRBlock]) -> [ScreenshotOCRBlock] {
+        let sorted = blocks.sorted { lhs, rhs in
+            let yDelta = lhs.normalizedBounds.midY - rhs.normalizedBounds.midY
+            if abs(yDelta) > 0.012 {
+                return lhs.normalizedBounds.minY < rhs.normalizedBounds.minY
+            }
+            return lhs.normalizedBounds.minX < rhs.normalizedBounds.minX
+        }
+
+        var merged: [ScreenshotOCRBlock] = []
+        for block in sorted {
+            guard let last = merged.last else {
+                merged.append(block)
+                continue
+            }
+
+            let verticalTolerance = max(0.012, max(last.normalizedBounds.height, block.normalizedBounds.height) * 0.55)
+            let sameLine = abs(last.normalizedBounds.midY - block.normalizedBounds.midY) <= verticalTolerance
+            let gap = block.normalizedBounds.minX - last.normalizedBounds.maxX
+            let close = gap < max(0.04, last.normalizedBounds.height * 1.4)
+            if sameLine, close, gap > -0.02 {
+                merged[merged.count - 1] = ScreenshotOCRBlock(
+                    id: last.id,
+                    text: joinedText(last.text, block.text),
+                    normalizedBounds: last.normalizedBounds.union(block.normalizedBounds),
+                    confidence: min(last.confidence, block.confidence)
+                )
+            } else {
+                merged.append(block)
+            }
+        }
+        return merged
+    }
+
+    private static func joinedText(_ left: String, _ right: String) -> String {
+        let needsSpace = left.last?.isASCII == true || right.first?.isASCII == true
+        return needsSpace ? "\(left) \(right)" : left + right
+    }
+
+    private static func ocrImage(from data: Data) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: ocrMaxPixelDimension
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return nil
+        }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    private static func translateBatches(
+        _ batches: [[AITranslationInput]],
+        targetLanguage: String,
+        configuration: AIAPIConfiguration,
+        apiClient: any AITranslationAPI,
+        onProgress: (@Sendable (Int, Int) -> Void)?,
+        total: Int
+    ) async throws -> [AITranslationOutput] {
+        guard batches.count > 1 else {
+            let outputs = try await apiClient.translate(
+                batches[0],
+                targetLanguage: targetLanguage,
+                configuration: configuration
+            )
+            onProgress?(total, total)
+            return outputs
+        }
+
+        return try await withThrowingTaskGroup(of: (Int, [AITranslationOutput]).self) { group in
+            for (index, batch) in batches.enumerated() {
+                group.addTask {
+                    try await (
+                        index,
+                        apiClient.translate(
+                            batch,
+                            targetLanguage: targetLanguage,
+                            configuration: configuration
+                        )
+                    )
+                }
+            }
+
+            var ordered = Array(repeating: [AITranslationOutput](), count: batches.count)
+            var completed = 0
+            for try await (index, outputs) in group {
+                ordered[index] = outputs
+                completed += outputs.count
+                onProgress?(min(completed, total), total)
+            }
+            return ordered.flatMap { $0 }
+        }
     }
 }

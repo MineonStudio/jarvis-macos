@@ -76,6 +76,7 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
         menuBarController.install()
+        NSApp.activate()
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

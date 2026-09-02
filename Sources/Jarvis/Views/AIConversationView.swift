@@ -78,6 +78,50 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum AIConversationNavigationDecision: Equatable {
+    case allow
+    case download
+    case openExternally
+    case cancel
+}
+
+enum AIConversationNavigationPolicy {
+    static func decision(
+        url: URL?,
+        isMainFrame: Bool,
+        isPrimaryWebView: Bool,
+        shouldDownload: Bool,
+        provider: AIConversationProvider
+    ) -> AIConversationNavigationDecision {
+        if shouldDownload {
+            return .download
+        }
+        guard let url else {
+            return .cancel
+        }
+        if !isPrimaryWebView || !isMainFrame {
+            return .allow
+        }
+        if isAllowedNavigation(url, for: provider) {
+            return .allow
+        }
+        let scheme = url.scheme?.lowercased()
+        if scheme == "http" || scheme == "https" {
+            return .openExternally
+        }
+        return .cancel
+    }
+
+    static func isAllowedNavigation(_ url: URL, for provider: AIConversationProvider) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        if scheme == "about" || scheme == "blob" || scheme == "data" {
+            return true
+        }
+        guard scheme == "https", let host = url.host else { return false }
+        return provider.allowsHost(host)
+    }
+}
+
 enum AIConversationLayoutMetrics {
     static let topBarSpacing: CGFloat = 12
     static let browserControlSize = JarvisToolbarMetrics.controlSize
@@ -108,6 +152,7 @@ final class AIConversationWebController: NSObject, ObservableObject {
 
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
+    private var popupWebViews: [WKWebView] = []
 
     init(
         provider: AIConversationProvider,
@@ -173,29 +218,32 @@ final class AIConversationWebController: NSObject, ObservableObject {
 
 extension AIConversationWebController: WKNavigationDelegate {
     func webView(
-        _: WKWebView,
+        _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        if navigationAction.shouldPerformDownload {
+        let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? (webView === self.webView)
+        switch AIConversationNavigationPolicy.decision(
+            url: navigationAction.request.url,
+            isMainFrame: isMainFrame,
+            isPrimaryWebView: webView === self.webView,
+            shouldDownload: navigationAction.shouldPerformDownload,
+            provider: provider
+        ) {
+        case .download:
             downloadManager.enqueue(
                 provider: provider,
                 sourceURL: navigationAction.request.url
             )
             decisionHandler(.download)
-            return
-        }
-
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.cancel)
-            return
-        }
-        if Self.isAllowedNavigation(url, for: provider) {
+        case .allow:
             decisionHandler(.allow)
-        } else if url.scheme == "http" || url.scheme == "https" {
-            NSWorkspace.shared.open(url)
+        case .openExternally:
+            if let url = navigationAction.request.url {
+                NSWorkspace.shared.open(url)
+            }
             decisionHandler(.cancel)
-        } else {
+        case .cancel:
             decisionHandler(.cancel)
         }
     }
@@ -282,32 +330,43 @@ extension AIConversationWebController: WKNavigationDelegate {
         }
         return nsError.domain == "WebKitErrorDomain" && nsError.code == 102
     }
-
-    private static func isAllowedNavigation(_ url: URL, for provider: AIConversationProvider) -> Bool {
-        guard let scheme = url.scheme?.lowercased() else { return false }
-        if scheme == "about" || scheme == "blob" || scheme == "data" {
-            return true
-        }
-        guard scheme == "https", let host = url.host else { return false }
-        return provider.allowsHost(host)
-    }
 }
 
 extension AIConversationWebController: WKUIDelegate {
     func webView(
         _ webView: WKWebView,
-        createWebViewWith _: WKWebViewConfiguration,
+        createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures _: WKWindowFeatures
     ) -> WKWebView? {
         guard navigationAction.targetFrame == nil else { return nil }
-        guard let url = navigationAction.request.url else { return nil }
-        if Self.isAllowedNavigation(url, for: provider) {
-            webView.load(navigationAction.request)
-        } else if url.scheme == "http" || url.scheme == "https" {
-            NSWorkspace.shared.open(url)
+
+        if navigationAction.navigationType == .linkActivated {
+            if let url = navigationAction.request.url,
+               AIConversationNavigationPolicy.isAllowedNavigation(url, for: provider)
+            {
+                webView.load(navigationAction.request)
+            } else if let url = navigationAction.request.url,
+                      url.scheme == "http" || url.scheme == "https"
+            {
+                NSWorkspace.shared.open(url)
+            }
+            return nil
         }
-        return nil
+
+        let popup = WKWebView(frame: webView.bounds, configuration: configuration)
+        popup.navigationDelegate = self
+        popup.uiDelegate = self
+        popup.autoresizingMask = [.width, .height]
+        popup.underPageBackgroundColor = .clear
+        webView.addSubview(popup)
+        popupWebViews.append(popup)
+        return popup
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        webView.removeFromSuperview()
+        popupWebViews.removeAll { $0 === webView }
     }
 
     func webView(

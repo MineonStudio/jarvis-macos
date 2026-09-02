@@ -161,6 +161,9 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
         restoreFrame(to: window)
         configureAppearance(for: window)
         observeFrameChanges(of: window)
+        if NSApp.isActive {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func detach() {

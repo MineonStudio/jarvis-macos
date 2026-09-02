@@ -583,7 +583,7 @@ private struct AIConversationDownloadManagerView: View {
                     Text("还没有下载任务")
                         .font(JarvisTypography.bodyEmphasis)
                         .foregroundStyle(Color.secondary)
-                    Text("在聊天页面点击文件下载后，任务会显示在这里")
+                    Text("在第三方AI平台页面点击文件下载后，任务会显示在这里")
                         .font(JarvisTypography.secondary)
                         .foregroundStyle(Color.secondary)
                         .multilineTextAlignment(.center)

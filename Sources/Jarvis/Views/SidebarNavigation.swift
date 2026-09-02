@@ -65,6 +65,8 @@ struct JarvisSidebarNavigation<
             .padding(.top, 14)
             .padding(.bottom, 12)
 
+            Spacer(minLength: 0)
+
             VStack(spacing: 4) {
                 ForEach(items) { item in
                     primaryRow(item)
@@ -75,9 +77,7 @@ struct JarvisSidebarNavigation<
                 }
             }
             .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
-            .padding(.top, JarvisMetrics.sidebarContentPadding)
-
-            Spacer(minLength: 0)
+            .padding(.bottom, 4)
 
             if let footerTitle, let footerIcon, let footerAction {
                 Divider()

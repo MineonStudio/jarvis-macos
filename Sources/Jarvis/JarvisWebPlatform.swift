@@ -97,21 +97,18 @@ enum JarvisWebPlatformLayoutMetrics {
     static let topBarSpacing: CGFloat = 12
     static let browserControlSize = JarvisToolbarMetrics.controlSize
     static let browserControlSpacing = JarvisToolbarMetrics.controlSpacing
-    static let browserControlCount = 4
+    static let browserControlCount = 5
     static let groupedPickerMinimumWidth: CGFloat = 268
 
-    static var browserControlsMinimumWidth: CGFloat {
+    static var actionClusterMinimumWidth: CGFloat {
         (browserControlSize * CGFloat(browserControlCount))
-            + (browserControlSpacing * CGFloat(browserControlCount - 1))
-            + 8
+            + 16
     }
 
     static var minimumTopBarWidth: CGFloat {
         groupedPickerMinimumWidth
             + topBarSpacing
-            + browserControlsMinimumWidth
-            + topBarSpacing
-            + browserControlSize
+            + actionClusterMinimumWidth
             + 8
     }
 }

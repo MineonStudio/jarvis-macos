@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct EntertainmentView: View {
@@ -8,34 +9,22 @@ struct EntertainmentView: View {
         JarvisContentArea(
             leadingToolbar: {
                 ToolbarItem(placement: .navigation) {
-                    HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
-                        JarvisToolbarGroupedPicker(
-                            items: EntertainmentPlatform.allCases,
-                            selection: selectedPlatform,
-                            title: { $0.title },
-                            icon: { platform, isSelected in
-                                Group {
-                                    if platform == .x {
-                                        Text("X")
-                                            .font(.system(size: 11, weight: .heavy, design: .rounded))
-                                    } else {
-                                        Image(systemName: platform.systemImage)
-                                            .font(.system(size: 12, weight: .semibold))
-                                    }
-                                }
-                                .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                            }
-                        )
-                        JarvisWebPlatformBrowserControls(controller: currentController)
-                    }
+                    JarvisToolbarGroupedPicker(
+                        items: EntertainmentPlatform.allCases,
+                        selection: selectedPlatform,
+                        title: { $0.title },
+                        icon: { platform, _ in
+                            EntertainmentPlatformIcon(platform: platform)
+                        }
+                    )
                 }
             },
             trailingToolbar: {
                 ToolbarItem(placement: .automatic) {
-                    JarvisWebPlatformDownloadButton(
+                    JarvisWebPlatformActionCluster(
                         controller: currentController,
                         showsDownloadManager: $showsDownloadManager,
-                        emptyHint: "在娱乐页面点击文件下载后，任务会显示在这里"
+                        emptyHint: "在娱乐广场页面点击文件下载后，任务会显示在这里"
                     )
                 }
             },
@@ -55,5 +44,40 @@ struct EntertainmentView: View {
 
     private var currentController: JarvisWebPlatformController {
         app.entertainmentController(for: app.selectedEntertainmentPlatform)
+    }
+}
+
+struct EntertainmentPlatformIcon: View {
+    let platform: EntertainmentPlatform
+
+    var body: some View {
+        Group {
+            if let image = Self.image(for: platform) {
+                Image(nsImage: image)
+                    .renderingMode(.original)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            } else {
+                Image(systemName: platform.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.secondary)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
+    }
+
+    private static func image(for platform: EntertainmentPlatform) -> NSImage? {
+        guard let url = Bundle.main.url(
+            forResource: platform.iconResourceName,
+            withExtension: platform.iconResourceExtension,
+            subdirectory: "EntertainmentIcons"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        image.isTemplate = false
+        return image
     }
 }

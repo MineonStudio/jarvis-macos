@@ -64,7 +64,12 @@ final class EntertainmentPlatformTests: XCTestCase {
 
     func testWebModuleSectionsUseMatchingSymbols() {
         XCTAssertEqual(AppSection.aiConversation.icon, "sparkles")
+        XCTAssertEqual(AppSection.aiConversation.navigationTitle, "AI聚合")
         XCTAssertEqual(AppSection.entertainment.icon, "play.rectangle")
-        XCTAssertEqual(AppSection.entertainment.navigationTitle, "娱乐")
+        XCTAssertEqual(AppSection.entertainment.navigationTitle, "娱乐广场")
+        XCTAssertEqual(
+            EntertainmentPlatform.allCases.map(\.iconResourceName),
+            ["x", "youtube", "tiktok"]
+        )
     }
 }

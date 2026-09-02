@@ -24,8 +24,8 @@ enum AppSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "首页"
-        case .aiConversation: "第三方AI平台"
-        case .entertainment: "娱乐"
+        case .aiConversation: "AI聚合"
+        case .entertainment: "娱乐广场"
         case let .skill(skill): skill.title
         case .settings: "设置"
         }
@@ -34,8 +34,8 @@ enum AppSection: Hashable, Identifiable {
     var navigationTitle: String {
         switch self {
         case .overview: "首页"
-        case .aiConversation: "第三方AI平台"
-        case .entertainment: "娱乐"
+        case .aiConversation: "AI聚合"
+        case .entertainment: "娱乐广场"
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
         case .skill(.windowLayout): "窗口布局"

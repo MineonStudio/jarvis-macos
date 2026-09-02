@@ -174,6 +174,7 @@ struct EntertainmentVideoDownloadView: View {
 private struct EntertainmentVideoDownloadRow: View {
     let item: EntertainmentVideoDownloadItem
     @ObservedObject var manager: EntertainmentVideoDownloadManager
+    @State private var didCopy = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -201,9 +202,18 @@ private struct EntertainmentVideoDownloadRow: View {
                     .font(JarvisTypography.caption)
                     .buttonStyle(.plain)
             } else if item.canOpenFile {
-                Button("打开") { manager.open(item) }
-                    .font(JarvisTypography.caption)
-                    .buttonStyle(.plain)
+                Button(didCopy ? "已复制" : "复制") {
+                    if manager.copyFile(item) {
+                        didCopy = true
+                    }
+                }
+                .font(JarvisTypography.caption)
+                .buttonStyle(.plain)
+                Button("下载") {
+                    manager.saveCopy(item)
+                }
+                .font(JarvisTypography.caption)
+                .buttonStyle(.plain)
             }
         }
     }

@@ -101,4 +101,40 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         XCTAssertEqual(EntertainmentVideoDownloadView.formatDuration(65), "1:05")
         XCTAssertEqual(EntertainmentVideoDownloadView.formatDuration(3723), "1:02:03")
     }
+
+    func testNetscapeCookieFileUsesTabSeparatedFields() throws {
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: ".youtube.com",
+            .path: "/",
+            .name: "SID",
+            .value: "abc",
+            .secure: true,
+            .expires: Date(timeIntervalSince1970: 1_800_000_000)
+        ]))
+        let line = NetscapeCookieFile.line(for: cookie)
+        XCTAssertTrue(line.contains(".youtube.com"))
+        XCTAssertTrue(line.contains("SID"))
+        XCTAssertTrue(line.contains("abc"))
+        let youtube = try XCTUnwrap(URL(string: "https://www.youtube.com/watch?v=abc"))
+        let tiktok = try XCTUnwrap(URL(string: "https://www.tiktok.com/@u/video/1"))
+        XCTAssertTrue(NetscapeCookieFile.isRelevant(cookie, to: youtube))
+        XCTAssertFalse(NetscapeCookieFile.isRelevant(cookie, to: tiktok))
+    }
+
+    func testYTDLPErrorPrefersERRORLineAndMapsYouTubeBotCheck() {
+        let output = Data("""
+        WARNING: outdated
+        ERROR: [youtube] abc: Sign in to confirm you’re not a bot. Use --cookies
+        null
+        """.utf8)
+        XCTAssertTrue(
+            YTDLPProcessRunner.errorMessage(from: output).contains("Sign in to confirm")
+        )
+        XCTAssertEqual(
+            EntertainmentVideoDownloadError.failed(
+                "ERROR: [youtube] abc: Sign in to confirm you’re not a bot."
+            ).localizedDescription,
+            "YouTube 需要登录验证。请先在娱乐广场打开并播放该视频，然后再下载。"
+        )
+    }
 }

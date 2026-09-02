@@ -31,7 +31,7 @@ struct EntertainmentView: View {
                             manager: app.entertainmentVideoDownloads,
                             initialURL: currentController.currentURL
                         )
-                        .frame(width: 440, height: 560)
+                        .frame(width: 360, height: 420)
                     }
                 }
             },

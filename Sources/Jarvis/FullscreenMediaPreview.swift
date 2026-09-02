@@ -105,11 +105,13 @@ struct FullscreenTextPreviewContent: View {
                 .padding(.vertical, FullscreenMediaPreviewSizing.textVerticalPadding)
         }
         .scrollIndicators(.automatic)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-        }
+        .background(Color.jarvisPanel)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+                .allowsHitTesting(false)
+        }
     }
 }
 
@@ -190,6 +192,7 @@ final class FullscreenMediaPreviewController {
             )
         )
         hostingView.sizingOptions = []
+        hostingView.appearance = NSApp.effectiveAppearance
         show(contentView: hostingView, model: model)
     }
 
@@ -207,6 +210,7 @@ final class FullscreenMediaPreviewController {
             defer: false
         )
         PreviewWindowSupport.configureBorderlessPreviewPanel(previewPanel)
+        previewPanel.appearance = NSApp.effectiveAppearance
         previewPanel.isMovableByWindowBackground = false
         previewPanel.onWindowClose = { [weak self] in
             self?.dismiss()

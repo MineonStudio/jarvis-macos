@@ -729,7 +729,7 @@ enum WallpaperSystemServiceError: LocalizedError, Equatable {
         case .invalidWallpaper:
             "壁纸文件不存在或不是有效图片"
         case .wallpaperStoreUnavailable:
-            "无法更新 macOS 的锁屏壁纸记录"
+            "无法更新 macOS 的统一壁纸记录"
         case .loginWindowUnavailable:
             "无法更新 macOS 的登录界面壁纸记录"
         case let .failed(message):
@@ -794,39 +794,40 @@ struct WallpaperSystemService {
         }
 
         let stableURL = try makeStableWallpaperCopy(from: imageURL)
-        let previousWallpaperIndexData: Data?
+        let previousWallpaperIndexData: Data
         let previousLoginWindowWallpaper: URL?
 
+        do {
+            previousWallpaperIndexData = try Data(contentsOf: wallpaperIndexURL)
+        } catch {
+            throw WallpaperSystemServiceError.failed("无法读取原有壁纸记录：\(error.localizedDescription)")
+        }
+
         if target.requiresLockScreen {
-            do {
-                previousWallpaperIndexData = try Data(contentsOf: wallpaperIndexURL)
-            } catch {
-                throw WallpaperSystemServiceError.failed("无法读取原有锁屏壁纸记录：\(error.localizedDescription)")
-            }
             previousLoginWindowWallpaper = Self.readLoginWindowWallpaper()
         } else {
-            previousWallpaperIndexData = nil
             previousLoginWindowWallpaper = nil
         }
 
         do {
-            if target.requiresLockScreen {
-                try updateIdleWallpaper(to: stableURL)
-                try setLoginWindowWallpaper(stableURL)
-            }
-
             if target == .desktop || target == .both {
+                // NSWorkspace rewrites Index.plist. It must run before our
+                // unified write, otherwise it restores stale Idle records and
+                // removes the AllSpacesAndDisplays desktop configuration.
                 try desktopWallpaperService.apply(imageURL: stableURL, target: .desktop)
             }
 
+            try updateWallpaperIndex(to: stableURL, target: target)
+
             if target.requiresLockScreen {
-                try? refreshWallpaperAgent()
+                try setLoginWindowWallpaper(stableURL)
             }
+
+            try refreshWallpaperAgent()
         } catch {
+            try? previousWallpaperIndexData.write(to: wallpaperIndexURL, options: .atomic)
+            try? refreshWallpaperAgent()
             if target.requiresLockScreen {
-                if let previousWallpaperIndexData {
-                    try? previousWallpaperIndexData.write(to: wallpaperIndexURL, options: .atomic)
-                }
                 try? setLoginWindowWallpaper(previousLoginWindowWallpaper)
             }
             throw error
@@ -867,7 +868,7 @@ struct WallpaperSystemService {
         }
     }
 
-    private func updateIdleWallpaper(to imageURL: URL) throws {
+    private func updateWallpaperIndex(to imageURL: URL, target: WallpaperSettingTarget) throws {
         do {
             let sourceData = try Data(contentsOf: wallpaperIndexURL)
             guard let propertyList = try PropertyListSerialization.propertyList(
@@ -879,10 +880,29 @@ struct WallpaperSystemService {
             }
 
             let configuration = try imageConfigurationData(for: imageURL)
-            let (updatedPropertyList, updateCount) = replacingIdleConfigurations(
-                in: propertyList,
-                with: configuration
-            )
+            var updatedPropertyList: Any = propertyList
+            var updateCount = 0
+
+            if target == .desktop || target == .both,
+               let root = updatedPropertyList as? [String: Any]
+            {
+                let (updatedRoot, desktopUpdateCount) = replacingDesktopConfigurations(
+                    in: root,
+                    with: configuration
+                )
+                updatedPropertyList = updatedRoot
+                updateCount += desktopUpdateCount
+            }
+
+            if target.requiresLockScreen {
+                let (updatedValue, idleUpdateCount) = replacingIdleConfigurations(
+                    in: updatedPropertyList,
+                    with: configuration
+                )
+                updatedPropertyList = updatedValue
+                updateCount += idleUpdateCount
+            }
+
             guard updateCount > 0 else {
                 throw WallpaperSystemServiceError.wallpaperStoreUnavailable
             }
@@ -898,6 +918,137 @@ struct WallpaperSystemService {
         } catch {
             throw WallpaperSystemServiceError.failed("无法写入锁屏壁纸记录：\(error.localizedDescription)")
         }
+    }
+
+    private func replacingDesktopConfigurations(
+        in root: [String: Any],
+        with configuration: Data
+    ) -> ([String: Any], Int) {
+        let (updatedValue, existingUpdateCount) = replacingDesktopConfigurations(
+            in: root as Any,
+            with: configuration
+        )
+        guard var updatedRoot = updatedValue as? [String: Any] else {
+            return (root, 0)
+        }
+
+        var allSpaces = dictionary(updatedRoot["AllSpacesAndDisplays"])
+        var updateCount = existingUpdateCount
+        var desktop = dictionary(allSpaces["Desktop"])
+        if desktopChoices(in: desktop).isEmpty {
+            let fallbackDesktop = desktopConfiguration(in: root)
+            let (fallback, fallbackUpdateCount) = replacingDesktopSection(
+                fallbackDesktop,
+                with: configuration
+            )
+            desktop = fallback
+            updateCount += fallbackUpdateCount
+        }
+
+        guard !desktopChoices(in: desktop).isEmpty else {
+            return (root, 0)
+        }
+
+        allSpaces["Desktop"] = desktop
+        allSpaces["Type"] = "desktop"
+        updatedRoot["AllSpacesAndDisplays"] = allSpaces
+        return (updatedRoot, max(updateCount, 1))
+    }
+
+    private func replacingDesktopConfigurations(
+        in value: Any,
+        with configuration: Data
+    ) -> (Any, Int) {
+        if var dictionary = value as? [String: Any] {
+            var updateCount = 0
+
+            if let desktop = dictionary["Desktop"] as? [String: Any] {
+                let (updatedDesktop, desktopUpdateCount) = replacingDesktopSection(
+                    desktop,
+                    with: configuration
+                )
+                dictionary["Desktop"] = updatedDesktop
+                updateCount += desktopUpdateCount
+            }
+
+            for key in dictionary.keys where key != "Desktop" {
+                let (updatedValue, nestedUpdateCount) = replacingDesktopConfigurations(
+                    in: dictionary[key] as Any,
+                    with: configuration
+                )
+                dictionary[key] = updatedValue
+                updateCount += nestedUpdateCount
+            }
+            return (dictionary, updateCount)
+        }
+
+        if var array = value as? [Any] {
+            var updateCount = 0
+            for index in array.indices {
+                let (updatedValue, nestedUpdateCount) = replacingDesktopConfigurations(
+                    in: array[index],
+                    with: configuration
+                )
+                array[index] = updatedValue
+                updateCount += nestedUpdateCount
+            }
+            return (array, updateCount)
+        }
+
+        return (value, 0)
+    }
+
+    private func replacingDesktopSection(
+        _ desktop: [String: Any],
+        with configuration: Data
+    ) -> ([String: Any], Int) {
+        var desktop = desktop
+        var content = dictionary(desktop["Content"])
+        var choices = desktopChoices(in: desktop)
+        guard !choices.isEmpty else {
+            return (desktop, 0)
+        }
+
+        for index in choices.indices {
+            choices[index]["Configuration"] = configuration
+            choices[index]["Files"] = [Any]()
+            choices[index]["Provider"] = "com.apple.wallpaper.choice.image"
+        }
+        content["Choices"] = choices
+        content["Shuffle"] = content["Shuffle"] ?? "$null"
+        desktop["Content"] = content
+        desktop["LastSet"] = Date()
+        desktop["LastUse"] = Date()
+        return (desktop, choices.count)
+    }
+
+    private func desktopChoices(in desktop: [String: Any]) -> [[String: Any]] {
+        let content = dictionary(desktop["Content"])
+        return dictionaryArray(content["Choices"])
+    }
+
+    private func desktopConfiguration(in root: [String: Any]) -> [String: Any] {
+        if let systemDefaultDesktop = dictionary(root["SystemDefault"])["Desktop"] as? [String: Any] {
+            return systemDefaultDesktop
+        }
+
+        let spaces = dictionary(root["Spaces"])
+        for space in spaces.values {
+            if let defaultDesktop = dictionary(dictionary(space)["Default"])["Desktop"] as? [String: Any] {
+                return defaultDesktop
+            }
+        }
+
+        return [:]
+    }
+
+    private func dictionary(_ value: Any?) -> [String: Any] {
+        value as? [String: Any] ?? [:]
+    }
+
+    private func dictionaryArray(_ value: Any?) -> [[String: Any]] {
+        guard let values = value as? [Any] else { return [] }
+        return values.compactMap { $0 as? [String: Any] }
     }
 
     private func imageConfigurationData(for imageURL: URL) throws -> Data {
@@ -930,6 +1081,8 @@ struct WallpaperSystemService {
             {
                 for index in choices.indices {
                     choices[index]["Configuration"] = configuration
+                    choices[index]["Files"] = [Any]()
+                    choices[index]["Provider"] = "com.apple.wallpaper.choice.image"
                 }
                 content["Choices"] = choices
                 idle["Content"] = content
@@ -991,15 +1144,13 @@ struct WallpaperSystemService {
 
     private static func refreshWallpaperAgent() throws {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = [
-            "kickstart",
-            "-k",
-            "gui/\(getuid())/com.apple.wallpaper.agent"
-        ]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        process.arguments = ["WallpaperAgent"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        guard process.terminationStatus == 0 || process.terminationStatus == 1 else {
             throw WallpaperSystemServiceError.failed("无法刷新 macOS 壁纸服务")
         }
     }

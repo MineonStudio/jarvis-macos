@@ -211,6 +211,20 @@ extension AppModel {
         UserDefaults.standard.set(provider.rawValue, forKey: selectedAIProviderKey)
     }
 
+    func loadSelectedEntertainmentPlatform() {
+        guard let rawValue = UserDefaults.standard.string(forKey: selectedEntertainmentPlatformKey),
+              let platform = EntertainmentPlatform(rawValue: rawValue)
+        else {
+            return
+        }
+        selectedEntertainmentPlatform = platform
+    }
+
+    func selectEntertainmentPlatform(_ platform: EntertainmentPlatform) {
+        selectedEntertainmentPlatform = platform
+        UserDefaults.standard.set(platform.rawValue, forKey: selectedEntertainmentPlatformKey)
+    }
+
     func synchronizeLaunchAtLogin() {
         guard launchAtLoginEnabled else { return }
 

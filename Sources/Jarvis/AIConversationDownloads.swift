@@ -39,7 +39,7 @@ enum AIConversationDownloadState: Equatable {
 
 struct AIConversationDownloadItem: Identifiable, Equatable {
     let id: UUID
-    let provider: AIConversationProvider
+    let platformTitle: String
     let sourceURL: URL?
     var filename: String
     var state: AIConversationDownloadState
@@ -108,10 +108,10 @@ final class AIConversationDownloadManager: NSObject, ObservableObject {
     }
 
     @discardableResult
-    func enqueue(provider: AIConversationProvider, sourceURL: URL?) -> UUID {
+    func enqueue(platformTitle: String, sourceURL: URL?) -> UUID {
         let item = AIConversationDownloadItem(
             id: UUID(),
-            provider: provider,
+            platformTitle: platformTitle,
             sourceURL: sourceURL,
             filename: sourceURL?.lastPathComponent.isEmpty == false
                 ? sourceURL?.lastPathComponent ?? "下载文件"
@@ -128,11 +128,11 @@ final class AIConversationDownloadManager: NSObject, ObservableObject {
 
     func attach(
         _ download: WKDownload,
-        provider: AIConversationProvider,
+        platformTitle: String,
         sourceURL: URL?
     ) {
-        let id = matchingPendingID(for: provider, sourceURL: sourceURL) ?? enqueue(
-            provider: provider,
+        let id = matchingPendingID(for: platformTitle, sourceURL: sourceURL) ?? enqueue(
+            platformTitle: platformTitle,
             sourceURL: sourceURL
         )
 
@@ -203,12 +203,12 @@ final class AIConversationDownloadManager: NSObject, ObservableObject {
     }
 
     private func matchingPendingID(
-        for provider: AIConversationProvider,
+        for platformTitle: String,
         sourceURL: URL?
     ) -> UUID? {
         let matchingID = pendingIDs.first { pendingID in
             guard let item = items.first(where: { $0.id == pendingID }) else { return false }
-            return item.provider == provider && (sourceURL == nil || item.sourceURL == sourceURL)
+            return item.platformTitle == platformTitle && (sourceURL == nil || item.sourceURL == sourceURL)
         }
         guard let matchingID else { return nil }
         pendingIDs.removeAll(where: { $0 == matchingID })

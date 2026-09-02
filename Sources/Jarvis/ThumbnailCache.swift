@@ -3,7 +3,12 @@ import Foundation
 import ImageIO
 
 enum JarvisThumbnailCache {
-    private static let imageCache = NSCache<NSString, NSImage>()
+    private static let imageCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 256
+        cache.totalCostLimit = 64 * 1024 * 1024
+        return cache
+    }()
 
     static func loadAsync(fileURL: URL, maxPixelSize: Int) async -> NSImage? {
         await withCheckedContinuation { continuation in
@@ -43,7 +48,7 @@ enum JarvisThumbnailCache {
             cgImage: cgImage,
             size: NSSize(width: cgImage.width, height: cgImage.height)
         )
-        imageCache.setObject(image, forKey: key)
+        imageCache.setObject(image, forKey: key, cost: cgImage.width * cgImage.height)
         return image
     }
 

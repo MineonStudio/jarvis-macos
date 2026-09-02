@@ -20,6 +20,7 @@ struct JarvisApp: App {
         // Bind before the status item is installed. Menu actions must remain
         // usable even when the main window has not appeared yet.
         menuBarController.bind(app: appModel)
+        applicationDelegate.appModel = appModel
     }
 
     var body: some Scene {
@@ -70,10 +71,31 @@ private struct JarvisRootView: View {
 @MainActor
 private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
+    weak var appModel: AppModel?
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
-        JarvisFreshInstallPermissionCleanup.runIfNeeded()
         menuBarController.install()
+        NSApp.activate()
+    }
+
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            menuBarController.reopenMainWindow()
+        }
+        return true
+    }
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        guard let workspace = appModel?.resumeWorkspace, workspace.requiresSaveBeforeNewResume else {
+            return .terminateNow
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "简历尚未保存"
+        alert.informativeText = "退出后未保存的简历内容会丢失。"
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "不保存并退出")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
     }
 }

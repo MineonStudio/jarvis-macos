@@ -218,11 +218,8 @@ struct ResumeAIService: Sendable {
         guard !trimmedContent.isEmpty else {
             throw AIAPIError.invalidJSON(context: context, reason: "返回内容为空")
         }
-        guard !trimmedContent.hasPrefix(String(repeating: "\u{60}", count: 3)) else {
-            throw AIAPIError.invalidJSON(context: context, reason: "返回了 Markdown 代码围栏，请仅返回 JSON")
-        }
-        guard let data = trimmedContent.data(using: .utf8) else {
-            throw AIAPIError.invalidJSON(context: context, reason: "返回内容无法转换为 UTF-8")
+        guard let data = OpenAICompatibleAPIClient.jsonData(fromModelContent: trimmedContent) else {
+            throw AIAPIError.invalidJSON(context: context, reason: "返回内容不是有效 JSON")
         }
 
         do {
@@ -236,10 +233,12 @@ struct ResumeAIService: Sendable {
                         school: response.school,
                         degree: response.degree,
                         major: response.major,
-                        period: ResumeCareerTimeline.educationPeriod(
-                            for: document.basicInfo.workYears,
-                            degree: response.degree
-                        ) ?? response.period
+                        period: isConcrete(response.period)
+                            ? response.period
+                            : (ResumeCareerTimeline.educationPeriod(
+                                for: document.basicInfo.workYears,
+                                degree: response.degree
+                            ) ?? response.period)
                     )
                 )
             case .experience:
@@ -248,7 +247,9 @@ struct ResumeAIService: Sendable {
                     ResumeExperience(
                         company: response.company,
                         role: response.role,
-                        period: ResumeCareerTimeline.period(for: document.basicInfo.workYears) ?? response.period
+                        period: isConcrete(response.period)
+                            ? response.period
+                            : (ResumeCareerTimeline.period(for: document.basicInfo.workYears) ?? response.period)
                     )
                 )
             case .skills:

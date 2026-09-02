@@ -29,7 +29,7 @@ extension ScreenshotCaptureController {
         guard !NSScreen.screens.isEmpty else {
             activeSessionID = nil
             sessionPhase = .idle
-            completion(.failure(ScreenshotError.permissionDenied))
+            completion(.failure(ScreenshotError.noDisplays))
             return
         }
 
@@ -84,6 +84,7 @@ extension ScreenshotCaptureController {
             : NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
+        didPushCrosshairCursor = true
 
         for frozenScreen in frozenScreens {
             guard let screen = NSScreen.screens.first(where: { $0.frame == frozenScreen.screenFrame }),
@@ -106,7 +107,7 @@ extension ScreenshotCaptureController {
             dismissSelectionWindows()
             activeSessionID = nil
             sessionPhase = .idle
-            completion(.failure(ScreenshotError.permissionDenied))
+            completion(.failure(ScreenshotError.captureFailed("无法创建截图选区窗口")))
             return
         }
     }
@@ -274,11 +275,12 @@ extension ScreenshotCaptureController {
         if let selectionWindow = selectionWindows.first(where: { $0.frame == presentation.capture.screenFrame }) {
             selectionWindows
                 .filter { $0 !== selectionWindow }
-                .forEach { $0.orderOut(nil) }
+                .forEach { window in
+                    window.orderOut(nil)
+                    window.close()
+                }
             selectionWindows.removeAll()
-            if NSCursor.current == NSCursor.crosshair {
-                NSCursor.pop()
-            }
+            popCrosshairCursorIfNeeded()
             imagePanel = selectionWindow
             selectionWindow.onDoubleClick = quickCopyAndClose
             selectionWindow.onMiddleClick = pasteToScreen
@@ -339,6 +341,7 @@ extension ScreenshotCaptureController {
         toolbarPanel.hasShadow = false
         toolbarPanel.hidesOnDeactivate = false
         toolbarPanel.isReleasedWhenClosed = false
+        toolbarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let toolbarHostingView = NSHostingView(
             rootView: ScreenshotToolbar(
                 editor: presentation.editor,
@@ -445,16 +448,8 @@ extension ScreenshotCaptureController {
               image.size.width > 0,
               image.size.height > 0 else { return }
 
-        let visibleFrame = NSScreen.main?.visibleFrame ?? CGRect(
-            origin: .zero,
-            size: image.size
-        )
-        let frame = CGRect(
-            x: visibleFrame.midX - image.size.width / 2,
-            y: visibleFrame.midY - image.size.height / 2,
-            width: image.size.width,
-            height: image.size.height
-        )
+        let visibleFrame = PreviewWindowSupport.screenFrames().visible
+        let frame = PreviewWindowSupport.fittedFrame(for: image.size, in: visibleFrame)
         let capture = ScreenshotCapture(data: data, screenFrame: frame)
         let session = ScreenshotEditingSession(
             id: UUID(),
@@ -467,11 +462,14 @@ extension ScreenshotCaptureController {
     }
 
     func dismissResult() {
+        activeEditor?.cancelTranslation()
         if let resultWindow, let toolbarWindow {
             resultWindow.removeChildWindow(toolbarWindow)
         }
         toolbarWindow?.orderOut(nil)
+        toolbarWindow?.close()
         resultWindow?.orderOut(nil)
+        resultWindow?.close()
         toolbarWindow = nil
         resultWindow = nil
         activeEditor = nil

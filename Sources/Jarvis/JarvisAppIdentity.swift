@@ -6,13 +6,15 @@ enum JarvisAppIdentity {
     static let developmentBundleIdentifier = "com.jarvis.mac.dev"
 
     static var bundleIdentifier: String {
-        Bundle.main.bundleIdentifier == developmentBundleIdentifier
-            ? developmentBundleIdentifier
-            : productionBundleIdentifier
+        Bundle.main.bundleIdentifier ?? productionBundleIdentifier
     }
 
     static var isDevelopment: Bool {
         bundleIdentifier == developmentBundleIdentifier
+    }
+
+    static var isProduction: Bool {
+        bundleIdentifier == productionBundleIdentifier
     }
 
     static var displayName: String {
@@ -20,6 +22,12 @@ enum JarvisAppIdentity {
     }
 
     static var dataDirectoryName: String {
-        isDevelopment ? "Jarvis-Dev" : "Jarvis"
+        if isDevelopment {
+            return "Jarvis-Dev"
+        }
+        if isProduction {
+            return "Jarvis"
+        }
+        return "Jarvis-Test"
     }
 }

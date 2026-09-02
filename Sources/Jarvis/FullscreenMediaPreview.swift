@@ -64,6 +64,55 @@ enum FullscreenMediaPreviewSizing {
         )
         return CGSize(width: preferred.width * scale, height: preferred.height * scale)
     }
+
+    static let textPanelWidth: CGFloat = 640
+    static let textPanelMinimumHeight: CGFloat = 400
+    static let textPanelMaximumHeight: CGFloat = 680
+    static let textHorizontalPadding: CGFloat = 40
+    static let textVerticalPadding: CGFloat = 36
+    static let textFontSize: CGFloat = 17
+
+    static func textDisplaySize(for text: String, maximumSize: CGSize) -> CGSize {
+        let width = min(textPanelWidth, max(480, maximumSize.width))
+        let font = NSFont.systemFont(ofSize: textFontSize)
+        let textWidth = max(320, width - textHorizontalPadding * 2)
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        let contentHeight = ceil(bounds.height) + textVerticalPadding * 2
+        let minHeight = min(textPanelMinimumHeight, maximumSize.height)
+        let maxHeight = min(textPanelMaximumHeight, maximumSize.height)
+        let height = min(max(contentHeight, minHeight), maxHeight)
+        return CGSize(width: width, height: height)
+    }
+}
+
+struct FullscreenTextPreviewContent: View {
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            Text(text.isEmpty ? "空文本" : text)
+                .font(.system(size: FullscreenMediaPreviewSizing.textFontSize))
+                .foregroundStyle(Color.primary)
+                .lineSpacing(5)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .textSelection(.enabled)
+                .padding(.horizontal, FullscreenMediaPreviewSizing.textHorizontalPadding)
+                .padding(.vertical, FullscreenMediaPreviewSizing.textVerticalPadding)
+        }
+        .scrollIndicators(.automatic)
+        .background(Color.jarvisPanel)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+                .allowsHitTesting(false)
+        }
+    }
 }
 
 struct FullscreenMediaPreview<MediaContent: View>: View {
@@ -125,6 +174,29 @@ final class FullscreenMediaPreviewController {
     private var model: FullscreenMediaPreviewModel?
 
     func show(
+        displaySize: CGSize,
+        allowsHitTesting: Bool = false,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder content: @escaping () -> some View
+    ) {
+        let screenFrame = PreviewWindowSupport.screenFrames().screen
+        let model = FullscreenMediaPreviewModel()
+        let hostingView = NSHostingView(
+            rootView: FullscreenMediaPreview(
+                containerSize: screenFrame.size,
+                mediaDisplaySize: displaySize,
+                model: model,
+                allowsMediaHitTesting: allowsHitTesting,
+                onMaskClick: onDismiss,
+                mediaContent: content
+            )
+        )
+        hostingView.sizingOptions = []
+        hostingView.appearance = NSApp.effectiveAppearance
+        show(contentView: hostingView, model: model)
+    }
+
+    func show(
         contentView: NSView,
         model: FullscreenMediaPreviewModel
     ) {
@@ -138,6 +210,7 @@ final class FullscreenMediaPreviewController {
             defer: false
         )
         PreviewWindowSupport.configureBorderlessPreviewPanel(previewPanel)
+        previewPanel.appearance = NSApp.effectiveAppearance
         previewPanel.isMovableByWindowBackground = false
         previewPanel.onWindowClose = { [weak self] in
             self?.dismiss()
@@ -233,6 +306,13 @@ private final class FullscreenMediaPreviewPanel: NSPanel {
             return
         }
         if event.type == .scrollWheel, abs(event.scrollingDeltaY) > 0.01 {
+            if let contentView,
+               let hitView = contentView.hitTest(event.locationInWindow),
+               hitView.enclosingScrollView != nil
+            {
+                super.sendEvent(event)
+                return
+            }
             onScrollZoom?(event.scrollingDeltaY > 0 ? 0.1 : -0.1)
             return
         }

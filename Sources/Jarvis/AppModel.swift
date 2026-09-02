@@ -22,7 +22,7 @@ enum AppSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "首页"
-        case .aiConversation: "聊天"
+        case .aiConversation: "第三方AI平台"
         case let .skill(skill): skill.title
         case .settings: "设置"
         }
@@ -31,7 +31,7 @@ enum AppSection: Hashable, Identifiable {
     var navigationTitle: String {
         switch self {
         case .overview: "首页"
-        case .aiConversation: "聊天"
+        case .aiConversation: "第三方AI平台"
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
         case .skill(.windowLayout): "窗口布局"
@@ -134,7 +134,9 @@ final class AppModel: ObservableObject {
     let themePreferenceKey = "jarvis.theme.preference"
     let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
+    let selectedAIProviderKey = "jarvis.ai.conversation.provider"
     var toastDismissTask: Task<Void, Never>?
+    var dailyQuoteGeneration = 0
     let dailyQuoteStore = DailyQuoteStore()
     let dailyQuoteService = DailyQuoteService()
 
@@ -218,6 +220,7 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+        loadSelectedAIProvider()
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()
 
@@ -228,8 +231,13 @@ final class AppModel: ObservableObject {
                 }
             },
             prepareCacheSpace: { [weak self] additionalBytes in
-                DispatchQueue.main.sync {
+                let trim = {
                     self?.trimClipboardCacheIfNeeded(forAdditionalBytes: additionalBytes)
+                }
+                if Thread.isMainThread {
+                    trim()
+                } else {
+                    DispatchQueue.main.sync(execute: trim)
                 }
             }
         )
@@ -493,6 +501,10 @@ extension AppModel {
 
     func downloadAndInstallUpdate() {
         guard case let .available(release) = updateState else { return }
+        // Ad-hoc updates replace the code identity, so TCC must be reset
+        // before install. Warn first; the actual tccutil reset runs inside
+        // `JarvisUpdateService.downloadAndInstall`.
+        showToast("更新会清除屏幕录制和辅助功能授权，安装后需要重新允许")
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
             guard let self else { return }

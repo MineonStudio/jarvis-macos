@@ -136,13 +136,15 @@ if [[ -d "$ICON_COMPOSER_DIR" ]]; then
   rm -f "$APP_DIR/Contents/Resources/jarvis.icns"
 fi
 
+ENTITLEMENTS="$ROOT_DIR/Resources/Jarvis.entitlements"
 if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then
-  codesign --force --deep --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null
+  codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null
 else
-  # Ad-hoc signing is enough for local development, but macOS may ask for
-  # Screen Recording again after the executable changes. Use a stable Apple
-  # Development identity for persistent TCC permissions when available.
-  codesign --force --deep --sign - "$APP_DIR" >/dev/null
+  # Shipping default is ad-hoc: there is no paid Apple Developer ID to sign
+  # or notarize with. Each new binary is a new TCC identity, so in-app
+  # updates must tccutil-reset Screen Recording and Accessibility before
+  # replacing the bundle (see JarvisPrivacyPermissionReset).
+  codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP_DIR" >/dev/null
 fi
 
 # Refresh the local LaunchServices registration so System Settings and Finder

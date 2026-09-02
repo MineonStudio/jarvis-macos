@@ -43,7 +43,10 @@ final class MenuBarConfigurationTests: XCTestCase {
     func testStatusItemUsesStableNamespacedAutosaveName() async {
         let autosaveName = await JarvisMenuBarController.menuBarAutosaveName
 
-        XCTAssertEqual(autosaveName, "com.jarvis.mac.primary-status-item")
+        XCTAssertEqual(
+            autosaveName,
+            "\(JarvisAppIdentity.bundleIdentifier).primary-status-item"
+        )
     }
 
     @MainActor

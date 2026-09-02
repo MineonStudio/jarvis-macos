@@ -3,6 +3,23 @@ import AppKit
 import XCTest
 
 final class ClipboardTests: XCTestCase {
+    func testClipboardIgnoresConcealedAndTransientPasteboardTypes() {
+        let pasteboard = NSPasteboard(
+            name: NSPasteboard.Name("JarvisClipboardPrivacy-\(UUID().uuidString)")
+        )
+        pasteboard.clearContents()
+        pasteboard.setString("secret-password", forType: .string)
+        XCTAssertFalse(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
+
+        pasteboard.setString("1", forType: ClipboardPasteboardPrivacy.concealedType)
+        XCTAssertTrue(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
+
+        pasteboard.clearContents()
+        pasteboard.setString("token", forType: .string)
+        pasteboard.setString("1", forType: ClipboardPasteboardPrivacy.transientType)
+        XCTAssertTrue(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
+    }
+
     func testClipboardServiceExtractsAllFileURLsFromPasteboard() {
         let pasteboard = NSPasteboard(
             name: NSPasteboard.Name("JarvisClipboardTests-\(UUID().uuidString)")
@@ -17,6 +34,17 @@ final class ClipboardTests: XCTestCase {
             ClipboardService.fileURLs(from: pasteboard),
             [firstURL, secondURL]
         )
+    }
+
+    func testClipboardTextItemsCanOpenTheSharedFullscreenPreview() {
+        let textItem = ClipboardItem(kind: .text, text: "可预览的文本")
+        let emptyText = ClipboardItem(kind: .text, text: nil)
+        let fileItem = ClipboardItem(kind: .file, filePath: "/tmp/file.pdf")
+
+        XCTAssertEqual(textItem.resolvedText, "可预览的文本")
+        XCTAssertTrue(textItem.canFullscreenPreview)
+        XCTAssertFalse(emptyText.canFullscreenPreview)
+        XCTAssertFalse(fileItem.canFullscreenPreview)
     }
 
     func testClipboardItemRoundTripsVideoMetadataAndPin() throws {

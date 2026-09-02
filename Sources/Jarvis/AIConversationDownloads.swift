@@ -206,7 +206,7 @@ final class AIConversationDownloadManager: NSObject, ObservableObject {
         for provider: AIConversationProvider,
         sourceURL: URL?
     ) -> UUID? {
-        let matchingID = pendingIDs.reversed().first { pendingID in
+        let matchingID = pendingIDs.first { pendingID in
             guard let item = items.first(where: { $0.id == pendingID }) else { return false }
             return item.provider == provider && (sourceURL == nil || item.sourceURL == sourceURL)
         }
@@ -257,28 +257,28 @@ extension AIConversationDownloadManager: WKDownloadDelegate {
             return
         }
 
-        do {
-            try FileManager.default.createDirectory(
-                at: downloadsDirectory,
-                withIntermediateDirectories: true
-            )
-            let destination = AIConversationDownloadFileName.destination(
-                in: downloadsDirectory,
-                suggestedFilename: suggestedFilename,
-                fileManager: .default
-            )
-            updateItem(id) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = downloadsDirectory
+        panel.nameFieldStringValue = AIConversationDownloadFileName.destination(
+            in: downloadsDirectory,
+            suggestedFilename: suggestedFilename
+        ).lastPathComponent
+        panel.begin { [weak self] response in
+            guard let self else {
+                completionHandler(nil)
+                return
+            }
+            guard response == .OK, let destination = panel.url else {
+                self.updateCompletion(for: download, state: .cancelled, error: nil)
+                completionHandler(nil)
+                return
+            }
+            self.updateItem(id) {
                 $0.filename = destination.lastPathComponent
                 $0.destinationURL = destination
             }
             completionHandler(destination)
-        } catch {
-            updateCompletion(
-                for: download,
-                state: .failed,
-                error: error.localizedDescription
-            )
-            completionHandler(nil)
         }
     }
 

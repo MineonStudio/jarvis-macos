@@ -67,9 +67,24 @@ final class ScreenshotTranslationTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+
+        do {
+            try await OpenAICompatibleAPIClient().testConnection(
+                configuration: AIAPIConfiguration(
+                    endpoint: "http://api.openai.com/v1",
+                    model: "test-model",
+                    apiKey: "test-key"
+                )
+            )
+            XCTFail("Expected invalid endpoint error")
+        } catch let error as AIAPIError {
+            XCTAssertEqual(error, .invalidEndpoint)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
-    func testAPIConnectionTestAcceptsSuccessfulEnvelopeWithoutTextContent() throws {
+    func testAPIConnectionTestRejectsEnvelopeWithoutTextContent() throws {
         let response: [String: Any] = [
             "choices": [[
                 "message": [
@@ -80,7 +95,155 @@ final class ScreenshotTranslationTests: XCTestCase {
         ]
         let data = try JSONSerialization.data(withJSONObject: response)
 
-        XCTAssertNoThrow(try OpenAICompatibleAPIClient.validateConnectionEnvelope(from: data))
+        XCTAssertThrowsError(try OpenAICompatibleAPIClient.validateConnectionEnvelope(from: data))
+    }
+
+    func testNormalizedEndpointRequiresHTTPSAndFillsOpenAICompletionsPath() {
+        XCTAssertNil(OpenAICompatibleAPIClient.normalizedEndpointURL(from: "http://api.openai.com/v1"))
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://api.openai.com")?.absoluteString,
+            "https://api.openai.com/v1/chat/completions"
+        )
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://api.openai.com/v1")?.absoluteString,
+            "https://api.openai.com/v1/chat/completions"
+        )
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://example.com/v1/chat/completions")?.absoluteString,
+            "https://example.com/v1/chat/completions"
+        )
+    }
+
+    func testJSONContentExtractorAcceptsFencedObjectsAndRejectsProse() {
+        let fenced = """
+        ```json
+        {"quote":"hello"}
+        ```
+        """
+        let data = OpenAICompatibleAPIClient.jsonData(fromModelContent: fenced)
+        XCTAssertNotNil(data)
+        XCTAssertNil(OpenAICompatibleAPIClient.jsonData(fromModelContent: "not json"))
+    }
+
+    func testTranslationSkipsPunctuationAndNumberOnlyFragments() {
+        XCTAssertFalse(ScreenshotTranslationService.needsTranslation("12:30"))
+        XCTAssertFalse(ScreenshotTranslationService.needsTranslation("100%"))
+        XCTAssertFalse(ScreenshotTranslationService.needsTranslation("—"))
+        XCTAssertTrue(ScreenshotTranslationService.needsTranslation("Settings"))
+        XCTAssertTrue(ScreenshotTranslationService.needsTranslation("设置"))
+    }
+
+    func testClassificationSkipsNumbersAndTextAlreadyInTheTargetLanguage() {
+        let number = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "12:30",
+            normalizedBounds: CGRect(x: 0.1, y: 0.1, width: 0.1, height: 0.04),
+            confidence: 0.9
+        )
+        let chinese = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "请打开设置窗口并选择你偏好的语言",
+            normalizedBounds: CGRect(x: 0.1, y: 0.2, width: 0.4, height: 0.04),
+            confidence: 0.9
+        )
+        let english = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Please open the Settings window and choose your preferred language.",
+            normalizedBounds: CGRect(x: 0.1, y: 0.3, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+
+        let plan = ScreenshotTranslationService.classify(
+            [number, chinese, english],
+            targetLanguage: .simplifiedChinese
+        )
+
+        XCTAssertEqual(plan.translatableCount, 1)
+        XCTAssertEqual(plan.groups.count, 1)
+        XCTAssertEqual(plan.groups[0].blocks.map(\.text), [english.text])
+        XCTAssertEqual(
+            plan.groups[0].source?.languageCode?.identifier,
+            "en"
+        )
+    }
+
+    func testClassificationGroupsMixedSourceLanguagesSeparately() {
+        let english = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Please open the Settings window and choose your preferred language.",
+            normalizedBounds: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+        let japanese = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "設定ウィンドウを開いて、希望する言語を選択してください。",
+            normalizedBounds: CGRect(x: 0.1, y: 0.3, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+
+        let plan = ScreenshotTranslationService.classify(
+            [english, japanese],
+            targetLanguage: .simplifiedChinese
+        )
+
+        XCTAssertEqual(plan.groups.count, 2)
+        let identifiers = Set(plan.groups.compactMap { $0.source?.languageCode?.identifier })
+        XCTAssertEqual(identifiers, ["en", "ja"])
+    }
+
+    func testTargetLanguageMatchingTreatsChineseScriptsSeparately() {
+        XCTAssertTrue(
+            ScreenshotTranslationLanguage.simplifiedChinese.matches(
+                Locale.Language(identifier: "zh-Hans")
+            )
+        )
+        XCTAssertFalse(
+            ScreenshotTranslationLanguage.simplifiedChinese.matches(
+                Locale.Language(identifier: "zh-Hant")
+            )
+        )
+        XCTAssertTrue(
+            ScreenshotTranslationLanguage.english.matches(
+                Locale.Language(identifier: "en-US")
+            )
+        )
+    }
+
+    func testOCRLineMergingJoinsAdjacentFragmentsOnTheSameRow() {
+        let left = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Hello",
+            normalizedBounds: CGRect(x: 0.10, y: 0.20, width: 0.12, height: 0.04),
+            confidence: 0.9
+        )
+        let right = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "world",
+            normalizedBounds: CGRect(x: 0.24, y: 0.20, width: 0.12, height: 0.04),
+            confidence: 0.8
+        )
+        let nextLine = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Next",
+            normalizedBounds: CGRect(x: 0.10, y: 0.40, width: 0.12, height: 0.04),
+            confidence: 0.9
+        )
+
+        let merged = ScreenshotTranslationService.mergedLineBlocks(from: [right, nextLine, left])
+        XCTAssertEqual(merged.count, 2)
+        XCTAssertEqual(merged[0].text, "Hello world")
+        XCTAssertEqual(merged[1].text, "Next")
+    }
+
+    func testTranslationBatchesSplitOversizedOCRPayloads() {
+        let small = (0 ..< 3).map { AITranslationInput(id: "\($0)", text: "hi") }
+        XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: small).count, 1)
+
+        let large = [
+            AITranslationInput(id: "a", text: String(repeating: "字", count: 4000)),
+            AITranslationInput(id: "b", text: String(repeating: "字", count: 4000))
+        ]
+        XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: large).count, 2)
     }
 
     func testVisionOCRRejectsInvalidImageData() async {

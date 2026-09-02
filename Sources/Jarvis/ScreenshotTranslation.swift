@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import NaturalLanguage
 import Vision
 
 enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
@@ -20,6 +21,37 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
         case .english: "English"
         case .japanese: "日本語"
         case .korean: "한국어"
+        }
+    }
+
+    var appleLanguageIdentifier: String {
+        switch self {
+        case .simplifiedChinese: "zh-Hans"
+        case .traditionalChinese: "zh-Hant"
+        case .english: "en-US"
+        case .japanese: "ja-JP"
+        case .korean: "ko-KR"
+        }
+    }
+
+    var localeLanguage: Locale.Language {
+        Locale.Language(identifier: appleLanguageIdentifier)
+    }
+
+    func matches(_ language: Locale.Language) -> Bool {
+        let code = language.languageCode?.identifier.lowercased()
+        let script = language.script?.identifier
+        switch self {
+        case .simplifiedChinese:
+            return code == "zh" && (script == nil || script == "Hans")
+        case .traditionalChinese:
+            return code == "zh" && script == "Hant"
+        case .english:
+            return code == "en"
+        case .japanese:
+            return code == "ja"
+        case .korean:
+            return code == "ko"
         }
     }
 }
@@ -72,8 +104,19 @@ struct ScreenshotTranslationConfiguration: Equatable, Sendable {
         defaults: UserDefaults = .standard,
         keychain: AIAPIKeychain = .shared
     ) -> Self {
+        load(defaults: defaults, resolvedAPIKey: keychain.readIfAvailable())
+    }
+
+    static func load(
+        defaults: UserDefaults = .standard,
+        resolvedAPIKey: String?
+    ) -> Self {
         Self(
-            api: AIAPIConfiguration.load(defaults: defaults, keychain: keychain),
+            api: AIAPIConfiguration(
+                endpoint: defaults.string(forKey: endpointKey) ?? defaultEndpoint,
+                model: defaults.string(forKey: modelKey) ?? defaultModel,
+                apiKey: resolvedAPIKey ?? ""
+            ),
             targetLanguage: ScreenshotTranslationLanguage(
                 rawValue: defaults.string(forKey: targetLanguageKey) ?? ""
             ) ?? .simplifiedChinese
@@ -107,6 +150,19 @@ struct ScreenshotTranslationRenderBlock: Equatable, Identifiable, Sendable {
     let confidence: Float
 }
 
+struct ScreenshotTranslationLanguageGroup: Equatable, Sendable {
+    let source: Locale.Language?
+    let blocks: [ScreenshotOCRBlock]
+}
+
+struct ScreenshotTranslationPlan: Equatable, Sendable {
+    let groups: [ScreenshotTranslationLanguageGroup]
+
+    var translatableCount: Int {
+        groups.reduce(0) { $0 + $1.blocks.count }
+    }
+}
+
 enum ScreenshotTranslationGeometry {
     static func canvasBounds(for normalizedBounds: CGRect, in canvasRect: CGRect) -> CGRect {
         CGRect(
@@ -136,11 +192,13 @@ enum ScreenshotTranslationState: Equatable {
 enum ScreenshotTranslationError: LocalizedError, Equatable {
     case invalidImage
     case noTextFound
+    case unsupportedLanguagePair
 
     var errorDescription: String? {
         switch self {
         case .invalidImage: "无法读取截图图像"
         case .noTextFound: "没有识别到可翻译的文字"
+        case .unsupportedLanguagePair: "系统翻译不支持该语言，请在设置中配置备选 API"
         }
     }
 }
@@ -156,16 +214,14 @@ struct ScreenshotTranslationService: Sendable {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                          let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-                    else {
+                    guard let image = Self.ocrImage(from: data) else {
                         throw ScreenshotTranslationError.invalidImage
                     }
 
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
                     request.usesLanguageCorrection = true
-                    request.minimumTextHeight = 0.008
+                    request.automaticallyDetectsLanguage = true
 
                     let handler = VNImageRequestHandler(cgImage: image, options: [:])
                     try handler.perform([request])
@@ -189,10 +245,11 @@ struct ScreenshotTranslationService: Sendable {
                         )
                     }
 
-                    guard !blocks.isEmpty else {
+                    let merged = Self.mergedLineBlocks(from: blocks)
+                    guard !merged.isEmpty else {
                         throw ScreenshotTranslationError.noTextFound
                     }
-                    continuation.resume(returning: blocks)
+                    continuation.resume(returning: merged)
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -200,21 +257,64 @@ struct ScreenshotTranslationService: Sendable {
         }
     }
 
+    func classify(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage
+    ) -> ScreenshotTranslationPlan {
+        Self.classify(blocks, targetLanguage: targetLanguage)
+    }
+
     func translate(
         _ blocks: [ScreenshotOCRBlock],
         targetLanguage: ScreenshotTranslationLanguage,
-        configuration: ScreenshotTranslationConfiguration
+        configuration: ScreenshotTranslationConfiguration,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> [ScreenshotTranslationBlock] {
+        try await translateWithAPI(
+            blocks,
+            targetLanguage: targetLanguage,
+            configuration: configuration,
+            onProgress: onProgress
+        )
+    }
+
+    func translateWithAPI(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage,
+        configuration: ScreenshotTranslationConfiguration,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> [ScreenshotTranslationBlock] {
         guard !blocks.isEmpty else { throw ScreenshotTranslationError.noTextFound }
-        let inputs = blocks.map { AITranslationInput(id: $0.id.uuidString, text: $0.text) }
-        let outputs = try await apiClient.translate(
-            inputs,
-            targetLanguage: targetLanguage.title,
-            configuration: configuration.api
-        )
-        let translationsByID = outputs.reduce(into: [String: String]()) { result, item in
-            result[item.id] = item.translation
+
+        var translationsByID: [String: String] = [:]
+        var translatable: [AITranslationInput] = []
+        for block in blocks {
+            if Self.needsTranslation(block.text) {
+                translatable.append(AITranslationInput(id: block.id.uuidString, text: block.text))
+            } else {
+                translationsByID[block.id.uuidString] = block.text
+            }
         }
+
+        let total = translatable.count
+        if total == 0 {
+            onProgress?(0, 0)
+        } else {
+            onProgress?(0, total)
+            let batches = Self.translationBatches(from: translatable)
+            let batchOutputs = try await Self.translateBatches(
+                batches,
+                targetLanguage: targetLanguage.title,
+                configuration: configuration.api,
+                apiClient: apiClient,
+                onProgress: onProgress,
+                total: total
+            )
+            for item in batchOutputs {
+                translationsByID[item.id] = item.translation
+            }
+        }
+
         let result = blocks.compactMap { block -> ScreenshotTranslationBlock? in
             guard let translatedText = translationsByID[block.id.uuidString],
                   !translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -233,5 +333,186 @@ struct ScreenshotTranslationService: Sendable {
             throw AIAPIError.incompleteTranslation(expected: blocks.count, actual: result.count)
         }
         return result
+    }
+
+    private static let translationBatchCharacterLimit = 6000
+
+    static func classify(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage
+    ) -> ScreenshotTranslationPlan {
+        var grouped: [String: (source: Locale.Language?, blocks: [ScreenshotOCRBlock])] = [:]
+        for block in blocks {
+            guard needsTranslation(block.text) else { continue }
+            let language = detectedLanguage(for: block.text)
+            if let language, targetLanguage.matches(language) {
+                continue
+            }
+            let key = languageKey(for: language)
+            if grouped[key] == nil {
+                grouped[key] = (language, [])
+            }
+            grouped[key]?.blocks.append(block)
+        }
+
+        let groups = grouped.values
+            .map { ScreenshotTranslationLanguageGroup(source: $0.source, blocks: $0.blocks) }
+            .sorted { lhs, rhs in
+                if lhs.blocks.count != rhs.blocks.count {
+                    return lhs.blocks.count > rhs.blocks.count
+                }
+                return languageKey(for: lhs.source) < languageKey(for: rhs.source)
+            }
+        return ScreenshotTranslationPlan(groups: groups)
+    }
+
+    static func translationBatches(from inputs: [AITranslationInput]) -> [[AITranslationInput]] {
+        guard !inputs.isEmpty else { return [] }
+        var batches: [[AITranslationInput]] = []
+        var current: [AITranslationInput] = []
+        var currentCharacters = 0
+        for input in inputs {
+            let size = max(input.text.count, 1)
+            if !current.isEmpty, currentCharacters + size > translationBatchCharacterLimit {
+                batches.append(current)
+                current = []
+                currentCharacters = 0
+            }
+            current.append(input)
+            currentCharacters += size
+        }
+        if !current.isEmpty {
+            batches.append(current)
+        }
+        return batches
+    }
+
+    static func needsTranslation(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.contains { character in
+            character.isLetter
+        }
+    }
+
+    static func detectedLanguage(for text: String) -> Locale.Language? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.languageConstraints = [
+            .simplifiedChinese,
+            .traditionalChinese,
+            .english,
+            .japanese,
+            .korean
+        ]
+        recognizer.processString(text)
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 5)
+        guard let best = hypotheses.max(by: { $0.value < $1.value }),
+              best.value >= 0.45
+        else {
+            return nil
+        }
+        return ScreenshotAppleTranslation.normalizedLanguage(
+            Locale.Language(identifier: best.key.rawValue)
+        )
+    }
+
+    static func mergedLineBlocks(from blocks: [ScreenshotOCRBlock]) -> [ScreenshotOCRBlock] {
+        let sorted = blocks.sorted { lhs, rhs in
+            let yDelta = lhs.normalizedBounds.midY - rhs.normalizedBounds.midY
+            if abs(yDelta) > 0.012 {
+                return lhs.normalizedBounds.minY < rhs.normalizedBounds.minY
+            }
+            return lhs.normalizedBounds.minX < rhs.normalizedBounds.minX
+        }
+
+        var merged: [ScreenshotOCRBlock] = []
+        for block in sorted {
+            guard let last = merged.last else {
+                merged.append(block)
+                continue
+            }
+
+            let verticalTolerance = max(0.012, max(last.normalizedBounds.height, block.normalizedBounds.height) * 0.55)
+            let sameLine = abs(last.normalizedBounds.midY - block.normalizedBounds.midY) <= verticalTolerance
+            let gap = block.normalizedBounds.minX - last.normalizedBounds.maxX
+            let close = gap < max(0.04, last.normalizedBounds.height * 1.4)
+            if sameLine, close, gap > -0.02 {
+                merged[merged.count - 1] = ScreenshotOCRBlock(
+                    id: last.id,
+                    text: joinedText(last.text, block.text),
+                    normalizedBounds: last.normalizedBounds.union(block.normalizedBounds),
+                    confidence: min(last.confidence, block.confidence)
+                )
+            } else {
+                merged.append(block)
+            }
+        }
+        return merged
+    }
+
+    static func languageKey(for language: Locale.Language?) -> String {
+        guard let language else { return "und" }
+        let code = language.languageCode?.identifier.lowercased() ?? "und"
+        if code == "zh" {
+            return "zh-\(language.script?.identifier ?? "Hans")"
+        }
+        return code
+    }
+
+    private static func joinedText(_ left: String, _ right: String) -> String {
+        let needsSpace = left.last?.isASCII == true || right.first?.isASCII == true
+        return needsSpace ? "\(left) \(right)" : left + right
+    }
+
+    private static func ocrImage(from data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return nil
+        }
+        return CGImageSourceCreateImageAtIndex(source, 0, [
+            kCGImageSourceShouldCache: true
+        ] as CFDictionary)
+    }
+
+    private static func translateBatches(
+        _ batches: [[AITranslationInput]],
+        targetLanguage: String,
+        configuration: AIAPIConfiguration,
+        apiClient: any AITranslationAPI,
+        onProgress: (@Sendable (Int, Int) -> Void)?,
+        total: Int
+    ) async throws -> [AITranslationOutput] {
+        guard batches.count > 1 else {
+            let outputs = try await apiClient.translate(
+                batches[0],
+                targetLanguage: targetLanguage,
+                configuration: configuration
+            )
+            onProgress?(total, total)
+            return outputs
+        }
+
+        return try await withThrowingTaskGroup(of: (Int, [AITranslationOutput]).self) { group in
+            for (index, batch) in batches.enumerated() {
+                group.addTask {
+                    try await (
+                        index,
+                        apiClient.translate(
+                            batch,
+                            targetLanguage: targetLanguage,
+                            configuration: configuration
+                        )
+                    )
+                }
+            }
+
+            var ordered = Array(repeating: [AITranslationOutput](), count: batches.count)
+            var completed = 0
+            for try await (index, outputs) in group {
+                ordered[index] = outputs
+                completed += outputs.count
+                onProgress?(min(completed, total), total)
+            }
+            return ordered.flatMap { $0 }
+        }
     }
 }

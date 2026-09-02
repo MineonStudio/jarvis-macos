@@ -4,12 +4,32 @@ enum PreviewWindowSupport {
     static let titlebarHeight: CGFloat = 28
     static let screenInset: CGFloat = 80
 
+    static func fittedFrame(for imageSize: CGSize, in visibleFrame: CGRect) -> CGRect {
+        let inset = visibleFrame.insetBy(dx: 32, dy: 32)
+        let scale = min(
+            1,
+            inset.width / max(imageSize.width, 1),
+            inset.height / max(imageSize.height, 1)
+        )
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(
+            x: inset.midX - size.width / 2,
+            y: inset.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
     static func screenFrames() -> (screen: CGRect, visible: CGRect) {
-        let screen = NSScreen.main?.frame ?? CGRect(
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        let frame = screen?.frame ?? CGRect(
             origin: .zero,
             size: CGSize(width: 1200, height: 800)
         )
-        return (screen, NSScreen.main?.visibleFrame ?? screen)
+        return (frame, screen?.visibleFrame ?? frame)
     }
 
     static func maximumContentSize(

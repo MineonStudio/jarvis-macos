@@ -53,12 +53,24 @@ extension AppModel {
     // MARK: - Screenshot translation settings
 
     func loadScreenshotTranslationSettings() {
-        let configuration = ScreenshotTranslationConfiguration.load()
+        let configuration: ScreenshotTranslationConfiguration
+        do {
+            let apiKey = try AIAPIKeychain.shared.read()
+            configuration = ScreenshotTranslationConfiguration.load(resolvedAPIKey: apiKey)
+        } catch {
+            screenshotTranslationAPIKeyConfigured = false
+            screenshotTranslationAPIKeyMask = ""
+            screenshotTranslationSettingsLocked = false
+            screenshotTranslationEndpoint = ScreenshotTranslationConfiguration.defaultEndpoint
+            screenshotTranslationModel = ScreenshotTranslationConfiguration.defaultModel
+            showToast("读取 API Key 失败：\(error.localizedDescription)")
+            return
+        }
         screenshotTranslationEndpoint = configuration.endpoint
         screenshotTranslationModel = configuration.model
         let hasAPIKey = !configuration.apiKey.isEmpty
         screenshotTranslationAPIKeyConfigured = hasAPIKey
-        screenshotTranslationAPIKeyMask = String(repeating: "•", count: configuration.apiKey.count)
+        screenshotTranslationAPIKeyMask = hasAPIKey ? "••••••••" : ""
         screenshotTranslationSettingsLocked = hasAPIKey
     }
 
@@ -98,7 +110,7 @@ extension AppModel {
             screenshotTranslationEndpoint = trimmedEndpoint
             screenshotTranslationModel = trimmedModel
             screenshotTranslationAPIKeyConfigured = true
-            screenshotTranslationAPIKeyMask = String(repeating: "•", count: resolvedAPIKey.count)
+            screenshotTranslationAPIKeyMask = "••••••••"
             screenshotTranslationSettingsLocked = true
             showToast("AI API 配置已保存")
             refreshDailyQuote(force: true)
@@ -183,6 +195,20 @@ extension AppModel {
 
     func loadLaunchAtLoginPreference() {
         launchAtLoginEnabled = JarvisLaunchAtLoginPreference.load(from: .standard)
+    }
+
+    func loadSelectedAIProvider() {
+        guard let rawValue = UserDefaults.standard.string(forKey: selectedAIProviderKey),
+              let provider = AIConversationProvider(rawValue: rawValue)
+        else {
+            return
+        }
+        selectedAIProvider = provider
+    }
+
+    func selectAIProvider(_ provider: AIConversationProvider) {
+        selectedAIProvider = provider
+        UserDefaults.standard.set(provider.rawValue, forKey: selectedAIProviderKey)
     }
 
     func synchronizeLaunchAtLogin() {

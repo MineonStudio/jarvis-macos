@@ -111,11 +111,25 @@ struct ScreenshotTranslationSettingsCard: View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    Image(systemName: "network")
+                    Image(systemName: "character.bubble")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(Color.secondary)
                         .frame(width: 24, height: 24)
-                    Text("配置 API")
+                    Text("截图翻译")
+                        .font(JarvisTypography.bodyEmphasis)
+                }
+
+                Text("默认使用系统本地翻译，首次可能需要下载语言包。下面的 API 仅在系统不支持该语言时作为备选。")
+                    .font(JarvisTypography.control)
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "network")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 24, height: 24)
+                    Text("备选 API")
                         .font(JarvisTypography.bodyEmphasis)
                 }
 

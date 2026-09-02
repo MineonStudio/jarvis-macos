@@ -122,12 +122,53 @@ enum JarvisWebPlatformConfiguration {
     }
 }
 
+enum JarvisWebPlatformFullscreenLayout {
+    static let windowedCornerRadius: CGFloat = 16
+
+    static func isActive(_ state: WKWebView.FullscreenState) -> Bool {
+        switch state {
+        case .enteringFullscreen, .inFullscreen:
+            true
+        case .exitingFullscreen, .notInFullscreen:
+            false
+        @unknown default:
+            false
+        }
+    }
+}
+
+final class JarvisWebPlatformViewContainer: NSView {
+    func embed(_ webView: WKWebView) {
+        guard !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) else { return }
+        if webView.superview !== self {
+            addSubview(webView)
+        }
+        wantsLayer = true
+        layer?.cornerRadius = JarvisWebPlatformFullscreenLayout.windowedCornerRadius
+        layer?.masksToBounds = true
+        webView.autoresizingMask = [.width, .height]
+        webView.frame = bounds
+    }
+
+    override func layout() {
+        super.layout()
+        guard let webView = subviews.first as? WKWebView,
+              webView.superview === self,
+              !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState)
+        else {
+            return
+        }
+        webView.frame = bounds
+    }
+}
+
 typealias AIConversationLayoutMetrics = JarvisWebPlatformLayoutMetrics
 
 @MainActor
 final class JarvisWebPlatformController: NSObject, ObservableObject {
     let platform: JarvisWebPlatformDescriptor
     let webView: WKWebView
+    let webViewContainer = JarvisWebPlatformViewContainer()
     let downloadManager: AIConversationDownloadManager
 
     @Published private(set) var canGoBack = false
@@ -137,6 +178,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
 
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
+    private var fullscreenObservation: NSKeyValueObservation?
     private var popupWebViews: [WKWebView] = []
 
     init(
@@ -154,6 +196,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        webViewContainer.embed(webView)
         canGoBackObservation = webView.observe(\WKWebView.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.updateNavigationState()
@@ -162,6 +205,11 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         canGoForwardObservation = webView.observe(\WKWebView.canGoForward, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.updateNavigationState()
+            }
+        }
+        fullscreenObservation = webView.observe(\WKWebView.fullscreenState, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.syncFullscreenLayout()
             }
         }
         webView.load(URLRequest(url: platform.url))
@@ -197,6 +245,31 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     private func updateNavigationState() {
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
+    }
+
+    private func syncFullscreenLayout() {
+        if JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) {
+            webView.layer?.cornerRadius = 0
+            webView.layer?.masksToBounds = false
+            webView.autoresizingMask = [.width, .height]
+            fillFullscreenWindowIfNeeded()
+            Task { @MainActor [weak self] in
+                self?.fillFullscreenWindowIfNeeded()
+            }
+        } else {
+            webView.layer?.cornerRadius = 0
+            webView.layer?.masksToBounds = false
+            webViewContainer.embed(webView)
+        }
+    }
+
+    private func fillFullscreenWindowIfNeeded() {
+        guard JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState),
+              let contentView = webView.window?.contentView
+        else {
+            return
+        }
+        webView.frame = contentView.bounds
     }
 }
 

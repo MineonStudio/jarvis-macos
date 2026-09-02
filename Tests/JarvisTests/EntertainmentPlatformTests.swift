@@ -66,6 +66,10 @@ final class EntertainmentPlatformTests: XCTestCase {
         XCTAssertTrue(
             JarvisWebPlatformConfiguration.make().preferences.isElementFullscreenEnabled
         )
+        XCTAssertTrue(JarvisWebPlatformFullscreenLayout.isActive(.enteringFullscreen))
+        XCTAssertTrue(JarvisWebPlatformFullscreenLayout.isActive(.inFullscreen))
+        XCTAssertFalse(JarvisWebPlatformFullscreenLayout.isActive(.exitingFullscreen))
+        XCTAssertFalse(JarvisWebPlatformFullscreenLayout.isActive(.notInFullscreen))
     }
 
     func testWebModuleSectionsUseMatchingSymbols() {

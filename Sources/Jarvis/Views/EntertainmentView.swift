@@ -24,8 +24,15 @@ struct EntertainmentView: View {
                     JarvisWebPlatformActionCluster(
                         controller: currentController,
                         showsDownloadManager: $showsDownloadManager,
-                        emptyHint: "在娱乐广场页面点击文件下载后，任务会显示在这里"
-                    )
+                        activeDownloadCount: app.entertainmentVideoDownloads.activeCount,
+                        downloadHelp: "视频下载"
+                    ) {
+                        EntertainmentVideoDownloadView(
+                            manager: app.entertainmentVideoDownloads,
+                            initialURL: currentController.currentURL
+                        )
+                        .frame(width: 440, height: 560)
+                    }
                 }
             },
             content: {

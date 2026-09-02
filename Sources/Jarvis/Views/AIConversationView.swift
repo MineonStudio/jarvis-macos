@@ -103,8 +103,14 @@ struct AIConversationView: View {
                     JarvisWebPlatformActionCluster(
                         controller: currentController,
                         showsDownloadManager: $showsDownloadManager,
-                        emptyHint: "在 AI 聚合页面点击文件下载后，任务会显示在这里"
-                    )
+                        activeDownloadCount: currentController.downloadManager.activeDownloadCount
+                    ) {
+                        JarvisWebPlatformDownloadManagerView(
+                            manager: currentController.downloadManager,
+                            emptyHint: "在 AI 聚合页面点击文件下载后，任务会显示在这里"
+                        )
+                        .frame(width: 390, height: 390)
+                    }
                 }
             },
             content: {

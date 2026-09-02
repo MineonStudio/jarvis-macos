@@ -2,114 +2,81 @@ import AppKit
 import AVKit
 import SwiftUI
 
-private struct ClipboardMediaSource {
-    let image: NSImage?
-    let displaySize: CGSize
-    let player: AVPlayer?
-}
-
 @MainActor
 final class ClipboardMediaPreviewController {
     private let previewController = FullscreenMediaPreviewController()
     private var player: AVPlayer?
 
     func show(item: ClipboardItem) {
-        guard item.kind == .image || item.kind == .video,
-              let path = item.kind == .image ? item.imagePath : item.filePath,
-              FileManager.default.fileExists(atPath: path)
-        else {
-            return
-        }
-
         dismiss()
 
         let frames = PreviewWindowSupport.screenFrames()
-        let screenFrame = frames.screen
         let maximumSize = PreviewWindowSupport.maximumContentSize(
-            for: screenFrame,
+            for: frames.screen,
             topChromeHeight: 0
         )
-        let source = mediaSource(for: item, path: path, maximumSize: maximumSize)
-        let image = source.image
-        let displaySize = source.displaySize
-        let mediaPlayer = source.player
-        let model = FullscreenMediaPreviewModel()
-        let hostingView = NSHostingView(
-            rootView: ClipboardMediaPreview(
-                image: image,
-                containerSize: screenFrame.size,
-                displaySize: displaySize,
-                model: model,
-                player: mediaPlayer,
+
+        switch item.kind {
+        case .text:
+            guard let text = item.resolvedText else { return }
+            previewController.show(
+                displaySize: FullscreenMediaPreviewSizing.textDisplaySize(
+                    for: text,
+                    maximumSize: maximumSize
+                ),
+                allowsHitTesting: true,
                 onDismiss: { [weak self] in
                     self?.dismiss()
                 }
-            )
-        )
-        hostingView.sizingOptions = []
-        player = mediaPlayer
-        previewController.show(
-            contentView: hostingView,
-            model: model
-        )
+            ) {
+                FullscreenTextPreviewContent(text: text)
+            }
+        case .image, .video:
+            showMedia(item: item, maximumSize: maximumSize)
+        case .file:
+            return
+        }
     }
 
-    private func mediaSource(
-        for item: ClipboardItem,
-        path: String,
-        maximumSize: CGSize
-    ) -> ClipboardMediaSource {
-        guard item.kind == .image,
-              let image = NSImage(contentsOfFile: path)
-        else {
-            return ClipboardMediaSource(
-                image: nil,
-                displaySize: FullscreenMediaPreviewSizing.videoDisplaySize(maximumSize: maximumSize),
-                player: AVPlayer(url: URL(fileURLWithPath: path))
-            )
+    private func showMedia(item: ClipboardItem, maximumSize: CGSize) {
+        let path = item.kind == .image ? item.imagePath : item.filePath
+        guard let path, FileManager.default.fileExists(atPath: path) else { return }
+
+        if item.kind == .image, let image = NSImage(contentsOfFile: path) {
+            previewController.show(
+                displaySize: FullscreenMediaPreviewSizing.displaySize(
+                    for: image.size,
+                    maximumSize: maximumSize
+                ),
+                onDismiss: { [weak self] in
+                    self?.dismiss()
+                }
+            ) {
+                Image(nsImage: image)
+                    .interpolation(.high)
+                    .resizable()
+                    .scaledToFit()
+            }
+            return
         }
-        return ClipboardMediaSource(
-            image: image,
-            displaySize: FullscreenMediaPreviewSizing.displaySize(
-                for: image.size,
-                maximumSize: maximumSize
-            ),
-            player: nil
-        )
+
+        let mediaPlayer = AVPlayer(url: URL(fileURLWithPath: path))
+        player = mediaPlayer
+        previewController.show(
+            displaySize: FullscreenMediaPreviewSizing.videoDisplaySize(maximumSize: maximumSize),
+            allowsHitTesting: true,
+            onDismiss: { [weak self] in
+                self?.dismiss()
+            }
+        ) {
+            ClipboardAVPlayerView(player: mediaPlayer)
+        }
     }
 
     func dismiss() {
         player?.pause()
         player = nil
         previewController.dismiss()
-    }
-}
-
-struct ClipboardMediaPreview: View {
-    let image: NSImage?
-    let containerSize: CGSize
-    let displaySize: CGSize
-    @ObservedObject var model: FullscreenMediaPreviewModel
-    let player: AVPlayer?
-    let onDismiss: () -> Void
-
-    var body: some View {
-        FullscreenMediaPreview(
-            containerSize: containerSize,
-            mediaDisplaySize: displaySize,
-            model: model,
-            allowsMediaHitTesting: player != nil,
-            onMaskClick: onDismiss
-        ) {
-            if let image {
-                Image(nsImage: image)
-                    .interpolation(.high)
-                    .resizable()
-                    .scaledToFit()
-            } else if let player {
-                ClipboardAVPlayerView(player: player)
-            }
-        }
     }
 }
 

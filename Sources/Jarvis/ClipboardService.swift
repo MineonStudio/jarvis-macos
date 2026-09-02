@@ -170,6 +170,26 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         }
     }
 
+    var resolvedText: String? {
+        guard kind == .text else { return nil }
+        if let text {
+            return text
+        }
+        guard let textPath else { return nil }
+        return try? String(contentsOf: URL(fileURLWithPath: textPath), encoding: .utf8)
+    }
+
+    var canFullscreenPreview: Bool {
+        switch kind {
+        case .text:
+            resolvedText != nil
+        case .image, .video:
+            hasLocalContent
+        case .file:
+            false
+        }
+    }
+
     var hasLocalContent: Bool {
         switch kind {
         case .text:

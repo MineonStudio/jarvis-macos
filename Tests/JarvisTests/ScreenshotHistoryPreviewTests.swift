@@ -33,6 +33,25 @@ final class ScreenshotHistoryPreviewTests: XCTestCase {
         XCTAssertEqual(model.zoom, 1.6, accuracy: 0.001)
     }
 
+    func testTextPreviewFitsComfortableReadingWidthInsideTheScreen() {
+        let maximumSize = CGSize(width: 1280, height: 800)
+        let short = FullscreenMediaPreviewSizing.textDisplaySize(
+            for: "简短文本",
+            maximumSize: maximumSize
+        )
+        XCTAssertGreaterThan(short.width, 300)
+        XCTAssertLessThanOrEqual(short.width, maximumSize.width)
+        XCTAssertLessThanOrEqual(short.height, maximumSize.height)
+
+        let long = FullscreenMediaPreviewSizing.textDisplaySize(
+            for: String(repeating: "预览文本。", count: 400),
+            maximumSize: maximumSize
+        )
+        XCTAssertLessThanOrEqual(long.width, maximumSize.width)
+        XCTAssertLessThanOrEqual(long.height, maximumSize.height)
+        XCTAssertGreaterThan(long.height, short.height)
+    }
+
     func testZoomChangesTheImageLayoutSizeDirectly() {
         let model = FullscreenMediaPreviewModel()
         model.setZoom(1.5)

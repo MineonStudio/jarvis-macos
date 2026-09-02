@@ -48,36 +48,23 @@ final class WallpaperPreviewController: ObservableObject {
     }
 
     private func present(image: NSImage) {
-        let screenFrame = PreviewWindowSupport.screenFrames().screen
         let maximumImageSize = PreviewWindowSupport.maximumContentSize(
-            for: screenFrame,
+            for: PreviewWindowSupport.screenFrames().screen,
             topChromeHeight: 0
         )
-        let imageDisplaySize = FullscreenMediaPreviewSizing.displaySize(
-            for: image.size,
-            maximumSize: maximumImageSize
-        )
-        let model = FullscreenMediaPreviewModel()
-        let hostingView = NSHostingView(
-            rootView: FullscreenMediaPreview(
-                containerSize: screenFrame.size,
-                mediaDisplaySize: imageDisplaySize,
-                model: model,
-                onMaskClick: { [weak self] in
-                    self?.dismiss()
-                },
-                mediaContent: {
-                    Image(nsImage: image)
-                        .interpolation(.high)
-                        .resizable()
-                        .scaledToFit()
-                }
-            )
-        )
-        hostingView.sizingOptions = []
         previewController.show(
-            contentView: hostingView,
-            model: model
-        )
+            displaySize: FullscreenMediaPreviewSizing.displaySize(
+                for: image.size,
+                maximumSize: maximumImageSize
+            ),
+            onDismiss: { [weak self] in
+                self?.dismiss()
+            }
+        ) {
+            Image(nsImage: image)
+                .interpolation(.high)
+                .resizable()
+                .scaledToFit()
+        }
     }
 }

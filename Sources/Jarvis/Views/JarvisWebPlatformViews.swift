@@ -38,7 +38,8 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
         }
         .padding(3)
         .frame(height: JarvisToolbarMetrics.controlSize)
-        .jarvisGlass(in: Capsule(), interactive: false)
+        // The enclosing ToolbarItem supplies the native toolbar group surface.
+        // Do not add a second custom glass capsule inside it.
     }
 }
 
@@ -83,7 +84,8 @@ struct JarvisWebPlatformActionCluster<DownloadPopover: View>: View {
         }
         .padding(3)
         .frame(height: JarvisToolbarMetrics.controlSize)
-        .jarvisGlass(in: Capsule(), interactive: false)
+        // The enclosing ToolbarItem supplies the native toolbar group surface.
+        // Do not add a second custom glass capsule inside it.
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: controller.isLoading

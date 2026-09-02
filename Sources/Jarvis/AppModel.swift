@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 enum AppSection: Hashable, Identifiable {
     case overview
     case aiConversation
+    case entertainment
     case skill(SkillID)
     case settings
 
@@ -14,6 +15,7 @@ enum AppSection: Hashable, Identifiable {
         switch self {
         case .overview: "overview"
         case .aiConversation: "ai-conversation"
+        case .entertainment: "entertainment"
         case let .skill(skill): "skill.\(skill.id)"
         case .settings: "settings"
         }
@@ -23,6 +25,7 @@ enum AppSection: Hashable, Identifiable {
         switch self {
         case .overview: "首页"
         case .aiConversation: "第三方AI平台"
+        case .entertainment: "娱乐"
         case let .skill(skill): skill.title
         case .settings: "设置"
         }
@@ -32,6 +35,7 @@ enum AppSection: Hashable, Identifiable {
         switch self {
         case .overview: "首页"
         case .aiConversation: "第三方AI平台"
+        case .entertainment: "娱乐"
         case .skill(.screenshot): "截图"
         case .skill(.clipboard): "剪贴板"
         case .skill(.windowLayout): "窗口布局"
@@ -44,7 +48,8 @@ enum AppSection: Hashable, Identifiable {
     var icon: String {
         switch self {
         case .overview: "square.grid.2x2"
-        case .aiConversation: "bubble.left.and.bubble.right"
+        case .aiConversation: "sparkles"
+        case .entertainment: "play.rectangle"
         case let .skill(skill): skill.icon
         case .settings: "gearshape"
         }
@@ -83,6 +88,7 @@ final class AppModel: ObservableObject {
     @Published var systemColorScheme: ColorScheme = .light
     @Published var updateState: JarvisUpdateState = .idle
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
+    @Published var selectedEntertainmentPlatform: EntertainmentPlatform = .x
     @Published var screenshotTranslationEndpoint = ScreenshotTranslationConfiguration.defaultEndpoint
     @Published var screenshotTranslationModel = ScreenshotTranslationConfiguration.defaultModel
     @Published var screenshotTranslationAPIKeyConfigured = false
@@ -115,10 +121,12 @@ final class AppModel: ObservableObject {
     let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     let updateService = JarvisUpdateService()
     let aiConversationDownloadManager = AIConversationDownloadManager()
+    let entertainmentDownloadManager = AIConversationDownloadManager()
     let resumeWorkspace = ResumeWorkspace()
     let launchAtLoginService = JarvisLaunchAtLoginService.shared
     let aiAPIConnectionTester: any AIAPIConnectionTesting
-    private var aiConversationControllers: [AIConversationProvider: AIConversationWebController] = [:]
+    private var aiConversationControllers: [AIConversationProvider: JarvisWebPlatformController] = [:]
+    private var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
     var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]
@@ -135,21 +143,35 @@ final class AppModel: ObservableObject {
     let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
     let selectedAIProviderKey = "jarvis.ai.conversation.provider"
+    let selectedEntertainmentPlatformKey = "jarvis.entertainment.platform"
     var toastDismissTask: Task<Void, Never>?
     var dailyQuoteGeneration = 0
     let dailyQuoteStore = DailyQuoteStore()
     let dailyQuoteService = DailyQuoteService()
 
-    func aiConversationController(for provider: AIConversationProvider) -> AIConversationWebController {
+    func aiConversationController(for provider: AIConversationProvider) -> JarvisWebPlatformController {
         if let controller = aiConversationControllers[provider] {
             return controller
         }
 
-        let controller = AIConversationWebController(
-            provider: provider,
+        let controller = JarvisWebPlatformController(
+            platform: provider.webPlatform,
             downloadManager: aiConversationDownloadManager
         )
         aiConversationControllers[provider] = controller
+        return controller
+    }
+
+    func entertainmentController(for platform: EntertainmentPlatform) -> JarvisWebPlatformController {
+        if let controller = entertainmentControllers[platform] {
+            return controller
+        }
+
+        let controller = JarvisWebPlatformController(
+            platform: platform.webPlatform,
+            downloadManager: entertainmentDownloadManager
+        )
+        entertainmentControllers[platform] = controller
         return controller
     }
 
@@ -221,6 +243,7 @@ final class AppModel: ObservableObject {
             }
         }
         loadSelectedAIProvider()
+        loadSelectedEntertainmentPlatform()
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()
 

@@ -57,8 +57,18 @@ enum EntertainmentVideoDownloadError: LocalizedError, Equatable {
         case .noVideo:
             "没有解析到可下载的视频"
         case let .failed(message):
-            message
+            Self.userFacingMessage(from: message)
         }
+    }
+
+    static func userFacingMessage(from raw: String) -> String {
+        if raw.contains("Sign in to confirm") || raw.contains("not a bot") {
+            return "YouTube 需要登录验证。请先在娱乐广场打开并播放该视频，然后再下载。"
+        }
+        if raw.lowercased().contains("ffmpeg") {
+            return "合并音视频需要 ffmpeg。请先安装：brew install ffmpeg"
+        }
+        return raw
     }
 }
 
@@ -199,15 +209,18 @@ struct EntertainmentVideoDownloadService: Sendable {
 
     func probe(url: URL, platform: EntertainmentPlatform) async throws -> EntertainmentVideoProbe {
         let executable = try resolvedYTDLP()
+        let cookieFile = await WKWebsiteCookieExport.writeNetscapeFile(matching: url)
+        defer {
+            if let cookieFile {
+                try? FileManager.default.removeItem(at: cookieFile)
+            }
+        }
         let data = try await YTDLPProcessRunner.run(
             executable: executable,
-            arguments: [
-                "-J",
-                "--no-playlist",
-                "--no-warnings",
-                "--skip-download",
-                url.absoluteString
-            ]
+            arguments: baseArguments(
+                cookieFile: cookieFile,
+                extra: ["-J", "--skip-download", url.absoluteString]
+            )
         )
         let dump = try decodeDump(from: data)
         let qualities = EntertainmentVideoQualityBuilder.options(from: dump)
@@ -231,9 +244,13 @@ struct EntertainmentVideoDownloadService: Sendable {
         isCancelled: @escaping @Sendable () -> Bool
     ) async throws {
         let executable = try resolvedYTDLP()
-        var arguments = [
-            "--no-playlist",
-            "--no-warnings",
+        let cookieFile = await WKWebsiteCookieExport.writeNetscapeFile(matching: url)
+        defer {
+            if let cookieFile {
+                try? FileManager.default.removeItem(at: cookieFile)
+            }
+        }
+        var extra = [
             "--newline",
             "--progress",
             "-f", quality.format,
@@ -241,12 +258,12 @@ struct EntertainmentVideoDownloadService: Sendable {
             "--merge-output-format", "mp4"
         ]
         if quality.extractAudio {
-            arguments.append(contentsOf: ["-x", "--audio-format", "mp3"])
+            extra.append(contentsOf: ["-x", "--audio-format", "mp3"])
         }
-        arguments.append(url.absoluteString)
+        extra.append(url.absoluteString)
         _ = try await YTDLPProcessRunner.run(
             executable: executable,
-            arguments: arguments,
+            arguments: baseArguments(cookieFile: cookieFile, extra: extra),
             onLine: { line in
                 if let percent = Self.progressPercent(in: line) {
                     onProgress?(percent)
@@ -254,6 +271,29 @@ struct EntertainmentVideoDownloadService: Sendable {
             },
             isCancelled: isCancelled
         )
+    }
+
+    func baseArguments(cookieFile: URL?, extra: [String]) -> [String] {
+        var arguments = [
+            "--no-playlist",
+            "--no-warnings",
+            "--no-update"
+        ]
+        if let cookieFile {
+            arguments.append(contentsOf: ["--cookies", cookieFile.path])
+        }
+        if let ffmpeg = BinaryLocator.ffmpeg() {
+            arguments.append(contentsOf: ["--ffmpeg-location", ffmpeg.path])
+        }
+        if let runtime = BinaryLocator.jsRuntimeArgument() {
+            arguments.append(contentsOf: ["--js-runtimes", runtime])
+        }
+        arguments.append(contentsOf: [
+            "--extractor-args",
+            "youtube:player_client=default,ios,android,web_safari"
+        ])
+        arguments.append(contentsOf: extra)
+        return arguments
     }
 
     static func progressPercent(in line: String) -> Double? {
@@ -293,13 +333,7 @@ struct EntertainmentVideoDownloadService: Sendable {
         do {
             return try JSONDecoder().decode(YTDLPDump.self, from: trimmed)
         } catch {
-            if let text = String(data: data, encoding: .utf8),
-               let message = text.split(separator: "\n").last,
-               !message.isEmpty
-            {
-                throw EntertainmentVideoDownloadError.failed(String(message))
-            }
-            throw EntertainmentVideoDownloadError.failed("无法解析视频信息")
+            throw EntertainmentVideoDownloadError.failed(YTDLPProcessRunner.errorMessage(from: data))
         }
     }
 }
@@ -386,12 +420,21 @@ enum YTDLPProcessRunner {
             throw CancellationError()
         }
         if process.terminationStatus != 0 {
-            let text = String(data: collected, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let message = text.split(separator: "\n").last.map(String.init) ?? "yt-dlp 下载失败"
-            throw EntertainmentVideoDownloadError.failed(message)
+            throw EntertainmentVideoDownloadError.failed(errorMessage(from: collected))
         }
         return collected
+    }
+
+    static func errorMessage(from output: Data) -> String {
+        let text = String(data: output, encoding: .utf8) ?? ""
+        let lines = text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0 != "null" }
+        if let error = lines.last(where: { $0.hasPrefix("ERROR:") }) {
+            return error.replacingOccurrences(of: "ERROR: ", with: "")
+        }
+        return lines.last ?? "yt-dlp 下载失败"
     }
 
     private static func emitLines(

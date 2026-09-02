@@ -65,29 +65,27 @@ enum FullscreenMediaPreviewSizing {
         return CGSize(width: preferred.width * scale, height: preferred.height * scale)
     }
 
-    static let textContentWidth: CGFloat = 720
-    static let textHorizontalPadding: CGFloat = 64
-    static let textVerticalPadding: CGFloat = 64
+    static let textPanelWidth: CGFloat = 640
+    static let textPanelMinimumHeight: CGFloat = 400
+    static let textPanelMaximumHeight: CGFloat = 680
+    static let textHorizontalPadding: CGFloat = 40
+    static let textVerticalPadding: CGFloat = 36
     static let textFontSize: CGFloat = 17
 
     static func textDisplaySize(for text: String, maximumSize: CGSize) -> CGSize {
-        let contentWidth = min(
-            textContentWidth,
-            max(320, maximumSize.width - textHorizontalPadding)
-        )
+        let width = min(textPanelWidth, max(480, maximumSize.width))
         let font = NSFont.systemFont(ofSize: textFontSize)
+        let textWidth = max(320, width - textHorizontalPadding * 2)
         let bounds = (text as NSString).boundingRect(
-            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font]
         )
-        return displaySize(
-            for: CGSize(
-                width: contentWidth + textHorizontalPadding,
-                height: max(120, ceil(bounds.height) + textVerticalPadding)
-            ),
-            maximumSize: maximumSize
-        )
+        let contentHeight = ceil(bounds.height) + textVerticalPadding * 2
+        let minHeight = min(textPanelMinimumHeight, maximumSize.height)
+        let maxHeight = min(textPanelMaximumHeight, maximumSize.height)
+        let height = min(max(contentHeight, minHeight), maxHeight)
+        return CGSize(width: width, height: height)
     }
 }
 
@@ -95,17 +93,23 @@ struct FullscreenTextPreviewContent: View {
     let text: String
 
     var body: some View {
-        Text(text.isEmpty ? "空文本" : text)
-            .font(.system(size: FullscreenMediaPreviewSizing.textFontSize))
-            .foregroundStyle(Color.primary)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(FullscreenMediaPreviewSizing.textHorizontalPadding / 2)
-            .textSelection(.enabled)
-            .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.regularMaterial)
-            }
+        ScrollView {
+            Text(text.isEmpty ? "空文本" : text)
+                .font(.system(size: FullscreenMediaPreviewSizing.textFontSize))
+                .foregroundStyle(Color.primary)
+                .lineSpacing(5)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .textSelection(.enabled)
+                .padding(.horizontal, FullscreenMediaPreviewSizing.textHorizontalPadding)
+                .padding(.vertical, FullscreenMediaPreviewSizing.textVerticalPadding)
+        }
+        .scrollIndicators(.automatic)
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 
@@ -298,6 +302,13 @@ private final class FullscreenMediaPreviewPanel: NSPanel {
             return
         }
         if event.type == .scrollWheel, abs(event.scrollingDeltaY) > 0.01 {
+            if let contentView,
+               let hitView = contentView.hitTest(event.locationInWindow),
+               hitView.enclosingScrollView != nil
+            {
+                super.sendEvent(event)
+                return
+            }
             onScrollZoom?(event.scrollingDeltaY > 0 ? 0.1 : -0.1)
             return
         }

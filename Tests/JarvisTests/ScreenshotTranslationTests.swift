@@ -125,6 +125,40 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertNil(OpenAICompatibleAPIClient.jsonData(fromModelContent: "not json"))
     }
 
+    func testTranslationSkipsPunctuationAndNumberOnlyFragments() {
+        XCTAssertFalse(ScreenshotTranslationService.needsTranslation("12:30"))
+        XCTAssertFalse(ScreenshotTranslationService.needsTranslation("100%"))
+        XCTAssertFalse(ScreenshotTranslationService.needsTranslation("—"))
+        XCTAssertTrue(ScreenshotTranslationService.needsTranslation("Settings"))
+        XCTAssertTrue(ScreenshotTranslationService.needsTranslation("设置"))
+    }
+
+    func testOCRLineMergingJoinsAdjacentFragmentsOnTheSameRow() {
+        let left = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Hello",
+            normalizedBounds: CGRect(x: 0.10, y: 0.20, width: 0.12, height: 0.04),
+            confidence: 0.9
+        )
+        let right = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "world",
+            normalizedBounds: CGRect(x: 0.24, y: 0.20, width: 0.12, height: 0.04),
+            confidence: 0.8
+        )
+        let nextLine = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Next",
+            normalizedBounds: CGRect(x: 0.10, y: 0.40, width: 0.12, height: 0.04),
+            confidence: 0.9
+        )
+
+        let merged = ScreenshotTranslationService.mergedLineBlocks(from: [right, nextLine, left])
+        XCTAssertEqual(merged.count, 2)
+        XCTAssertEqual(merged[0].text, "Hello world")
+        XCTAssertEqual(merged[1].text, "Next")
+    }
+
     func testTranslationBatchesSplitOversizedOCRPayloads() {
         let small = (0 ..< 3).map { AITranslationInput(id: "\($0)", text: "hi") }
         XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: small).count, 1)

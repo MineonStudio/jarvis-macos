@@ -51,10 +51,17 @@ extension ScreenshotEditorModel {
                     guard let self, self.translationGeneration == generation else { return }
                     self.translationState = .translating(completed: 0, total: ocrBlocks.count)
                 }
+                let editor = self
                 let translatedBlocks = try await service.translate(
                     ocrBlocks,
                     targetLanguage: targetLanguage,
-                    configuration: configuration
+                    configuration: configuration,
+                    onProgress: { completed, total in
+                        Task { @MainActor [weak editor] in
+                            guard let editor, editor.translationGeneration == generation else { return }
+                            editor.translationState = .translating(completed: completed, total: total)
+                        }
+                    }
                 )
                 try Task.checkCancellation()
                 await MainActor.run {

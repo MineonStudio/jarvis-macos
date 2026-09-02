@@ -1,4 +1,5 @@
 import SwiftUI
+import Translation
 
 // MARK: - Screenshot editing toolbar
 
@@ -101,6 +102,9 @@ extension ScreenshotToolbar {
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: editor.secondaryBarVisible
         )
+        .translationTask(editor.appleTranslationConfiguration) { @Sendable session in
+            await editor.consumeAppleTranslationSession(session)
+        }
     }
 
     private func toolButton(_ tool: ScreenshotTool) -> some View {
@@ -148,6 +152,13 @@ extension ScreenshotToolbar {
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(editor.translationState.isRunning)
         .help(editor.translationState.isRunning ? "正在翻译" : "截图翻译")
+    }
+
+    private var translationRetryHelp: String {
+        if case let .failed(message) = editor.translationState {
+            return message
+        }
+        return "使用系统本地翻译，首次可能下载语言包"
     }
 
     private struct MosaicToolIcon: View {
@@ -228,7 +239,8 @@ extension ScreenshotToolbar {
                 onAction(.startTranslation)
             }
             .buttonStyle(JarvisPrimaryButtonStyle())
-            .disabled(editor.translationState.isRunning || !editor.isTranslationAPIConfigured)
+            .disabled(editor.translationState.isRunning)
+            .help(translationRetryHelp)
 
             Button(editor.translationVisible ? "显示原文" : "显示译文") {
                 onAction(.toggleTranslationVisibility)

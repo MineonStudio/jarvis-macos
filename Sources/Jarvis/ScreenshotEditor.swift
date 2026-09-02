@@ -1,6 +1,7 @@
 import AppKit
 import CoreImage
 import SwiftUI
+import Translation
 
 enum ScreenshotTextColor: String, CaseIterable, Identifiable, Equatable {
     case red
@@ -234,6 +235,7 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published var translationTargetLanguage: ScreenshotTranslationLanguage
     @Published var translationBlocks: [ScreenshotTranslationBlock] = []
     @Published var translationState: ScreenshotTranslationState = .idle
+    @Published var appleTranslationConfiguration: TranslationSession.Configuration?
 
     private let coordinateSpace: ScreenshotCoordinateSpace
     private let initialSelectionRect: CGRect?
@@ -241,6 +243,9 @@ final class ScreenshotEditorModel: ObservableObject {
     private var activeMoveSnapshot: [ScreenshotAnnotation]?
     var translationTask: Task<Void, Never>?
     var translationGeneration = 0
+    var pendingAppleTranslationJob: ScreenshotAppleTranslationJob?
+    var appleTranslationJobContinuation: CheckedContinuation<Void, Error>?
+    var appleTranslationSourceBlocks: [UUID: ScreenshotOCRBlock] = [:]
     let translationConfiguration: ScreenshotTranslationConfiguration
 
     var isTranslationAPIConfigured: Bool {
@@ -278,6 +283,7 @@ final class ScreenshotEditorModel: ObservableObject {
 
     deinit {
         translationTask?.cancel()
+        appleTranslationJobContinuation?.resume(throwing: CancellationError())
     }
 }
 

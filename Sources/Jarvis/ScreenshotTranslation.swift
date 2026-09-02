@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import NaturalLanguage
 import Vision
 
 enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
@@ -20,6 +21,37 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
         case .english: "English"
         case .japanese: "日本語"
         case .korean: "한국어"
+        }
+    }
+
+    var appleLanguageIdentifier: String {
+        switch self {
+        case .simplifiedChinese: "zh-Hans"
+        case .traditionalChinese: "zh-Hant"
+        case .english: "en-US"
+        case .japanese: "ja-JP"
+        case .korean: "ko-KR"
+        }
+    }
+
+    var localeLanguage: Locale.Language {
+        Locale.Language(identifier: appleLanguageIdentifier)
+    }
+
+    func matches(_ language: Locale.Language) -> Bool {
+        let code = language.languageCode?.identifier.lowercased()
+        let script = language.script?.identifier
+        switch self {
+        case .simplifiedChinese:
+            return code == "zh" && (script == nil || script == "Hans")
+        case .traditionalChinese:
+            return code == "zh" && script == "Hant"
+        case .english:
+            return code == "en"
+        case .japanese:
+            return code == "ja"
+        case .korean:
+            return code == "ko"
         }
     }
 }
@@ -118,6 +150,19 @@ struct ScreenshotTranslationRenderBlock: Equatable, Identifiable, Sendable {
     let confidence: Float
 }
 
+struct ScreenshotTranslationLanguageGroup: Equatable, Sendable {
+    let source: Locale.Language?
+    let blocks: [ScreenshotOCRBlock]
+}
+
+struct ScreenshotTranslationPlan: Equatable, Sendable {
+    let groups: [ScreenshotTranslationLanguageGroup]
+
+    var translatableCount: Int {
+        groups.reduce(0) { $0 + $1.blocks.count }
+    }
+}
+
 enum ScreenshotTranslationGeometry {
     static func canvasBounds(for normalizedBounds: CGRect, in canvasRect: CGRect) -> CGRect {
         CGRect(
@@ -147,11 +192,13 @@ enum ScreenshotTranslationState: Equatable {
 enum ScreenshotTranslationError: LocalizedError, Equatable {
     case invalidImage
     case noTextFound
+    case unsupportedLanguagePair
 
     var errorDescription: String? {
         switch self {
         case .invalidImage: "无法读取截图图像"
         case .noTextFound: "没有识别到可翻译的文字"
+        case .unsupportedLanguagePair: "系统翻译不支持该语言，请在设置中配置备选 API"
         }
     }
 }
@@ -173,9 +220,8 @@ struct ScreenshotTranslationService: Sendable {
 
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
-                    request.usesLanguageCorrection = false
-                    request.minimumTextHeight = 0.012
-                    request.recognitionLanguages = ["zh-Hans", "en-US", "ja-JP", "ko-KR"]
+                    request.usesLanguageCorrection = true
+                    request.automaticallyDetectsLanguage = true
 
                     let handler = VNImageRequestHandler(cgImage: image, options: [:])
                     try handler.perform([request])
@@ -211,7 +257,28 @@ struct ScreenshotTranslationService: Sendable {
         }
     }
 
+    func classify(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage
+    ) -> ScreenshotTranslationPlan {
+        Self.classify(blocks, targetLanguage: targetLanguage)
+    }
+
     func translate(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage,
+        configuration: ScreenshotTranslationConfiguration,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> [ScreenshotTranslationBlock] {
+        try await translateWithAPI(
+            blocks,
+            targetLanguage: targetLanguage,
+            configuration: configuration,
+            onProgress: onProgress
+        )
+    }
+
+    func translateWithAPI(
         _ blocks: [ScreenshotOCRBlock],
         targetLanguage: ScreenshotTranslationLanguage,
         configuration: ScreenshotTranslationConfiguration,
@@ -269,7 +336,35 @@ struct ScreenshotTranslationService: Sendable {
     }
 
     private static let translationBatchCharacterLimit = 6000
-    private static let ocrMaxPixelDimension = 1600
+
+    static func classify(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage
+    ) -> ScreenshotTranslationPlan {
+        var grouped: [String: (source: Locale.Language?, blocks: [ScreenshotOCRBlock])] = [:]
+        for block in blocks {
+            guard needsTranslation(block.text) else { continue }
+            let language = detectedLanguage(for: block.text)
+            if let language, targetLanguage.matches(language) {
+                continue
+            }
+            let key = languageKey(for: language)
+            if grouped[key] == nil {
+                grouped[key] = (language, [])
+            }
+            grouped[key]?.blocks.append(block)
+        }
+
+        let groups = grouped.values
+            .map { ScreenshotTranslationLanguageGroup(source: $0.source, blocks: $0.blocks) }
+            .sorted { lhs, rhs in
+                if lhs.blocks.count != rhs.blocks.count {
+                    return lhs.blocks.count > rhs.blocks.count
+                }
+                return languageKey(for: lhs.source) < languageKey(for: rhs.source)
+            }
+        return ScreenshotTranslationPlan(groups: groups)
+    }
 
     static func translationBatches(from inputs: [AITranslationInput]) -> [[AITranslationInput]] {
         guard !inputs.isEmpty else { return [] }
@@ -298,6 +393,27 @@ struct ScreenshotTranslationService: Sendable {
         return trimmed.contains { character in
             character.isLetter
         }
+    }
+
+    static func detectedLanguage(for text: String) -> Locale.Language? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.languageConstraints = [
+            .simplifiedChinese,
+            .traditionalChinese,
+            .english,
+            .japanese,
+            .korean
+        ]
+        recognizer.processString(text)
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 5)
+        guard let best = hypotheses.max(by: { $0.value < $1.value }),
+              best.value >= 0.45
+        else {
+            return nil
+        }
+        return ScreenshotAppleTranslation.normalizedLanguage(
+            Locale.Language(identifier: best.key.rawValue)
+        )
     }
 
     static func mergedLineBlocks(from blocks: [ScreenshotOCRBlock]) -> [ScreenshotOCRBlock] {
@@ -334,21 +450,27 @@ struct ScreenshotTranslationService: Sendable {
         return merged
     }
 
+    static func languageKey(for language: Locale.Language?) -> String {
+        guard let language else { return "und" }
+        let code = language.languageCode?.identifier.lowercased() ?? "und"
+        if code == "zh" {
+            return "zh-\(language.script?.identifier ?? "Hans")"
+        }
+        return code
+    }
+
     private static func joinedText(_ left: String, _ right: String) -> String {
         let needsSpace = left.last?.isASCII == true || right.first?.isASCII == true
         return needsSpace ? "\(left) \(right)" : left + right
     }
 
     private static func ocrImage(from data: Data) -> CGImage? {
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: ocrMaxPixelDimension
-        ]
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             return nil
         }
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        return CGImageSourceCreateImageAtIndex(source, 0, [
+            kCGImageSourceShouldCache: true
+        ] as CFDictionary)
     }
 
     private static func translateBatches(

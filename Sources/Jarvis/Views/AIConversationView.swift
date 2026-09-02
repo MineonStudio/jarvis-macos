@@ -88,25 +88,22 @@ struct AIConversationView: View {
         JarvisContentArea(
             leadingToolbar: {
                 ToolbarItem(placement: .navigation) {
-                    HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
-                        JarvisToolbarGroupedPicker(
-                            items: AIConversationProvider.allCases,
-                            selection: selectedProvider,
-                            title: { $0.title },
-                            icon: { provider, isSelected in
-                                AIConversationProviderIcon(provider: provider, isSelected: isSelected)
-                            }
-                        )
-                        JarvisWebPlatformBrowserControls(controller: currentController)
-                    }
+                    JarvisToolbarGroupedPicker(
+                        items: AIConversationProvider.allCases,
+                        selection: selectedProvider,
+                        title: { $0.title },
+                        icon: { provider, isSelected in
+                            AIConversationProviderIcon(provider: provider, isSelected: isSelected)
+                        }
+                    )
                 }
             },
             trailingToolbar: {
                 ToolbarItem(placement: .automatic) {
-                    JarvisWebPlatformDownloadButton(
+                    JarvisWebPlatformActionCluster(
                         controller: currentController,
                         showsDownloadManager: $showsDownloadManager,
-                        emptyHint: "在第三方AI平台页面点击文件下载后，任务会显示在这里"
+                        emptyHint: "在 AI 聚合页面点击文件下载后，任务会显示在这里"
                     )
                 }
             },
@@ -137,6 +134,7 @@ struct AIConversationProviderIcon: View {
         Group {
             if let image = Self.image(for: provider, isSelected: isSelected) {
                 Image(nsImage: image)
+                    .renderingMode(.original)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()

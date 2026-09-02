@@ -17,6 +17,14 @@ enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    var iconResourceName: String {
+        rawValue
+    }
+
+    var iconResourceExtension: String {
+        "svg"
+    }
+
     var systemImage: String {
         switch self {
         case .x: "x.circle"

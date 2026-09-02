@@ -20,8 +20,8 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                             .frame(width: 16, height: 16)
                         Text(title(item))
                             .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                            .foregroundStyle(isSelected ? Color.white : Color.secondary)
                     }
-                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
                     .padding(.horizontal, 8)
                     .frame(height: 26)
                     .background {
@@ -42,12 +42,14 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
     }
 }
 
-struct JarvisWebPlatformBrowserControls: View {
+struct JarvisWebPlatformActionCluster: View {
     @ObservedObject var controller: JarvisWebPlatformController
+    @Binding var showsDownloadManager: Bool
+    let emptyHint: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
+        HStack(spacing: 2) {
             browserControlButton(
                 systemName: "house",
                 action: controller.goHome,
@@ -70,7 +72,15 @@ struct JarvisWebPlatformBrowserControls: View {
                 action: controller.reloadOrStop,
                 help: controller.isLoading ? "停止加载" : "刷新"
             )
+            JarvisWebPlatformDownloadButton(
+                controller: controller,
+                showsDownloadManager: $showsDownloadManager,
+                emptyHint: emptyHint
+            )
         }
+        .padding(3)
+        .frame(height: JarvisToolbarMetrics.controlSize)
+        .jarvisGlass(in: Capsule(), interactive: false)
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: controller.isLoading
@@ -121,9 +131,9 @@ struct JarvisWebPlatformDownloadButton: View {
                 }
             }
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
+        .buttonStyle(JarvisToolbarIconButtonStyle())
         .foregroundStyle(Color.secondary)
+        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help("下载管理")
         .animation(
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),

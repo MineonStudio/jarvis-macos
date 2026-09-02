@@ -41,6 +41,15 @@ if [[ -d "$ROOT_DIR/Resources/AIProviderIcons" ]]; then
      "$APP_DIR/Contents/Resources/AIProviderIcons/"
 fi
 
+if [[ -d "$ROOT_DIR/Resources/EntertainmentIcons" ]]; then
+  mkdir -p "$APP_DIR/Contents/Resources/EntertainmentIcons"
+  for staleIcon in "$APP_DIR/Contents/Resources/EntertainmentIcons"/*.svg(N); do
+    rm -f "$staleIcon"
+  done
+  cp "$ROOT_DIR/Resources/EntertainmentIcons"/*.svg \
+     "$APP_DIR/Contents/Resources/EntertainmentIcons/"
+fi
+
 # Keep production builds compatible with the installed app. Development
 # builds opt into a separate identity so LaunchServices, TCC, preferences,
 # Keychain entries, and application data remain isolated from production.

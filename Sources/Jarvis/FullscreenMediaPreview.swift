@@ -232,10 +232,7 @@ private final class FullscreenMediaPreviewPanel: NSPanel {
             onEscape?()
             return
         }
-        if event.type == .scrollWheel,
-           event.modifierFlags.contains(.command),
-           abs(event.scrollingDeltaY) > 0.01
-        {
+        if event.type == .scrollWheel, abs(event.scrollingDeltaY) > 0.01 {
             onScrollZoom?(event.scrollingDeltaY > 0 ? 0.1 : -0.1)
             return
         }

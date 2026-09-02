@@ -1,3 +1,4 @@
+import AppKit
 @testable import Jarvis
 import XCTest
 
@@ -95,6 +96,27 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
                 pathEnvironment: ""
             )
         )
+    }
+
+    func testCompletedFileCanBeCopiedToPasteboardAndDuplicated() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-video-share-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let source = directory.appendingPathComponent("clip.mp4")
+        let contents = Data("video".utf8)
+        try contents.write(to: source)
+        let pasteboard = NSPasteboard.withUniqueName()
+        XCTAssertTrue(EntertainmentVideoFileActions.copyFile(source, to: pasteboard))
+        XCTAssertEqual(
+            pasteboard.readObjects(forClasses: [NSURL.self], options: nil)?.first as? URL,
+            source
+        )
+
+        let destination = directory.appendingPathComponent("copy.mp4")
+        try EntertainmentVideoFileActions.copyFile(at: source, to: destination)
+        XCTAssertEqual(try Data(contentsOf: destination), contents)
     }
 
     func testDurationFormattingMatchesPlayerStyle() {

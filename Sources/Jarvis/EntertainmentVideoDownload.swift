@@ -42,6 +42,21 @@ struct EntertainmentVideoDownloadItem: Identifiable, Equatable, Sendable {
     }
 }
 
+enum EntertainmentVideoFileActions {
+    static func copyFile(_ url: URL, to pasteboard: NSPasteboard) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        pasteboard.clearContents()
+        return pasteboard.writeObjects([url as NSURL])
+    }
+
+    static func copyFile(at url: URL, to destination: URL, fileManager: FileManager = .default) throws {
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: url, to: destination)
+    }
+}
+
 enum EntertainmentVideoDownloadError: LocalizedError, Equatable {
     case missingYTDLP
     case invalidLink
@@ -559,6 +574,25 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     func open(_ item: EntertainmentVideoDownloadItem) {
         guard let destinationURL = item.destinationURL else { return }
         NSWorkspace.shared.open(destinationURL)
+    }
+
+    @discardableResult
+    func copyFile(_ item: EntertainmentVideoDownloadItem) -> Bool {
+        guard let destinationURL = item.destinationURL else { return false }
+        return EntertainmentVideoFileActions.copyFile(destinationURL, to: .general)
+    }
+
+    func saveCopy(_ item: EntertainmentVideoDownloadItem) {
+        guard let source = item.destinationURL,
+              FileManager.default.fileExists(atPath: source.path)
+        else { return }
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = item.filename
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else { return }
+            try? EntertainmentVideoFileActions.copyFile(at: source, to: destination)
+        }
     }
 
     func revealInFinder(_ item: EntertainmentVideoDownloadItem) {

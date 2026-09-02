@@ -341,13 +341,13 @@ struct JarvisWebPlatformBrowserPage: View {
 private struct JarvisWebPlatformWebView: NSViewRepresentable {
     @ObservedObject var controller: JarvisWebPlatformController
 
-    func makeNSView(context _: Context) -> WKWebView {
-        let webView = controller.webView
-        webView.wantsLayer = true
-        webView.layer?.cornerRadius = 16
-        webView.layer?.masksToBounds = true
-        return webView
+    func makeNSView(context _: Context) -> JarvisWebPlatformViewContainer {
+        let container = controller.webViewContainer
+        container.embed(controller.webView)
+        return container
     }
 
-    func updateNSView(_ _: WKWebView, context _: Context) {}
+    func updateNSView(_ container: JarvisWebPlatformViewContainer, context _: Context) {
+        container.embed(controller.webView)
+    }
 }

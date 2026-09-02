@@ -93,13 +93,8 @@ struct DailyQuoteService: Sendable {
             configuration: configuration
         )
 
-        let normalized = content
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = normalized.data(using: .utf8) else {
-            throw AIAPIError.invalidJSON(context: "每日语录", reason: "响应无法转换为 UTF-8")
+        guard let data = OpenAICompatibleAPIClient.jsonData(fromModelContent: content) else {
+            throw AIAPIError.invalidJSON(context: "每日语录", reason: "返回内容不是有效 JSON")
         }
 
         do {

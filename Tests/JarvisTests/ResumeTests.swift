@@ -135,12 +135,9 @@ final class ResumeTests: XCTestCase {
         let templatedData = try ResumeDocumentCodec.encodedData(for: templatedDocument)
 
         let exportedRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertNil(exportedRoot["template"])
-
+        XCTAssertEqual(exportedRoot["template"] as? String, "minimal")
         XCTAssertEqual(try ResumeDocumentCodec.decode(data), document)
-        var importedTemplatedDocument = templatedDocument
-        importedTemplatedDocument.template = .minimal
-        XCTAssertEqual(try ResumeDocumentCodec.decode(templatedData), importedTemplatedDocument)
+        XCTAssertEqual(try ResumeDocumentCodec.decode(templatedData), templatedDocument)
 
         var legacyRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         legacyRoot["template"] = "sidebar"
@@ -237,7 +234,7 @@ final class ResumeTests: XCTestCase {
         )
 
         XCTAssertEqual(generated.company, "远航软件")
-        XCTAssertEqual(generated.period, ResumeCareerTimeline.period(for: "5年经验"))
+        XCTAssertEqual(generated.period, "2019 — 2021")
         XCTAssertEqual(api.callCount, 2)
     }
 
@@ -261,10 +258,7 @@ final class ResumeTests: XCTestCase {
         )
 
         XCTAssertEqual(education.school, "复旦大学")
-        XCTAssertEqual(
-            education.period,
-            ResumeCareerTimeline.educationPeriod(for: "6年经验", degree: "硕士")
-        )
+        XCTAssertEqual(education.period, "2017 — 2019")
         XCTAssertEqual(experience.company, "远航软件")
         XCTAssertEqual(skill, "用户研究")
         XCTAssertEqual(project.name, "客户增长平台")

@@ -131,7 +131,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
         let storedMaximum = defaults.object(forKey: Self.maximumBytesKey) as? NSNumber
         maximumBytes = Self.normalizedMaximumBytes(storedMaximum?.int64Value ?? Self.defaultMaximumBytes)
 
-        try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
     }
 
     var currentDirectoryURL: URL {
@@ -155,7 +155,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
     }
 
     func storeFile(_ sourceURL: URL, fileSize _: Int64) -> String? {
-        lock.withLock {
+        let destination: URL? = lock.withLock {
             guard
                 let values = try? sourceURL.resourceValues(
                     forKeys: [.isRegularFileKey, .fileSizeKey]
@@ -164,44 +164,52 @@ final class ClipboardCacheStore: @unchecked Sendable {
                 let sourceSize = values.fileSize,
                 sourceSize >= 0,
                 Int64(sourceSize) <= maximumBytes,
-                usageLocked().usedBytes + Int64(sourceSize) <= maximumBytes,
-                let destination = makeDestinationLocked(extension: sourceURL.pathExtension)
+                usageLocked().usedBytes + Int64(sourceSize) <= maximumBytes
             else {
                 return nil
             }
+            return makeDestinationLocked(extension: sourceURL.pathExtension)
+        }
+        guard let destination else { return nil }
 
-            do {
-                try fileManager.copyItem(at: sourceURL, to: destination)
-                return destination.path
-            } catch {
-                JarvisPersistenceLog.logger.error(
-                    "复制剪贴板文件失败：\(error.localizedDescription, privacy: .public)"
-                )
-                return nil
-            }
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destination)
+            try? fileManager.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: destination.path
+            )
+            return destination.path
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            JarvisPersistenceLog.logger.error(
+                "复制剪贴板文件失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 
     func storeData(_ data: Data, fileExtension: String) -> String? {
-        lock.withLock {
+        let destination: URL? = lock.withLock {
             let dataSize = Int64(data.count)
             guard
                 dataSize <= maximumBytes,
-                usageLocked().usedBytes + dataSize <= maximumBytes,
-                let destination = makeDestinationLocked(extension: fileExtension)
+                usageLocked().usedBytes + dataSize <= maximumBytes
             else {
                 return nil
             }
+            return makeDestinationLocked(extension: fileExtension)
+        }
+        guard let destination else { return nil }
 
-            do {
-                try data.write(to: destination, options: .atomic)
-                return destination.path
-            } catch {
-                JarvisPersistenceLog.logger.error(
-                    "写入剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
-                )
-                return nil
-            }
+        do {
+            try JarvisProtectedStorage.write(data, to: destination)
+            return destination.path
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            JarvisPersistenceLog.logger.error(
+                "写入剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 

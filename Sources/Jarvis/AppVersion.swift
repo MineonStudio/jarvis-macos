@@ -2,6 +2,7 @@ import AppKit
 import CoreServices
 import CryptoKit
 import Foundation
+import Security
 
 enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
@@ -181,9 +182,11 @@ struct JarvisUpdateService {
         // bundle identifier.
         cleanupStaleLaunchServices(preserving: [launchedAppURL, currentAppURL])
 
-        // Reset while the current app is still running and the user has just
-        // confirmed the update. The replacement process is deliberately not
-        // responsible for TCC state.
+        // Ad-hoc signed updates cannot keep TCC grants: macOS keys Screen
+        // Recording and Accessibility to the code identity, which changes
+        // with every unsigned/ad-hoc replacement. Clear the stale grants now,
+        // while this process still matches the current TCC entries. The
+        // detached installer must not touch TCC.
         try resetPrivacyPermissions()
 
         let fileManager = FileManager.default
@@ -253,6 +256,8 @@ struct JarvisUpdateService {
         try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
     }
 
+    /// See `JarvisPrivacyPermissionReset`: required because shipping builds
+    /// are ad-hoc signed without a Developer ID.
     private func resetPrivacyPermissions() throws {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             throw JarvisUpdateError.privacyPermissionResetFailed("无法读取应用 Bundle ID")
@@ -366,7 +371,31 @@ struct JarvisUpdateService {
         else {
             return false
         }
-        return bundleIdentifier == Bundle.main.bundleIdentifier
+        guard bundleIdentifier == Bundle.main.bundleIdentifier else {
+            return false
+        }
+        return signingTeamIdentifier(of: url) == signingTeamIdentifier(of: Bundle.main.bundleURL)
+    }
+
+    func signingTeamIdentifier(of appURL: URL) -> String? {
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(appURL as CFURL, [], &staticCode) == errSecSuccess,
+              let staticCode
+        else {
+            return nil
+        }
+
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+            let information = information as? [String: Any]
+        else {
+            return nil
+        }
+        return information[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
     private func runTool(_ path: String, arguments: [String]) throws {
@@ -418,19 +447,19 @@ extension JarvisUpdateService {
         log "开始安装更新：$new_app -> $old_app"
         log "当前进程 PID：$parent_pid"
 
-        # The archive was explicitly downloaded from inside Jarvis. Remove a
-        # possible quarantine flag copied from the browser/URL session so the
-        # existing ad-hoc signed app can be relaunched consistently.
-        if /usr/bin/xattr -p com.apple.quarantine "$new_app" >/dev/null 2>&1; then
-            log "检测到更新包 quarantine 标记，移除"
-            /usr/bin/xattr -dr com.apple.quarantine "$new_app" 2>&1 || log "移除 quarantine 失败"
-        fi
-
         if /usr/bin/codesign --verify --deep --strict "$new_app" >/dev/null 2>&1; then
             log "新应用签名校验通过"
         else
             log "新应用签名校验失败，取消替换"
             exit 1
+        fi
+
+        # Ad-hoc signed GitHub zips keep a quarantine flag from URLSession.
+        # Without a Developer ID / notarization ticket, Gatekeeper would
+        # block relaunch, so strip it only after codesign --verify succeeds.
+        if /usr/bin/xattr -p com.apple.quarantine "$new_app" >/dev/null 2>&1; then
+            log "签名校验通过后移除 quarantine 标记"
+            /usr/bin/xattr -dr com.apple.quarantine "$new_app" 2>&1 || log "移除 quarantine 失败"
         fi
 
         is_app_running() {

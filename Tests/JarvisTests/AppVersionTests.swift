@@ -72,15 +72,15 @@ final class AppVersionTests: XCTestCase {
         XCTAssertFalse(JarvisPrivacyPermissionReset.isMissingBundleFailure("权限服务不可用"))
     }
 
-    func testLaunchAtLoginPreferenceDefaultsToEnabled() throws {
+    func testLaunchAtLoginPreferenceDefaultsToDisabled() throws {
         let suiteName = "jarvis-launch-at-login-defaults-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        XCTAssertTrue(JarvisLaunchAtLoginPreference.load(from: defaults))
+        XCTAssertFalse(JarvisLaunchAtLoginPreference.load(from: defaults))
         XCTAssertEqual(
             defaults.object(forKey: JarvisLaunchAtLoginPreference.key) as? Bool,
-            true
+            false
         )
     }
 
@@ -132,7 +132,7 @@ final class AppVersionTests: XCTestCase {
         identifier:                 com.jarvis.mac
         --------------------------------------------------------------------------------
         bundle id:                  Jarvis (0x2)
-        path:                       /Users/wesley/Downloads/Jarvis.app (0x3)
+        path:                       /tmp/Jarvis.app (0x3)
         identifier:                 com.jarvis.mac
         --------------------------------------------------------------------------------
         bundle id:                  Jarvis Dev (0x3)
@@ -142,6 +142,10 @@ final class AppVersionTests: XCTestCase {
         bundle id:                  JarvisStatusBarProbe (0x5)
         path:                       /private/tmp/JarvisStatusBarProbe.app (0x7)
         identifier:                 com.example.jarvis-status-probe
+        --------------------------------------------------------------------------------
+        bundle id:                  Jarvis (0x8)
+        path:                       /tmp/OldJarvis.app (0x8)
+        identifier:                 com.jarvis.mac
         --------------------------------------------------------------------------------
         bundle id:                  ChatGPT (0x7)
         path:                       /Applications/ChatGPT.app (0x9)
@@ -153,13 +157,12 @@ final class AppVersionTests: XCTestCase {
                 from: dump,
                 preserving: [
                     URL(fileURLWithPath: "/private/var/folders/vy/AppTranslocation/ABC/d/Jarvis.app"),
-                    URL(fileURLWithPath: "/Users/wesley/Downloads/Jarvis.app")
+                    URL(fileURLWithPath: "/tmp/Jarvis.app")
                 ],
                 bundleIdentifier: "com.jarvis.mac"
             ),
             [
-                URL(fileURLWithPath: "/Users/wesley/VibeCodingProjects/贾维斯/dist/Jarvis-Dev.app"),
-                URL(fileURLWithPath: "/private/tmp/JarvisStatusBarProbe.app").standardizedFileURL
+                URL(fileURLWithPath: "/tmp/OldJarvis.app")
             ]
         )
     }
@@ -181,5 +184,12 @@ final class AppVersionTests: XCTestCase {
         XCTAssertFalse(script.contains("reset_screen_recording_permission"))
         XCTAssertTrue(script.contains("refresh_launch_services"))
         XCTAssertTrue(script.contains("lsregister"))
+        if let verifyRange = script.range(of: "codesign --verify"),
+           let quarantineRange = script.range(of: "xattr -dr com.apple.quarantine")
+        {
+            XCTAssertLessThan(verifyRange.lowerBound, quarantineRange.lowerBound)
+        } else {
+            XCTFail("Installer should verify the signature before removing quarantine")
+        }
     }
 }

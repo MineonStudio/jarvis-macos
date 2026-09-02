@@ -17,16 +17,18 @@ extension AppModel {
 
         guard hasConfiguredAPI else { return }
 
+        dailyQuoteGeneration += 1
+        let generation = dailyQuoteGeneration
         dailyQuoteTask = Task { @MainActor [weak self] in
             defer {
-                self?.dailyQuoteTask = nil
+                if self?.dailyQuoteGeneration == generation {
+                    self?.dailyQuoteTask = nil
+                }
             }
 
             do {
-                let configuration = await Task.detached(priority: .utility) {
-                    AIAPIConfiguration.load()
-                }.value
-                guard !Task.isCancelled, let self else { return }
+                let configuration = AIAPIConfiguration.load()
+                guard !Task.isCancelled, let self, self.dailyQuoteGeneration == generation else { return }
 
                 guard configuration.isConfigured else { return }
                 if !force, cachedQuote?.source == .ai {
@@ -36,11 +38,15 @@ extension AppModel {
 
                 let service = self.dailyQuoteService
                 let quote = try await service.generate(for: dayKey, configuration: configuration)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, self.dailyQuoteGeneration == generation else { return }
                 self.dailyQuote = quote
                 self.dailyQuoteStore.save(quote, for: dayKey)
+            } catch is CancellationError {
+                return
             } catch {
-                // Keep the already visible built-in or cached quote on failure.
+                if force {
+                    self?.showToast("每日语录生成失败：\(error.localizedDescription)")
+                }
             }
         }
     }

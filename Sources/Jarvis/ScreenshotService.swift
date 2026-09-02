@@ -23,14 +23,23 @@ final class ScreenshotService {
     /// Window picking then works against these pixels, so no system content
     /// sharing picker is needed for the normal screenshot flow.
     func captureFullScreens(screenFrames: [CGRect]) async throws -> [ScreenshotCapture] {
-        var captures: [ScreenshotCapture] = []
-        captures.reserveCapacity(screenFrames.count)
-
-        for screenFrame in screenFrames {
-            try await captures.append(capture(screenRect: screenFrame))
+        guard !screenFrames.isEmpty else {
+            throw ScreenshotError.noDisplays
         }
 
-        return captures
+        return try await withThrowingTaskGroup(of: (Int, ScreenshotCapture).self) { group in
+            for (index, screenFrame) in screenFrames.enumerated() {
+                group.addTask {
+                    try await (index, self.capture(screenRect: screenFrame))
+                }
+            }
+
+            var captures = Array(repeating: ScreenshotCapture?.none, count: screenFrames.count)
+            for try await (index, capture) in group {
+                captures[index] = capture
+            }
+            return captures.compactMap { $0 }
+        }
     }
 
     /// Captures one display-sized rectangle while retaining every visible
@@ -122,7 +131,7 @@ final class ScreenshotService {
 
         let sourceImageSize = sourceImage.size
         guard sourceImageSize.width > 0, sourceImageSize.height > 0 else {
-            throw ScreenshotError.permissionDenied
+            throw ScreenshotError.captureFailed("截图图像尺寸无效")
         }
 
         let sourceRepresentation = sourceImage.representations.first
@@ -156,12 +165,12 @@ final class ScreenshotService {
             bytesPerRow: 0,
             bitsPerPixel: 0
         ) else {
-            throw ScreenshotError.permissionDenied
+            throw ScreenshotError.captureFailed("无法创建截图位图")
         }
 
         bitmap.size = clippedRect.size
         guard let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
-            throw ScreenshotError.permissionDenied
+            throw ScreenshotError.captureFailed("无法创建截图绘制上下文")
         }
 
         NSGraphicsContext.saveGraphicsState()
@@ -176,7 +185,7 @@ final class ScreenshotService {
         NSGraphicsContext.restoreGraphicsState()
 
         guard let data = bitmap.representation(using: .png, properties: [:]) else {
-            throw ScreenshotError.permissionDenied
+            throw ScreenshotError.captureFailed("无法将截图编码为 PNG")
         }
 
         let outputFrame = CGRect(
@@ -198,6 +207,7 @@ enum ScreenshotError: LocalizedError {
     case cancelled
     case invalidSelection
     case permissionDenied
+    case noDisplays
     case captureFailed(String)
 
     var errorDescription: String? {
@@ -205,6 +215,7 @@ enum ScreenshotError: LocalizedError {
         case .cancelled: "截图已取消"
         case .invalidSelection: "截图区域太小，请重新框选"
         case .permissionDenied: "macOS 屏幕录制权限未开启，请在系统设置中允许贾维斯读取屏幕"
+        case .noDisplays: "没有可用的显示器"
         case let .captureFailed(reason): "截图失败：\(reason)"
         }
     }

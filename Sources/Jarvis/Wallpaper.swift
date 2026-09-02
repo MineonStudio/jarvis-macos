@@ -486,14 +486,14 @@ final class WallpaperStore {
             .appendingPathComponent("Wallpapers", isDirectory: true)
         directoryURL = directory
         metadataURL = directory.appendingPathComponent("metadata.json")
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        JarvisProtectedStorage.prepareDirectory(directory, fileManager: fileManager)
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL
         metadataURL = directoryURL.appendingPathComponent("metadata.json")
-        try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
     }
 
     func load() -> [WallpaperItem] {
@@ -629,7 +629,17 @@ final class WallpaperDownloadService {
         self.session = session
     }
 
+    static func isAllowedDownloadURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else {
+            return false
+        }
+        return host == "wallhaven.cc" || host.hasSuffix(".wallhaven.cc")
+    }
+
     func download(from url: URL) async throws -> URL {
+        guard Self.isAllowedDownloadURL(url) else {
+            throw WallpaperAPIError.invalidURL
+        }
         var request = URLRequest(url: url)
         request.timeoutInterval = 45
         let (temporaryURL, response) = try await session.download(for: request)
@@ -1176,6 +1186,7 @@ final class WallpaperViewModel: ObservableObject {
     @Published private(set) var downloadingIDs: Set<String> = []
     @Published private(set) var appliedWallpaperID: String?
 
+    private var searchGeneration = 0
     let store: WallpaperStore
     private let wallhavenSource: WallhavenWallpaperSource
     private let downloader: WallpaperDownloadService
@@ -1208,6 +1219,8 @@ final class WallpaperViewModel: ObservableObject {
     }
 
     func refresh() async {
+        searchGeneration += 1
+        let generation = searchGeneration
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
@@ -1226,16 +1239,19 @@ final class WallpaperViewModel: ObservableObject {
             var loadedItems = mergeWithSavedItems(page.items)
 
             while loadedItems.count < Self.initialDisplayCount, page.hasNextPage {
+                guard generation == searchGeneration else { return }
                 page = try await wallhavenSource.search(page: page.page + 1, filters: currentFilters)
                 loadedItems.append(contentsOf: mergeWithSavedItems(page.items))
             }
 
+            guard generation == searchGeneration else { return }
             items = Array(loadedItems.prefix(Self.initialDisplayCount))
             bufferedItems = Array(loadedItems.dropFirst(items.count))
             currentPage = page.page
             canFetchMorePages = page.hasNextPage
             hasNextPage = !bufferedItems.isEmpty || canFetchMorePages
         } catch {
+            guard generation == searchGeneration else { return }
             items = []
             bufferedItems = []
             canFetchMorePages = false
@@ -1246,6 +1262,7 @@ final class WallpaperViewModel: ObservableObject {
 
     func loadMore() async {
         guard !isLoading, !isLoadingMore, hasNextPage else { return }
+        let generation = searchGeneration
         isLoadingMore = true
         loadMoreErrorMessage = nil
         defer { isLoadingMore = false }
@@ -1269,12 +1286,14 @@ final class WallpaperViewModel: ObservableObject {
                 nextCanFetchMorePages = page.hasNextPage
             }
 
+            guard generation == searchGeneration else { return }
             items.append(contentsOf: nextItems)
             bufferedItems = nextBufferedItems
             currentPage = nextPage
             canFetchMorePages = nextCanFetchMorePages
             hasNextPage = !bufferedItems.isEmpty || canFetchMorePages
         } catch {
+            guard generation == searchGeneration else { return }
             loadMoreErrorMessage = error.localizedDescription
         }
     }

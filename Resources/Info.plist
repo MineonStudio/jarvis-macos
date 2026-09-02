@@ -26,8 +26,6 @@
 	<string>贾维斯需要使用麦克风，让聊天网页支持语音输入和语音通话。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>贾维斯需要使用摄像头，让聊天网页支持视频和拍照功能。</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>贾维斯需要使用语音识别，让聊天网页支持语音输入。</string>
 	<key>CFBundleIconName</key>
 	<string>jarvis</string>
 </dict>

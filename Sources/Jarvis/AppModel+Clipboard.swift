@@ -33,20 +33,33 @@ extension AppModel {
     func receiveClipboardItem(_ item: ClipboardItem) {
         let matchingItems = clipboardItems.filter { $0.fingerprint == item.fingerprint }
         let wasPinned = matchingItems.contains(where: \.isPinned)
-        _ = clipboardCacheStore.removeManagedFiles(for: matchingItems)
-
         var item = item
         item.isPinned = wasPinned
+
+        if item.kind != .text,
+           !item.hasLocalContent,
+           matchingItems.contains(where: \.hasLocalContent)
+        {
+            return
+        }
+
+        let previousItems = clipboardItems
         clipboardItems.removeAll { $0.fingerprint == item.fingerprint }
         clipboardItems.append(item)
         clipboardItems = ClipboardOrdering.newestFirst(clipboardItems)
-        let removedItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
+        let overflowItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
         clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
-        _ = clipboardCacheStore.removeManagedFiles(for: removedItems)
         trimClipboardCacheIfNeeded()
-        if !clipboardStore.save(clipboardItems) {
+        guard clipboardStore.save(clipboardItems) else {
+            clipboardItems = previousItems
             showToast("剪贴板历史保存失败")
+            return
         }
+
+        let preservedPaths = Set(item.cachePaths)
+        let stalePaths = matchingItems.flatMap(\.cachePaths).filter { !preservedPaths.contains($0) }
+            + overflowItems.flatMap(\.cachePaths)
+        clipboardCacheStore.removeLegacyFiles(atPaths: stalePaths)
         refreshClipboardCacheUsage()
     }
 
@@ -310,7 +323,14 @@ extension AppModel {
         var changed = false
         for item in candidates where needsRoom(usage) {
             guard clipboardCacheStore.removeManagedFiles(for: [item]) else { continue }
-            clipboardItems.removeAll { $0.id == item.id }
+            if item.kind == .text, item.text != nil,
+               let index = clipboardItems.firstIndex(where: { $0.id == item.id })
+            {
+                clipboardItems[index].textPath = nil
+                clipboardItems[index].isStoredCopy = false
+            } else {
+                clipboardItems.removeAll { $0.id == item.id }
+            }
             usage = clipboardCacheStore.usage()
             changed = true
         }
@@ -326,8 +346,9 @@ extension AppModel {
                 changed = true
             }
         }
-        if changed {
-            _ = clipboardStore.save(clipboardItems)
+        if changed, !clipboardStore.save(clipboardItems) {
+            JarvisPersistenceLog.logger.error("清理剪贴板缓存后保存历史失败")
+            showToast("剪贴板历史保存失败")
         }
     }
 

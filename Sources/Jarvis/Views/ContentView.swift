@@ -168,7 +168,7 @@ struct ContentView: View {
             app.selectedSection = .skill(skill)
         case let .aiProvider(provider):
             navigationSelection = .aiConversation
-            app.selectedAIProvider = provider
+            app.selectAIProvider(provider)
             app.selectedSection = .aiConversation
         }
     }

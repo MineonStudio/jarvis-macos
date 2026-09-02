@@ -3,7 +3,7 @@ import ServiceManagement
 
 enum JarvisLaunchAtLoginPreference {
     static let key = "jarvis.launch-at-login.enabled"
-    static let defaultValue = true
+    static let defaultValue = false
 
     static func load(from defaults: UserDefaults) -> Bool {
         guard defaults.object(forKey: key) != nil else {

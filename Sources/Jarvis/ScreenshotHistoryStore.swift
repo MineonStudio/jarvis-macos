@@ -14,6 +14,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     private let fileManager: FileManager
     private let directoryURL: URL
     private let metadataURL: URL
+    private let lock = NSLock()
     private let maximumCount = 100
 
     init(fileManager: FileManager = .default) {
@@ -29,17 +30,21 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             .appendingPathComponent("ScreenshotHistory", isDirectory: true)
         directoryURL = directory
         metadataURL = directory.appendingPathComponent("metadata.json")
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        JarvisProtectedStorage.prepareDirectory(directory, fileManager: fileManager)
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL
         metadataURL = directoryURL.appendingPathComponent("metadata.json")
-        try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
     }
 
     func load() -> [ScreenshotHistoryItem] {
+        lock.withLock { loadLocked() }
+    }
+
+    private func loadLocked() -> [ScreenshotHistoryItem] {
         guard fileManager.fileExists(atPath: metadataURL.path) else {
             return []
         }
@@ -62,17 +67,19 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     }
 
     func data(for item: ScreenshotHistoryItem) -> Data? {
-        guard let url = safeFileURL(for: item.fileName) else {
-            JarvisPersistenceLog.logger.error("拒绝读取越界的截图历史路径")
-            return nil
-        }
-        do {
-            return try Data(contentsOf: url)
-        } catch {
-            JarvisPersistenceLog.logger.error(
-                "读取历史截图失败：\(error.localizedDescription, privacy: .public)"
-            )
-            return nil
+        lock.withLock {
+            guard let url = safeFileURL(for: item.fileName) else {
+                JarvisPersistenceLog.logger.error("拒绝读取越界的截图历史路径")
+                return nil
+            }
+            do {
+                return try Data(contentsOf: url)
+            } catch {
+                JarvisPersistenceLog.logger.error(
+                    "读取历史截图失败：\(error.localizedDescription, privacy: .public)"
+                )
+                return nil
+            }
         }
     }
 
@@ -93,56 +100,62 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     @discardableResult
     func add(data: Data, date: Date = Date()) -> ScreenshotHistoryItem? {
         guard !data.isEmpty else { return nil }
-        let id = UUID()
-        let item = ScreenshotHistoryItem(
-            id: id,
-            createdAt: date,
-            updatedAt: date,
-            fileName: "screenshot-\(id.uuidString).png"
-        )
-        guard write(data, for: item) else { return nil }
+        return lock.withLock {
+            let id = UUID()
+            let item = ScreenshotHistoryItem(
+                id: id,
+                createdAt: date,
+                updatedAt: date,
+                fileName: "screenshot-\(id.uuidString).png"
+            )
+            guard write(data, for: item) else { return nil }
 
-        var items = load()
-        items.removeAll { $0.id == item.id }
-        items.insert(item, at: 0)
-        guard save(trimmed(items)) else { return nil }
-        return item
+            var items = loadLocked()
+            items.removeAll { $0.id == item.id }
+            items.insert(item, at: 0)
+            guard save(trimmed(items)) else { return nil }
+            return item
+        }
     }
 
     @discardableResult
     func update(_ item: ScreenshotHistoryItem, data: Data, date: Date = Date()) -> ScreenshotHistoryItem? {
         guard !data.isEmpty else { return nil }
-        var items = load()
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return nil }
-        guard write(data, for: item) else { return nil }
+        return lock.withLock {
+            var items = loadLocked()
+            guard let index = items.firstIndex(where: { $0.id == item.id }) else { return nil }
+            guard write(data, for: item) else { return nil }
 
-        var updated = items[index]
-        updated.updatedAt = date
-        items[index] = updated
-        guard save(items.sorted { $0.updatedAt > $1.updatedAt }) else { return nil }
-        return updated
+            var updated = items[index]
+            updated.updatedAt = date
+            items[index] = updated
+            guard save(items.sorted { $0.updatedAt > $1.updatedAt }) else { return nil }
+            return updated
+        }
     }
 
     @discardableResult
     func delete(_ item: ScreenshotHistoryItem) -> Bool {
-        do {
-            guard let url = safeFileURL(for: item.fileName) else {
-                JarvisPersistenceLog.logger.error("拒绝删除越界的截图历史路径")
+        lock.withLock {
+            do {
+                guard let url = safeFileURL(for: item.fileName) else {
+                    JarvisPersistenceLog.logger.error("拒绝删除越界的截图历史路径")
+                    return false
+                }
+                try fileManager.removeItem(at: url)
+            } catch CocoaError.fileNoSuchFile {
+                // The metadata index still needs to be cleaned when the PNG was
+                // already removed by an earlier failed cleanup.
+            } catch {
+                JarvisPersistenceLog.logger.error(
+                    "删除历史截图文件失败：\(error.localizedDescription, privacy: .public)"
+                )
                 return false
             }
-            try fileManager.removeItem(at: url)
-        } catch CocoaError.fileNoSuchFile {
-            // The metadata index still needs to be cleaned when the PNG was
-            // already removed by an earlier failed cleanup.
-        } catch {
-            JarvisPersistenceLog.logger.error(
-                "删除历史截图文件失败：\(error.localizedDescription, privacy: .public)"
-            )
-            return false
+            var items = loadLocked()
+            items.removeAll { $0.id == item.id }
+            return save(items)
         }
-        var items = load()
-        items.removeAll { $0.id == item.id }
-        return save(items)
     }
 
     private func write(_ data: Data, for item: ScreenshotHistoryItem) -> Bool {
@@ -151,7 +164,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             return false
         }
         do {
-            try data.write(to: url, options: .atomic)
+            try JarvisProtectedStorage.write(data, to: url)
             return true
         } catch {
             JarvisPersistenceLog.logger.error(
@@ -165,7 +178,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     private func save(_ items: [ScreenshotHistoryItem]) -> Bool {
         do {
             let data = try JSONEncoder().encode(items)
-            try data.write(to: metadataURL, options: .atomic)
+            try JarvisProtectedStorage.write(data, to: metadataURL)
             return true
         } catch {
             JarvisPersistenceLog.logger.error(

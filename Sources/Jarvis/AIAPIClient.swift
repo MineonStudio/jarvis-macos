@@ -24,7 +24,7 @@ struct AIAPIConfiguration: Equatable, Sendable {
         Self(
             endpoint: defaults.string(forKey: endpointKey) ?? defaultEndpoint,
             model: defaults.string(forKey: modelKey) ?? defaultModel,
-            apiKey: (try? keychain.read()) ?? ""
+            apiKey: keychain.readIfAvailable()
         )
     }
 }
@@ -139,7 +139,7 @@ enum AIAPIError: LocalizedError, Equatable {
 struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPIConnectionTesting, Sendable {
     func testConnection(configuration: AIAPIConfiguration) async throws {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = endpointURL(from: configuration.endpoint) else {
+        guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
             throw AIAPIError.invalidEndpoint
         }
 
@@ -151,8 +151,9 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": configuration.model,
             "temperature": 0,
+            "response_format": ["type": "json_object"],
             "messages": [
-                ["role": "user", "content": "Reply with OK only."]
+                ["role": "user", "content": "{\"ok\":true}"]
             ]
         ])
 
@@ -175,7 +176,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         configuration: AIAPIConfiguration
     ) async throws -> String {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = endpointURL(from: configuration.endpoint) else {
+        guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
             throw AIAPIError.invalidEndpoint
         }
 
@@ -187,6 +188,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": configuration.model,
             "temperature": 0.7,
+            "max_tokens": 2048,
             "response_format": ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": systemPrompt],
@@ -213,7 +215,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
     ) async throws -> [AITranslationOutput] {
         guard !items.isEmpty else { return [] }
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = endpointURL(from: configuration.endpoint) else {
+        guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
             throw AIAPIError.invalidEndpoint
         }
 
@@ -234,6 +236,8 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": configuration.model,
             "temperature": 0.1,
+            "max_tokens": 4096,
+            "response_format": ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": sourceText]
@@ -251,7 +255,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         }
 
         let content = try Self.chatCompletionContent(from: data)
-        guard let responseData = Self.jsonDataFromModelContent(content) else {
+        guard let responseData = Self.jsonData(fromModelContent: content) else {
             throw AIAPIError.invalidJSON(context: "翻译", reason: "返回内容无法转换为 UTF-8")
         }
         do {
@@ -261,20 +265,26 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         }
     }
 
-    private func endpointURL(from rawValue: String) -> URL? {
+    static func normalizedEndpointURL(from rawValue: String) -> URL? {
         let trimmed = rawValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard var components = URLComponents(string: trimmed),
-              components.scheme != nil,
-              components.host != nil
+              components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty
         else {
             return nil
         }
-        if !components.path.hasSuffix("/chat/completions") {
-            components.path = components.path.hasSuffix("/")
-                ? components.path + "chat/completions"
-                : components.path + "/chat/completions"
+        let path = components.path
+        if path.hasSuffix("/chat/completions") {
+            return components.url
+        }
+        if path.isEmpty || path == "/" || path == "/v1" {
+            components.path = "/v1/chat/completions"
+        } else {
+            components.path = path.hasSuffix("/")
+                ? path + "chat/completions"
+                : path + "/chat/completions"
         }
         return components.url
     }
@@ -288,6 +298,11 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         }
         guard let message = choices[0]["message"] as? [String: Any] else {
             throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message")
+        }
+        if let finishReason = choices[0]["finish_reason"] as? String,
+           finishReason == "length"
+        {
+            throw AIAPIError.invalidCompletionEnvelope("生成结果被截断，请减少输入或更换模型")
         }
         if let content = message["content"] as? String {
             guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -312,12 +327,26 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         guard let choices = root["choices"] as? [[String: Any]], !choices.isEmpty else {
             throw AIAPIError.invalidCompletionEnvelope("缺少 choices 数组或 choices 为空")
         }
-        guard choices[0]["message"] is [String: Any] else {
+        guard let message = choices[0]["message"] as? [String: Any] else {
             throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message")
         }
+        if let content = message["content"] as? String {
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AIAPIError.invalidCompletionEnvelope("choices[0].message.content 为空")
+            }
+            return
+        }
+        if let contentParts = message["content"] as? [[String: Any]] {
+            let content = contentParts.compactMap { $0["text"] as? String }.joined()
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AIAPIError.invalidCompletionEnvelope("choices[0].message.content 文本片段为空")
+            }
+            return
+        }
+        throw AIAPIError.invalidCompletionEnvelope("缺少 choices[0].message.content，或 content 类型不受支持")
     }
 
-    private static func jsonDataFromModelContent(_ content: String) -> Data? {
+    static func jsonData(fromModelContent content: String) -> Data? {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if let data = trimmed.data(using: .utf8),
            (try? JSONSerialization.jsonObject(with: data)) != nil
@@ -328,7 +357,12 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
             .replacingOccurrences(of: "```json", with: "")
             .replacingOccurrences(of: "```", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return unfenced.data(using: .utf8)
+        guard let data = unfenced.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: data)) != nil
+        else {
+            return nil
+        }
+        return data
     }
 
     private static func serverMessage(from data: Data) -> String? {
@@ -354,6 +388,10 @@ final class AIAPIKeychain: @unchecked Sendable {
     private let service = "\(JarvisAppIdentity.bundleIdentifier).screenshot-translation"
     private let account = "api-key"
 
+    func readIfAvailable() -> String {
+        (try? read()) ?? ""
+    }
+
     func read() throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -377,21 +415,17 @@ final class AIAPIKeychain: @unchecked Sendable {
 
     func write(_ value: String) throws {
         let data = Data(value.utf8)
-        let query: [String: Any] = [
+        try delete()
+        let insert: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrSynchronizable as String: false
         ]
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var insert = query
-            insert[kSecValueData as String] = data
-            let insertStatus = SecItemAdd(insert as CFDictionary, nil)
-            guard insertStatus == errSecSuccess else { throw KeychainError(status: insertStatus) }
-        } else if status != errSecSuccess {
-            throw KeychainError(status: status)
-        }
+        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
+        guard insertStatus == errSecSuccess else { throw KeychainError(status: insertStatus) }
     }
 
     func delete() throws {

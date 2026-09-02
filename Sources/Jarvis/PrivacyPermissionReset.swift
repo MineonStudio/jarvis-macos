@@ -1,5 +1,10 @@
 import Foundation
 
+/// Releases are ad-hoc signed (no paid Apple Developer ID / notarization).
+/// Each replacement binary gets a new code identity, so Screen Recording and
+/// Accessibility grants on the old identity will not apply to the new one.
+/// Reset those TCC entries while the current process is still running, then
+/// let the replacement app prompt again. Do not reset on ordinary launches.
 enum JarvisPrivacyPermissionReset {
     static func arguments(bundleIdentifier: String) -> [[String]] {
         [

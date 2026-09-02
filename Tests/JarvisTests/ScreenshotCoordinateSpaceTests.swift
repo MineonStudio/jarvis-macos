@@ -21,7 +21,7 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
 
     func testScreenshotHistorySupportsUpdateAndDelete() {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jarvis-history-test-(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jarvis-history-test-\(UUID().uuidString)", isDirectory: true)
         let history = ScreenshotHistoryStore(directoryURL: directory)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -68,6 +68,42 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
         XCTAssertTrue(history.load().isEmpty)
         XCTAssertNil(history.data(for: item))
         XCTAssertFalse(history.fileURL(for: item).path.contains("outside.png"))
+    }
+
+    func testDockAppKitRectConvertsIntoOverlayBottomOnPrimaryDisplay() {
+        let screenFrame = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let desktopTop = screenFrame.maxY
+        let dockAppKit = CGRect(x: 0, y: 0, width: 1440, height: 70)
+        let quartzDock = WindowSelectionDetector.quartzRect(
+            fromAppKitRect: dockAppKit,
+            desktopTop: desktopTop
+        )
+        let local = WindowSelectionDetector.localRect(
+            for: quartzDock,
+            screenFrame: screenFrame,
+            desktopTop: desktopTop,
+            screenBounds: CGRect(origin: .zero, size: screenFrame.size)
+        )
+
+        XCTAssertEqual(local.minY, 0, accuracy: 0.5)
+        XCTAssertEqual(local.height, 70, accuracy: 0.5)
+        XCTAssertEqual(local.width, 1440, accuracy: 0.5)
+    }
+
+    func testHistoryEditorFrameFitsInsideTheVisibleDisplay() {
+        let visible = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let huge = CGSize(width: 5000, height: 4000)
+        let frame = PreviewWindowSupport.fittedFrame(for: huge, in: visible)
+        XCTAssertLessThanOrEqual(frame.width, visible.width - 64)
+        XCTAssertLessThanOrEqual(frame.height, visible.height - 64)
+        XCTAssertTrue(visible.insetBy(dx: 32, dy: 32).contains(frame))
+
+        let small = PreviewWindowSupport.fittedFrame(
+            for: CGSize(width: 200, height: 100),
+            in: visible
+        )
+        XCTAssertEqual(small.width, 200, accuracy: 0.5)
+        XCTAssertEqual(small.height, 100, accuracy: 0.5)
     }
 
     func testCanvasAndOutputRectRoundTrip() {

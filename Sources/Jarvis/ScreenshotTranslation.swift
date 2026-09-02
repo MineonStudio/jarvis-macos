@@ -72,8 +72,19 @@ struct ScreenshotTranslationConfiguration: Equatable, Sendable {
         defaults: UserDefaults = .standard,
         keychain: AIAPIKeychain = .shared
     ) -> Self {
+        load(defaults: defaults, resolvedAPIKey: keychain.readIfAvailable())
+    }
+
+    static func load(
+        defaults: UserDefaults = .standard,
+        resolvedAPIKey: String?
+    ) -> Self {
         Self(
-            api: AIAPIConfiguration.load(defaults: defaults, keychain: keychain),
+            api: AIAPIConfiguration(
+                endpoint: defaults.string(forKey: endpointKey) ?? defaultEndpoint,
+                model: defaults.string(forKey: modelKey) ?? defaultModel,
+                apiKey: resolvedAPIKey ?? ""
+            ),
             targetLanguage: ScreenshotTranslationLanguage(
                 rawValue: defaults.string(forKey: targetLanguageKey) ?? ""
             ) ?? .simplifiedChinese
@@ -166,6 +177,8 @@ struct ScreenshotTranslationService: Sendable {
                     request.recognitionLevel = .accurate
                     request.usesLanguageCorrection = true
                     request.minimumTextHeight = 0.008
+                    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"]
+                    request.automaticallyDetectsLanguage = true
 
                     let handler = VNImageRequestHandler(cgImage: image, options: [:])
                     try handler.perform([request])
@@ -207,11 +220,15 @@ struct ScreenshotTranslationService: Sendable {
     ) async throws -> [ScreenshotTranslationBlock] {
         guard !blocks.isEmpty else { throw ScreenshotTranslationError.noTextFound }
         let inputs = blocks.map { AITranslationInput(id: $0.id.uuidString, text: $0.text) }
-        let outputs = try await apiClient.translate(
-            inputs,
-            targetLanguage: targetLanguage.title,
-            configuration: configuration.api
-        )
+        var outputs: [AITranslationOutput] = []
+        for batch in Self.translationBatches(from: inputs) {
+            let batchOutputs = try await apiClient.translate(
+                batch,
+                targetLanguage: targetLanguage.title,
+                configuration: configuration.api
+            )
+            outputs.append(contentsOf: batchOutputs)
+        }
         let translationsByID = outputs.reduce(into: [String: String]()) { result, item in
             result[item.id] = item.translation
         }
@@ -233,5 +250,28 @@ struct ScreenshotTranslationService: Sendable {
             throw AIAPIError.incompleteTranslation(expected: blocks.count, actual: result.count)
         }
         return result
+    }
+
+    private static let translationBatchCharacterLimit = 6000
+
+    static func translationBatches(from inputs: [AITranslationInput]) -> [[AITranslationInput]] {
+        guard !inputs.isEmpty else { return [] }
+        var batches: [[AITranslationInput]] = []
+        var current: [AITranslationInput] = []
+        var currentCharacters = 0
+        for input in inputs {
+            let size = max(input.text.count, 1)
+            if !current.isEmpty, currentCharacters + size > translationBatchCharacterLimit {
+                batches.append(current)
+                current = []
+                currentCharacters = 0
+            }
+            current.append(input)
+            currentCharacters += size
+        }
+        if !current.isEmpty {
+            batches.append(current)
+        }
+        return batches
     }
 }

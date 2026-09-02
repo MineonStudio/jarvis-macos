@@ -240,7 +240,12 @@ final class ScreenshotEditorModel: ObservableObject {
     private var undoStack: [[ScreenshotAnnotation]] = []
     private var activeMoveSnapshot: [ScreenshotAnnotation]?
     var translationTask: Task<Void, Never>?
+    var translationGeneration = 0
     let translationConfiguration: ScreenshotTranslationConfiguration
+
+    var isTranslationAPIConfigured: Bool {
+        ScreenshotTranslationConfiguration.load().isConfigured
+    }
 
     init(
         image: NSImage,

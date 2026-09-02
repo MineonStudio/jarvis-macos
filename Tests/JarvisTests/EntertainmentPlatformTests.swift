@@ -62,6 +62,12 @@ final class EntertainmentPlatformTests: XCTestCase {
         )
     }
 
+    func testEmbeddedWebViewsAllowElementFullscreen() {
+        XCTAssertTrue(
+            JarvisWebPlatformConfiguration.make().preferences.isElementFullscreenEnabled
+        )
+    }
+
     func testWebModuleSectionsUseMatchingSymbols() {
         XCTAssertEqual(AppSection.aiConversation.icon, "sparkles")
         XCTAssertEqual(AppSection.aiConversation.navigationTitle, "AI聚合")

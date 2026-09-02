@@ -113,6 +113,15 @@ enum JarvisWebPlatformLayoutMetrics {
     }
 }
 
+enum JarvisWebPlatformConfiguration {
+    static func make() -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = WKWebsiteDataStore.default()
+        configuration.preferences.isElementFullscreenEnabled = true
+        return configuration
+    }
+}
+
 typealias AIConversationLayoutMetrics = JarvisWebPlatformLayoutMetrics
 
 @MainActor
@@ -137,8 +146,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         self.platform = platform
         self.downloadManager = downloadManager
 
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = WKWebsiteDataStore.default()
+        let configuration = JarvisWebPlatformConfiguration.make()
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         super.init()
@@ -330,6 +338,7 @@ extension JarvisWebPlatformController: WKUIDelegate {
             return nil
         }
 
+        configuration.preferences.isElementFullscreenEnabled = true
         let popup = WKWebView(frame: webView.bounds, configuration: configuration)
         popup.navigationDelegate = self
         popup.uiDelegate = self

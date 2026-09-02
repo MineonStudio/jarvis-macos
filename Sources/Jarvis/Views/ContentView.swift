@@ -13,7 +13,8 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             JarvisSidebarNavigation(
-                items: primaryNavigationItems,
+                topItems: topNavigationItems,
+                bottomItems: bottomNavigationItems,
                 selection: selectedSectionBinding,
                 title: { $0.title },
                 icon: { $0.icon },
@@ -115,8 +116,12 @@ struct ContentView: View {
         )
     }
 
-    private var primaryNavigationItems: [TopLevelSection] {
-        [.overview, .aiConversation, .entertainment, .skillLibrary]
+    private var topNavigationItems: [TopLevelSection] {
+        [.overview, .skillLibrary]
+    }
+
+    private var bottomNavigationItems: [TopLevelSection] {
+        [.aiConversation, .entertainment]
     }
 
     private var secondaryMenus: [JarvisSidebarSecondaryMenu<TopLevelSection, SidebarSecondaryItem>] {

@@ -64,6 +64,49 @@ enum FullscreenMediaPreviewSizing {
         )
         return CGSize(width: preferred.width * scale, height: preferred.height * scale)
     }
+
+    static let textContentWidth: CGFloat = 720
+    static let textHorizontalPadding: CGFloat = 64
+    static let textVerticalPadding: CGFloat = 64
+    static let textFontSize: CGFloat = 17
+
+    static func textDisplaySize(for text: String, maximumSize: CGSize) -> CGSize {
+        let contentWidth = min(
+            textContentWidth,
+            max(320, maximumSize.width - textHorizontalPadding)
+        )
+        let font = NSFont.systemFont(ofSize: textFontSize)
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        return displaySize(
+            for: CGSize(
+                width: contentWidth + textHorizontalPadding,
+                height: max(120, ceil(bounds.height) + textVerticalPadding)
+            ),
+            maximumSize: maximumSize
+        )
+    }
+}
+
+struct FullscreenTextPreviewContent: View {
+    let text: String
+
+    var body: some View {
+        Text(text.isEmpty ? "空文本" : text)
+            .font(.system(size: FullscreenMediaPreviewSizing.textFontSize))
+            .foregroundStyle(Color.primary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(FullscreenMediaPreviewSizing.textHorizontalPadding / 2)
+            .textSelection(.enabled)
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.regularMaterial)
+            }
+    }
 }
 
 struct FullscreenMediaPreview<MediaContent: View>: View {
@@ -123,6 +166,28 @@ struct FullscreenMediaPreview<MediaContent: View>: View {
 final class FullscreenMediaPreviewController {
     private var panel: FullscreenMediaPreviewPanel?
     private var model: FullscreenMediaPreviewModel?
+
+    func show(
+        displaySize: CGSize,
+        allowsHitTesting: Bool = false,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder content: @escaping () -> some View
+    ) {
+        let screenFrame = PreviewWindowSupport.screenFrames().screen
+        let model = FullscreenMediaPreviewModel()
+        let hostingView = NSHostingView(
+            rootView: FullscreenMediaPreview(
+                containerSize: screenFrame.size,
+                mediaDisplaySize: displaySize,
+                model: model,
+                allowsMediaHitTesting: allowsHitTesting,
+                onMaskClick: onDismiss,
+                mediaContent: content
+            )
+        )
+        hostingView.sizingOptions = []
+        show(contentView: hostingView, model: model)
+    }
 
     func show(
         contentView: NSView,

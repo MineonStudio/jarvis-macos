@@ -293,7 +293,7 @@ struct ClipboardView: View {
                                         selectedItemID: selectedItemID,
                                         onSelect: { selectedItemID = $0.id },
                                         onDoubleClick: { item in
-                                            guard item.kind == .image || item.kind == .video else { return }
+                                            guard item.canFullscreenPreview else { return }
                                             app.showClipboardMediaPreview(item)
                                         }
                                     )
@@ -356,8 +356,7 @@ struct ClipboardHistoryActionToolbar: View {
     @State private var showingDeleteConfirmation = false
 
     private var canPreview: Bool {
-        guard let selectedItem else { return false }
-        return selectedItem.kind == .image || selectedItem.kind == .video
+        selectedItem?.canFullscreenPreview == true
     }
 
     var body: some View {

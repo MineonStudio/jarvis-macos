@@ -73,12 +73,12 @@ extension AppModel {
     }
 
     func showClipboardMediaPreview(_ item: ClipboardItem) {
-        guard item.kind == .image || item.kind == .video else {
-            copyClipboard(item)
-            return
-        }
-        guard item.hasLocalContent else {
-            showToast("媒体文件已不可用")
+        guard item.canFullscreenPreview else {
+            if item.kind == .file {
+                copyClipboard(item)
+                return
+            }
+            showToast(item.kind == .text ? "文本已不可用" : "媒体文件已不可用")
             return
         }
         clipboardMediaPreviewController.show(item: item)

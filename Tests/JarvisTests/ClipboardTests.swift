@@ -36,6 +36,17 @@ final class ClipboardTests: XCTestCase {
         )
     }
 
+    func testClipboardTextItemsCanOpenTheSharedFullscreenPreview() {
+        let textItem = ClipboardItem(kind: .text, text: "可预览的文本")
+        let emptyText = ClipboardItem(kind: .text, text: nil)
+        let fileItem = ClipboardItem(kind: .file, filePath: "/tmp/file.pdf")
+
+        XCTAssertEqual(textItem.resolvedText, "可预览的文本")
+        XCTAssertTrue(textItem.canFullscreenPreview)
+        XCTAssertFalse(emptyText.canFullscreenPreview)
+        XCTAssertFalse(fileItem.canFullscreenPreview)
+    }
+
     func testClipboardItemRoundTripsVideoMetadataAndPin() throws {
         let item = ClipboardItem(
             kind: .video,

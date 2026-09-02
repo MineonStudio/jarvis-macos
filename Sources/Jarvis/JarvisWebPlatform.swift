@@ -113,11 +113,22 @@ enum JarvisWebPlatformLayoutMetrics {
     }
 }
 
+enum JarvisWebPlatformUserAgent {
+    /// WKWebView's default UA omits `Version/x Safari/y`, so sites such as
+    /// YouTube live chat treat it as an ancient browser. Append the current
+    /// Safari identity while keeping the system's real WebKit tokens.
+    static var safariCompatibleApplicationName: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "Version/\(version.majorVersion).\(version.minorVersion).\(version.patchVersion) Safari/605.1.15"
+    }
+}
+
 enum JarvisWebPlatformConfiguration {
     static func make() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore.default()
         configuration.preferences.isElementFullscreenEnabled = true
+        configuration.applicationNameForUserAgent = JarvisWebPlatformUserAgent.safariCompatibleApplicationName
         return configuration
     }
 }
@@ -414,6 +425,7 @@ extension JarvisWebPlatformController: WKUIDelegate {
         }
 
         configuration.preferences.isElementFullscreenEnabled = true
+        configuration.applicationNameForUserAgent = JarvisWebPlatformUserAgent.safariCompatibleApplicationName
         let popup = WKWebView(frame: webView.bounds, configuration: configuration)
         popup.navigationDelegate = self
         popup.uiDelegate = self

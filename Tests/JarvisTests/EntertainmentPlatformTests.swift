@@ -62,6 +62,19 @@ final class EntertainmentPlatformTests: XCTestCase {
         )
     }
 
+    func testEmbeddedWebViewsPresentAsCurrentSafari() {
+        let applicationName = JarvisWebPlatformUserAgent.safariCompatibleApplicationName
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        XCTAssertEqual(
+            applicationName,
+            "Version/\(version.majorVersion).\(version.minorVersion).\(version.patchVersion) Safari/605.1.15"
+        )
+        XCTAssertEqual(
+            JarvisWebPlatformConfiguration.make().applicationNameForUserAgent,
+            applicationName
+        )
+    }
+
     func testEmbeddedWebViewsAllowElementFullscreen() {
         XCTAssertTrue(
             JarvisWebPlatformConfiguration.make().preferences.isElementFullscreenEnabled

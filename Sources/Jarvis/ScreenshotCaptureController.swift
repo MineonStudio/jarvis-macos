@@ -87,6 +87,42 @@ enum ScreenshotToolbarMetrics {
     static let gap: CGFloat = 16
     static let screenHorizontalInset: CGFloat = 12
     static let availableWidthInset: CGFloat = screenHorizontalInset * 2
+    static let overlayInset: CGFloat = 12
+}
+
+enum ScreenshotToolbarPlacement {
+    static func frame(
+        for imageFrame: CGRect,
+        in visibleFrame: CGRect,
+        height: CGFloat,
+        width requestedWidth: CGFloat
+    ) -> CGRect {
+        let availableWidth = max(1, visibleFrame.width - ScreenshotToolbarMetrics.availableWidthInset)
+        let toolbarWidth = min(max(requestedWidth, 1), availableWidth)
+        let minX = visibleFrame.minX + ScreenshotToolbarMetrics.screenHorizontalInset
+        let maxX = visibleFrame.maxX - toolbarWidth - ScreenshotToolbarMetrics.screenHorizontalInset
+        let x = minX <= maxX
+            ? min(max(imageFrame.midX - toolbarWidth / 2, minX), maxX)
+            : visibleFrame.minX
+
+        let minY = visibleFrame.minY
+        let maxY = visibleFrame.maxY - height
+        let belowY = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
+        let aboveY = imageFrame.maxY + ScreenshotToolbarMetrics.gap
+        let y: CGFloat
+        if belowY >= minY {
+            y = belowY
+        } else if aboveY <= maxY {
+            y = aboveY
+        } else {
+            let visibleImage = imageFrame.intersection(visibleFrame)
+            let base = visibleImage.isNull || visibleImage.isEmpty ? visibleFrame : visibleImage
+            y = min(base.minY + ScreenshotToolbarMetrics.overlayInset, maxY)
+        }
+
+        let clampedY = maxY >= minY ? min(max(y, minY), maxY) : minY
+        return CGRect(x: x, y: clampedY, width: toolbarWidth, height: height)
+    }
 }
 
 @MainActor

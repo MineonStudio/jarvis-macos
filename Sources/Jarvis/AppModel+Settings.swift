@@ -221,8 +221,23 @@ extension AppModel {
     }
 
     func selectEntertainmentPlatform(_ platform: EntertainmentPlatform) {
+        let previous = selectedEntertainmentPlatform
+        guard previous != platform else { return }
+
+        // 切 tab：静默旧 tab，新 tab 若是此前被静默的则恢复静音状态
+        entertainmentControllers[previous]?.suspendMediaPlayback()
         selectedEntertainmentPlatform = platform
         UserDefaults.standard.set(platform.rawValue, forKey: selectedEntertainmentPlatformKey)
+        entertainmentControllers[platform]?.resumeMediaPlayback()
+    }
+
+    // 离开/回到娱乐广场 section 时静默/恢复当前 tab，避免切到 AI 聚合或设置后仍在后台出声
+    func suspendSelectedEntertainmentMedia() {
+        entertainmentControllers[selectedEntertainmentPlatform]?.suspendMediaPlayback()
+    }
+
+    func resumeSelectedEntertainmentMedia() {
+        entertainmentControllers[selectedEntertainmentPlatform]?.resumeMediaPlayback()
     }
 
     func synchronizeLaunchAtLogin() {

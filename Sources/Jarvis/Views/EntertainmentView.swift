@@ -40,6 +40,12 @@ struct EntertainmentView: View {
                     .id(app.selectedEntertainmentPlatform)
             }
         )
+        .onAppear {
+            app.resumeSelectedEntertainmentMedia()
+        }
+        .onDisappear {
+            app.suspendSelectedEntertainmentMedia()
+        }
     }
 
     private var selectedPlatform: Binding<EntertainmentPlatform> {

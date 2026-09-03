@@ -78,8 +78,14 @@ struct ClipboardCacheSettingsCard: View {
     var body: some View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 14) {
-                Label("剪贴板缓存", systemImage: "externaldrive")
-                    .font(.system(size: 14, weight: .semibold))
+                HStack(spacing: 8) {
+                    Image(systemName: "externaldrive")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 24, height: 24)
+                    Text("剪贴板缓存")
+                        .font(JarvisTypography.bodyEmphasis)
+                }
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {

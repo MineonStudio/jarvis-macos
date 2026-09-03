@@ -294,27 +294,13 @@ extension ScreenshotCaptureController {
     }
 
     func toolbarFrame(for imageFrame: CGRect, height toolbarHeight: CGFloat, width requestedWidth: CGFloat) -> NSRect {
-        let screen = NSScreen.screens.first { $0.frame.intersects(imageFrame) }
-        let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let availableWidth = max(1, visibleFrame.width - ScreenshotToolbarMetrics.availableWidthInset)
-        let toolbarWidth = min(requestedWidth, availableWidth)
-        let fitsBelow = imageFrame.minY - toolbarHeight - ScreenshotToolbarMetrics.gap >= visibleFrame.minY
-        let y = fitsBelow
-            ? imageFrame.minY - toolbarHeight - ScreenshotToolbarMetrics.gap
-            : imageFrame.maxY + ScreenshotToolbarMetrics.gap
-        let x = min(
-            max(
-                imageFrame.midX - toolbarWidth / 2,
-                visibleFrame.minX + ScreenshotToolbarMetrics.screenHorizontalInset
-            ),
-            visibleFrame.maxX - toolbarWidth - ScreenshotToolbarMetrics.screenHorizontalInset
-        )
-
-        return NSRect(
-            x: x,
-            y: y,
-            width: toolbarWidth,
-            height: toolbarHeight
+        let screen = NSScreen.screens.first { $0.frame.intersects(imageFrame) } ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? .zero
+        return ScreenshotToolbarPlacement.frame(
+            for: imageFrame,
+            in: visibleFrame,
+            height: toolbarHeight,
+            width: requestedWidth
         )
     }
 

@@ -150,22 +150,29 @@ enum JarvisWebPlatformFullscreenLayout {
 
 final class JarvisWebPlatformViewContainer: NSView {
     func embed(_ webView: WKWebView) {
-        guard !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) else { return }
+        guard !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) else {
+            return
+        }
         if webView.superview !== self {
             addSubview(webView)
+            webView.autoresizingMask = [.width, .height]
         }
+        // Do not mask or round the WKWebView itself: hardware video layers
+        // flicker when an ancestor clips with cornerRadius + masksToBounds.
         wantsLayer = true
-        layer?.cornerRadius = JarvisWebPlatformFullscreenLayout.windowedCornerRadius
-        layer?.masksToBounds = true
-        webView.autoresizingMask = [.width, .height]
-        webView.frame = bounds
+        layer?.masksToBounds = false
+        clipsToBounds = false
+        if webView.frame != bounds {
+            webView.frame = bounds
+        }
     }
 
     override func layout() {
         super.layout()
         guard let webView = subviews.first as? WKWebView,
               webView.superview === self,
-              !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState)
+              !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState),
+              webView.frame != bounds
         else {
             return
         }
@@ -208,6 +215,8 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        webView.underPageBackgroundColor = .clear
+        webView.clipsToBounds = false
         webViewContainer.embed(webView)
         canGoBackObservation = webView.observe(\WKWebView.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
@@ -255,9 +264,18 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     }
 
     private func updateNavigationState() {
-        canGoBack = webView.canGoBack
-        canGoForward = webView.canGoForward
-        currentURL = webView.url
+        let canGoBack = webView.canGoBack
+        let canGoForward = webView.canGoForward
+        let currentURL = webView.url
+        if self.canGoBack != canGoBack {
+            self.canGoBack = canGoBack
+        }
+        if self.canGoForward != canGoForward {
+            self.canGoForward = canGoForward
+        }
+        if self.currentURL != currentURL {
+            self.currentURL = currentURL
+        }
     }
 
     private(set) var isMediaSuspended = false
@@ -288,16 +306,16 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
 
     private func syncFullscreenLayout() {
         if JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) {
-            webView.layer?.cornerRadius = 0
             webView.layer?.masksToBounds = false
+            webView.clipsToBounds = false
             webView.autoresizingMask = [.width, .height]
             fillFullscreenWindowIfNeeded()
             Task { @MainActor [weak self] in
                 self?.fillFullscreenWindowIfNeeded()
             }
         } else {
-            webView.layer?.cornerRadius = 0
             webView.layer?.masksToBounds = false
+            webView.clipsToBounds = false
             webViewContainer.embed(webView)
         }
     }
@@ -385,13 +403,19 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
     }
 
     func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation?) {
-        isLoading = true
-        loadError = nil
+        if !isLoading {
+            isLoading = true
+        }
+        if loadError != nil {
+            loadError = nil
+        }
         updateNavigationState()
     }
 
     func webView(_: WKWebView, didFinish _: WKNavigation?) {
-        isLoading = false
+        if isLoading {
+            isLoading = false
+        }
         updateNavigationState()
     }
 
@@ -400,7 +424,9 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
         didFailProvisionalNavigation _: WKNavigation?,
         withError error: Error
     ) {
-        isLoading = false
+        if isLoading {
+            isLoading = false
+        }
         if !Self.isCancellation(error) {
             loadError = error.localizedDescription
         }
@@ -412,7 +438,9 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
         didFail _: WKNavigation?,
         withError error: Error
     ) {
-        isLoading = false
+        if isLoading {
+            isLoading = false
+        }
         if !Self.isCancellation(error) {
             loadError = error.localizedDescription
         }
@@ -457,6 +485,7 @@ extension JarvisWebPlatformController: WKUIDelegate {
         popup.uiDelegate = self
         popup.autoresizingMask = [.width, .height]
         popup.underPageBackgroundColor = .clear
+        popup.clipsToBounds = false
         webView.addSubview(popup)
         popupWebViews.append(popup)
         if isMediaSuspended {

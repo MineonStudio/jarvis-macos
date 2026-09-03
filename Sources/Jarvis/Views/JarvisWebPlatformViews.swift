@@ -306,6 +306,7 @@ struct JarvisWebPlatformBrowserPage: View {
     var body: some View {
         ZStack {
             JarvisWebPlatformWebView(controller: controller)
+                .equatable()
 
             if let loadError = controller.loadError {
                 VStack(spacing: 12) {
@@ -331,7 +332,6 @@ struct JarvisWebPlatformBrowserPage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .jarvisFloatingPanel(cornerRadius: 16)
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
@@ -340,8 +340,12 @@ struct JarvisWebPlatformBrowserPage: View {
     }
 }
 
-private struct JarvisWebPlatformWebView: NSViewRepresentable {
-    @ObservedObject var controller: JarvisWebPlatformController
+private struct JarvisWebPlatformWebView: NSViewRepresentable, Equatable {
+    let controller: JarvisWebPlatformController
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.controller === rhs.controller
+    }
 
     func makeNSView(context _: Context) -> JarvisWebPlatformViewContainer {
         let container = controller.webViewContainer

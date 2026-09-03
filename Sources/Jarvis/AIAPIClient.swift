@@ -153,7 +153,8 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
             "temperature": 0,
             "response_format": ["type": "json_object"],
             "messages": [
-                ["role": "user", "content": "{\"ok\":true}"]
+                // DeepSeek/OpenAI 要求 json_object 模式下 prompt 必须含 "json" 字样，否则 400
+                ["role": "user", "content": "Reply with JSON: {\"ok\":true}"]
             ]
         ])
 

@@ -9,6 +9,7 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
     case english = "en"
     case japanese = "ja"
     case korean = "ko"
+    case spanish = "es"
 
     var id: String {
         rawValue
@@ -21,6 +22,7 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
         case .english: "English"
         case .japanese: "日本語"
         case .korean: "한국어"
+        case .spanish: "Español"
         }
     }
 
@@ -31,6 +33,7 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
         case .english: "en-US"
         case .japanese: "ja-JP"
         case .korean: "ko-KR"
+        case .spanish: "es-ES"
         }
     }
 
@@ -52,6 +55,8 @@ enum ScreenshotTranslationLanguage: String, CaseIterable, Codable, Identifiable,
             return code == "ja"
         case .korean:
             return code == "ko"
+        case .spanish:
+            return code == "es"
         }
     }
 }

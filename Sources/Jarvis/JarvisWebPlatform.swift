@@ -260,6 +260,23 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         currentURL = webView.url
     }
 
+    private(set) var isMediaSuspended = false
+
+    // tab 切走时原生挂起全部媒体（含 Web Audio），不触碰页面 DOM：
+    // 网络/缓冲照常（直播不丢），切回时 setAllMediaPlaybackSuspended(false)
+    // 会从原位置自动续播，效果等同 Safari 隐藏标签页
+    func suspendMediaPlayback() {
+        guard !isMediaSuspended else { return }
+        isMediaSuspended = true
+        webView.setAllMediaPlaybackSuspended(true) {}
+    }
+
+    func resumeMediaPlayback() {
+        guard isMediaSuspended else { return }
+        isMediaSuspended = false
+        webView.setAllMediaPlaybackSuspended(false) {}
+    }
+
     private func syncFullscreenLayout() {
         if JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) {
             webView.layer?.cornerRadius = 0

@@ -191,6 +191,31 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(identifiers, ["en", "ja"])
     }
 
+    func testLanguagePackTargetsOrderMatchesSettingsList() {
+        XCTAssertEqual(
+            ScreenshotTranslationLanguage.packTargets.map(\.rawValue),
+            ["zh-Hans", "en", "ja", "ko", "es"]
+        )
+    }
+
+    func testLanguagePackProbesUseChineseEnglishRepresentativePairs() {
+        // 目标为中文时用英语作源语言探测
+        XCTAssertEqual(
+            ScreenshotLanguagePackProbe(target: .simplifiedChinese).source,
+            .english
+        )
+        XCTAssertEqual(
+            ScreenshotLanguagePackProbe(target: .traditionalChinese).source,
+            .english
+        )
+        // 其余目标以简体中文为源语言探测
+        for target in [ScreenshotTranslationLanguage.english, .japanese, .korean, .spanish] {
+            let probe = ScreenshotLanguagePackProbe(target: target)
+            XCTAssertEqual(probe.source, .simplifiedChinese)
+            XCTAssertFalse(probe.sampleText.isEmpty)
+        }
+    }
+
     func testTargetLanguageMatchingTreatsChineseScriptsSeparately() {
         XCTAssertTrue(
             ScreenshotTranslationLanguage.simplifiedChinese.matches(

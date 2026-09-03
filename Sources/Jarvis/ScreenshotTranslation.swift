@@ -407,7 +407,8 @@ struct ScreenshotTranslationService: Sendable {
             .traditionalChinese,
             .english,
             .japanese,
-            .korean
+            .korean,
+            .spanish
         ]
         recognizer.processString(text)
         let hypotheses = recognizer.languageHypotheses(withMaximum: 5)

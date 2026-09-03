@@ -94,7 +94,6 @@ struct ShortcutSettingsCard: View {
     }
 }
 
-
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

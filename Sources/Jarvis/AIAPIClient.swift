@@ -148,12 +148,12 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        // json_object mode rejects prompts that do not contain the word "json".
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": configuration.model,
             "temperature": 0,
             "response_format": ["type": "json_object"],
             "messages": [
-                // DeepSeek/OpenAI 要求 json_object 模式下 prompt 必须含 "json" 字样，否则 400
                 ["role": "user", "content": "Reply with JSON: {\"ok\":true}"]
             ]
         ])

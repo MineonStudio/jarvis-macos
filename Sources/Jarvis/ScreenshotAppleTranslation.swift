@@ -23,6 +23,8 @@ enum ScreenshotAppleTranslation {
             return Locale.Language(identifier: "ja-JP")
         case "ko":
             return Locale.Language(identifier: "ko-KR")
+        case "es":
+            return Locale.Language(identifier: "es-ES")
         default:
             return language
         }

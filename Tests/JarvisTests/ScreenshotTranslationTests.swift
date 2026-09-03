@@ -216,6 +216,43 @@ final class ScreenshotTranslationTests: XCTestCase {
         }
     }
 
+    func testNormalizedLanguageMapsSpanishToSpainLocale() {
+        let normalized = ScreenshotAppleTranslation.normalizedLanguage(
+            Locale.Language(identifier: "es")
+        )
+        XCTAssertEqual(normalized.languageCode?.identifier.lowercased(), "es")
+        XCTAssertEqual(normalized.region?.identifier, "ES")
+    }
+
+    func testDetectedLanguageRecognizesSpanishWhenItIsAPackTarget() {
+        let language = ScreenshotTranslationService.detectedLanguage(
+            for: "El rápido zorro marrón salta sobre el perro perezoso todas las mañanas."
+        )
+        XCTAssertEqual(language?.languageCode?.identifier.lowercased(), "es")
+    }
+
+    func testClassifyGroupsSpanishSeparatelyFromEnglish() {
+        let spanish = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "El rápido zorro marrón salta sobre el perro perezoso todas las mañanas.",
+            normalizedBounds: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+        let english = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "The quick brown fox jumps over the lazy dog every morning.",
+            normalizedBounds: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.04),
+            confidence: 0.9
+        )
+        let plan = ScreenshotTranslationService.classify(
+            [spanish, english],
+            targetLanguage: .simplifiedChinese
+        )
+        let identifiers = Set(plan.groups.compactMap { $0.source?.languageCode?.identifier })
+        XCTAssertTrue(identifiers.contains("es"))
+        XCTAssertTrue(identifiers.contains("en"))
+    }
+
     func testTargetLanguageMatchingTreatsChineseScriptsSeparately() {
         XCTAssertTrue(
             ScreenshotTranslationLanguage.simplifiedChinese.matches(

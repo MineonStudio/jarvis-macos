@@ -68,7 +68,7 @@ enum EntertainmentVideoDownloadError: LocalizedError, Equatable {
         case .missingYTDLP:
             "未找到 yt-dlp。请先安装：brew install yt-dlp ffmpeg"
         case .invalidLink:
-            "请粘贴 YouTube、X 或 TikTok 的视频链接"
+            "请粘贴 YouTube、X、TikTok 或 Twitch 的视频链接"
         case .noVideo:
             "没有解析到可下载的视频"
         case let .failed(message):

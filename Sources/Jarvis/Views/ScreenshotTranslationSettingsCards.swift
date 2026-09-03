@@ -3,10 +3,7 @@ import Combine
 import SwiftUI
 import Translation
 
-// MARK: - 系统翻译语言包（下载与检测）
-
-// 卡片级容器：创建 5 个行模型并把子模型的发布转发为自己的 objectWillChange，
-// 父视图才能观察到 busyCount 等派生值（@ObservedObject 只订阅直接持有的对象）
+/// Forwards row `objectWillChange` so `busyCount` updates the parent card.
 @MainActor
 final class LanguagePackSettingsStore: ObservableObject {
     private let models: [ScreenshotTranslationLanguage: LanguagePackRowModel]
@@ -50,11 +47,12 @@ final class LanguagePackSettingsStore: ObservableObject {
 
 struct ScreenshotLanguagePackSettingsCard: View {
     @StateObject private var store = LanguagePackSettingsStore()
-    @State private var defaultTarget = ScreenshotTranslationLanguage(
-        rawValue: UserDefaults.standard.string(
-            forKey: ScreenshotTranslationConfiguration.targetLanguageKey
-        ) ?? ""
-    ) ?? .simplifiedChinese
+    @AppStorage(ScreenshotTranslationConfiguration.targetLanguageKey)
+    private var defaultTargetRaw = ScreenshotTranslationLanguage.simplifiedChinese.rawValue
+
+    private var defaultTarget: ScreenshotTranslationLanguage {
+        ScreenshotTranslationLanguage(rawValue: defaultTargetRaw) ?? .simplifiedChinese
+    }
 
     var body: some View {
         JarvisCard {
@@ -78,6 +76,11 @@ struct ScreenshotLanguagePackSettingsCard: View {
                     .help("重新检测")
                 }
 
+                Text("默认使用系统本地翻译，首次可能需要下载语言包。下面的备选 API 仅在系统不支持该语言时使用。")
+                    .font(JarvisTypography.control)
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 VStack(spacing: 8) {
                     ForEach(ScreenshotTranslationLanguage.packTargets) { target in
                         LanguagePackRowView(
@@ -93,7 +96,6 @@ struct ScreenshotLanguagePackSettingsCard: View {
     }
 }
 
-// 纯渲染行：状态全在 LanguagePackRowModel，行内无任何 @State 状态
 private struct LanguagePackRowView: View {
     @ObservedObject var model: LanguagePackRowModel
     let isDefaultTarget: Bool
@@ -116,14 +118,11 @@ private struct LanguagePackRowView: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(height: 30)
+        .frame(minHeight: 30)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        // 会话通道：模型发布 configuration 驱动本行 translationTask；到手的 TranslationSession
-        // 包装成句柄交回模型（TranslationSession 无"未安装对"公开构造，只能经 SwiftUI 获取）
-        // .id(channelGeneration)：每次发起下载重建本视图，新挂载 + 非空配置必然派发新会话，
-        // 不受"配置 Equatable 相等则不重启"的限制（取消后重试的关键）
+        // Uninstalled pairs can only be prepared via `.translationTask`.
         .translationTask(model.sessionConfiguration) { session in
-            await model.handOver(
+            await model.consumeSession(
                 SystemLanguagePackSessionHandler(target: model.target, session: session)
             )
         }
@@ -151,18 +150,18 @@ private struct LanguagePackRowView: View {
             Text("下载中…").font(JarvisTypography.control).foregroundStyle(Color.secondary)
             Button("取消") { model.cancelDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())
-        case .failed(let message):
-            Text("下载失败")
+        case let .failed(message):
+            Text(message)
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.red)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .help(message)
             Button("重试") { model.startDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())
         }
     }
 }
-
-// MARK: - AI 备选 API
 
 struct ScreenshotAITranslationAPISettingsCard: View {
     @EnvironmentObject private var app: AppModel
@@ -185,7 +184,7 @@ struct ScreenshotAITranslationAPISettingsCard: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(Color.secondary)
                         .frame(width: 24, height: 24)
-                    Text("API KEY 配置")
+                    Text("备选 API")
                         .font(JarvisTypography.bodyEmphasis)
                 }
 
@@ -286,7 +285,9 @@ struct ScreenshotAITranslationAPISettingsCard: View {
             endpoint: endpoint,
             model: model,
             apiKey: apiKey
-        ) else { return }
+        ) else {
+            return
+        }
         apiKey = ""
     }
 }

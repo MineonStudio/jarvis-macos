@@ -32,6 +32,22 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
             EntertainmentVideoLink.match("https://vm.tiktok.com/ZMabcdef/")?.platform,
             .tiktok
         )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://www.twitch.tv/shroud")?.platform,
+            .twitch
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://www.twitch.tv/videos/123456789")?.platform,
+            .twitch
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://www.twitch.tv/shroud/clip/FunnyClip")?.platform,
+            .twitch
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://clips.twitch.tv/FunnyClip")?.platform,
+            .twitch
+        )
     }
 
     func testLinkMatcherExtractsURLFromCopiedTextAndRejectsUnrelatedSites() {
@@ -40,6 +56,13 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         XCTAssertNil(EntertainmentVideoLink.match("https://example.com/watch?v=abc"))
         XCTAssertNil(EntertainmentVideoLink.match("https://accounts.google.com/"))
         XCTAssertNil(EntertainmentVideoLink.match("not a url"))
+        XCTAssertNil(EntertainmentVideoLink.match("https://www.twitch.tv/"))
+        XCTAssertNil(EntertainmentVideoLink.match("https://www.twitch.tv/directory/game/Art"))
+        XCTAssertNil(EntertainmentVideoLink.match("https://www.bilibili.com/video/BV1xx411c7mD"))
+        XCTAssertEqual(
+            EntertainmentVideoDownloadError.invalidLink.errorDescription,
+            "请粘贴 YouTube、X、TikTok 或 Twitch 的视频链接"
+        )
     }
 
     func testQualityBuilderKeepsExactHeightsAndAddsBestAndAudio() {

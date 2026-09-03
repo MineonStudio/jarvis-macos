@@ -127,7 +127,6 @@ final class AppModel: ObservableObject {
     let launchAtLoginService = JarvisLaunchAtLoginService.shared
     let aiAPIConnectionTester: any AIAPIConnectionTesting
     private var aiConversationControllers: [AIConversationProvider: JarvisWebPlatformController] = [:]
-    // private(set)：仅本文件内赋值，外部扩展只读以支持切 tab 静默
     private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?

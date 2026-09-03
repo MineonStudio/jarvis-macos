@@ -22,6 +22,9 @@ enum EntertainmentVideoLink {
         if isTikTokHost(host), isTikTokPath(url) {
             return .tiktok
         }
+        if isTwitchHost(host), isTwitchPath(url) {
+            return .twitch
+        }
         return nil
     }
 
@@ -95,5 +98,29 @@ enum EntertainmentVideoLink {
         return path.contains("/video/")
             || path.contains("/t/")
             || path.contains("/photo/")
+    }
+
+    private static func isTwitchHost(_ host: String) -> Bool {
+        host == "twitch.tv" || host.hasSuffix(".twitch.tv")
+    }
+
+    private static func isTwitchPath(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        let path = url.path.lowercased()
+        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if host == "clips.twitch.tv" || host.hasSuffix(".clips.twitch.tv") {
+            return !trimmed.isEmpty
+        }
+        if path.contains("/videos/") || path.contains("/clip/") || path.contains("/video/") {
+            return true
+        }
+        guard let first = trimmed.split(separator: "/").first.map(String.init), !first.isEmpty else {
+            return false
+        }
+        let reserved = [
+            "directory", "settings", "inventory", "subscriptions", "wallet",
+            "drops", "prime", "p", "search", "downloads", "jobs", "store"
+        ]
+        return !reserved.contains(first)
     }
 }

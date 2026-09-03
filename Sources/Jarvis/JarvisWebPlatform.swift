@@ -262,19 +262,28 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
 
     private(set) var isMediaSuspended = false
 
-    // tab 切走时原生挂起全部媒体（含 Web Audio），不触碰页面 DOM：
-    // 网络/缓冲照常（直播不丢），切回时 setAllMediaPlaybackSuspended(false)
-    // 会从原位置自动续播，效果等同 Safari 隐藏标签页
+    /// Same effect as Safari hiding a tab: media pauses, live buffers stay.
     func suspendMediaPlayback() {
-        guard !isMediaSuspended else { return }
+        guard !isMediaSuspended else {
+            return
+        }
         isMediaSuspended = true
-        webView.setAllMediaPlaybackSuspended(true) {}
+        setMediaPlaybackSuspended(true)
     }
 
     func resumeMediaPlayback() {
-        guard isMediaSuspended else { return }
+        guard isMediaSuspended else {
+            return
+        }
         isMediaSuspended = false
-        webView.setAllMediaPlaybackSuspended(false) {}
+        setMediaPlaybackSuspended(false)
+    }
+
+    private func setMediaPlaybackSuspended(_ suspended: Bool) {
+        webView.setAllMediaPlaybackSuspended(suspended) {}
+        for popup in popupWebViews {
+            popup.setAllMediaPlaybackSuspended(suspended) {}
+        }
     }
 
     private func syncFullscreenLayout() {
@@ -450,6 +459,9 @@ extension JarvisWebPlatformController: WKUIDelegate {
         popup.underPageBackgroundColor = .clear
         webView.addSubview(popup)
         popupWebViews.append(popup)
+        if isMediaSuspended {
+            popup.setAllMediaPlaybackSuspended(true) {}
+        }
         return popup
     }
 

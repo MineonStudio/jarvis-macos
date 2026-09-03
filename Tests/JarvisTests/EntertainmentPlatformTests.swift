@@ -5,13 +5,12 @@ final class EntertainmentPlatformTests: XCTestCase {
     func testPlatformsExposeOfficialWebAddresses() {
         XCTAssertEqual(
             EntertainmentPlatform.allCases.map(\.title),
-            ["X", "YouTube", "TikTok", "Twitch", "哔哩哔哩"]
+            ["X", "YouTube", "TikTok", "Twitch"]
         )
         XCTAssertEqual(EntertainmentPlatform.x.url.absoluteString, "https://x.com/")
         XCTAssertEqual(EntertainmentPlatform.youtube.url.absoluteString, "https://www.youtube.com/")
         XCTAssertEqual(EntertainmentPlatform.tiktok.url.absoluteString, "https://www.tiktok.com/")
         XCTAssertEqual(EntertainmentPlatform.twitch.url.absoluteString, "https://www.twitch.tv/")
-        XCTAssertEqual(EntertainmentPlatform.bilibili.url.absoluteString, "https://www.bilibili.com/")
     }
 
     func testHostAllowlistsCoverLoginAndSubdomains() {
@@ -33,12 +32,6 @@ final class EntertainmentPlatformTests: XCTestCase {
         XCTAssertTrue(EntertainmentPlatform.twitch.allowsHost("id.twitch.tv"))
         XCTAssertTrue(EntertainmentPlatform.twitch.allowsHost("player.twitch.tv"))
         XCTAssertFalse(EntertainmentPlatform.twitch.allowsHost("evil.example"))
-
-        XCTAssertTrue(EntertainmentPlatform.bilibili.allowsHost("www.bilibili.com"))
-        XCTAssertTrue(EntertainmentPlatform.bilibili.allowsHost("passport.bilibili.com"))
-        XCTAssertTrue(EntertainmentPlatform.bilibili.allowsHost("b23.tv"))
-        XCTAssertFalse(EntertainmentPlatform.bilibili.allowsHost("evil.example"))
-        XCTAssertFalse(EntertainmentPlatform.bilibili.allowsHost("bilibili.com.evil.example"))
     }
 
     func testEmbeddedFramesStayInsideTheWebView() {
@@ -105,7 +98,7 @@ final class EntertainmentPlatformTests: XCTestCase {
         XCTAssertEqual(AppSection.entertainment.navigationTitle, "娱乐广场")
         XCTAssertEqual(
             EntertainmentPlatform.allCases.map(\.iconResourceName),
-            ["x", "youtube", "tiktok", "twitch", "bilibili"]
+            ["x", "youtube", "tiktok", "twitch"]
         )
     }
 }

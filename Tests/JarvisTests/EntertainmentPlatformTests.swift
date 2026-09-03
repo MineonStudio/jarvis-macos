@@ -1,4 +1,5 @@
 @testable import Jarvis
+import WebKit
 import XCTest
 
 final class EntertainmentPlatformTests: XCTestCase {
@@ -79,6 +80,23 @@ final class EntertainmentPlatformTests: XCTestCase {
             JarvisWebPlatformConfiguration.make().applicationNameForUserAgent,
             applicationName
         )
+    }
+
+    func testWebViewContainerKeepsRoundedCornersWithoutClippingTheWebView() {
+        let container = JarvisWebPlatformViewContainer(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 180)
+        )
+        let webView = WKWebView(frame: .zero)
+        container.embed(webView)
+
+        XCTAssertTrue(webView.superview === container)
+        XCTAssertFalse(container.clipsToBounds)
+        XCTAssertEqual(container.layer?.masksToBounds, false)
+        XCTAssertFalse(webView.clipsToBounds)
+        let cover = container.subviews.compactMap { $0 as? JarvisWebPlatformCornerCoverView }.first
+        XCTAssertNotNil(cover)
+        XCTAssertTrue(cover?.superview === container)
+        XCTAssertEqual(cover?.hitTest(NSPoint(x: 8, y: 8)), nil)
     }
 
     func testEmbeddedWebViewsAllowElementFullscreen() {

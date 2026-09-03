@@ -1,6 +1,22 @@
 import AppKit
 import SwiftUI
 
+private struct SettingsCardHeader: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 24, height: 24)
+            Text(title)
+                .font(JarvisTypography.bodyEmphasis)
+        }
+    }
+}
+
 struct ShortcutSettingsCard: View {
     @EnvironmentObject private var app: AppModel
     @State private var screenshotShortcut = ScreenshotShortcut.default
@@ -11,8 +27,7 @@ struct ShortcutSettingsCard: View {
     var body: some View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 15) {
-                Label("快捷键", systemImage: "keyboard")
-                    .font(JarvisTypography.bodyEmphasis)
+                SettingsCardHeader(title: "快捷键", systemImage: "keyboard")
 
                 shortcutRow(
                     title: "截图",
@@ -102,7 +117,7 @@ struct SettingsView: View {
         JarvisContentArea(
             leadingToolbar: {
                 ToolbarItem(placement: .navigation) {
-                    JarvisPageTopBar(title: "设置")
+                    EmptyView()
                 }
             },
             trailingToolbar: {
@@ -135,9 +150,8 @@ struct SettingsView: View {
     private var themeSettingsCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
-                Label("主题", systemImage: "circle.lefthalf.filled")
-                    .font(JarvisTypography.bodyEmphasis)
-                Spacer()
+                SettingsCardHeader(title: "主题", systemImage: "circle.lefthalf.filled")
+                Spacer(minLength: 8)
                 JarvisThemePicker(selection: Binding(
                     get: { app.themePreference },
                     set: { app.updateThemePreference($0) }
@@ -149,9 +163,8 @@ struct SettingsView: View {
     private var launchAtLoginSettingsCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
-                Label("开机自启", systemImage: "power")
-                    .font(JarvisTypography.cardTitle)
-                Spacer()
+                SettingsCardHeader(title: "开机自启", systemImage: "power")
+                Spacer(minLength: 8)
                 Toggle("", isOn: Binding(
                     get: { app.launchAtLoginEnabled },
                     set: { app.updateLaunchAtLogin($0) }
@@ -169,17 +182,18 @@ struct SettingsView: View {
     private var versionAndUpdateCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
-                HStack(spacing: 6) {
-                    Label("版本与更新", systemImage: "arrow.triangle.2.circlepath")
-                        .font(JarvisTypography.bodyEmphasis)
-                    Text("(v\(JarvisAppVersion.shortVersion))")
+                HStack(spacing: 8) {
+                    SettingsCardHeader(
+                        title: "版本与更新",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    Text("v\(JarvisAppVersion.shortVersion)")
                         .font(JarvisTypography.monospaced)
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 updateControls
             }
-            .frame(height: 34)
         }
     }
 
@@ -220,7 +234,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(height: 34, alignment: .center)
         .animation(
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
             value: app.updateState

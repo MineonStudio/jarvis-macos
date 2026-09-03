@@ -148,28 +148,90 @@ enum JarvisWebPlatformFullscreenLayout {
     }
 }
 
+final class JarvisWebPlatformCornerCoverView: NSView {
+    var cornerRadius: CGFloat = JarvisWebPlatformFullscreenLayout.windowedCornerRadius {
+        didSet {
+            if oldValue != cornerRadius {
+                needsDisplay = true
+            }
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        clipsToBounds = false
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        autoresizingMask = [.width, .height]
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isOpaque: Bool {
+        false
+    }
+
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func draw(_: NSRect) {
+        let bounds = self.bounds
+        guard bounds.width > 0, bounds.height > 0 else {
+            return
+        }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let path = NSBezierPath(rect: bounds)
+            path.append(NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius))
+            path.windingRule = .evenOdd
+            NSColor.textBackgroundColor.setFill()
+            path.fill()
+        }
+    }
+}
+
 final class JarvisWebPlatformViewContainer: NSView {
+    private let cornerCover = JarvisWebPlatformCornerCoverView(frame: .zero)
+
     func embed(_ webView: WKWebView) {
-        guard !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState) else {
+        let isFullscreen = JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState)
+        cornerCover.isHidden = isFullscreen
+        guard !isFullscreen else {
             return
         }
         if webView.superview !== self {
             addSubview(webView)
             webView.autoresizingMask = [.width, .height]
         }
-        // Do not mask or round the WKWebView itself: hardware video layers
-        // flicker when an ancestor clips with cornerRadius + masksToBounds.
+        // Keep rounded corners as a sibling overlay. Masking the WKWebView
+        // itself makes hardware video layers flicker.
         wantsLayer = true
         layer?.masksToBounds = false
         clipsToBounds = false
+        addSubview(cornerCover, positioned: .above, relativeTo: webView)
         if webView.frame != bounds {
             webView.frame = bounds
+        }
+        if cornerCover.frame != bounds {
+            cornerCover.frame = bounds
         }
     }
 
     override func layout() {
         super.layout()
-        guard let webView = subviews.first as? WKWebView,
+        if cornerCover.superview === self, cornerCover.frame != bounds {
+            cornerCover.frame = bounds
+        }
+        guard let webView = subviews.first(where: { $0 is WKWebView }) as? WKWebView,
               webView.superview === self,
               !JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState),
               webView.frame != bounds

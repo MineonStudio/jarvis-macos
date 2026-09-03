@@ -181,7 +181,7 @@ struct ScreenshotAITranslationAPISettingsCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
                     Image(systemName: "network")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(Color.secondary)
                         .frame(width: 24, height: 24)
                     Text("备选 API")

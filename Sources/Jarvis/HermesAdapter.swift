@@ -9,7 +9,7 @@ struct HermesStatus: Equatable, Sendable {
     var model: String?
 
     var isInstalled: Bool {
-        cliPath != nil
+        homeExists || cliPath != nil
     }
 
     var isProfileReady: Bool {
@@ -18,9 +18,6 @@ struct HermesStatus: Equatable, Sendable {
 
     var message: String {
         if !isInstalled {
-            if homeExists {
-                return "检测到 Hermes 数据，但命令未就绪，请重新部署 Hermes Agent。"
-            }
             return "未检测到 Hermes。请先在本机安装 Hermes Agent。"
         }
         if !isProfileReady {
@@ -37,7 +34,6 @@ enum HermesError: LocalizedError, Equatable {
     case profileMissing
     case writeFailed(String)
     case cliMissing
-    case installFailed(String)
     case chatFailed(String)
 
     var errorDescription: String? {
@@ -48,8 +44,6 @@ enum HermesError: LocalizedError, Equatable {
             "写入 Hermes 配置失败：\(message)"
         case .cliMissing:
             "未找到 hermes 命令，请先安装 Hermes Agent"
-        case let .installFailed(message):
-            "部署 Hermes 失败：\(message)"
         case let .chatFailed(message):
             "Hermes 对话失败：\(message)"
         }

@@ -108,9 +108,7 @@ final class AppModel: ObservableObject {
     @Published var hermesStatusMessage = "正在检测 Hermes…"
     @Published var hermesIsInstalled = false
     @Published var hermesProfileReady = false
-    @Published var hermesStatusIsChecking = true
     @Published var hermesIsBusy = false
-    @Published var hermesInstallMessage = ""
     @Published var hermesCLIPath = ""
     @Published var hermesSyncedModel = ""
     @Published var hermesBots: [HermesBot] = []

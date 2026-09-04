@@ -25,36 +25,6 @@ extension AppModel {
         }
     }
 
-    func installHermes() {
-        guard !hermesIsBusy else { return }
-        hermesIsBusy = true
-        hermesStatusIsChecking = false
-        hermesInstallMessage = "正在准备 Hermes 安装…"
-        hermesStatusMessage = "正在部署 Hermes Agent…"
-
-        Task.detached { [weak self] in
-            do {
-                try HermesInstaller.live().install { output in
-                    let message = Self.hermesInstallMessage(from: output)
-                    guard !message.isEmpty else { return }
-                    Task { @MainActor in
-                        self?.hermesInstallMessage = message
-                    }
-                }
-
-                let adapter = HermesAdapter.live()
-                guard adapter.inspect().isInstalled else {
-                    throw HermesError.installFailed("安装完成，但未找到 hermes 命令")
-                }
-                try adapter.createJarvisProfile()
-                try adapter.injectAPIIfAbsent(AIAPIConfiguration.load())
-                await self?.finishHermesInstallation(adapter.inspect())
-            } catch {
-                await self?.failHermesMutation(error.localizedDescription)
-            }
-        }
-    }
-
     func createJarvisHermesProfile() {
         guard !hermesIsBusy else { return }
         hermesIsBusy = true
@@ -86,7 +56,6 @@ extension AppModel {
 
     private func failHermesMutation(_ message: String) {
         hermesIsBusy = false
-        hermesInstallMessage = ""
         refreshHermesStatus()
         showToast(message)
     }
@@ -342,58 +311,11 @@ extension AppModel {
     }
 
     private func applyHermesStatus(_ status: HermesStatus) {
-        hermesStatusIsChecking = false
         hermesIsInstalled = status.isInstalled
         hermesProfileReady = status.isProfileReady
         hermesStatusMessage = status.message
         hermesCLIPath = status.cliPath ?? ""
         hermesSyncedModel = status.model ?? ""
-    }
-
-    private func finishHermesInstallation(_ status: HermesStatus) {
-        hermesIsBusy = false
-        hermesInstallMessage = ""
-        applyHermesStatus(status)
-        applyHermesCurrentModel(HermesAdapter.live().currentModel())
-        hermesBots = HermesAdapter.live().listBots()
-        refreshAvailableAIModels()
-        showToast(status.isProfileReady ? "Hermes 已部署，JARVIS 已就绪" : "Hermes 已部署，请完成 Profile 设置")
-    }
-
-    private nonisolated static func hermesInstallMessage(from output: String) -> String {
-        let lines = output.split(whereSeparator: \.isNewline)
-        for line in lines.reversed() {
-            let normalized = line
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(
-                    of: "\u{001B}[[0-9;]*[A-Za-z]",
-                    with: "",
-                    options: .regularExpression
-                )
-            let lowercased = normalized.lowercased()
-            if lowercased.contains("detected:") {
-                return "正在检查系统环境…"
-            }
-            if lowercased.contains("installing") || lowercased.contains("install ") {
-                return "正在安装 Hermes 运行环境…"
-            }
-            if lowercased.contains("clon") || lowercased.contains("download") {
-                return "正在下载 Hermes Agent…"
-            }
-            if lowercased.contains("python") || lowercased.contains("venv") {
-                return "正在准备 Python 运行环境…"
-            }
-            if lowercased.contains("node") || lowercased.contains("browser") {
-                return "正在准备 Hermes 工具依赖…"
-            }
-            if lowercased.contains("command") || lowercased.contains("path") {
-                return "正在安装 hermes 命令…"
-            }
-            if lowercased.contains("config") || lowercased.contains("skill") {
-                return "正在准备 Hermes 配置…"
-            }
-        }
-        return "正在部署 Hermes Agent…"
     }
 
     private static var identityAvatarURL: URL {

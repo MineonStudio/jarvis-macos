@@ -127,7 +127,8 @@ private struct ResumeTemplateThumbnail: View {
                 divider
                 miniSection(title: "教育经历", accent: ResumePaperPalette.ink)
                 miniSection(title: "工作经历", accent: ResumePaperPalette.ink)
-                miniSection(title: "掌握技能", accent: ResumePaperPalette.ink)
+                miniSkillsTitle("掌握技能")
+                miniSkills(["产品规划", "用户研究", "数据分析"], fill: ResumePaperPalette.ink.opacity(0.08))
                 miniSection(title: "项目经历", accent: ResumePaperPalette.ink)
             }
             .padding(19)
@@ -144,7 +145,8 @@ private struct ResumeTemplateThumbnail: View {
                     .frame(height: 2)
                 miniMinimalSection("教育经历")
                 miniMinimalSection("工作经历")
-                miniMinimalSection("掌握技能")
+                miniSkillsTitle("掌握技能")
+                miniSkills(["产品规划", "用户研究", "数据分析"], fill: ResumePaperPalette.blue.opacity(0.12))
                 miniMinimalSection("项目经历")
             }
             .padding(18)
@@ -170,10 +172,7 @@ private struct ResumeTemplateThumbnail: View {
                     miniTimelineSection("2021 — 至今", "高级产品经理")
                     miniTimelineSection("2018 — 2021", "产品经理")
                     miniTimelineSection("2015 — 2018", "计算机科学 · 硕士")
-                    Text("产品规划  ·  用户研究  ·  数据分析")
-                        .font(.system(size: 5.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(ResumePaperPalette.body)
-                        .lineLimit(1)
+                    miniSkills(["产品规划", "用户研究", "数据分析"], fill: ResumePaperPalette.teal.opacity(0.12))
                 }
             }
             .padding(16)
@@ -208,6 +207,25 @@ private struct ResumeTemplateThumbnail: View {
         Rectangle()
             .fill(color)
             .frame(height: 1)
+    }
+
+    private func miniSkillsTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 5.5, weight: .bold, design: .rounded))
+            .foregroundStyle(ResumePaperPalette.muted)
+    }
+
+    private func miniSkills(_ skills: [String], fill: Color) -> some View {
+        HStack(spacing: 3) {
+            ForEach(skills, id: \.self) { skill in
+                Text(skill)
+                    .font(.system(size: 4.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(ResumePaperPalette.body)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(fill, in: Capsule())
+            }
+        }
     }
 
     private func miniMinimalSection(_ title: String) -> some View {

@@ -21,108 +21,31 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertFalse(ScreenshotTranslationState.failed("失败").isRunning)
     }
 
-    func testTranslationConfigurationRequiresAnAPIKey() {
-        let missingKey = ScreenshotTranslationConfiguration(
-            endpoint: "https://example.com/v1/chat/completions",
-            model: "test-model",
-            apiKey: "",
-            targetLanguage: .simplifiedChinese
-        )
-        let configured = ScreenshotTranslationConfiguration(
-            endpoint: "https://example.com/v1/chat/completions",
-            model: "test-model",
-            apiKey: "test-key",
-            targetLanguage: .english
-        )
+    func testTranslationConfigurationLoadsTargetLanguageAndIgnoresLegacyAPIKeys() throws {
+        let suiteName = "ScreenshotTranslationConfigurationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        XCTAssertFalse(missingKey.isConfigured)
-        XCTAssertTrue(configured.isConfigured)
-    }
-
-    func testAPIConnectionTestRejectsMissingConfigurationBeforeNetworkCall() async {
-        do {
-            try await OpenAICompatibleAPIClient().testConnection(
-                configuration: AIAPIConfiguration(endpoint: "", model: "", apiKey: "")
-            )
-            XCTFail("Expected missing configuration error")
-        } catch let error as AIAPIError {
-            XCTAssertEqual(error, .missingConfiguration)
-        } catch {
-            XCTFail("Unexpected error: \(error)")
-        }
-    }
-
-    func testAPIConnectionTestRejectsMalformedEndpointBeforeNetworkCall() async {
-        do {
-            try await OpenAICompatibleAPIClient().testConnection(
-                configuration: AIAPIConfiguration(
-                    endpoint: "not an endpoint",
-                    model: "test-model",
-                    apiKey: "test-key"
-                )
-            )
-            XCTFail("Expected invalid endpoint error")
-        } catch let error as AIAPIError {
-            XCTAssertEqual(error, .invalidEndpoint)
-        } catch {
-            XCTFail("Unexpected error: \(error)")
-        }
-
-        do {
-            try await OpenAICompatibleAPIClient().testConnection(
-                configuration: AIAPIConfiguration(
-                    endpoint: "http://api.openai.com/v1",
-                    model: "test-model",
-                    apiKey: "test-key"
-                )
-            )
-            XCTFail("Expected invalid endpoint error")
-        } catch let error as AIAPIError {
-            XCTAssertEqual(error, .invalidEndpoint)
-        } catch {
-            XCTFail("Unexpected error: \(error)")
-        }
-    }
-
-    func testAPIConnectionTestRejectsEnvelopeWithoutTextContent() throws {
-        let response: [String: Any] = [
-            "choices": [[
-                "message": [
-                    "role": "assistant",
-                    "content": NSNull()
-                ]
-            ]]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: response)
-
-        XCTAssertThrowsError(try OpenAICompatibleAPIClient.validateConnectionEnvelope(from: data))
-    }
-
-    func testNormalizedEndpointRequiresHTTPSAndFillsOpenAICompletionsPath() {
-        XCTAssertNil(OpenAICompatibleAPIClient.normalizedEndpointURL(from: "http://api.openai.com/v1"))
         XCTAssertEqual(
-            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://api.openai.com")?.absoluteString,
-            "https://api.openai.com/v1/chat/completions"
+            ScreenshotTranslationConfiguration.loadTargetLanguage(defaults: defaults),
+            .simplifiedChinese
+        )
+
+        defaults.set(
+            ScreenshotTranslationLanguage.english.rawValue,
+            forKey: ScreenshotTranslationConfiguration.targetLanguageKey
         )
         XCTAssertEqual(
-            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://api.openai.com/v1")?.absoluteString,
-            "https://api.openai.com/v1/chat/completions"
-        )
-        XCTAssertEqual(
-            OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://example.com/v1/chat/completions")?.absoluteString,
-            "https://example.com/v1/chat/completions"
+            ScreenshotTranslationConfiguration.loadTargetLanguage(defaults: defaults),
+            .english
         )
     }
 
-    func testJSONContentExtractorAcceptsFencedObjectsAndRejectsProse() {
-        let fenced = """
-        ```json
-        {"quote":"hello"}
-        ```
-        """
-        let data = OpenAICompatibleAPIClient.jsonData(fromModelContent: fenced)
-        XCTAssertNotNil(data)
-        XCTAssertNil(OpenAICompatibleAPIClient.jsonData(fromModelContent: "not json"))
+    func testUnsupportedLanguagePairAsksUserToDownloadLanguagePack() {
+        XCTAssertEqual(
+            ScreenshotTranslationError.unsupportedLanguagePair.errorDescription,
+            "系统翻译不支持该语言，请先在设置中下载对应语言包"
+        )
     }
 
     func testTranslationSkipsPunctuationAndNumberOnlyFragments() {
@@ -297,17 +220,6 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(merged[1].text, "Next")
     }
 
-    func testTranslationBatchesSplitOversizedOCRPayloads() {
-        let small = (0 ..< 3).map { AITranslationInput(id: "\($0)", text: "hi") }
-        XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: small).count, 1)
-
-        let large = [
-            AITranslationInput(id: "a", text: String(repeating: "字", count: 4000)),
-            AITranslationInput(id: "b", text: String(repeating: "字", count: 4000))
-        ]
-        XCTAssertEqual(ScreenshotTranslationService.translationBatches(from: large).count, 2)
-    }
-
     func testVisionOCRRejectsInvalidImageData() async {
         do {
             _ = try await ScreenshotTranslationService().recognizeText(in: Data([1, 2, 3]))
@@ -317,33 +229,6 @@ final class ScreenshotTranslationTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
-    }
-
-    func testTranslationServiceDelegatesTextToTheAPIAndKeepsVisionBounds() async throws {
-        let id = UUID()
-        let blocks = [ScreenshotOCRBlock(
-            id: id,
-            text: "Hello",
-            normalizedBounds: CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.1),
-            confidence: 0.95
-        )]
-        let service = ScreenshotTranslationService(apiClient: StubTranslationAPI())
-        let configuration = ScreenshotTranslationConfiguration(
-            endpoint: "https://example.com/v1/chat/completions",
-            model: "test-model",
-            apiKey: "test-key",
-            targetLanguage: .simplifiedChinese
-        )
-
-        let result = try await service.translate(
-            blocks,
-            targetLanguage: .simplifiedChinese,
-            configuration: configuration
-        )
-
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result[0].translatedText, "你好")
-        XCTAssertEqual(result[0].normalizedBounds, blocks[0].normalizedBounds)
     }
 
     func testRenderPipelineIncludesTranslationLayer() throws {
@@ -372,15 +257,5 @@ final class ScreenshotTranslationTests: XCTestCase {
 
         let data = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(request))
         XCTAssertNotNil(NSImage(data: data))
-    }
-}
-
-private struct StubTranslationAPI: AITranslationAPI {
-    func translate(
-        _ items: [AITranslationInput],
-        targetLanguage _: String,
-        configuration _: AIAPIConfiguration
-    ) async throws -> [AITranslationOutput] {
-        items.map { AITranslationOutput(id: $0.id, translation: "你好") }
     }
 }

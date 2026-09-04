@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 enum AppSection: Hashable, Identifiable {
     case overview
+    case conversation
     case aiConversation
     case entertainment
     case skill(SkillID)
@@ -14,6 +15,7 @@ enum AppSection: Hashable, Identifiable {
     var id: String {
         switch self {
         case .overview: "overview"
+        case .conversation: "conversation"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
         case let .skill(skill): "skill.\(skill.id)"
@@ -24,6 +26,7 @@ enum AppSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "首页"
+        case .conversation: "对话"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
         case let .skill(skill): skill.title
@@ -34,6 +37,7 @@ enum AppSection: Hashable, Identifiable {
     var navigationTitle: String {
         switch self {
         case .overview: "首页"
+        case .conversation: "对话"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
         case .skill(.screenshot): "截图"
@@ -48,6 +52,7 @@ enum AppSection: Hashable, Identifiable {
     var icon: String {
         switch self {
         case .overview: "square.grid.2x2"
+        case .conversation: "bubble.left.and.bubble.right"
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
         case let .skill(skill): skill.icon
@@ -72,13 +77,12 @@ private struct ScreenshotSaveRequest {
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var selectedSection: AppSection = .overview
+    @Published var selectedSection: AppSection = .conversation
     @Published var clipboardItems: [ClipboardItem] = []
     @Published var latestScreenshotData: Data?
     @Published var screenshotHistory: [ScreenshotHistoryItem] = []
     @Published var isCapturing = false
     @Published var statusMessage = "系统就绪"
-    @Published var dailyQuote = DailyQuote.builtIn()
     @Published var toastMessage: String?
     @Published var screenshotShortcut = ScreenshotShortcut.default
     @Published var screenshotShortcutConflictMessage = ""
@@ -89,12 +93,34 @@ final class AppModel: ObservableObject {
     @Published var updateState: JarvisUpdateState = .idle
     @Published var selectedAIProvider: AIConversationProvider = .deepSeek
     @Published var selectedEntertainmentPlatform: EntertainmentPlatform = .x
-    @Published var screenshotTranslationEndpoint = ScreenshotTranslationConfiguration.defaultEndpoint
-    @Published var screenshotTranslationModel = ScreenshotTranslationConfiguration.defaultModel
-    @Published var screenshotTranslationAPIKeyConfigured = false
-    @Published var screenshotTranslationAPIKeyMask = ""
-    @Published var screenshotTranslationSettingsLocked = false
-    @Published var screenshotTranslationConnectionTesting = false
+    @Published var providerEndpoint = AIAPIConfiguration.defaultEndpoint
+    @Published var providerName = ""
+    @Published var providerModel = AIAPIConfiguration.defaultModel
+    @Published var hermesCurrentProvider = ""
+    @Published var hermesCurrentModel = ""
+    @Published var aiAPIKeyConfigured = false
+    @Published var aiAPIKeyMask = ""
+    @Published var aiSettingsLocked = false
+    @Published var aiConnectionTesting = false
+    @Published var availableAIModelOptions: [AIModelOption] = []
+    @Published var aiModelsLoading = false
+    var aiModelsGeneration = 0
+    @Published var hermesStatusMessage = "正在检测 Hermes…"
+    @Published var hermesIsInstalled = false
+    @Published var hermesProfileReady = false
+    @Published var hermesIsBusy = false
+    @Published var hermesCLIPath = ""
+    @Published var hermesSyncedModel = ""
+    @Published var hermesBots: [HermesBot] = []
+    @Published var selectedHermesBotID = HermesAdapter.profileName
+    @Published var hermesChatTranscripts: [String: [HermesChatMessage]] = [:]
+    @Published var hermesChatDraft = ""
+    @Published var hermesChatAttachments: [HermesChatAttachment] = []
+    @Published var hermesChatIsSending = false
+    @Published var hermesChatProgress = "JARVIS 正在处理…"
+    @Published var hermesChatProgressSteps: [String] = []
+    @Published var jarvisIdentityName = ""
+    @Published var jarvisAvatarPath = ""
     @Published var screenCapturePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
     @Published var microphonePermissionGranted = false
@@ -135,7 +161,6 @@ final class AppModel: ObservableObject {
     var systemAppearanceObservation: NSKeyValueObservation?
     var editingHistoryID: UUID?
     var clipboardCacheCleanupTimer: Timer?
-    var dailyQuoteTask: Task<Void, Never>?
 
     let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
@@ -143,12 +168,9 @@ final class AppModel: ObservableObject {
     let themePreferenceKey = "jarvis.theme.preference"
     let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
-    let selectedAIProviderKey = "jarvis.ai.conversation.provider"
+    let selectedAIProviderKey = "jarvis.web.conversation.provider"
     let selectedEntertainmentPlatformKey = "jarvis.entertainment.platform"
     var toastDismissTask: Task<Void, Never>?
-    var dailyQuoteGeneration = 0
-    let dailyQuoteStore = DailyQuoteStore()
-    let dailyQuoteService = DailyQuoteService()
 
     func aiConversationController(for provider: AIConversationProvider) -> JarvisWebPlatformController {
         if let controller = aiConversationControllers[provider] {
@@ -201,7 +223,9 @@ final class AppModel: ObservableObject {
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
         loadClipboardShortcut()
-        loadScreenshotTranslationSettings()
+        loadAIAPISettings()
+        loadJarvisIdentity()
+        refreshHermesStatus()
         loadThemePreference()
         loadLaunchAtLoginPreference()
         refreshSystemColorScheme()
@@ -279,7 +303,6 @@ final class AppModel: ObservableObject {
     }
 
     deinit {
-        dailyQuoteTask?.cancel()
         toastDismissTask?.cancel()
         clipboardCacheCleanupTimer?.invalidate()
     }

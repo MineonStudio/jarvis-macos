@@ -28,7 +28,6 @@ extension ScreenshotEditorModel {
 
     func startTranslation() {
         guard !translationState.isRunning else { return }
-        let configuration = ScreenshotTranslationConfiguration.load()
 
         translationTask?.cancel()
         resumeAppleTranslationJob(.failure(CancellationError()))
@@ -47,8 +46,7 @@ extension ScreenshotEditorModel {
             await self?.runTranslation(
                 generation: generation,
                 sourceData: sourceData,
-                targetLanguage: targetLanguage,
-                configuration: configuration
+                targetLanguage: targetLanguage
             )
         }
     }
@@ -90,8 +88,7 @@ extension ScreenshotEditorModel {
     private func runTranslation(
         generation: Int,
         sourceData: Data,
-        targetLanguage: ScreenshotTranslationLanguage,
-        configuration: ScreenshotTranslationConfiguration
+        targetLanguage: ScreenshotTranslationLanguage
     ) async {
         do {
             let service = ScreenshotTranslationService()
@@ -103,7 +100,6 @@ extension ScreenshotEditorModel {
             try await translate(
                 plan: plan,
                 targetLanguage: targetLanguage,
-                configuration: configuration,
                 generation: generation
             )
         } catch is CancellationError {
@@ -121,7 +117,6 @@ extension ScreenshotEditorModel {
     private func translate(
         plan: ScreenshotTranslationPlan,
         targetLanguage: ScreenshotTranslationLanguage,
-        configuration: ScreenshotTranslationConfiguration,
         generation: Int
     ) async throws {
         let total = plan.translatableCount
@@ -140,7 +135,6 @@ extension ScreenshotEditorModel {
                 try await translate(
                     group: group,
                     targetLanguage: targetLanguage,
-                    configuration: configuration,
                     generation: generation
                 )
                 completed += group.blocks.count
@@ -164,7 +158,6 @@ extension ScreenshotEditorModel {
     private func translate(
         group: ScreenshotTranslationLanguageGroup,
         targetLanguage: ScreenshotTranslationLanguage,
-        configuration: ScreenshotTranslationConfiguration,
         generation: Int
     ) async throws {
         let sampleText = group.blocks.map(\.text).joined(separator: "\n")
@@ -191,29 +184,15 @@ extension ScreenshotEditorModel {
         }
 
         if status == .installed || status == .supported {
-            do {
-                try await translateWithAppleDownload(
-                    group: group,
-                    targetLanguage: targetLanguage,
-                    generation: generation
-                )
-                return
-            } catch {
-                if Task.isCancelled || Self.isCancellation(error) {
-                    throw error
-                }
-            }
+            try await translateWithAppleDownload(
+                group: group,
+                targetLanguage: targetLanguage,
+                generation: generation
+            )
+            return
         }
 
-        guard configuration.isConfigured else {
-            throw ScreenshotTranslationError.unsupportedLanguagePair
-        }
-        try await translateWithAPI(
-            group: group,
-            targetLanguage: targetLanguage,
-            configuration: configuration,
-            generation: generation
-        )
+        throw ScreenshotTranslationError.unsupportedLanguagePair
     }
 
     private func translateWithInstalledApple(
@@ -252,25 +231,6 @@ extension ScreenshotEditorModel {
                 source: group.source,
                 target: targetLanguage
             )
-        }
-    }
-
-    private func translateWithAPI(
-        group: ScreenshotTranslationLanguageGroup,
-        targetLanguage: ScreenshotTranslationLanguage,
-        configuration: ScreenshotTranslationConfiguration,
-        generation: Int
-    ) async throws {
-        let service = ScreenshotTranslationService()
-        let translated = try await service.translateWithAPI(
-            group.blocks,
-            targetLanguage: targetLanguage,
-            configuration: configuration
-        )
-        guard translationGeneration == generation else { return }
-        rememberTranslationSources(group.blocks)
-        for block in translated {
-            upsertTranslationBlock(block)
         }
     }
 

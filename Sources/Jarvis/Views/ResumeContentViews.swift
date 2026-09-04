@@ -23,9 +23,7 @@ struct ResumeContentView: View {
                         EmptyView()
                     }
                 } else {
-                    ToolbarItem(placement: .navigation) {
-                        resumeToolbarLeading
-                    }
+                    resumeLeadingToolbar
                 }
             },
             trailingToolbar: {
@@ -34,9 +32,7 @@ struct ResumeContentView: View {
                         EmptyView()
                     }
                 } else {
-                    ToolbarItem(placement: .automatic) {
-                        resumeToolbarTrailing
-                    }
+                    resumeTrailingToolbar
                 }
             },
             content: {
@@ -165,18 +161,23 @@ private extension ResumeContentView {
         }
     }
 
-    var resumeToolbarLeading: some View {
-        HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
+    @ToolbarContentBuilder
+    var resumeLeadingToolbar: some ToolbarContent {
+        ToolbarItem(id: "resume.filename", placement: .navigation) {
             TextField("未命名简历", text: $workspace.document.title)
                 .textFieldStyle(.plain)
                 .font(JarvisTypography.cardTitle)
+                .lineLimit(1)
                 .frame(width: filenameWidth, height: JarvisToolbarMetrics.controlSize)
                 .padding(.horizontal, 12)
                 .background(Color.primary.opacity(0.08), in: Capsule())
                 .focused($isFilenameFocused)
                 .onSubmit { finishFilenameEditing() }
                 .help("点击修改文件名")
+        }
+        .sharedBackgroundVisibility(.hidden)
 
+        ToolbarItem(id: "resume.save-status", placement: .navigation) {
             HStack(spacing: 5) {
                 Image(systemName: workspace.isSaved ? "checkmark.circle.fill" : "circle.dashed")
                     .font(.system(size: 11, weight: .medium))
@@ -184,13 +185,17 @@ private extension ResumeContentView {
                 Text(saveStatusText)
                     .font(JarvisTypography.caption)
                     .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
         }
+        .sharedBackgroundVisibility(.hidden)
     }
 
-    var resumeToolbarTrailing: some View {
-        HStack(spacing: JarvisToolbarMetrics.controlSpacing) {
+    @ToolbarContentBuilder
+    var resumeTrailingToolbar: some ToolbarContent {
+        ToolbarItem(id: "resume.new", placement: .automatic) {
             Button {
                 requestNewResume()
             } label: {
@@ -198,7 +203,9 @@ private extension ResumeContentView {
             }
             .buttonStyle(JarvisToolbarButtonStyle())
             .help("直接打开一份全新的空白简历")
+        }
 
+        ToolbarItem(id: "resume.import", placement: .automatic) {
             Button {
                 finishFilenameEditing()
                 importJSON()
@@ -207,7 +214,9 @@ private extension ResumeContentView {
             }
             .buttonStyle(JarvisToolbarButtonStyle())
             .help("打开一份 JSON 简历作为当前文档")
+        }
 
+        ToolbarItem(id: "resume.save", placement: .automatic) {
             Menu {
                 ForEach(ResumeExportFormat.allCases) { format in
                     Button("保存为 \(format.title)") {
@@ -218,8 +227,10 @@ private extension ResumeContentView {
             } label: {
                 Text("保存简历")
             }
-            .buttonStyle(JarvisToolbarButtonStyle(tint: .accentColor))
-            .help("选择 PDF、RTF、Markdown 或 JSON 保存简历")
+            .menuIndicator(.hidden)
+            .buttonStyle(JarvisToolbarButtonStyle.menu(tint: .accentColor))
+            .accessibilityLabel("保存简历")
+            .accessibilityHint("选择 PDF、RTF、Markdown 或 JSON")
         }
     }
 
@@ -402,7 +413,7 @@ private extension ResumeContentView {
 
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try data.write(to: url, options: .atomic)
-            workspace.markSaved()
+            workspace.markSaved(to: url)
             app.showToast("已保存为 \(format.title)")
             afterSave?()
         } catch {

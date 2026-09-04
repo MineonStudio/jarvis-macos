@@ -58,10 +58,10 @@ enum ResumePageLayout {
                 pages: &pages
             )
         }
-        for item in fullContent.skills {
+        if !fullContent.skills.isEmpty {
             place(
-                .skill(item),
-                height: 25,
+                .skills(fullContent.skills),
+                height: estimatedSkillsHeight(fullContent.skills),
                 current: &current,
                 pages: &pages
             )
@@ -125,6 +125,11 @@ enum ResumePageLayout {
         24 + estimatedTextHeight([item.company, item.role, item.period])
     }
 
+    private static func estimatedSkillsHeight(_ skills: [String]) -> CGFloat {
+        let lineCount = max(1, Int(ceil(Double(skills.count) / 5.0)))
+        return CGFloat(lineCount) * 26
+    }
+
     private static func estimatedProjectHeight(_ item: ResumeProject) -> CGFloat {
         25
             + (nonEmpty(item.summary) ? estimatedTextHeight([item.summary]) + 5 : 0)
@@ -147,7 +152,7 @@ enum ResumePageLayout {
 private enum ResumePageItem {
     case education(ResumeEducation)
     case experience(ResumeExperience)
-    case skill(String)
+    case skills([String])
     case project(ResumeProject)
 }
 
@@ -179,7 +184,7 @@ private struct ResumePageAccumulator {
             !education.isEmpty
         case .experience:
             !experience.isEmpty
-        case .skill:
+        case .skills:
             !skills.isEmpty
         case .project:
             !projects.isEmpty
@@ -192,8 +197,8 @@ private struct ResumePageAccumulator {
             education.append(value)
         case let .experience(value):
             experience.append(value)
-        case let .skill(value):
-            skills.append(value)
+        case let .skills(values):
+            skills.append(contentsOf: values)
         case let .project(value):
             projects.append(value)
         }

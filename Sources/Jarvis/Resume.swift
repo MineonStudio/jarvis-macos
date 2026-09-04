@@ -20,7 +20,7 @@ enum ResumeTemplate: String, CaseIterable, Codable, Equatable, Identifiable, Sen
         case "timeline":
             self = .timeline
         default:
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "未知的简历模板：\(rawValue)")
+            self = .defaultTemplate
         }
     }
 
@@ -357,6 +357,14 @@ enum ResumeExportFormat: String, CaseIterable, Identifiable {
     }
 }
 
+enum ResumeSavedFile {
+    static func documentTitle(from url: URL) -> String {
+        let name = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "未命名简历" : name
+    }
+}
+
 @MainActor
 final class ResumeWorkspace: ObservableObject {
     @Published var document: ResumeDocument
@@ -402,7 +410,9 @@ final class ResumeWorkspace: ObservableObject {
 
     func replace(with document: ResumeDocument) {
         cancelGeneration()
+        let preservedTemplate = hasChosenTemplate ? self.document.template : document.template
         self.document = document
+        self.document.template = preservedTemplate
         hasChosenTemplate = true
         savedSignature = nil
         lastSavedAt = nil
@@ -411,6 +421,11 @@ final class ResumeWorkspace: ObservableObject {
     func markSaved(at date: Date = Date()) {
         savedSignature = ResumeDocumentCodec.signature(for: document)
         lastSavedAt = date
+    }
+
+    func markSaved(to url: URL, at date: Date = Date()) {
+        document.title = ResumeSavedFile.documentTitle(from: url)
+        markSaved(at: date)
     }
 
     var isGenerating: Bool {
@@ -458,7 +473,6 @@ enum ResumeDocumentCodec {
     private struct ExportDocument: Encodable {
         let id: UUID
         let title: String
-        let template: ResumeTemplate
         let basicInfo: ResumeBasicInfo
         let education: [ResumeEducation]
         let experience: [ResumeExperience]
@@ -468,7 +482,6 @@ enum ResumeDocumentCodec {
         init(_ document: ResumeDocument) {
             id = document.id
             title = document.title
-            template = document.template
             basicInfo = document.basicInfo
             education = document.education
             experience = document.experience

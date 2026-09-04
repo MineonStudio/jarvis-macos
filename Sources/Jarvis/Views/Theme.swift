@@ -339,26 +339,39 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
 /// hover/press feedback, so no control can grow into a toolbar background.
 struct JarvisToolbarButtonStyle: ButtonStyle {
     let tint: Color?
+    let hoverScale: CGFloat
+    let animatesPress: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(tint: Color? = nil) {
+    init(tint: Color? = nil, hoverScale: CGFloat = 1.03, animatesPress: Bool = true) {
         self.tint = tint
+        self.hoverScale = hoverScale
+        self.animatesPress = animatesPress
+    }
+
+    /// Menu labels must keep a stable frame. Hovering popup items toggles
+    /// press/hover on macOS and would otherwise flicker the attached list.
+    static func menu(tint: Color? = nil) -> Self {
+        Self(tint: tint, hoverScale: 1, animatesPress: false)
     }
 
     func makeBody(configuration: Configuration) -> some View {
+        let isPressed = animatesPress && configuration.isPressed
         configuration.label
             .font(tint == nil ? JarvisTypography.control : JarvisTypography.controlEmphasis)
             .foregroundStyle(tint ?? Color.primary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
             .frame(height: JarvisToolbarMetrics.controlSize)
-            .opacity(configuration.isPressed ? 0.68 : 1)
+            .opacity(isPressed ? 0.68 : 1)
             .contentShape(Capsule())
-            .jarvisHoverFeedback(in: Capsule(), scale: 1.03)
-            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
+            .jarvisHoverFeedback(in: Capsule(), scale: hoverScale)
+            .scaleEffect(reduceMotion || !isPressed ? 1 : 0.98)
             .animation(
                 JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
-                value: configuration.isPressed
+                value: isPressed
             )
     }
 }

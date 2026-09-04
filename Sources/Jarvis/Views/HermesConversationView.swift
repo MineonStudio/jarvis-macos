@@ -152,26 +152,162 @@ struct HermesConversationView: View {
     }
 
     private var emptyState: some View {
+        Group {
+            if app.hermesStatusIsChecking {
+                checkingHermesState
+            } else if app.hermesIsBusy, !app.hermesIsInstalled {
+                installingHermesState
+            } else if !app.hermesIsInstalled {
+                missingHermesState
+            } else {
+                profileState
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var checkingHermesState: some View {
         VStack(spacing: 14) {
-            Spacer(minLength: 0)
-            JarvisEmptyState(
-                icon: "bubble.left.and.bubble.right",
-                title: "还不能和 JARVIS 对话",
-                message: app.hermesIsInstalled
-                    ? "先创建 Jarvis Profile，再开始对话。"
-                    : "未检测到 Hermes。请先在本机安装 Hermes Agent。"
-            )
-            if app.hermesIsInstalled, !app.hermesProfileReady {
-                Button("创建 Jarvis Profile") {
-                    app.createJarvisHermesProfile()
+            Spacer()
+            ProgressView()
+                .controlSize(.regular)
+            Text("正在检查 Hermes")
+                .font(JarvisTypography.cardTitle)
+            Text("确认本机是否已部署 JARVIS 的执行引擎…")
+                .font(JarvisTypography.secondary)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            Spacer()
+        }
+        .padding(24)
+    }
+
+    private var missingHermesState: some View {
+        VStack(spacing: 18) {
+            Spacer(minLength: 12)
+            Image(systemName: "bolt.horizontal.circle.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 64, height: 64)
+                .background(Color.accentColor.opacity(0.12), in: Circle())
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.accentColor.opacity(0.20), lineWidth: 0.75)
                 }
-                .buttonStyle(JarvisPrimaryButtonStyle())
-                .disabled(app.hermesIsBusy)
+
+            VStack(spacing: 8) {
+                Text("先部署 Hermes，唤醒 JARVIS")
+                    .font(JarvisTypography.pageTitle)
+                    .multilineTextAlignment(.center)
+                Text("Hermes 是 JARVIS 的本地执行引擎。部署完成后，你可以在这里进行对话，并让 JARVIS 处理文件与网页任务。")
+                    .font(JarvisTypography.secondary)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 470)
+
+            VStack(alignment: .leading, spacing: 8) {
+                setupStep(icon: "arrow.down.circle", title: "自动安装 Hermes Agent", detail: "使用 Hermes 官方安装源")
+                setupStep(icon: "person.crop.circle.badge.checkmark", title: "创建 Jarvis Profile", detail: "为 JARVIS 准备独立配置")
+                setupStep(icon: "arrow.triangle.2.circlepath", title: "同步当前 API 配置", detail: "已有 API 设置会自动接入")
+            }
+            .frame(maxWidth: 470)
+            .padding(12)
+            .background(
+                Color.primary.opacity(0.045),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+
+            Button {
+                app.installHermes()
+            } label: {
+                Label("一键部署 Hermes", systemImage: "arrow.down.circle.fill")
+                    .frame(minWidth: 190)
+            }
+            .buttonStyle(JarvisPrimaryButtonStyle())
+
+            Text("安装可能需要几分钟，完成后无需重启 Jarvis。")
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            Spacer(minLength: 12)
+        }
+        .padding(.horizontal, 26)
+        .padding(.vertical, 20)
+    }
+
+    private var installingHermesState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .controlSize(.regular)
+            Text("正在部署 Hermes")
+                .font(JarvisTypography.cardTitle)
+            Text(app.hermesInstallMessage.isEmpty ? "正在准备运行环境…" : app.hermesInstallMessage)
+                .font(JarvisTypography.secondary)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            Text("请保持 Jarvis 打开，安装完成后会自动创建 JARVIS Profile。")
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+        }
+        .padding(24)
+    }
+
+    private var profileState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "person.crop.circle.badge.checkmark")
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 58, height: 58)
+                .background(
+                    Color.accentColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+            Text("完成 JARVIS 设置")
+                .font(JarvisTypography.cardTitle)
+            Text("Hermes 已部署，再创建一次 Jarvis Profile 就可以开始对话。")
+                .font(JarvisTypography.secondary)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                app.createJarvisHermesProfile()
+            } label: {
+                if app.hermesIsBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(minWidth: 150)
+                } else {
+                    Text("创建 Jarvis Profile")
+                        .frame(minWidth: 150)
+                }
+            }
+            .buttonStyle(JarvisPrimaryButtonStyle())
+            .disabled(app.hermesIsBusy)
+            Spacer()
+        }
+        .padding(24)
+        .frame(maxWidth: 420)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func setupStep(icon: String, title: String, detail: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(JarvisTypography.controlEmphasis)
+                Text(detail)
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
             }
             Spacer(minLength: 0)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var messageList: some View {

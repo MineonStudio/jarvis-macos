@@ -246,19 +246,12 @@ final class ScreenshotEditorModel: ObservableObject {
     var pendingAppleTranslationJob: ScreenshotAppleTranslationJob?
     var appleTranslationJobContinuation: CheckedContinuation<Void, Error>?
     var appleTranslationSourceBlocks: [UUID: ScreenshotOCRBlock] = [:]
-    let translationConfiguration: ScreenshotTranslationConfiguration
-
-    var isTranslationAPIConfigured: Bool {
-        ScreenshotTranslationConfiguration.load().isConfigured
-    }
-
     init(
         image: NSImage,
         data: Data,
         outputData: Data,
         canvasSize: CGSize,
-        outputRect: CGRect? = nil,
-        translationConfiguration: ScreenshotTranslationConfiguration = .load()
+        outputRect: CGRect? = nil
     ) {
         originalImage = image
         originalData = data
@@ -277,8 +270,7 @@ final class ScreenshotEditorModel: ObservableObject {
         initialSelectionRect = canvasSelectionRect
         blurredImageCache = nil
         pixelatedImageCache = nil
-        self.translationConfiguration = translationConfiguration
-        translationTargetLanguage = translationConfiguration.targetLanguage
+        translationTargetLanguage = ScreenshotTranslationConfiguration.loadTargetLanguage()
     }
 
     deinit {

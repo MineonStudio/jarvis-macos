@@ -3,11 +3,13 @@ import Foundation
 enum ResumeGeneratedContent: Sendable {
     case education(ResumeEducation)
     case experience(ResumeExperience)
-    case skill(String)
+    case skills([String])
     case project(ResumeProject)
 }
 
 struct ResumeAIService: Sendable {
+    static let skillBatchSize = 10
+
     private let apiClient: any AITextCompletionAPI
 
     init(apiClient: any AITextCompletionAPI = OpenAICompatibleAPIClient()) {
@@ -42,18 +44,62 @@ struct ResumeAIService: Sendable {
         return item
     }
 
-    func generateSkill(
+    func generateSkills(
         for document: ResumeDocument,
         configuration: AIAPIConfiguration
-    ) async throws -> String {
-        guard case let .skill(value) = try await generate(
-            section: .skills,
-            document: document,
-            configuration: configuration
-        ) else {
-            throw AIAPIError.invalidSchema(context: "技能生成", reason: "返回类型错误")
+    ) async throws -> [String] {
+        try requireBasicInfo(for: .skills, document: document)
+
+        var collected: [String] = []
+        var collectedSignatures = Set(signatures(for: .skills, in: document))
+        var rejectedSignatures: Set<String> = []
+        var lastEmptyError: AIAPIError?
+
+        for _ in 0 ..< 3 {
+            let remaining = Self.skillBatchSize - collected.count
+            guard remaining > 0 else { break }
+
+            let content = try await apiClient.complete(
+                systemPrompt: systemPrompt(for: .skills, count: remaining),
+                userPrompt: userPrompt(
+                    for: .skills,
+                    document: document,
+                    rejectedSignatures: rejectedSignatures,
+                    generationFocus: nil,
+                    count: remaining
+                ),
+                configuration: configuration
+            )
+            let decoded = try decodeSkills(from: content)
+            var addedAny = false
+            for rawValue in decoded {
+                let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard isConcrete(value) else { continue }
+                let candidateSignature = signature(values: [value])
+                guard !collectedSignatures.contains(candidateSignature),
+                      !rejectedSignatures.contains(candidateSignature)
+                else {
+                    rejectedSignatures.insert(candidateSignature)
+                    continue
+                }
+                collected.append(value)
+                collectedSignatures.insert(candidateSignature)
+                addedAny = true
+                if collected.count == Self.skillBatchSize {
+                    return collected
+                }
+            }
+            if !addedAny {
+                lastEmptyError = decoded.isEmpty
+                    ? .emptyGeneratedContent(context: ResumeSection.skills.title)
+                    : .duplicateGeneratedContent(context: ResumeSection.skills.title)
+            }
         }
-        return value
+
+        if collected.isEmpty {
+            throw lastEmptyError ?? .duplicateGeneratedContent(context: ResumeSection.skills.title)
+        }
+        return collected
     }
 
     func generateProject(
@@ -76,18 +122,25 @@ struct ResumeAIService: Sendable {
         return item
     }
 
-    private func generate(
-        section: ResumeSection,
-        document: ResumeDocument,
-        configuration: AIAPIConfiguration,
-        generationFocus: String? = nil
-    ) async throws -> ResumeGeneratedContent {
+    private func requireBasicInfo(for section: ResumeSection, document: ResumeDocument) throws {
         guard document.basicInfo.isReadyForAIGeneration else {
             let missingFields = document.basicInfo.missingRequiredFieldsForAI.joined(separator: "、")
             throw AIAPIError.invalidSchema(
                 context: "\(section.title)生成",
                 reason: "请先完成基本信息：\(missingFields)"
             )
+        }
+    }
+
+    private func generate(
+        section: ResumeSection,
+        document: ResumeDocument,
+        configuration: AIAPIConfiguration,
+        generationFocus: String? = nil
+    ) async throws -> ResumeGeneratedContent {
+        try requireBasicInfo(for: section, document: document)
+        if section == .skills {
+            return try await .skills(generateSkills(for: document, configuration: configuration))
         }
         let existingSignatures = Set(signatures(for: section, in: document))
         var rejectedSignatures: Set<String> = []
@@ -127,7 +180,7 @@ struct ResumeAIService: Sendable {
         throw AIAPIError.duplicateGeneratedContent(context: section.title)
     }
 
-    private func systemPrompt(for section: ResumeSection) -> String {
+    private func systemPrompt(for section: ResumeSection, count: Int = 1) -> String {
         let contract = switch section {
         case .basicInfo:
             "不支持生成基本信息"
@@ -136,13 +189,16 @@ struct ResumeAIService: Sendable {
         case .experience:
             #"返回 {"company":"公司","role":"职位","period":"时间"}"#
         case .skills:
-            #"返回 {"skill":"技能名称"}"#
+            #"返回 {"skills":["技能1","技能2"]}"#
         case .projects:
             #"返回 {"name":"真实项目名称","period":"时间","summary":"约80字的项目简介","bullets":["项目要点"]}"#
         }
+        let quantity = section == .skills
+            ? "本次生成 \(count) 条互不相同的新\(section.title)，不要生成其他模块。"
+            : "本次只生成一条新的\(section.title)表单内容，不要生成其他模块，不要返回数组。"
 
         return """
-        你是简历表单内容助手。本次只生成一条新的\(section.title)表单内容，不要生成其他模块，不要返回数组。
+        你是简历表单内容助手。\(quantity)
         只能返回 JSON 对象，不要 Markdown 代码围栏，不要解释文字。格式：\(contract)。
         所有字符串都必须有具体内容，不要返回空字符串、示例、待补充或待核实。
         参考当前简历内容生成合理的候选条目，但不要重复已有条目或本次已经拒绝的条目。
@@ -156,7 +212,8 @@ struct ResumeAIService: Sendable {
         for section: ResumeSection,
         document: ResumeDocument,
         rejectedSignatures: Set<String>,
-        generationFocus: String?
+        generationFocus: String?,
+        count: Int = 1
     ) -> String {
         let basicInfo = document.basicInfo
         let role = basicInfo.headline.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -183,7 +240,9 @@ struct ResumeAIService: Sendable {
 
         \(generationFocus.map { "目标项目领域：\($0)" } ?? "")
         工作经历必须与职位标题匹配，时间必须使用推算工作时间“\(workPeriod)”；教育经历必须围绕毕业年份基准并按学历匹配；掌握技能和项目经历必须围绕职位标题和工作年限生成。
-        只生成一条新的\(section.title)，并严格返回 JSON 对象。
+        \(section == .skills
+            ? "生成 \(count) 条互不相同的新掌握技能，严格返回 JSON 对象 {\"skills\":[\"技能1\",...]}。"
+            : "只生成一条新的\(section.title)，并严格返回 JSON 对象。")
         """
     }
 
@@ -253,8 +312,7 @@ struct ResumeAIService: Sendable {
                     )
                 )
             case .skills:
-                let response = try JSONDecoder().decode(SkillResponse.self, from: data)
-                return .skill(response.skill)
+                return try .skills(decodeSkills(from: content))
             case .projects:
                 let response = try JSONDecoder().decode(ProjectResponse.self, from: data)
                 return .project(
@@ -279,8 +337,8 @@ struct ResumeAIService: Sendable {
             [item.school, item.degree, item.major, item.period].allSatisfy(isConcrete)
         case let .experience(item):
             [item.company, item.role, item.period].allSatisfy(isConcrete)
-        case let .skill(value):
-            isConcrete(value)
+        case let .skills(values):
+            !values.isEmpty && values.allSatisfy(isConcrete)
         case let .project(item):
             isConcrete(item.name)
                 && isConcrete(item.period)
@@ -317,8 +375,8 @@ struct ResumeAIService: Sendable {
             signature(values: [item.school, item.degree, item.major])
         case let .experience(item):
             signature(values: [item.company, item.role, item.period])
-        case let .skill(value):
-            signature(values: [value])
+        case let .skills(values):
+            values.map { signature(values: [$0]) }.joined(separator: "\n")
         case let .project(item):
             signature(values: [item.name, item.period])
         }
@@ -352,8 +410,25 @@ struct ResumeAIService: Sendable {
         let period: String
     }
 
-    private struct SkillResponse: Decodable {
-        let skill: String
+    private func decodeSkills(from content: String) throws -> [String] {
+        let context = "掌握技能生成"
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContent.isEmpty else {
+            throw AIAPIError.invalidJSON(context: context, reason: "返回内容为空")
+        }
+        guard let data = OpenAICompatibleAPIClient.jsonData(fromModelContent: trimmedContent) else {
+            throw AIAPIError.invalidJSON(context: context, reason: "返回内容不是有效 JSON")
+        }
+        do {
+            let response = try JSONDecoder().decode(SkillsResponse.self, from: data)
+            return response.skills
+        } catch {
+            throw AIAPIError.decodingError(error, context: context)
+        }
+    }
+
+    private struct SkillsResponse: Decodable {
+        let skills: [String]
     }
 
     private struct ProjectResponse: Decodable {

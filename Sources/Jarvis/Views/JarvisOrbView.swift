@@ -41,18 +41,69 @@ struct JarvisOrbMark: View {
     }
 }
 
+enum JarvisOrbMood: Equatable, Sendable {
+    case idle
+    case listening
+    case thinking
+    case working
+    case speaking
+    case trouble
+
+    static func from(
+        isSending: Bool,
+        progress: String,
+        isListening: Bool,
+        isSpeaking: Bool,
+        lastAssistantText: String
+    ) -> Self {
+        if isSending {
+            if progress.contains("额度") || progress.contains("重试") || progress.contains("失败") {
+                return .trouble
+            }
+            if progress.hasPrefix("已完成") || progress.hasPrefix("已取消") {
+                return .working
+            }
+            return .thinking
+        }
+        if lastAssistantText.hasPrefix("Hermes 对话失败")
+            || lastAssistantText.contains("额度已用完")
+        {
+            return isListening ? .listening : .trouble
+        }
+        if isSpeaking {
+            return .speaking
+        }
+        if isListening {
+            return .listening
+        }
+        return .idle
+    }
+}
+
 struct JarvisOrbView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
+    let mood: JarvisOrbMood
+    let pulse: Int
+
     @State private var gazeOffset: CGSize = .zero
     @State private var isBlinking = false
     @State private var isTapBouncing = false
+    @State private var isNodding = false
     @State private var dragSquash: CGFloat = 0
     @State private var isDragging = false
+    @State private var breath: CGFloat = 0
 
-    private let orbDiameter: CGFloat = 276
-    private let maximumDragDistance: CGFloat = 180
+    private let orbDiameter: CGFloat
+    private let maximumDragDistance: CGFloat
+
+    init(diameter: CGFloat = 276, mood: JarvisOrbMood = .idle, pulse: Int = 0) {
+        orbDiameter = diameter
+        self.mood = mood
+        self.pulse = pulse
+        maximumDragDistance = diameter * 0.65
+    }
 
     private var orbColor: Color {
         colorScheme == .dark ? .white : .black
@@ -75,32 +126,50 @@ struct JarvisOrbView: View {
                 y: 12
             )
             .overlay {
-                HStack(spacing: 48) {
-                    JarvisOrbEye(eyeColor: eyeColor, isBlinking: isBlinking)
-                    JarvisOrbEye(eyeColor: eyeColor, isBlinking: isBlinking)
+                HStack(spacing: orbDiameter * 0.174) {
+                    JarvisOrbEye(
+                        eyeColor: eyeColor,
+                        closeAmount: eyeCloseAmount,
+                        width: orbDiameter * 0.152,
+                        height: orbDiameter * 0.319
+                    )
+                    JarvisOrbEye(
+                        eyeColor: eyeColor,
+                        closeAmount: eyeCloseAmount,
+                        width: orbDiameter * 0.152,
+                        height: orbDiameter * 0.319
+                    )
                 }
-                .offset(x: gazeOffset.width, y: -38 + gazeOffset.height)
+                .offset(x: displayedGaze.width, y: -orbDiameter * 0.138 + displayedGaze.height)
                 .animation(
                     JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
-                    value: gazeOffset
+                    value: displayedGaze
                 )
             }
             .frame(width: orbDiameter, height: orbDiameter)
-            .scaleEffect(
-                x: (isTapBouncing ? 1.10 : 1) * (1 + dragSquash * 0.10),
-                y: (isTapBouncing ? 0.90 : 1) * (1 - dragSquash * 0.42)
-            )
-            .task {
+            .scaleEffect(x: scaleX, y: scaleY)
+            .task(id: mood) {
                 await gazeLoop()
             }
-            .task {
+            .task(id: mood) {
                 await blinkLoop()
             }
+            .task(id: mood) {
+                await applyMoodMotion()
+            }
+            .onChange(of: mood) { _, newMood in
+                if newMood == .speaking {
+                    triggerNod()
+                }
+            }
+            .onChange(of: pulse) { _, _ in
+                triggerNod()
+            }
             .frame(maxWidth: .infinity)
-            .frame(height: 330)
+            .frame(height: orbDiameter + 54)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("JARVIS 动态小球")
-            .accessibilityValue("会眨眼并四处观察")
+            .accessibilityValue(accessibilityMood)
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("点击或拖拽触发 Q 弹动画")
             .contentShape(Circle())
@@ -115,12 +184,114 @@ struct JarvisOrbView: View {
             )
     }
 
+    private var displayedGaze: CGSize {
+        mood == .idle ? gazeOffset : moodGaze
+    }
+
+    private var moodGaze: CGSize {
+        switch mood {
+        case .idle:
+            .zero
+        case .listening:
+            CGSize(width: 0, height: orbDiameter * 0.048)
+        case .thinking:
+            CGSize(width: -orbDiameter * 0.042, height: -orbDiameter * 0.028)
+        case .working:
+            CGSize(width: 0, height: orbDiameter * 0.02)
+        case .speaking:
+            CGSize(width: 0, height: orbDiameter * 0.05)
+        case .trouble:
+            CGSize(width: orbDiameter * 0.048, height: orbDiameter * 0.012)
+        }
+    }
+
+    private var eyeCloseAmount: CGFloat {
+        if isBlinking {
+            return mood == .trouble ? 0.12 : 0.08
+        }
+        return mood == .trouble ? 0.55 : 1
+    }
+
+    private var bounceX: CGFloat {
+        if isTapBouncing {
+            return 1.10
+        }
+        if isNodding {
+            return 1.05
+        }
+        return 1
+    }
+
+    private var bounceY: CGFloat {
+        if isTapBouncing {
+            return 0.90
+        }
+        if isNodding {
+            return 0.94
+        }
+        return 1
+    }
+
+    private var troubleFlattenX: CGFloat {
+        mood == .trouble ? 1.04 : 1
+    }
+
+    private var troubleFlattenY: CGFloat {
+        mood == .trouble ? 0.94 : 1
+    }
+
+    private var scaleX: CGFloat {
+        bounceX * (1 + dragSquash * 0.10) * (1 + breath * 0.03) * troubleFlattenX
+    }
+
+    private var scaleY: CGFloat {
+        bounceY * (1 - dragSquash * 0.42) * (1 + breath * 0.03) * troubleFlattenY
+    }
+
+    private var accessibilityMood: String {
+        switch mood {
+        case .idle: "空闲，会眨眼并四处观察"
+        case .listening: "正在听你输入"
+        case .thinking: "正在思考"
+        case .working: "正在调用工具"
+        case .speaking: "正在回复"
+        case .trouble: "遇到问题"
+        }
+    }
+
+    private func applyMoodMotion() async {
+        if mood == .thinking, !reduceMotion, !isDragging {
+            withAnimation(.easeInOut(duration: 1.35).repeatForever(autoreverses: true)) {
+                breath = 1
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                breath = 0
+            }
+        }
+    }
+
+    private func triggerNod() {
+        guard !reduceMotion, !isDragging else { return }
+        withAnimation(.spring(response: 0.16, dampingFraction: 0.52, blendDuration: 0.02)) {
+            isNodding = true
+        }
+        Task {
+            guard await pause(for: 0.14) else { return }
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.64, blendDuration: 0.03)) {
+                isNodding = false
+            }
+        }
+    }
+
     private func updateDrag(_ translation: CGSize) {
         let distance = hypot(translation.width, translation.height)
         guard distance > 4 else { return }
 
         isDragging = true
         isTapBouncing = false
+        isNodding = false
+        breath = 0
         let normalizedDistance = min(distance / maximumDragDistance, 1)
 
         if reduceMotion {
@@ -147,6 +318,9 @@ struct JarvisOrbView: View {
         ) {
             dragSquash = 0
         }
+        Task {
+            await applyMoodMotion()
+        }
     }
 
     private func triggerTapBounce() {
@@ -165,15 +339,16 @@ struct JarvisOrbView: View {
     }
 
     private func gazeLoop() async {
-        guard !reduceMotion else { return }
+        guard !reduceMotion, mood == .idle else { return }
 
         while !Task.isCancelled {
             guard await pause(for: Double.random(in: 0.55 ... 1.45)) else { return }
+            guard !isDragging else { continue }
 
             withAnimation(.spring(response: 0.24, dampingFraction: 0.72, blendDuration: 0.02)) {
                 gazeOffset = CGSize(
-                    width: CGFloat.random(in: -14 ... 14),
-                    height: CGFloat.random(in: -8 ... 8)
+                    width: CGFloat.random(in: -orbDiameter * 0.05 ... orbDiameter * 0.05),
+                    height: CGFloat.random(in: -orbDiameter * 0.03 ... orbDiameter * 0.03)
                 )
             }
         }
@@ -183,7 +358,15 @@ struct JarvisOrbView: View {
         guard !reduceMotion else { return }
 
         while !Task.isCancelled {
-            guard await pause(for: Double.random(in: 1.8 ... 4.2)) else { return }
+            let interval = switch mood {
+            case .idle: Double.random(in: 1.8 ... 4.2)
+            case .listening: Double.random(in: 3.4 ... 6.0)
+            case .thinking: Double.random(in: 2.6 ... 5.0)
+            case .working: Double.random(in: 1.2 ... 2.4)
+            case .speaking: Double.random(in: 1.6 ... 2.8)
+            case .trouble: Double.random(in: 3.2 ... 5.5)
+            }
+            guard await pause(for: interval) else { return }
 
             withAnimation(.easeInOut(duration: 0.08)) {
                 isBlinking = true
@@ -208,13 +391,15 @@ struct JarvisOrbView: View {
 
 private struct JarvisOrbEye: View {
     let eyeColor: Color
-    let isBlinking: Bool
+    let closeAmount: CGFloat
+    var width: CGFloat = 42
+    var height: CGFloat = 88
 
     var body: some View {
         Capsule()
             .fill(eyeColor)
-            .frame(width: 42, height: 88)
-            .scaleEffect(y: isBlinking ? 0.08 : 1)
-            .animation(.easeInOut(duration: 0.10), value: isBlinking)
+            .frame(width: width, height: height)
+            .scaleEffect(y: closeAmount)
+            .animation(.easeInOut(duration: 0.10), value: closeAmount)
     }
 }

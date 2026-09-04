@@ -4,10 +4,10 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var navigationSelection: TopLevelSection = .overview
+    @State private var navigationSelection: TopLevelSection = .conversation
     @State private var selectedSkill: SkillID = .screenshot
     @State private var selectedSidebarSecondary: SidebarSecondaryItem = .skill(.screenshot)
-    @State private var loadedSection: AppSection = .overview
+    @State private var loadedSection: AppSection = .conversation
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
@@ -20,7 +20,7 @@ struct ContentView: View {
                 icon: { $0.icon },
                 secondaryMenus: secondaryMenus,
                 secondarySelection: selectedSidebarSecondaryBinding,
-                secondaryTitle: { $0.title },
+                secondaryTitle: sidebarSecondaryTitle,
                 secondaryIcon: sidebarSecondaryIcon,
                 footerTitle: "设置",
                 footerIcon: "gearshape",
@@ -56,8 +56,8 @@ struct ContentView: View {
                 selectedSkill = skill
                 selectedSidebarSecondary = .skill(skill)
                 navigationSelection = .skillLibrary
-            case .overview:
-                navigationSelection = .overview
+            case .overview, .conversation:
+                navigationSelection = .conversation
             case .aiConversation:
                 navigationSelection = .aiConversation
             case .entertainment:
@@ -99,7 +99,9 @@ struct ContentView: View {
             selectedSkill = .screenshot
             selectedSidebarSecondary = .skill(.screenshot)
             app.selectedSection = .skill(.screenshot)
-        case .aiConversation, .entertainment, .overview, .settings:
+        case .conversation, .overview:
+            app.selectedSection = .conversation
+        case .aiConversation, .entertainment, .settings:
             app.selectedSection = section.appSection
         }
     }
@@ -117,7 +119,7 @@ struct ContentView: View {
     }
 
     private var topNavigationItems: [TopLevelSection] {
-        [.overview, .skillLibrary]
+        [.conversation, .skillLibrary]
     }
 
     private var bottomNavigationItems: [TopLevelSection] {
@@ -138,6 +140,13 @@ struct ContentView: View {
             get: { selectedSidebarSecondary },
             set: { selectSidebarSecondary($0) }
         )
+    }
+
+    private func sidebarSecondaryTitle(_ item: SidebarSecondaryItem) -> String {
+        switch item {
+        case let .skill(skill):
+            skill.navigationTitle
+        }
     }
 
     private func sidebarSecondaryIcon(
@@ -171,19 +180,21 @@ struct ContentView: View {
         switch navigationSelection {
         case .skillLibrary:
             "skill-library|\(selectedSkill.id)"
+        case .conversation, .overview:
+            "conversation"
         case .aiConversation:
             "ai-conversation|\(app.selectedAIProvider.id)"
         case .entertainment:
             "entertainment|\(app.selectedEntertainmentPlatform.id)"
-        case .overview, .settings:
+        case .settings:
             navigationSelection.id
         }
     }
 
     private func contentSection(for section: TopLevelSection) -> AppSection {
         switch section {
-        case .overview:
-            .overview
+        case .overview, .conversation:
+            .conversation
         case .aiConversation:
             .aiConversation
         case .entertainment:
@@ -198,7 +209,7 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch loadedSection {
-        case .overview: DashboardView()
+        case .overview, .conversation: HermesConversationView()
         case .aiConversation: AIConversationView()
         case .entertainment: EntertainmentView()
         case .skill(.screenshot): ScreenshotView()
@@ -257,6 +268,7 @@ enum SidebarSecondaryItem: Hashable, Identifiable {
 
 private enum TopLevelSection: Hashable, Identifiable {
     case overview
+    case conversation
     case aiConversation
     case entertainment
     case skillLibrary
@@ -265,6 +277,7 @@ private enum TopLevelSection: Hashable, Identifiable {
     var id: String {
         switch self {
         case .overview: "overview"
+        case .conversation: "conversation"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
         case .skillLibrary: "skill-library"
@@ -275,6 +288,7 @@ private enum TopLevelSection: Hashable, Identifiable {
     var title: String {
         switch self {
         case .overview: "首页"
+        case .conversation: "对话"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
         case .skillLibrary: "技能库"
@@ -285,6 +299,7 @@ private enum TopLevelSection: Hashable, Identifiable {
     var icon: String {
         switch self {
         case .overview: "rectangle.grid.2x2"
+        case .conversation: "bubble.left.and.bubble.right"
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
         case .skillLibrary: "square.stack.3d.up"
@@ -295,132 +310,11 @@ private enum TopLevelSection: Hashable, Identifiable {
     var appSection: AppSection {
         switch self {
         case .overview: .overview
+        case .conversation: .conversation
         case .aiConversation: .aiConversation
         case .entertainment: .entertainment
         case .skillLibrary: .skill(.screenshot)
         case .settings: .settings
         }
-    }
-}
-
-struct DashboardView: View {
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        JarvisContentArea(
-            leadingToolbar: {
-                ToolbarItem(placement: .navigation) {
-                    EmptyView()
-                }
-            },
-            trailingToolbar: {
-                ToolbarItem(placement: .automatic) {
-                    EmptyView()
-                }
-            },
-            content: {
-                GeometryReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 28) {
-                            JarvisOrbView()
-
-                            dailyQuoteCard
-
-                            Spacer(minLength: 0)
-
-                            permissionStatusRow
-                        }
-                        .frame(
-                            maxWidth: 980,
-                            minHeight: max(0, proxy.size.height - JarvisMetrics.pageInset * 2),
-                            alignment: .top
-                        )
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(JarvisMetrics.pageInset)
-                    }
-                }
-            }
-        )
-        .onAppear {
-            app.refreshPermissionStatus()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            app.refreshPermissionStatus()
-        }
-    }
-
-    private var dailyQuoteCard: some View {
-        Text("“\(app.dailyQuote.text)”")
-            .font(.system(size: 50, weight: .bold))
-            .multilineTextAlignment(.center)
-            .foregroundStyle(Color.primary)
-            .frame(maxWidth: 820)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("每日语录，\(app.dailyQuote.text)")
-            .onAppear {
-                app.refreshDailyQuote()
-            }
-    }
-
-    private var permissionStatusRow: some View {
-        HStack(spacing: 10) {
-            DashboardPermissionCapsule(
-                title: "屏幕录制",
-                isGranted: app.screenCapturePermissionGranted,
-                action: { _ = app.requestScreenCapturePermission() }
-            )
-            DashboardPermissionCapsule(
-                title: "辅助功能",
-                isGranted: app.accessibilityPermissionGranted,
-                action: app.requestAccessibilityPermission
-            )
-            DashboardPermissionCapsule(
-                title: "麦克风",
-                isGranted: app.microphonePermissionGranted,
-                action: app.requestMicrophonePermission
-            )
-            DashboardPermissionCapsule(
-                title: "摄像头",
-                isGranted: app.cameraPermissionGranted,
-                action: app.requestCameraPermission
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-    }
-}
-
-private struct DashboardPermissionCapsule: View {
-    let title: String
-    let isGranted: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(JarvisTypography.captionEmphasis)
-                    .foregroundStyle(Color.primary)
-                Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isGranted ? Color.green : Color.orange)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill((isGranted ? Color.green : Color.orange).opacity(0.08))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke((isGranted ? Color.green : Color.orange).opacity(0.20), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(isGranted)
-        .accessibilityLabel("\(title)，\(isGranted ? "已授权" : "需要授权")")
-        .help(isGranted ? "\(title)已授权" : "点击获取\(title)权限")
     }
 }

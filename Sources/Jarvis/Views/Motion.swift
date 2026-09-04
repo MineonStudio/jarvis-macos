@@ -85,7 +85,7 @@ struct JarvisHoverModifier<HoverShape: Shape>: ViewModifier {
                     .allowsHitTesting(false)
             }
             .scaleEffect(isHovered && !reduceMotion ? scale : 1)
-            .zIndex(isHovered ? 1 : 0)
+            .zIndex(isHovered && scale != 1 ? 1 : 0)
             .animation(
                 JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
                 value: isHovered

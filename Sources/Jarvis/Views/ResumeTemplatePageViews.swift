@@ -263,26 +263,105 @@ struct ResumePageSkills: View {
     let template: ResumeTemplate
 
     var body: some View {
-        switch template {
-        case .minimal, .editorial:
-            Text(skills.joined(separator: "  ·  "))
-                .font(.system(size: 9.5, weight: .medium, design: template == .editorial ? .serif : .rounded))
-                .foregroundStyle(ResumePaperPalette.body)
-                .lineSpacing(4)
-        case .timeline:
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                ForEach(Array(skills.enumerated()), id: \.offset) { index, skill in
-                    if index > 0 {
-                        Text("·")
-                            .foregroundStyle(ResumePaperPalette.teal)
-                    }
-                    Text(skill)
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(ResumePaperPalette.body)
-                }
+        ResumeSkillFlowLayout(spacing: 6, lineSpacing: 6) {
+            ForEach(Array(skills.enumerated()), id: \.offset) { _, skill in
+                skillChip(skill)
             }
-            .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    @ViewBuilder
+    private func skillChip(_ skill: String) -> some View {
+        switch template {
+        case .minimal:
+            Text(skill)
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(ResumePaperPalette.blue)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(ResumePaperPalette.blue.opacity(0.08), in: Capsule())
+        case .editorial:
+            Text(skill)
+                .font(.system(size: 9, weight: .medium, design: .serif))
+                .foregroundStyle(ResumePaperPalette.ink)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(ResumePaperPalette.ink.opacity(0.22))
+                        .frame(height: 0.6)
+                }
+        case .timeline:
+            Text(skill)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(ResumePaperPalette.teal)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(ResumePaperPalette.teal.opacity(0.10), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(ResumePaperPalette.teal.opacity(0.28), lineWidth: 0.6)
+                }
+        }
+    }
+}
+
+private struct ResumeSkillFlowLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        arrange(proposal: proposal, subviews: subviews).size
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal _: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout ()
+    ) {
+        let maxWidth = bounds.width
+        var x = bounds.minX
+        var y = bounds.minY
+        var lineHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.minX + maxWidth {
+                x = bounds.minX
+                y += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+            subview.place(
+                at: CGPoint(x: x, y: y),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(size)
+            )
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
+
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, lineCount: Int) {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var lineCount = 1
+        var usedWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += lineHeight + lineSpacing
+                lineHeight = 0
+                lineCount += 1
+            }
+            lineHeight = max(lineHeight, size.height)
+            x += size.width + spacing
+            usedWidth = max(usedWidth, x - spacing)
+        }
+        let width = maxWidth.isFinite ? maxWidth : usedWidth
+        return (CGSize(width: width, height: y + lineHeight), lineCount)
     }
 }
 

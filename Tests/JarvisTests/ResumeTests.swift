@@ -52,7 +52,7 @@ final class ResumeTests: XCTestCase {
         let service = ResumeAIService(apiClient: api)
 
         do {
-            _ = try await service.generateSkill(for: .blank(), configuration: testAIConfiguration)
+            _ = try await service.generateSkills(for: .blank(), configuration: testAIConfiguration)
             XCTFail("基本信息未完成时不应调用 AI")
         } catch let error as AIAPIError {
             XCTAssertEqual(
@@ -127,6 +127,24 @@ final class ResumeTests: XCTestCase {
         XCTAssertFalse(workspace.isSaved)
     }
 
+    func testSavingUsesTheSavePanelFileNameAsTheDocumentTitle() {
+        let workspace = ResumeWorkspace(document: makeDocument())
+        XCTAssertEqual(workspace.document.title, "产品经理简历")
+
+        workspace.markSaved(to: URL(fileURLWithPath: "/tmp/林知远-产品经理.pdf"))
+
+        XCTAssertEqual(workspace.document.title, "林知远-产品经理")
+        XCTAssertTrue(workspace.isSaved)
+        XCTAssertEqual(
+            ResumeSavedFile.documentTitle(from: URL(fileURLWithPath: "/tmp/未命名简历.md")),
+            "未命名简历"
+        )
+        XCTAssertEqual(
+            ResumeSavedFile.documentTitle(from: URL(fileURLWithPath: "/tmp/林知远-产品经理.backup.json")),
+            "林知远-产品经理.backup"
+        )
+    }
+
     func testDocumentCodecRoundTripsTheNewSchema() throws {
         let document = makeDocument()
         var templatedDocument = document
@@ -135,14 +153,40 @@ final class ResumeTests: XCTestCase {
         let templatedData = try ResumeDocumentCodec.encodedData(for: templatedDocument)
 
         let exportedRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(exportedRoot["template"] as? String, "minimal")
-        XCTAssertEqual(try ResumeDocumentCodec.decode(data), document)
-        XCTAssertEqual(try ResumeDocumentCodec.decode(templatedData), templatedDocument)
+        XCTAssertNil(exportedRoot["template"])
+        XCTAssertEqual(try contentMatchingTemplate(ResumeDocumentCodec.decode(data), template: document.template), document)
+        XCTAssertEqual(
+            try contentMatchingTemplate(ResumeDocumentCodec.decode(templatedData), template: .editorial),
+            templatedDocument
+        )
 
         var legacyRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         legacyRoot["template"] = "sidebar"
         let legacyData = try JSONSerialization.data(withJSONObject: legacyRoot)
         XCTAssertEqual(try ResumeDocumentCodec.decode(legacyData).template, .minimal)
+    }
+
+    func testJSONImportKeepsTheCurrentTemplateAndAcceptsUnknownTemplates() throws {
+        let workspace = ResumeWorkspace(document: makeDocument())
+        workspace.chooseTemplate(.timeline)
+
+        let data = try ResumeDocumentCodec.encodedData(for: makeDocument())
+        try workspace.replace(with: ResumeDocumentCodec.decode(data))
+        XCTAssertEqual(workspace.document.template, .timeline)
+        XCTAssertEqual(workspace.document.basicInfo.name, "林知远")
+
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        root["template"] = "unknown-layout"
+        let unknownData = try JSONSerialization.data(withJSONObject: root)
+        XCTAssertEqual(try ResumeDocumentCodec.decode(unknownData).template, .minimal)
+
+        for template in ResumeTemplate.allCases {
+            var document = makeDocument()
+            document.template = template
+            XCTAssertNoThrow(try ResumeExportService.data(for: document, format: .json))
+            XCTAssertNoThrow(try ResumeExportService.data(for: document, format: .markdown))
+            XCTAssertNoThrow(try ResumeExportService.data(for: document, format: .rtf))
+        }
     }
 
     func testPDFExportSupportsEveryResumeTemplate() throws {
@@ -242,7 +286,7 @@ final class ResumeTests: XCTestCase {
         let api = SequenceResumeAIAPI(responses: [
             #"{"school":"复旦大学","degree":"硕士","major":"软件工程","period":"2017 — 2019"}"#,
             #"{"company":"远航软件","role":"高级产品经理","period":"2019 — 2021"}"#,
-            #"{"skill":"用户研究"}"#,
+            #"{"skills":["用户研究","接口测试","性能测试","自动化测试","缺陷管理","测试计划","用例设计","回归测试","质量度量","持续集成"]}"#,
             #"{"name":"客户增长平台","period":"2020 — 2021","summary":"面向企业客户的增长实验与运营分析平台，支持策略配置、效果追踪和数据复盘。","bullets":["搭建增长实验闭环"]}"#
         ])
         let service = ResumeAIService(apiClient: api)
@@ -250,7 +294,7 @@ final class ResumeTests: XCTestCase {
 
         let education = try await service.generateEducation(for: document, configuration: testAIConfiguration)
         let experience = try await service.generateExperience(for: document, configuration: testAIConfiguration)
-        let skill = try await service.generateSkill(for: document, configuration: testAIConfiguration)
+        let skills = try await service.generateSkills(for: document, configuration: testAIConfiguration)
         let project = try await service.generateProject(
             for: document,
             domain: "软件平台",
@@ -260,10 +304,32 @@ final class ResumeTests: XCTestCase {
         XCTAssertEqual(education.school, "复旦大学")
         XCTAssertEqual(education.period, "2017 — 2019")
         XCTAssertEqual(experience.company, "远航软件")
-        XCTAssertEqual(skill, "用户研究")
+        XCTAssertEqual(
+            skills,
+            ["用户研究", "接口测试", "性能测试", "自动化测试", "缺陷管理", "测试计划", "用例设计", "回归测试", "质量度量", "持续集成"]
+        )
         XCTAssertEqual(project.name, "客户增长平台")
         XCTAssertEqual(project.summary, "面向企业客户的增长实验与运营分析平台，支持策略配置、效果追踪和数据复盘。")
         XCTAssertEqual(api.callCount, 4)
+    }
+
+    func testResumeAIServiceGeneratesTenSkillsAndDropsExistingDuplicates() async throws {
+        let api = SequenceResumeAIAPI(responses: [
+            #"{"skills":["产品规划","技能1","技能2","技能3","技能4","技能5","技能6","技能7","技能8","技能9","技能10"]}"#
+        ])
+        let service = ResumeAIService(apiClient: api)
+
+        let skills = try await service.generateSkills(
+            for: makeDocument(),
+            configuration: testAIConfiguration
+        )
+
+        XCTAssertEqual(
+            skills,
+            ["技能1", "技能2", "技能3", "技能4", "技能5", "技能6", "技能7", "技能8", "技能9", "技能10"]
+        )
+        XCTAssertEqual(api.callCount, 1)
+        XCTAssertTrue(api.userPrompts.first?.contains("生成 10 条") == true)
     }
 
     func testResumeAIServiceUsesTheRequestedProjectDomain() async throws {
@@ -315,6 +381,12 @@ final class ResumeTests: XCTestCase {
 
     private var testAIConfiguration: AIAPIConfiguration {
         AIAPIConfiguration(endpoint: "https://example.com", model: "test-model", apiKey: "test-key")
+    }
+
+    private func contentMatchingTemplate(_ document: ResumeDocument, template: ResumeTemplate) -> ResumeDocument {
+        var copy = document
+        copy.template = template
+        return copy
     }
 
     private func makeAIGenerationDocument() -> ResumeDocument {

@@ -248,7 +248,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openMainWindow() {
-        app?.selectedSection = .overview
+        app?.selectedSection = .conversation
         NSApp.activate(ignoringOtherApps: true)
 
         let mainWindow = NSApp.windows.first { window in

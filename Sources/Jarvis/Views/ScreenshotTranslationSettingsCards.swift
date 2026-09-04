@@ -76,11 +76,6 @@ struct ScreenshotLanguagePackSettingsCard: View {
                     .help("重新检测")
                 }
 
-                Text("默认使用系统本地翻译，首次可能需要下载语言包。下面的备选 API 仅在系统不支持该语言时使用。")
-                    .font(JarvisTypography.control)
-                    .foregroundStyle(Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 VStack(spacing: 8) {
                     ForEach(ScreenshotTranslationLanguage.packTargets) { target in
                         LanguagePackRowView(
@@ -141,7 +136,7 @@ private struct LanguagePackRowView: View {
             Button("下载") { model.startDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())
         case .unsupported:
-            Text("系统不支持，走 AI 备选")
+            Text("系统不支持")
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
                 .fixedSize()
@@ -160,134 +155,5 @@ private struct LanguagePackRowView: View {
             Button("重试") { model.startDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())
         }
-    }
-}
-
-struct ScreenshotAITranslationAPISettingsCard: View {
-    @EnvironmentObject private var app: AppModel
-    @State private var endpoint = ScreenshotTranslationConfiguration.defaultEndpoint
-    @State private var model = ScreenshotTranslationConfiguration.defaultModel
-    @State private var apiKey = ""
-
-    private var canUseConfiguration: Bool {
-        !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && (app.screenshotTranslationAPIKeyConfigured
-                || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-
-    var body: some View {
-        JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) {
-                    Image(systemName: "network")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color.secondary)
-                        .frame(width: 24, height: 24)
-                    Text("备选 API")
-                        .font(JarvisTypography.bodyEmphasis)
-                }
-
-                HStack(spacing: 10) {
-                    Text("接口地址")
-                        .font(JarvisTypography.control)
-                        .frame(width: 70, alignment: .leading)
-                    TextField(
-                        ScreenshotTranslationConfiguration.defaultEndpoint,
-                        text: $endpoint
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(isLocked)
-                }
-
-                HStack(spacing: 10) {
-                    Text("模型")
-                        .font(JarvisTypography.control)
-                        .frame(width: 70, alignment: .leading)
-                    TextField(
-                        ScreenshotTranslationConfiguration.defaultModel,
-                        text: $model
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(isLocked)
-                    Spacer(minLength: 0)
-                }
-
-                HStack(spacing: 10) {
-                    Text("API Key")
-                        .font(JarvisTypography.control)
-                        .frame(width: 70, alignment: .leading)
-                    SecureField(
-                        app.screenshotTranslationAPIKeyMask.isEmpty
-                            ? "输入 API Key"
-                            : app.screenshotTranslationAPIKeyMask,
-                        text: $apiKey
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(isLocked)
-
-                    if isLocked {
-                        Button("编辑", action: beginEditing)
-                            .buttonStyle(JarvisSecondaryButtonStyle())
-                    } else {
-                        Button("保存", action: saveSettings)
-                            .buttonStyle(JarvisSecondaryButtonStyle())
-                            .disabled(!canUseConfiguration)
-                    }
-
-                    Button {
-                        Task {
-                            await app.testScreenshotTranslationConnection(
-                                endpoint: endpoint,
-                                model: model,
-                                apiKey: apiKey
-                            )
-                        }
-                    } label: {
-                        if app.screenshotTranslationConnectionTesting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(minWidth: 56)
-                        } else {
-                            Text("测试连接")
-                        }
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(!canUseConfiguration || app.screenshotTranslationConnectionTesting)
-                }
-            }
-        }
-        .onAppear(perform: loadDraft)
-        .onChange(of: app.screenshotTranslationSettingsLocked) { _, isLocked in
-            if isLocked {
-                loadDraft()
-            }
-        }
-    }
-
-    private var isLocked: Bool {
-        app.screenshotTranslationSettingsLocked
-    }
-
-    private func loadDraft() {
-        endpoint = app.screenshotTranslationEndpoint
-        model = app.screenshotTranslationModel
-        apiKey = ""
-    }
-
-    private func beginEditing() {
-        loadDraft()
-        app.editScreenshotTranslationSettings()
-    }
-
-    private func saveSettings() {
-        guard app.saveScreenshotTranslationSettings(
-            endpoint: endpoint,
-            model: model,
-            apiKey: apiKey
-        ) else {
-            return
-        }
-        apiKey = ""
     }
 }

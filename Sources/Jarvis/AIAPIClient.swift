@@ -2,49 +2,170 @@ import Foundation
 import Security
 
 struct AIAPIConfiguration: Equatable, Sendable {
-    static let endpointKey = "jarvis.screenshot.translation.endpoint"
-    static let modelKey = "jarvis.screenshot.translation.model"
+    static let apiEndpointKey = "jarvis.ai.api.endpoint"
+    static let apiModelKey = "jarvis.ai.api.model"
+    static let apiNameKey = "jarvis.ai.api.name"
+    static let apiModelsKey = "jarvis.ai.api.models"
+    static let endpointKey = "jarvis.ai.endpoint"
+    static let modelKey = "jarvis.ai.model"
+    static let providerEndpointKey = "jarvis.ai.provider.endpoint"
+    static let paidEndpointKey = "jarvis.ai.paid-endpoint"
+    static let paidModelKey = "jarvis.ai.paid-model"
+    static let paidModelsKey = "jarvis.ai.paid-models"
+    static let legacyEndpointKey = "jarvis.screenshot.translation.endpoint"
+    static let legacyModelKey = "jarvis.screenshot.translation.model"
     static let defaultEndpoint = "https://api.openai.com/v1/chat/completions"
+    static let defaultBaseURL = "https://api.openai.com/v1"
     static let defaultModel = "gpt-4o-mini"
 
     var endpoint: String
     var model: String
     var apiKey: String
+    var name: String = ""
+
+    var isKeyless: Bool {
+        Self.isKeylessEndpoint(endpoint)
+    }
 
     var isConfigured: Bool {
         !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (isKeyless || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    static func isKeylessEndpoint(_ rawValue: String) -> Bool {
+        let host = URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))?.host?
+            .lowercased() ?? ""
+        return host == "opencode.ai" || host.hasSuffix(".opencode.ai")
     }
 
     static func load(
         defaults: UserDefaults = .standard,
         keychain: AIAPIKeychain = .shared
     ) -> Self {
-        Self(
-            endpoint: defaults.string(forKey: endpointKey) ?? defaultEndpoint,
-            model: defaults.string(forKey: modelKey) ?? defaultModel,
-            apiKey: keychain.readIfAvailable()
+        load(defaults: defaults, resolvedAPIKey: keychain.readIfAvailable())
+    }
+
+    static func loadProvider(
+        defaults: UserDefaults = .standard,
+        keychain: AIAPIKeychain = .shared
+    ) -> Self {
+        load(defaults: defaults, keychain: keychain)
+    }
+
+    static func load(
+        defaults: UserDefaults = .standard,
+        resolvedAPIKey: String?
+    ) -> Self {
+        let endpoint = nonKeyless(defaults.string(forKey: apiEndpointKey))
+            ?? nonKeyless(defaults.string(forKey: providerEndpointKey))
+            ?? nonKeyless(defaults.string(forKey: paidEndpointKey))
+            ?? nonKeyless(defaults.string(forKey: endpointKey))
+            ?? nonKeyless(defaults.string(forKey: legacyEndpointKey))
+            ?? defaultEndpoint
+        let model = nonFreeModel(defaults.string(forKey: apiModelKey))
+            ?? nonFreeModel(defaults.string(forKey: paidModelKey))
+            ?? nonFreeModel(defaults.string(forKey: modelKey))
+            ?? nonFreeModel(defaults.string(forKey: legacyModelKey))
+            ?? defaultModel
+        let storedName = defaults.string(forKey: apiNameKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return Self(
+            endpoint: endpoint,
+            model: model,
+            apiKey: resolvedAPIKey ?? "",
+            name: storedName.isEmpty
+                ? AIModelOption.providerTitle(for: endpoint, isFree: false)
+                : storedName
         )
     }
-}
 
-struct AITranslationInput: Codable, Equatable, Sendable {
-    let id: String
-    let text: String
-}
+    static func loadProvider(
+        defaults: UserDefaults = .standard,
+        resolvedAPIKey: String?
+    ) -> Self {
+        load(defaults: defaults, resolvedAPIKey: resolvedAPIKey)
+    }
 
-struct AITranslationOutput: Codable, Equatable, Sendable {
-    let id: String
-    let translation: String
-}
+    static func migrateLegacyKeys(defaults: UserDefaults = .standard) {
+        if defaults.string(forKey: apiEndpointKey) == nil,
+           let endpoint = nonKeyless(
+               defaults.string(forKey: providerEndpointKey)
+                   ?? defaults.string(forKey: paidEndpointKey)
+                   ?? defaults.string(forKey: endpointKey)
+                   ?? defaults.string(forKey: legacyEndpointKey)
+           )
+        {
+            defaults.set(endpoint, forKey: apiEndpointKey)
+        }
+        if defaults.string(forKey: apiModelKey) == nil,
+           let model = nonFreeModel(
+               defaults.string(forKey: paidModelKey)
+                   ?? defaults.string(forKey: modelKey)
+                   ?? defaults.string(forKey: legacyModelKey)
+           )
+        {
+            defaults.set(model, forKey: apiModelKey)
+        }
+        if defaults.string(forKey: apiModelsKey) == nil,
+           let models = defaults.stringArray(forKey: paidModelsKey),
+           !models.isEmpty
+        {
+            defaults.set(models, forKey: apiModelsKey)
+        }
+        if defaults.string(forKey: apiNameKey) == nil {
+            let endpoint = defaults.string(forKey: apiEndpointKey)
+                ?? defaults.string(forKey: providerEndpointKey)
+                ?? ""
+            let inferred = AIModelOption.providerTitle(for: endpoint, isFree: false)
+            if inferred != "已配置" {
+                defaults.set(inferred, forKey: apiNameKey)
+            }
+        }
+    }
 
-protocol AITranslationAPI: Sendable {
-    func translate(
-        _ items: [AITranslationInput],
-        targetLanguage: String,
-        configuration: AIAPIConfiguration
-    ) async throws -> [AITranslationOutput]
+    static func hasStoredAPIEndpoint(defaults: UserDefaults = .standard) -> Bool {
+        nonKeyless(defaults.string(forKey: apiEndpointKey)) != nil
+            || nonKeyless(defaults.string(forKey: providerEndpointKey)) != nil
+    }
+
+    static func nonKeyless(_ rawValue: String?) -> String? {
+        guard let rawValue, !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !isKeylessEndpoint(rawValue)
+        else {
+            return nil
+        }
+        return rawValue
+    }
+
+    static func nonFreeModel(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !HermesFreeModelCatalog.isAnonymousFreeModel(trimmed) else {
+            return nil
+        }
+        return trimmed
+    }
+
+    var openAIBaseURL: String {
+        let trimmed = endpoint
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let stripped = if trimmed.lowercased().hasSuffix("/chat/completions") {
+            String(trimmed.dropLast("/chat/completions".count))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        } else {
+            trimmed
+        }
+        guard let components = URLComponents(string: stripped) else {
+            return stripped
+        }
+        let path = components.path
+        if path.isEmpty || path == "/" {
+            return stripped + "/v1"
+        }
+        return stripped
+    }
 }
 
 protocol AITextCompletionAPI: Sendable {
@@ -66,7 +187,6 @@ enum AIAPIError: LocalizedError, Equatable {
     case invalidCompletionEnvelope(String)
     case invalidJSON(context: String, reason: String)
     case invalidSchema(context: String, reason: String)
-    case incompleteTranslation(expected: Int, actual: Int)
     case emptyGeneratedContent(context: String)
     case duplicateGeneratedContent(context: String)
     case server(String)
@@ -85,8 +205,6 @@ enum AIAPIError: LocalizedError, Equatable {
             "\(context)结果不是有效 JSON：\(reason)"
         case let .invalidSchema(context, reason):
             "\(context)字段结构不符合要求：\(reason)"
-        case let .incompleteTranslation(expected, actual):
-            "AI 翻译结果不完整：应返回 \(expected) 条，实际 \(actual) 条"
         case let .emptyGeneratedContent(context):
             "\(context)没有生成有效内容"
         case let .duplicateGeneratedContent(context):
@@ -136,7 +254,7 @@ enum AIAPIError: LocalizedError, Equatable {
     }
 }
 
-struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPIConnectionTesting, Sendable {
+struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, Sendable {
     func testConnection(configuration: AIAPIConfiguration) async throws {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
         guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
@@ -147,7 +265,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        Self.applyAuthentication(to: &request, configuration: configuration)
         // json_object mode rejects prompts that do not contain the word "json".
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": configuration.model,
@@ -185,7 +303,7 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         request.httpMethod = "POST"
         request.timeoutInterval = 90
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        Self.applyAuthentication(to: &request, configuration: configuration)
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": configuration.model,
             "temperature": 0.7,
@@ -209,41 +327,16 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         return try Self.chatCompletionContent(from: data)
     }
 
-    func translate(
-        _ items: [AITranslationInput],
-        targetLanguage: String,
-        configuration: AIAPIConfiguration
-    ) async throws -> [AITranslationOutput] {
-        guard !items.isEmpty else { return [] }
+    func listModels(configuration: AIAPIConfiguration) async throws -> [String] {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
+        guard let endpoint = Self.normalizedModelsURL(from: configuration.endpoint) else {
             throw AIAPIError.invalidEndpoint
         }
 
-        let sourceData = try JSONEncoder().encode(items)
-        guard let sourceText = String(data: sourceData, encoding: .utf8) else {
-            throw AIAPIError.invalidJSON(context: "翻译", reason: "请求内容无法转换为 UTF-8")
-        }
-        let systemPrompt = """
-        Translate each item into \(targetLanguage). Keep numbers, code, URLs and line breaks.
-        JSON only: {"translations":[{"id":"id","translation":"text"}]}. Every item once.
-        """
-
         var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 45
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": configuration.model,
-            "temperature": 0.1,
-            "max_tokens": 4096,
-            "response_format": ["type": "json_object"],
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": sourceText]
-            ]
-        ])
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        Self.applyAuthentication(to: &request, configuration: configuration)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -251,19 +344,24 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let message = Self.serverMessage(from: data)
-                ?? "AI 翻译服务请求失败（\(httpResponse.statusCode)）"
+                ?? "AI 服务请求失败（\(httpResponse.statusCode)）"
             throw AIAPIError.server(message)
         }
+        return try Self.modelIdentifiers(from: data)
+    }
 
-        let content = try Self.chatCompletionContent(from: data)
-        guard let responseData = Self.jsonData(fromModelContent: content) else {
-            throw AIAPIError.invalidJSON(context: "翻译", reason: "返回内容无法转换为 UTF-8")
+    static func applyAuthentication(
+        to request: inout URLRequest,
+        configuration: AIAPIConfiguration
+    ) {
+        if configuration.isKeyless {
+            request.setValue("https://hermes-agent.nousresearch.com", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("Jarvis", forHTTPHeaderField: "X-Title")
+            return
         }
-        do {
-            return try JSONDecoder().decode(TranslationResponse.self, from: responseData).translations
-        } catch {
-            throw AIAPIError.decodingError(error, context: "翻译")
-        }
+        let apiKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else { return }
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     }
 
     static func normalizedEndpointURL(from rawValue: String) -> URL? {
@@ -288,6 +386,39 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
                 : path + "/chat/completions"
         }
         return components.url
+    }
+
+    static func normalizedModelsURL(from rawValue: String) -> URL? {
+        guard let chatURL = normalizedEndpointURL(from: rawValue),
+              var components = URLComponents(url: chatURL, resolvingAgainstBaseURL: false)
+        else {
+            return nil
+        }
+        let path = components.path
+        if path.hasSuffix("/chat/completions") {
+            components.path = String(path.dropLast("/chat/completions".count)) + "/models"
+        } else {
+            components.path = path.hasSuffix("/") ? path + "models" : path + "/models"
+        }
+        return components.url
+    }
+
+    static func modelIdentifiers(from data: Data) throws -> [String] {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIAPIError.invalidCompletionEnvelope("模型列表不是 JSON 对象")
+        }
+        guard let items = root["data"] as? [[String: Any]] else {
+            throw AIAPIError.invalidCompletionEnvelope("缺少 data 数组")
+        }
+        let identifiers = items.compactMap { item -> String? in
+            let identifier = (item["id"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return identifier.isEmpty ? nil : identifier
+        }
+        guard !identifiers.isEmpty else {
+            throw AIAPIError.invalidCompletionEnvelope("模型列表为空")
+        }
+        return identifiers
     }
 
     private static func chatCompletionContent(from data: Data) throws -> String {
@@ -377,16 +508,11 @@ struct OpenAICompatibleAPIClient: AITranslationAPI, AITextCompletionAPI, AIAPICo
     }
 }
 
-private extension OpenAICompatibleAPIClient {
-    struct TranslationResponse: Decodable {
-        let translations: [AITranslationOutput]
-    }
-}
-
 final class AIAPIKeychain: @unchecked Sendable {
     static let shared = AIAPIKeychain()
 
-    private let service = "\(JarvisAppIdentity.bundleIdentifier).screenshot-translation"
+    private let service = "\(JarvisAppIdentity.bundleIdentifier).ai"
+    private let legacyService = "\(JarvisAppIdentity.bundleIdentifier).screenshot-translation"
     private let account = "api-key"
 
     func readIfAvailable() -> String {
@@ -394,6 +520,17 @@ final class AIAPIKeychain: @unchecked Sendable {
     }
 
     func read() throws -> String? {
+        if let value = try read(service: service) {
+            return value
+        }
+        guard let legacy = try read(service: legacyService) else {
+            return nil
+        }
+        try? write(legacy)
+        return legacy
+    }
+
+    private func read(service: String) throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -430,6 +567,11 @@ final class AIAPIKeychain: @unchecked Sendable {
     }
 
     func delete() throws {
+        try delete(service: service)
+        try delete(service: legacyService)
+    }
+
+    private func delete(service: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

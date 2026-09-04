@@ -132,7 +132,7 @@ struct ResumeInspector: View {
         }
         let documentID = draft.id
         let snapshot = draft
-        let configuration = AIAPIConfiguration.load()
+        let configuration = AIAPIConfiguration.loadProvider()
         let workspace = app.resumeWorkspace
 
         workspace.startGeneration(for: section) {
@@ -146,8 +146,8 @@ struct ResumeInspector: View {
                     projectDomain: projectDomain
                 )
                 guard !Task.isCancelled, draft.id == documentID else { return }
-                append(content)
-                app.showToast("已生成 1 条\(section.title)")
+                let count = append(content)
+                app.showToast("已生成 \(count) 条\(section.title)")
             } catch is CancellationError {
                 return
             } catch {
@@ -172,7 +172,7 @@ struct ResumeInspector: View {
         case .experience:
             return try await .experience(service.generateExperience(for: document, configuration: configuration))
         case .skills:
-            return try await .skill(service.generateSkill(for: document, configuration: configuration))
+            return try await .skills(service.generateSkills(for: document, configuration: configuration))
         case .projects:
             guard let projectDomain else {
                 throw AIAPIError.invalidSchema(context: "项目经历生成", reason: "缺少生成领域")
@@ -187,16 +187,21 @@ struct ResumeInspector: View {
         }
     }
 
-    private func append(_ content: ResumeGeneratedContent) {
+    @discardableResult
+    private func append(_ content: ResumeGeneratedContent) -> Int {
         switch content {
         case let .education(item):
             draft.education.append(item)
+            return 1
         case let .experience(item):
             draft.experience.append(item)
-        case let .skill(value):
-            draft.skills.append(value)
+            return 1
+        case let .skills(values):
+            draft.skills.append(contentsOf: values)
+            return values.count
         case let .project(item):
             draft.projects.append(item)
+            return 1
         }
     }
 
@@ -215,6 +220,7 @@ private struct ResumeAIGenerateButton: View {
     let isEnabled: Bool
     let disabledReason: String
     let title: String
+    var itemCount = 1
     let action: () -> Void
 
     var body: some View {
@@ -228,7 +234,10 @@ private struct ResumeAIGenerateButton: View {
     }
 
     private var helpText: String {
-        disabledReason.hasPrefix("请先完成") ? disabledReason : "生成一条\(title)"
+        if disabledReason.hasPrefix("请先完成") {
+            return disabledReason
+        }
+        return itemCount > 1 ? "一次生成 \(itemCount) 条\(title)" : "生成一条\(title)"
     }
 }
 
@@ -408,7 +417,8 @@ private struct ResumeSkillsEditor: View {
                     isGenerating: isGenerating,
                     isEnabled: canGenerate,
                     disabledReason: disabledReason,
-                    title: "技能",
+                    title: "掌握技能",
+                    itemCount: ResumeAIService.skillBatchSize,
                     action: onGenerate
                 )
             }

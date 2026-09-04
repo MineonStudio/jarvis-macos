@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-private struct SettingsCardHeader: View {
+struct SettingsCardHeader: View {
     let title: String
     let systemImage: String
 
@@ -133,18 +133,52 @@ struct SettingsView: View {
                         themeSettingsCard
 
                         launchAtLoginSettingsCard
+                        AIAPISettingsCard()
                         ClipboardCacheSettingsCard()
 
                         ScreenshotLanguagePackSettingsCard()
 
-                        ScreenshotAITranslationAPISettingsCard()
-
                         ShortcutSettingsCard()
+
+                        permissionStatusRow
                     }
                     .padding(JarvisMetrics.pageInset)
                 }
             }
         )
+        .onAppear {
+            app.refreshPermissionStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            app.refreshPermissionStatus()
+        }
+    }
+
+    private var permissionStatusRow: some View {
+        HStack(spacing: 10) {
+            SettingsPermissionCapsule(
+                title: "屏幕录制",
+                isGranted: app.screenCapturePermissionGranted,
+                action: { _ = app.requestScreenCapturePermission() }
+            )
+            SettingsPermissionCapsule(
+                title: "辅助功能",
+                isGranted: app.accessibilityPermissionGranted,
+                action: app.requestAccessibilityPermission
+            )
+            SettingsPermissionCapsule(
+                title: "麦克风",
+                isGranted: app.microphonePermissionGranted,
+                action: app.requestMicrophonePermission
+            )
+            SettingsPermissionCapsule(
+                title: "摄像头",
+                isGranted: app.cameraPermissionGranted,
+                action: app.requestCameraPermission
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 8)
     }
 
     private var themeSettingsCard: some View {
@@ -353,5 +387,38 @@ struct JarvisToast: View {
             }
             .shadow(color: Color.black.opacity(0.15), radius: 14, y: 6)
             .frame(maxWidth: 520)
+    }
+}
+
+private struct SettingsPermissionCapsule: View {
+    let title: String
+    let isGranted: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(Color.primary)
+                Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isGranted ? Color.green : Color.orange)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill((isGranted ? Color.green : Color.orange).opacity(0.08))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke((isGranted ? Color.green : Color.orange).opacity(0.20), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isGranted)
+        .accessibilityLabel("\(title)，\(isGranted ? "已授权" : "需要授权")")
+        .help(isGranted ? "\(title)已授权" : "点击获取\(title)权限")
     }
 }

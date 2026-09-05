@@ -21,10 +21,10 @@ struct ScreenshotTranslationBlockView: View {
             .font(.system(size: fontSize, weight: .medium))
             .foregroundStyle(.white)
             .lineLimit(maxLineCount)
-            .minimumScaleFactor(0.55)
+            .minimumScaleFactor(0.35)
             .multilineTextAlignment(.leading)
             .lineSpacing(0)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, block.horizontalPadding)
             .frame(
                 width: max(8, bounds.width),
                 height: max(8, bounds.height),
@@ -39,10 +39,10 @@ struct ScreenshotTranslationBlockView: View {
     }
 
     private var fontSize: CGFloat {
-        max(1, block.bounds.height - 2)
+        max(1, block.fontSize > 0 ? block.fontSize : block.bounds.height - 2)
     }
 
     private var maxLineCount: Int {
-        max(1, min(4, Int(block.bounds.height / max(fontSize * 1.3, 1))))
+        max(1, block.lineLimit)
     }
 }

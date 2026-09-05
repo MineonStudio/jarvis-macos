@@ -204,7 +204,7 @@ final class ScreenshotTranslationTests: XCTestCase {
         let right = ScreenshotOCRBlock(
             id: UUID(),
             text: "world",
-            normalizedBounds: CGRect(x: 0.24, y: 0.20, width: 0.12, height: 0.04),
+            normalizedBounds: CGRect(x: 0.232, y: 0.20, width: 0.12, height: 0.04),
             confidence: 0.8
         )
         let nextLine = ScreenshotOCRBlock(
@@ -218,6 +218,25 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(merged.count, 2)
         XCTAssertEqual(merged[0].text, "Hello world")
         XCTAssertEqual(merged[1].text, "Next")
+    }
+
+    func testOCRLineMergingKeepsVisuallySeparatedFragmentsAsBlocks() {
+        let left = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "File",
+            normalizedBounds: CGRect(x: 0.10, y: 0.20, width: 0.08, height: 0.04),
+            confidence: 0.9
+        )
+        let right = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Edit",
+            normalizedBounds: CGRect(x: 0.24, y: 0.20, width: 0.08, height: 0.04),
+            confidence: 0.8
+        )
+
+        let blocks = ScreenshotTranslationService.mergedLineBlocks(from: [right, left])
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks.map(\.text), ["File", "Edit"])
     }
 
     func testVisionOCRRejectsInvalidImageData() async {

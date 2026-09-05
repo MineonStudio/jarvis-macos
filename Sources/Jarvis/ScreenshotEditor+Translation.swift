@@ -5,7 +5,7 @@ extension ScreenshotEditorModel {
     var renderedTranslationBlocks: [ScreenshotTranslationRenderBlock] {
         guard translationVisible else { return [] }
         let selection = selectionRect ?? CGRect(origin: .zero, size: canvasSize)
-        return translationBlocks.map { block in
+        let rawBlocks = translationBlocks.map { block in
             let bounds = ScreenshotTranslationGeometry.canvasBounds(
                 for: block.normalizedBounds,
                 in: selection
@@ -15,9 +15,11 @@ extension ScreenshotEditorModel {
                 sourceText: block.sourceText,
                 translatedText: block.translatedText,
                 bounds: bounds,
-                confidence: block.confidence
+                confidence: block.confidence,
+                sourceLineHeight: block.lineHeight * selection.height
             )
         }
+        return ScreenshotTranslationLayout.apply(to: rawBlocks, canvasSize: canvasSize)
     }
 
     func enterTranslationMode() {
@@ -283,7 +285,8 @@ extension ScreenshotEditorModel {
                 sourceText: sourceBlock.text,
                 translatedText: translatedText,
                 normalizedBounds: sourceBlock.normalizedBounds,
-                confidence: sourceBlock.confidence
+                confidence: sourceBlock.confidence,
+                lineHeight: sourceBlock.lineHeight
             )
         )
     }

@@ -303,13 +303,13 @@ final class ScreenshotRenderPipeline {
         let bounds = translation.bounds.integral
         guard bounds.width > 4, bounds.height > 4 else { return }
 
-        let fontSize = max(1, bounds.height - 2)
+        let fontSize = max(1, translation.fontSize > 0 ? translation.fontSize : bounds.height - 2)
         let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white
         ]
-        let horizontalPadding: CGFloat = 6
+        let horizontalPadding = max(0, translation.horizontalPadding)
         let textRect = CGRect(
             x: bounds.minX + horizontalPadding,
             y: bounds.minY,

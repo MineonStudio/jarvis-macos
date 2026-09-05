@@ -70,6 +70,13 @@ if [[ -f "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" ]]; then
      "$APP_DIR/Contents/Resources/JarvisMenuBarIcon.png"
 fi
 
+if [[ -f "$ROOT_DIR/Resources/HermesIcon.png" ]]; then
+  cp "$ROOT_DIR/Resources/HermesIcon.png" \
+     "$APP_DIR/Contents/Resources/HermesIcon.png"
+else
+  rm -f "$APP_DIR/Contents/Resources/HermesIcon.png"
+fi
+
 # Use the native Icon Composer asset as the Dock/Finder icon source. This
 # preserves the layered macOS 26 composition instead of flattening it into a
 # square PNG inside the system's rounded Dock tile. Keep CFBundleIconFile out

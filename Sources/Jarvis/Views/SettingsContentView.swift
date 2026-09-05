@@ -134,6 +134,7 @@ struct SettingsView: View {
 
                         launchAtLoginSettingsCard
                         AIAPISettingsCard()
+                        HermesSettingsCard()
                         ClipboardCacheSettingsCard()
 
                         ScreenshotLanguagePackSettingsCard()

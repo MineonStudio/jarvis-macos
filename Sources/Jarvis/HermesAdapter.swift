@@ -9,7 +9,7 @@ struct HermesStatus: Equatable, Sendable {
     var model: String?
 
     var isInstalled: Bool {
-        homeExists || cliPath != nil
+        cliPath != nil
     }
 
     var isProfileReady: Bool {
@@ -352,6 +352,28 @@ struct HermesAdapter {
             )
         )
         try writeText(nextYAML, to: configURL)
+    }
+
+    func removeInjectedAPIConfiguration() throws {
+        guard directoryExists(profileDirectory) else { return }
+
+        let environmentKeys = Set(
+            HermesInferenceProvider.apiKeyEnvNames
+                + HermesProviderCatalog.descriptors.values.flatMap { descriptor in
+                    [descriptor.apiKeyEnv, descriptor.baseURLEnv]
+                }
+                + ["OPENAI_BASE_URL", "DEEPSEEK_BASE_URL"]
+        )
+        let currentEnv = readText(at: envURL) ?? ""
+        try writeProtected(
+            HermesEnvFile.removing(keys: environmentKeys, from: currentEnv),
+            to: envURL
+        )
+        try setCurrentModel(
+            provider: "openai",
+            model: AIAPIConfiguration.defaultModel,
+            baseURL: AIAPIConfiguration.defaultBaseURL
+        )
     }
 
     func injectAPIIfAbsent(_ configuration: AIAPIConfiguration) throws {

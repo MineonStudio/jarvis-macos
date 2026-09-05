@@ -83,19 +83,17 @@ extension AppModel {
     ) -> Bool {
         do {
             let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedBaseURL.isEmpty else {
-                showToast("请填写 base_url")
-                return false
-            }
-            guard !AIAPIConfiguration.isKeylessEndpoint(trimmedBaseURL) else {
-                showToast("请填写可用的接口地址")
+            let effectiveBaseURL = trimmedBaseURL.isEmpty
+                ? AIAPIConfiguration.defaultBaseURL
+                : trimmedBaseURL
+            guard !AIAPIConfiguration.isKeylessEndpoint(effectiveBaseURL) else {
+                showToast("API 配置不支持无 Key 接口")
                 return false
             }
             let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedModel.isEmpty else {
-                showToast("请填写模型")
-                return false
-            }
+            let effectiveModel = trimmedModel.isEmpty
+                ? AIAPIConfiguration.defaultModel
+                : trimmedModel
 
             let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
@@ -105,24 +103,33 @@ extension AppModel {
                 return false
             }
 
-            let endpoint = OpenAICompatibleAPIClient.normalizedEndpointURL(from: trimmedBaseURL)?
-                .absoluteString ?? trimmedBaseURL
+            guard let endpoint = OpenAICompatibleAPIClient.normalizedEndpointURL(from: effectiveBaseURL)?
+                .absoluteString
+            else {
+                showToast("接口地址需要是 HTTPS 地址")
+                return false
+            }
             var trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmedName.isEmpty {
                 trimmedName = AIModelOption.providerTitle(for: endpoint, isFree: false)
             }
+            let configuration = AIAPIConfiguration(
+                endpoint: endpoint,
+                model: effectiveModel,
+                apiKey: resolvedAPIKey,
+                name: trimmedName
+            )
             try persistProviderConfiguration(
-                AIAPIConfiguration(
-                    endpoint: endpoint,
-                    model: trimmedModel,
-                    apiKey: resolvedAPIKey,
-                    name: trimmedName
-                ),
+                configuration,
                 writeKeychain: !trimmedAPIKey.isEmpty
             )
-            injectJarvisAPIIntoHermesIfNeeded()
+            let hermesSyncError = syncJarvisAPIIntoHermesIfNeeded(configuration)
             if announce {
-                showToast("API 配置已保存")
+                showToast(
+                    hermesSyncError == nil
+                        ? "API 配置已保存"
+                        : "API 配置已保存，Hermes 同步失败"
+                )
             }
             refreshAvailableAIModels()
             return true
@@ -133,16 +140,38 @@ extension AppModel {
     }
 
     @discardableResult
-    func clearAIAPIKey() -> Bool {
+    func deleteAIAPIConfiguration() -> Bool {
         do {
             try AIAPIKeychain.shared.delete()
+            AIAPIConfiguration.removeStoredConfiguration()
+
+            var hermesSyncError: Error?
+            let adapter = HermesAdapter.live()
+            if adapter.inspect().isProfileReady {
+                do {
+                    try adapter.removeInjectedAPIConfiguration()
+                } catch {
+                    hermesSyncError = error
+                }
+                refreshHermesStatus()
+            }
+
+            providerEndpoint = AIAPIConfiguration.defaultEndpoint
+            providerName = ""
+            providerModel = AIAPIConfiguration.defaultModel
             aiAPIKeyConfigured = false
             aiAPIKeyMask = ""
             aiSettingsLocked = false
-            showToast("已清除 AI API Key")
+            availableAIModelOptions = []
+            refreshAvailableAIModels()
+            showToast(
+                hermesSyncError == nil
+                    ? "API 配置已删除"
+                    : "API 配置已删除，Hermes 同步失败"
+            )
             return true
         } catch {
-            showToast("清除 AI API Key 失败：\(error.localizedDescription)")
+            showToast("删除 API 配置失败：\(error.localizedDescription)")
             return false
         }
     }
@@ -206,6 +235,7 @@ extension AppModel {
         let currentModel = hermesCurrentModel
         let currentHermesProvider = hermesCurrentProvider
         let provider = AIAPIConfiguration.load()
+        let usableHermesSlugs = HermesProviderCatalog.usableConfiguredSlugs()
         let cachedPaidModels = UserDefaults.standard.stringArray(forKey: AIAPIConfiguration.apiModelsKey)
             ?? UserDefaults.standard.stringArray(forKey: AIAPIConfiguration.paidModelsKey)
             ?? []
@@ -229,7 +259,8 @@ extension AppModel {
                     UserDefaults.standard.set(paidModels, forKey: AIAPIConfiguration.apiModelsKey)
                 }
             }
-            if !provider.model.isEmpty,
+            if provider.isConfigured,
+               !provider.model.isEmpty,
                !HermesFreeModelCatalog.isAnonymousFreeModel(provider.model),
                !paidModels.contains(provider.model)
             {
@@ -239,14 +270,15 @@ extension AppModel {
             let hermesCache = HermesProviderCatalog.loadCachedModels()
             var options = AIModelOption.combine(
                 paidModels: paidModels,
-                paidEndpoint: provider.isKeyless ? "" : provider.endpoint,
+                paidEndpoint: provider.isConfigured ? provider.endpoint : "",
                 freeModels: [],
                 cache: hermesCache,
-                allowedSlugs: HermesProviderCatalog.explicitlyConfiguredSlugs(),
-                paidTitle: provider.name
+                allowedSlugs: usableHermesSlugs,
+                paidTitle: provider.isConfigured ? provider.name : ""
             )
             if !currentModel.isEmpty,
                !HermesFreeModelCatalog.isAnonymousFreeModel(currentModel),
+               HermesProviderCatalog.hasUsableCredentials(for: currentHermesProvider),
                !options.contains(where: {
                    $0.model == currentModel && $0.hermesProvider == currentHermesProvider
                })
@@ -286,14 +318,18 @@ extension AppModel {
         hermesCurrentModel = current?.model ?? ""
     }
 
-    func injectJarvisAPIIntoHermesIfNeeded() {
+    private func syncJarvisAPIIntoHermesIfNeeded(
+        _ configuration: AIAPIConfiguration
+    ) -> Error? {
         let adapter = HermesAdapter.live()
-        guard adapter.inspect().isProfileReady else { return }
+        guard adapter.inspect().isProfileReady else { return nil }
         do {
-            try adapter.injectAPIIfAbsent(AIAPIConfiguration.load())
+            try adapter.sync(configuration: configuration)
             refreshHermesStatus()
+            return nil
         } catch {
             NSLog("Jarvis could not inject API into Hermes: \(error.localizedDescription)")
+            return error
         }
     }
 

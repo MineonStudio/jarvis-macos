@@ -94,6 +94,24 @@ final class HermesAdapterTests: XCTestCase {
         XCTAssertTrue(updated.contains("OPENAI_API_KEY=\"sk test\""))
     }
 
+    func testEnvRemovingKeysPreservesUnrelatedValues() {
+        let original = """
+        TELEGRAM_BOT_TOKEN=abc
+        OPENAI_API_KEY=secret
+        OPENAI_BASE_URL=https://api.openai.com/v1
+        """
+
+        let updated = HermesEnvFile.removing(
+            keys: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+            from: original
+        )
+
+        let parsed = HermesEnvFile.parse(updated)
+        XCTAssertEqual(parsed["TELEGRAM_BOT_TOKEN"], "abc")
+        XCTAssertNil(parsed["OPENAI_API_KEY"])
+        XCTAssertNil(parsed["OPENAI_BASE_URL"])
+    }
+
     func testYAMLUpsertReplacesEmptyModelSentinelAndKeepsOtherSections() {
         let original = """
         model: ""
@@ -136,6 +154,7 @@ final class HermesAdapterTests: XCTestCase {
 
         let status = adapter.inspect()
         XCTAssertTrue(status.homeExists)
+        XCTAssertFalse(status.isInstalled)
         XCTAssertTrue(status.isProfileReady)
         XCTAssertTrue(FileManager.default.fileExists(atPath: adapter.soulURL.path))
         XCTAssertEqual(try String(contentsOf: defaultSoul, encoding: .utf8), "default soul")
@@ -404,6 +423,39 @@ final class HermesAdapterTests: XCTestCase {
         )
     }
 
+    func testUsableConfiguredSlugsIgnoreAutoProviderWithoutCredentials() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HermesUsableSlugs.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "model:\n  provider: auto\n"
+            .write(to: home.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(HermesProviderCatalog.usableConfiguredSlugs(homeDirectory: home).isEmpty)
+        XCTAssertFalse(
+            HermesProviderCatalog.hasUsableCredentials(for: "auto", homeDirectory: home)
+        )
+    }
+
+    func testUsableConfiguredSlugsReadProfileAPIKey() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HermesUsableProfileSlugs.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let profile = home
+            .appendingPathComponent("profiles")
+            .appendingPathComponent(HermesAdapter.profileName)
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        try "DEEPSEEK_API_KEY=test-key\n"
+            .write(to: profile.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(
+            HermesProviderCatalog.hasUsableCredentials(
+                for: "deepseek",
+                homeDirectory: home
+            )
+        )
+    }
+
     func testAmbientGitHubCLICredentialIsNotTreatedAsConfiguredCopilot() {
         let auth: [String: Any] = [
             "active_provider": "xai-oauth",
@@ -513,6 +565,41 @@ final class HermesAdapterTests: XCTestCase {
         XCTAssertEqual(current.model, "deepseek-v4-flash")
     }
 
+    func testRemoveInjectedAPIConfigurationClearsSecretsAndResetsModel() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HermesAdapterRemoveAPI.(UUID().uuidString)")
+        let hermesHome = root.appendingPathComponent(".hermes")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let adapter = HermesAdapter(
+            homeDirectory: hermesHome,
+            pathEnvironment: "",
+            extraSearchPaths: []
+        )
+        try adapter.createJarvisProfile()
+        try adapter.sync(
+            configuration: AIAPIConfiguration(
+                endpoint: "https://api.deepseek.com/v1/chat/completions",
+                model: "deepseek-v4-flash",
+                apiKey: "sk-deepseek"
+            )
+        )
+        try HermesEnvFile.upsert(
+            ["TELEGRAM_BOT_TOKEN": "keep-me"],
+            into: String(contentsOf: adapter.envURL, encoding: .utf8)
+        ).write(to: adapter.envURL, atomically: true, encoding: .utf8)
+
+        try adapter.removeInjectedAPIConfiguration()
+
+        let env = try HermesEnvFile.parse(String(contentsOf: adapter.envURL, encoding: .utf8))
+        XCTAssertEqual(env["TELEGRAM_BOT_TOKEN"], "keep-me")
+        XCTAssertNil(env["DEEPSEEK_API_KEY"])
+        XCTAssertNil(env["OPENAI_API_KEY"])
+        XCTAssertNil(env["OPENAI_BASE_URL"])
+        XCTAssertFalse(adapter.inspect().hasAPIKey)
+        XCTAssertTrue(try XCTUnwrap(adapter.currentModel()).isPlaceholder)
+    }
+
     func testSyncingOpenCodeFreeModelWritesKeylessProvider() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HermesAdapterFreeModel.\(UUID().uuidString)")
@@ -586,5 +673,169 @@ final class HermesAdapterTests: XCTestCase {
         XCTAssertFalse(status.isInstalled)
         XCTAssertFalse(status.isProfileReady)
         XCTAssertTrue(status.message.contains("未检测到 Hermes"))
+    }
+}
+
+final class HermesInstallerTests: XCTestCase {
+    func testInstallerUsesTheOfficialScriptAndSurfacesTheLastOutputLine() {
+        XCTAssertEqual(
+            HermesInstaller.scriptURL.absoluteString,
+            "https://hermes-agent.nousresearch.com/install.sh"
+        )
+        XCTAssertEqual(
+            HermesInstaller.lastMeaningfulLine(
+                in: "\u{001B}[32mInstalling Hermes\u{001B}[0m\n  finished  "
+            ),
+            "finished"
+        )
+    }
+
+    func testInstallerErrorIncludesAReadableOutputTail() {
+        let error = HermesInstallerError.failed(
+            status: 12,
+            output: "download started\n\u{001B}[31mnetwork unavailable\u{001B}[0m\n"
+        )
+
+        XCTAssertEqual(
+            error.localizedDescription,
+            "Hermes 安装程序未完成：network unavailable"
+        )
+    }
+
+    func testTirithPreinstallUsesTheSynchronousHermesResolver() {
+        XCTAssertTrue(HermesTirithInstaller.pythonScript.contains("_resolve_tirith_path"))
+        XCTAssertTrue(HermesTirithInstaller.pythonScript.contains("Tirith ready"))
+    }
+
+    func testTirithInstallerErrorIncludesAReadableOutputTail() {
+        let error = HermesSecurityInstallerError.failed(
+            output: "download started\n\u{001B}[31mchecksum mismatch\u{001B}[0m\n"
+        )
+
+        XCTAssertEqual(
+            error.localizedDescription,
+            "Hermes 安全组件准备失败：checksum mismatch"
+        )
+    }
+}
+
+final class HermesUninstallerTests: XCTestCase {
+    func testRemovesHermesHomeAndManagedLaunchersButKeepsUnrelatedFiles() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("HermesUninstaller.\(UUID().uuidString)")
+        let home = root.appendingPathComponent("home")
+        let hermesHome = home.appendingPathComponent(".hermes")
+        let commandDirectory = home.appendingPathComponent(".local/bin")
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(
+            at: hermesHome.appendingPathComponent("profiles/jarvis"),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: commandDirectory,
+            withIntermediateDirectories: true
+        )
+        try "#!/bin/sh\nexec \(hermesHome.path)/hermes-agent/venv/bin/python".write(
+            to: commandDirectory.appendingPathComponent("hermes"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try fileManager.createSymbolicLink(
+            at: commandDirectory.appendingPathComponent("node"),
+            withDestinationURL: hermesHome.appendingPathComponent("node/bin/node")
+        )
+        try "keep me".write(
+            to: commandDirectory.appendingPathComponent("python"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try HermesUninstaller(
+            fileManager: fileManager,
+            homeDirectory: home,
+            commandDirectories: [commandDirectory]
+        ).uninstall()
+
+        XCTAssertFalse(fileManager.fileExists(atPath: hermesHome.path))
+        XCTAssertFalse(fileManager.fileExists(atPath: commandDirectory.appendingPathComponent("hermes").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: commandDirectory.appendingPathComponent("node").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: commandDirectory.appendingPathComponent("python").path))
+    }
+
+    func testDoesNotRemoveUnmanagedLauncherWithTheSameName() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("HermesUninstaller.\(UUID().uuidString)")
+        let home = root.appendingPathComponent("home")
+        let commandDirectory = home.appendingPathComponent(".local/bin")
+        let launcher = commandDirectory.appendingPathComponent("hermes")
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(at: commandDirectory, withIntermediateDirectories: true)
+        try "#!/bin/sh\nexec /opt/custom/hermes".write(
+            to: launcher,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try HermesUninstaller(
+            fileManager: fileManager,
+            homeDirectory: home,
+            commandDirectories: [commandDirectory]
+        ).uninstall()
+
+        XCTAssertTrue(fileManager.fileExists(atPath: launcher.path))
+    }
+
+    func testStandardUninstallRemovesRuntimeButKeepsHermesData() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("HermesUninstaller.\(UUID().uuidString)")
+        let home = root.appendingPathComponent("home")
+        let hermesHome = home.appendingPathComponent(".hermes")
+        let commandDirectory = home.appendingPathComponent(".local/bin")
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(
+            at: hermesHome.appendingPathComponent("profiles/jarvis"),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: hermesHome.appendingPathComponent("hermes-agent"),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: hermesHome.appendingPathComponent("node"),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: hermesHome.appendingPathComponent("bin"),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(at: commandDirectory, withIntermediateDirectories: true)
+        try "runtime".write(
+            to: hermesHome.appendingPathComponent("bin/uv"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "#!/bin/sh\nexec \(hermesHome.path)/hermes-agent/venv/bin/python".write(
+            to: commandDirectory.appendingPathComponent("hermes"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try HermesUninstaller(
+            fileManager: fileManager,
+            homeDirectory: home,
+            commandDirectories: [commandDirectory]
+        ).uninstall(mode: .standard)
+
+        XCTAssertFalse(fileManager.fileExists(atPath: hermesHome.appendingPathComponent("hermes-agent").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: hermesHome.appendingPathComponent("node").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: hermesHome.appendingPathComponent("bin/uv").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: hermesHome.appendingPathComponent("profiles/jarvis").path))
+        XCTAssertTrue(fileManager.fileExists(atPath: hermesHome.path))
     }
 }

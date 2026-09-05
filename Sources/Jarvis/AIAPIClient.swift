@@ -18,6 +18,21 @@ struct AIAPIConfiguration: Equatable, Sendable {
     static let defaultBaseURL = "https://api.openai.com/v1"
     static let defaultModel = "gpt-4o-mini"
 
+    private static let storedProviderKeys = [
+        apiEndpointKey,
+        apiModelKey,
+        apiNameKey,
+        apiModelsKey,
+        endpointKey,
+        modelKey,
+        providerEndpointKey,
+        paidEndpointKey,
+        paidModelKey,
+        paidModelsKey,
+        legacyEndpointKey,
+        legacyModelKey
+    ]
+
     var endpoint: String
     var model: String
     var apiKey: String
@@ -127,6 +142,12 @@ struct AIAPIConfiguration: Equatable, Sendable {
     static func hasStoredAPIEndpoint(defaults: UserDefaults = .standard) -> Bool {
         nonKeyless(defaults.string(forKey: apiEndpointKey)) != nil
             || nonKeyless(defaults.string(forKey: providerEndpointKey)) != nil
+    }
+
+    static func removeStoredConfiguration(defaults: UserDefaults = .standard) {
+        for key in storedProviderKeys {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     static func nonKeyless(_ rawValue: String?) -> String? {

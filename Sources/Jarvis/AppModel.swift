@@ -108,7 +108,14 @@ final class AppModel: ObservableObject {
     @Published var hermesStatusMessage = "正在检测 Hermes…"
     @Published var hermesIsInstalled = false
     @Published var hermesProfileReady = false
+    @Published var hermesNeedsAIConfiguration = false
     @Published var hermesIsBusy = false
+    @Published var hermesDeploymentPhase: HermesDeploymentPhase = .idle
+    @Published var hermesDeploymentMessage = ""
+    @Published var hermesDeploymentDetail = ""
+    @Published var hermesDeploymentErrorMessage: String?
+    @Published var hermesUninstallIsBusy = false
+    @Published var hermesUninstallErrorMessage: String?
     @Published var hermesCLIPath = ""
     @Published var hermesSyncedModel = ""
     @Published var hermesBots: [HermesBot] = []
@@ -154,6 +161,9 @@ final class AppModel: ObservableObject {
     let aiAPIConnectionTester: any AIAPIConnectionTesting
     private var aiConversationControllers: [AIConversationProvider: JarvisWebPlatformController] = [:]
     private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
+    var hermesDeploymentTask: Task<Void, Never>?
+    var hermesInstallerControl: HermesInstallerControl?
+    var hermesUninstallTask: Task<Void, Never>?
     var screenshotShortcutManager: ScreenshotShortcutManager?
     var clipboardShortcutManager: ScreenshotShortcutManager?
     var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]

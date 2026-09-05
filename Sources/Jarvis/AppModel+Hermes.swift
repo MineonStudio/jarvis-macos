@@ -15,9 +15,10 @@ extension AppModel {
 
     func refreshHermesStatus() {
         let adapter = HermesAdapter.live()
-        applyHermesStatus(adapter.inspect())
+        let status = adapter.inspect()
+        applyHermesStatus(status)
         applyHermesCurrentModel(adapter.currentModel())
-        hermesBots = adapter.listBots()
+        hermesBots = status.isInstalled ? adapter.listBots() : []
         if hermesBots.contains(where: { $0.id == selectedHermesBotID }) == false {
             selectedHermesBotID = hermesBots.first(where: \.isJarvisProfile)?.id
                 ?? hermesBots.first?.id
@@ -27,8 +28,12 @@ extension AppModel {
 
     func createJarvisHermesProfile() {
         guard !hermesIsBusy else { return }
+        hermesDeploymentPhase = .preparingProfile
+        hermesDeploymentMessage = "正在为 JARVIS 准备工作空间…"
+        hermesDeploymentDetail = ""
+        hermesDeploymentErrorMessage = nil
         hermesIsBusy = true
-        Task.detached { [weak self] in
+        hermesDeploymentTask = Task.detached { [weak self] in
             do {
                 let adapter = HermesAdapter.live()
                 try adapter.createJarvisProfile()
@@ -39,8 +44,100 @@ extension AppModel {
                     successMessage: "Jarvis Profile 已就绪"
                 )
             } catch {
-                await self?.failHermesMutation(
+                await self?.failHermesDeployment(
                     "创建 Jarvis Profile 失败：\(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    func deployHermes() {
+        guard !hermesIsBusy else { return }
+        hermesIsBusy = true
+        hermesDeploymentPhase = .installing
+        hermesDeploymentMessage = "正在下载并准备 Hermes CLI…"
+        hermesDeploymentDetail = ""
+        hermesDeploymentErrorMessage = nil
+        let control = HermesInstallerControl()
+        hermesInstallerControl = control
+
+        hermesDeploymentTask = Task.detached { [weak self, control] in
+            do {
+                let adapter = HermesAdapter.live()
+                if adapter.inspect().cliPath == nil {
+                    try await HermesInstaller().install(control: control) { line in
+                        Task { @MainActor [weak self] in
+                            self?.hermesDeploymentDetail = line
+                        }
+                    }
+                }
+
+                try Task.checkCancellation()
+                await self?.setHermesDeploymentPhase(
+                    .preparingSecurity,
+                    message: "正在准备 Hermes 安全组件…"
+                )
+                try HermesTirithInstaller().install(control: control) { line in
+                    Task { @MainActor [weak self] in
+                        self?.hermesDeploymentDetail = line
+                    }
+                }
+
+                try Task.checkCancellation()
+                await self?.setHermesDeploymentPhase(
+                    .preparingProfile,
+                    message: "正在创建 JARVIS Profile…"
+                )
+                try adapter.createJarvisProfile()
+
+                try Task.checkCancellation()
+                await self?.setHermesDeploymentPhase(
+                    .configuring,
+                    message: "正在同步模型配置…"
+                )
+                try adapter.injectAPIIfAbsent(AIAPIConfiguration.load())
+                let status = adapter.inspect()
+                await self?.finishHermesMutation(
+                    status: status,
+                    successMessage: "Hermes 已部署，JARVIS 可以开始工作了"
+                )
+            } catch {
+                let message = if control.isCancelled || error is CancellationError {
+                    "Hermes 部署已停止"
+                } else {
+                    "Hermes 部署失败：\(error.localizedDescription)"
+                }
+                await self?.failHermesDeployment(
+                    message
+                )
+            }
+        }
+    }
+
+    func cancelHermesDeployment() {
+        guard hermesIsBusy else { return }
+        hermesDeploymentPhase = .cancelling
+        hermesDeploymentMessage = "正在停止部署…"
+        hermesInstallerControl?.cancel()
+        hermesDeploymentTask?.cancel()
+    }
+
+    func uninstallHermes(mode: HermesUninstallMode) {
+        guard hermesIsInstalled, !hermesIsBusy, !hermesUninstallIsBusy else { return }
+        guard !hermesChatIsSending else {
+            showToast("当前对话结束后才能卸载 Hermes")
+            return
+        }
+
+        hermesUninstallIsBusy = true
+        hermesUninstallErrorMessage = nil
+        hermesUninstallTask = Task.detached { [weak self, mode] in
+            do {
+                try HermesUninstaller().uninstall(mode: mode)
+                await self?.finishHermesUninstall(mode: mode)
+            } catch {
+                await self?.failHermesUninstall(
+                    "Hermes 卸载失败：\(error.localizedDescription)"
                 )
             }
         }
@@ -48,14 +145,54 @@ extension AppModel {
 
     private func finishHermesMutation(status: HermesStatus, successMessage: String) {
         hermesIsBusy = false
+        hermesDeploymentPhase = .idle
+        hermesDeploymentMessage = ""
+        hermesDeploymentDetail = ""
+        hermesDeploymentErrorMessage = nil
+        hermesDeploymentTask = nil
+        hermesInstallerControl = nil
         applyHermesStatus(status)
         applyHermesCurrentModel(HermesAdapter.live().currentModel())
         hermesBots = HermesAdapter.live().listBots()
+        refreshAvailableAIModels()
         showToast(successMessage)
     }
 
-    private func failHermesMutation(_ message: String) {
+    private func setHermesDeploymentPhase(
+        _ phase: HermesDeploymentPhase,
+        message: String
+    ) {
+        hermesDeploymentPhase = phase
+        hermesDeploymentMessage = message
+    }
+
+    private func failHermesDeployment(_ message: String) {
         hermesIsBusy = false
+        hermesDeploymentPhase = .failed
+        hermesDeploymentMessage = ""
+        hermesDeploymentDetail = ""
+        hermesDeploymentErrorMessage = message
+        hermesDeploymentTask = nil
+        hermesInstallerControl = nil
+        refreshHermesStatus()
+        showToast(message)
+    }
+
+    private func finishHermesUninstall(mode: HermesUninstallMode) {
+        hermesUninstallIsBusy = false
+        hermesUninstallTask = nil
+        hermesUninstallErrorMessage = nil
+        refreshHermesStatus()
+        hermesBots = []
+        selectedHermesBotID = HermesAdapter.profileName
+        applyHermesCurrentModel(nil)
+        showToast(mode == .complete ? "Hermes 已完全卸载" : "Hermes 已卸载，数据已保留")
+    }
+
+    private func failHermesUninstall(_ message: String) {
+        hermesUninstallIsBusy = false
+        hermesUninstallTask = nil
+        hermesUninstallErrorMessage = message
         refreshHermesStatus()
         showToast(message)
     }
@@ -312,7 +449,8 @@ extension AppModel {
 
     private func applyHermesStatus(_ status: HermesStatus) {
         hermesIsInstalled = status.isInstalled
-        hermesProfileReady = status.isProfileReady
+        hermesProfileReady = status.isInstalled && status.isProfileReady
+        hermesNeedsAIConfiguration = hermesProfileReady && !status.hasAPIKey && !aiAPIKeyConfigured
         hermesStatusMessage = status.message
         hermesCLIPath = status.cliPath ?? ""
         hermesSyncedModel = status.model ?? ""

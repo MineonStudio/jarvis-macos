@@ -3,15 +3,30 @@ import SwiftUI
 struct AIAPISettingsCard: View {
     @EnvironmentObject private var app: AppModel
     @State private var name = ""
-    @State private var baseURL = AIAPIConfiguration.defaultBaseURL
-    @State private var model = AIAPIConfiguration.defaultModel
+    @State private var baseURL = ""
+    @State private var model = ""
     @State private var apiKey = ""
+    @State private var showingDeleteConfirmation = false
+
+    private var hasStoredConfiguration: Bool {
+        app.aiAPIKeyConfigured || AIAPIConfiguration.hasStoredAPIEndpoint()
+    }
+
+    private var effectiveBaseURL: String {
+        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? AIAPIConfiguration.defaultBaseURL : trimmed
+    }
+
+    private var effectiveModel: String {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? AIAPIConfiguration.defaultModel : trimmed
+    }
 
     private var canUseConfiguration: Bool {
-        !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && (app.aiAPIKeyConfigured
-                || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        (app.aiAPIKeyConfigured
+            || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            && OpenAICompatibleAPIClient.normalizedEndpointURL(from: effectiveBaseURL) != nil
+            && !effectiveModel.isEmpty
     }
 
     var body: some View {
@@ -20,7 +35,7 @@ struct AIAPISettingsCard: View {
                 SettingsCardHeader(title: "API 配置", systemImage: "key")
 
                 fieldRow(title: "名称") {
-                    TextField("DeepSeek", text: $name)
+                    TextField("例如：DeepSeek", text: $name)
                         .textFieldStyle(.roundedBorder)
                         .disabled(isLocked)
                 }
@@ -38,51 +53,51 @@ struct AIAPISettingsCard: View {
                 }
 
                 fieldRow(title: "Key") {
-                    HStack(spacing: 8) {
-                        SecureField(
-                            app.aiAPIKeyMask.isEmpty ? "输入 API Key" : app.aiAPIKeyMask,
-                            text: $apiKey
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(isLocked)
+                    SecureField(
+                        app.aiAPIKeyMask.isEmpty ? "输入 API Key" : app.aiAPIKeyMask,
+                        text: $apiKey
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(isLocked)
+                }
 
-                        if isLocked {
-                            Button("编辑", action: beginEditing)
-                                .buttonStyle(JarvisSecondaryButtonStyle())
-                        } else {
-                            Button("保存", action: saveSettings)
-                                .buttonStyle(JarvisSecondaryButtonStyle())
-                                .disabled(!canUseConfiguration)
-                        }
+                HStack(spacing: 8) {
+                    Spacer(minLength: 82)
 
-                        if app.aiAPIKeyConfigured, !isLocked {
-                            Button("清除") {
-                                guard app.clearAIAPIKey() else { return }
-                                apiKey = ""
-                                loadDraft()
-                            }
+                    if isLocked {
+                        Button("编辑配置", action: beginEditing)
                             .buttonStyle(JarvisSecondaryButtonStyle())
-                        }
+                    } else {
+                        Button("保存配置", action: saveSettings)
+                            .buttonStyle(JarvisSecondaryButtonStyle())
+                            .disabled(!canUseConfiguration)
+                    }
 
-                        Button {
-                            Task {
-                                await app.testAIAPIConnection(
-                                    endpoint: baseURL,
-                                    model: model,
-                                    apiKey: apiKey
-                                )
-                            }
-                        } label: {
-                            if app.aiConnectionTesting {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .frame(minWidth: 56)
-                            } else {
-                                Text("测试连接")
-                            }
+                    Button {
+                        Task {
+                            await app.testAIAPIConnection(
+                                endpoint: effectiveBaseURL,
+                                model: effectiveModel,
+                                apiKey: apiKey
+                            )
                         }
-                        .buttonStyle(JarvisSecondaryButtonStyle())
-                        .disabled(!canUseConfiguration || app.aiConnectionTesting)
+                    } label: {
+                        if app.aiConnectionTesting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(minWidth: 56)
+                        } else {
+                            Text("测试连接")
+                        }
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(!canUseConfiguration || app.aiConnectionTesting)
+
+                    if hasStoredConfiguration {
+                        Button("删除配置", role: .destructive) {
+                            showingDeleteConfirmation = true
+                        }
+                        .buttonStyle(JarvisToolbarButtonStyle(tint: .red))
                     }
                 }
             }
@@ -92,6 +107,20 @@ struct AIAPISettingsCard: View {
             if isLocked {
                 loadDraft()
             }
+        }
+        .confirmationDialog(
+            "删除 API 配置？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除配置", role: .destructive) {
+                if app.deleteAIAPIConfiguration() {
+                    loadDraft()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将删除 API Key、接口地址、模型和本地模型缓存，并清除 Hermes 中由 JARVIS 同步的配置。")
         }
     }
 
@@ -112,14 +141,20 @@ struct AIAPISettingsCard: View {
     }
 
     private func loadDraft() {
-        name = app.providerName
-        let configuration = AIAPIConfiguration(
-            endpoint: app.providerEndpoint,
-            model: app.providerModel,
-            apiKey: ""
-        )
-        baseURL = configuration.openAIBaseURL
-        model = app.providerModel
+        if hasStoredConfiguration {
+            name = app.providerName
+            let configuration = AIAPIConfiguration(
+                endpoint: app.providerEndpoint,
+                model: app.providerModel,
+                apiKey: ""
+            )
+            baseURL = configuration.openAIBaseURL
+            model = app.providerModel
+        } else {
+            name = ""
+            baseURL = ""
+            model = ""
+        }
         apiKey = ""
     }
 

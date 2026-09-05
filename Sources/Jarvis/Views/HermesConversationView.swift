@@ -16,8 +16,10 @@ struct HermesConversationView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                ToolbarItem(placement: .navigation) {
-                    modelSwitcher
+                if app.hermesIsInstalled, app.aiModelsLoading || !modelOptions.isEmpty {
+                    ToolbarItem(placement: .navigation) {
+                        modelSwitcher
+                    }
                 }
             },
             trailingToolbar: {
@@ -140,7 +142,7 @@ struct HermesConversationView: View {
 
     private var chatPanel: some View {
         VStack(spacing: 0) {
-            if !app.hermesProfileReady {
+            if !app.hermesIsInstalled || !app.hermesProfileReady || app.hermesNeedsAIConfiguration {
                 emptyState
             } else {
                 messageList
@@ -151,23 +153,195 @@ struct HermesConversationView: View {
         .jarvisGlass(cornerRadius: 22, interactive: false)
     }
 
+    @ViewBuilder
     private var emptyState: some View {
+        if app.hermesNeedsAIConfiguration {
+            modelConfigurationState
+        } else if app.hermesIsBusy || app.hermesDeploymentErrorMessage != nil || !app.hermesIsInstalled {
+            deploymentInvitationState
+        } else {
+            profileSetupState
+        }
+    }
+
+    private var deploymentInvitationState: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            VStack(spacing: 16) {
+                hermesBrandIcon
+
+                Text(deploymentTitle)
+                    .font(JarvisTypography.pageTitle)
+                    .multilineTextAlignment(.center)
+
+                if app.hermesIsBusy {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .controlSize(.small)
+
+                        deploymentProgress
+
+                        if !app.hermesDeploymentDetail.isEmpty {
+                            Text(app.hermesDeploymentDetail)
+                                .font(JarvisTypography.caption)
+                                .foregroundStyle(Color.jarvisTextSecondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity)
+                        }
+
+                        Button("停止部署") {
+                            app.cancelHermesDeployment()
+                        }
+                        .buttonStyle(JarvisSecondaryButtonStyle())
+                        .disabled(app.hermesDeploymentPhase == .cancelling)
+                    }
+                } else {
+                    if let errorMessage = app.hermesDeploymentErrorMessage {
+                        Text(errorMessage)
+                            .font(JarvisTypography.body)
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                    } else {
+                        Text("Hermes CLI 是 JARVIS 在本机执行任务所需的核心引擎，部署后才能开始对话。")
+                            .font(JarvisTypography.body)
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Button(app.hermesDeploymentErrorMessage == nil ? "一键部署到本机" : "重试部署") {
+                        app.deployHermes()
+                    }
+                    .buttonStyle(JarvisPrimaryButtonStyle())
+                    .frame(minWidth: 140)
+                }
+            }
+            .frame(maxWidth: 520)
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var deploymentProgress: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            deploymentStageRow(
+                title: "安装 Hermes CLI",
+                isComplete: deploymentStepIndex > 0,
+                isCurrent: deploymentStepIndex == 0
+            )
+            deploymentStageRow(
+                title: "创建 JARVIS Profile",
+                isComplete: deploymentStepIndex > 1,
+                isCurrent: deploymentStepIndex == 1
+            )
+            deploymentStageRow(
+                title: "同步模型配置",
+                isComplete: deploymentStepIndex > 2,
+                isCurrent: deploymentStepIndex == 2
+            )
+        }
+        .frame(width: 240, alignment: .leading)
+    }
+
+    private var deploymentTitle: String {
+        if app.hermesIsBusy {
+            return "正在部署Hermes"
+        }
+        return app.hermesDeploymentErrorMessage == nil ? "未检测到Hermes" : "再试一次"
+    }
+
+    private var deploymentStepIndex: Int {
+        switch app.hermesDeploymentPhase {
+        case .installing, .preparingSecurity, .cancelling:
+            0
+        case .preparingProfile:
+            1
+        case .configuring:
+            2
+        case .idle, .failed:
+            0
+        }
+    }
+
+    private func deploymentStageRow(
+        title: String,
+        isComplete: Bool,
+        isCurrent: Bool
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isComplete ? "checkmark.circle.fill" : isCurrent ? "circle.dotted" : "circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isComplete || isCurrent ? Color.accentColor : Color.secondary)
+            Text(title)
+                .font(isCurrent ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                .foregroundStyle(isCurrent ? Color.primary : Color.jarvisTextSecondary)
+        }
+    }
+
+    private var modelConfigurationState: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 0)
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+            Text("Hermes 已准备好")
+                .font(JarvisTypography.pageTitle)
+            Text("再连接一个模型，JARVIS 就能开始对话。")
+                .font(JarvisTypography.body)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .multilineTextAlignment(.center)
+            Button("去设置") {
+                app.selectedSection = .settings
+            }
+            .buttonStyle(JarvisPrimaryButtonStyle())
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var hermesBrandIcon: some View {
+        Group {
+            if let image = Self.hermesIconImage {
+                Image(nsImage: image)
+                    .renderingMode(.original)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .frame(width: 112, height: 112)
+    }
+
+    private static let hermesIconImage: NSImage? = {
+        guard let url = Bundle.main.url(forResource: "HermesIcon", withExtension: "png") else {
+            return nil
+        }
+        let image = NSImage(contentsOf: url)
+        image?.isTemplate = false
+        return image
+    }()
+
+    private var profileSetupState: some View {
         VStack(spacing: 14) {
             Spacer(minLength: 0)
             JarvisEmptyState(
                 icon: "bubble.left.and.bubble.right",
-                title: "还不能和 JARVIS 对话",
-                message: app.hermesIsInstalled
-                    ? "先创建 Jarvis Profile，再开始对话。"
-                    : "未检测到 Hermes。请先在本机安装 Hermes Agent。"
+                title: "完成 JARVIS 设置",
+                message: "Hermes 已安装，再完成一次配置即可开始对话。"
             )
-            if app.hermesIsInstalled, !app.hermesProfileReady {
-                Button("创建 Jarvis Profile") {
-                    app.createJarvisHermesProfile()
-                }
-                .buttonStyle(JarvisPrimaryButtonStyle())
-                .disabled(app.hermesIsBusy)
+            Button("完成设置") {
+                app.createJarvisHermesProfile()
             }
+            .buttonStyle(JarvisPrimaryButtonStyle())
+            .disabled(app.hermesIsBusy)
             Spacer(minLength: 0)
         }
         .padding(24)
@@ -449,23 +623,7 @@ struct HermesConversationView: View {
     }
 
     private var modelOptions: [AIModelOption] {
-        if app.availableAIModelOptions.isEmpty, !app.hermesCurrentModel.isEmpty {
-            let isFree = HermesFreeModelCatalog.isAnonymousFreeModel(app.hermesCurrentModel)
-            return [
-                AIModelOption(
-                    model: app.hermesCurrentModel,
-                    isFree: isFree,
-                    providerTitle: HermesProviderCatalog.groupTitle(
-                        forSlug: app.hermesCurrentProvider,
-                        isFree: isFree
-                    ),
-                    endpoint: HermesProviderCatalog.descriptor(for: app.hermesCurrentProvider)?
-                        .chatCompletionsURL ?? "",
-                    hermesProvider: app.hermesCurrentProvider
-                )
-            ]
-        }
-        return app.availableAIModelOptions
+        app.availableAIModelOptions
     }
 
     private var groupedModelOptions: [(title: String, options: [AIModelOption])] {
@@ -492,13 +650,7 @@ struct HermesConversationView: View {
     }
 
     private var currentModelTitle: String {
-        if app.hermesCurrentModel.isEmpty {
-            return "选择模型"
-        }
-        return modelOptions.first(where: isSelected)?.menuTitle
-            ?? (HermesFreeModelCatalog.isAnonymousFreeModel(app.hermesCurrentModel)
-                ? "\(app.hermesCurrentModel)  free"
-                : app.hermesCurrentModel)
+        modelOptions.first(where: isSelected)?.menuTitle ?? "选择模型"
     }
 
     private func isSelected(_ option: AIModelOption) -> Bool {

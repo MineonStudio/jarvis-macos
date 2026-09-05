@@ -42,6 +42,20 @@ enum HermesEnvFile {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    static func removing(keys: Set<String>, from content: String) -> String {
+        let lines = content.components(separatedBy: .newlines).filter { rawLine in
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return true }
+            let stripped = trimmed.hasPrefix("export ")
+                ? String(trimmed.dropFirst("export ".count)).trimmingCharacters(in: .whitespaces)
+                : trimmed
+            guard let separator = stripped.firstIndex(of: "=") else { return true }
+            let key = String(stripped[..<separator]).trimmingCharacters(in: .whitespaces)
+            return !keys.contains(key)
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: CharacterSet.newlines) + "\n"
+    }
+
     static func quotedValue(_ value: String) -> String {
         let specials = CharacterSet(charactersIn: "#\"$\\'")
         let needsQuotes = value.contains(where: { character in

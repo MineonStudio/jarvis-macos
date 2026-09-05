@@ -245,6 +245,32 @@ enum HermesProviderCatalog {
         return slugs
     }
 
+    static func usableConfiguredSlugs(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".hermes")
+    ) -> Set<String> {
+        let authURL = homeDirectory.appendingPathComponent("auth.json")
+        let envURL = homeDirectory.appendingPathComponent(".env")
+        let profileEnvURL = homeDirectory
+            .appendingPathComponent("profiles")
+            .appendingPathComponent(HermesAdapter.profileName)
+            .appendingPathComponent(".env")
+        let credentialed = slugsFromAuth(at: authURL)
+            .union(slugsFromEnv(at: envURL))
+            .union(slugsFromEnv(at: profileEnvURL))
+        return Set(credentialed.filter { descriptor(for: $0) != nil })
+    }
+
+    static func hasUsableCredentials(
+        for slug: String,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".hermes")
+    ) -> Bool {
+        usableConfiguredSlugs(homeDirectory: homeDirectory).contains(
+            slug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        )
+    }
+
     static func slugsFromAuth(at url: URL) -> Set<String> {
         guard let data = FileManager.default.contents(atPath: url.path),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]

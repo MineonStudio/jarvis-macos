@@ -25,6 +25,50 @@ final class AIAPIConfigurationTests: XCTestCase {
         XCTAssertTrue(keylessFree.isConfigured)
     }
 
+    func testLoadUsesDefaultsWithoutStoredProviderValues() throws {
+        let suiteName = "AIAPIConfigurationDefaults.(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let configuration = AIAPIConfiguration.load(defaults: defaults, resolvedAPIKey: nil)
+
+        XCTAssertEqual(configuration.endpoint, AIAPIConfiguration.defaultEndpoint)
+        XCTAssertEqual(configuration.model, AIAPIConfiguration.defaultModel)
+        XCTAssertEqual(configuration.apiKey, "")
+        XCTAssertFalse(AIAPIConfiguration.hasStoredAPIEndpoint(defaults: defaults))
+    }
+
+    func testRemoveStoredConfigurationClearsCurrentAndLegacyValues() throws {
+        let suiteName = "AIAPIConfigurationRemove.(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let keys = [
+            AIAPIConfiguration.apiEndpointKey,
+            AIAPIConfiguration.apiModelKey,
+            AIAPIConfiguration.apiNameKey,
+            AIAPIConfiguration.apiModelsKey,
+            AIAPIConfiguration.endpointKey,
+            AIAPIConfiguration.modelKey,
+            AIAPIConfiguration.providerEndpointKey,
+            AIAPIConfiguration.paidEndpointKey,
+            AIAPIConfiguration.paidModelKey,
+            AIAPIConfiguration.paidModelsKey,
+            AIAPIConfiguration.legacyEndpointKey,
+            AIAPIConfiguration.legacyModelKey
+        ]
+        for key in keys {
+            defaults.set("stored", forKey: key)
+        }
+
+        AIAPIConfiguration.removeStoredConfiguration(defaults: defaults)
+
+        for key in keys {
+            XCTAssertNil(defaults.object(forKey: key), "Expected (key) to be removed")
+        }
+        XCTAssertFalse(AIAPIConfiguration.hasStoredAPIEndpoint(defaults: defaults))
+    }
+
     func testLoadPrefersNewKeysAndFallsBackToLegacyScreenshotKeys() throws {
         let suiteName = "AIAPIConfigurationTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

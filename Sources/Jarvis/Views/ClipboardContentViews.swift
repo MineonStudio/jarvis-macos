@@ -354,6 +354,8 @@ struct ClipboardHistoryActionToolbar: View {
     let selectedItem: ClipboardItem?
     let onClearSelection: () -> Void
     @State private var showingDeleteConfirmation = false
+    @State private var showingSensitiveCopyConfirmation = false
+    @State private var showingSensitivePreviewConfirmation = false
 
     private var canPreview: Bool {
         selectedItem?.canFullscreenPreview == true
@@ -367,7 +369,11 @@ struct ClipboardHistoryActionToolbar: View {
                 isEnabled: canPreview
             ) {
                 guard let selectedItem else { return }
-                app.showClipboardMediaPreview(selectedItem)
+                if selectedItem.isSensitive {
+                    showingSensitivePreviewConfirmation = true
+                } else {
+                    app.showClipboardMediaPreview(selectedItem)
+                }
             }
             actionButton(
                 systemName: "doc.on.doc",
@@ -375,7 +381,11 @@ struct ClipboardHistoryActionToolbar: View {
                 isEnabled: selectedItem != nil
             ) {
                 guard let selectedItem else { return }
-                app.copyClipboard(selectedItem)
+                if selectedItem.isSensitive {
+                    showingSensitiveCopyConfirmation = true
+                } else {
+                    app.copyClipboard(selectedItem)
+                }
             }
             actionButton(
                 systemName: selectedItem?.isPinned == true ? "star.slash" : "star",
@@ -412,6 +422,32 @@ struct ClipboardHistoryActionToolbar: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("删除后无法恢复。")
+        }
+        .confirmationDialog(
+            "这段内容疑似包含敏感信息",
+            isPresented: $showingSensitiveCopyConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("显示并复制") {
+                guard let selectedItem else { return }
+                app.copyClipboard(selectedItem)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("只有在你主动确认后，才会显示并复制原始内容。")
+        }
+        .confirmationDialog(
+            "这段内容疑似包含敏感信息",
+            isPresented: $showingSensitivePreviewConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("显示并查看") {
+                guard let selectedItem else { return }
+                app.showClipboardMediaPreview(selectedItem)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("只有在你主动确认后，才会打开原始内容预览。")
         }
     }
 
@@ -450,6 +486,8 @@ struct ClipboardEmptyState: View {
 struct ClipboardCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
+    @State private var isSensitiveRevealed = false
+    @State private var isTextExpanded = false
     let item: ClipboardItem
     let isSelected: Bool
     let onSelect: () -> Void
@@ -470,12 +508,63 @@ struct ClipboardCard: View {
     private var previewContent: some View {
         ZStack {
             if item.kind == .text {
-                Text(item.preview)
-                    .font(JarvisTypography.body)
-                    .lineLimit(6)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .padding(HistoryGridMetrics.clipboardCardPadding)
+                VStack(spacing: 8) {
+                    if let presentation = item.sensitivePresentation(revealed: isSensitiveRevealed) {
+                        Text(presentation.displayText)
+                            .font(
+                                presentation.requiresReveal
+                                    ? JarvisTypography.secondary
+                                    : JarvisTypography.body
+                            )
+                            .foregroundStyle(
+                                presentation.requiresReveal
+                                    ? Color.jarvisTextSecondary
+                                    : Color.primary
+                            )
+                            .lineLimit(
+                                presentation.requiresReveal
+                                    ? 2
+                                    : (isTextExpanded ? nil : 6)
+                            )
+                            .multilineTextAlignment(.center)
+                            .accessibilityLabel(presentation.accessibilityText)
+
+                        if presentation.requiresReveal {
+                            Button("显示一次") {
+                                withAnimation(
+                                    JarvisMotion.animation(
+                                        JarvisMotion.feedback,
+                                        reduceMotion: reduceMotion
+                                    )
+                                ) {
+                                    isSensitiveRevealed = true
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .accessibilityHint("仅临时显示，离开卡片后会重新隐藏")
+                        } else if presentation.sensitivity != nil {
+                            Label("已临时显示", systemImage: "eye")
+                                .font(JarvisTypography.caption)
+                                .foregroundStyle(Color.jarvisTextSecondary)
+                        }
+
+                        if shouldOfferTextExpansion {
+                            textExpansionButton
+                        }
+                    } else {
+                        Text(item.preview)
+                            .font(JarvisTypography.body)
+                            .lineLimit(isTextExpanded ? nil : 6)
+                            .multilineTextAlignment(.center)
+
+                        if shouldOfferTextExpansion {
+                            textExpansionButton
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(HistoryGridMetrics.clipboardCardPadding)
             } else if item.kind == .file {
                 VStack(spacing: 10) {
                     Image(systemName: item.kind.icon)
@@ -507,9 +596,33 @@ struct ClipboardCard: View {
         .help("拖到 Finder 或其他应用导出内容")
     }
 
+    private var shouldOfferTextExpansion: Bool {
+        guard item.kind == .text, let text = item.resolvedText else { return false }
+        return text.count > 240 || text.split(separator: "\n").count > 6
+    }
+
+    private var textExpansionButton: some View {
+        Button(isTextExpanded ? "收起" : "展开") {
+            withAnimation(
+                JarvisMotion.animation(
+                    JarvisMotion.feedback,
+                    reduceMotion: reduceMotion
+                )
+            ) {
+                isTextExpanded.toggle()
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(JarvisTypography.captionEmphasis)
+        .foregroundStyle(Color.accentColor)
+        .accessibilityLabel(isTextExpanded ? "收起长文本" : "展开长文本")
+    }
+
     @ViewBuilder
     private var previewArea: some View {
-        if ClipboardSharing.itemProvider(for: item) != nil {
+        if ClipboardSharing.itemProvider(for: item) != nil,
+           !item.isSensitive || isSensitiveRevealed
+        {
             previewContent
                 .onDrag {
                     ClipboardSharing.itemProvider(for: item) ?? NSItemProvider()
@@ -521,17 +634,21 @@ struct ClipboardCard: View {
 
     private var metadataRow: some View {
         HStack(spacing: 6) {
+            Label(item.kind.title, systemImage: item.kind.icon)
+                .font(JarvisTypography.captionEmphasis)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if item.isPinned {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("已收藏")
+            }
             Text(item.shortTimestamp)
                 .font(JarvisTypography.caption)
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
-            Spacer(minLength: 0)
-            if let size = item.sizeDescription {
-                Text(size)
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-            }
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,
@@ -579,6 +696,18 @@ struct ClipboardCard: View {
             )
             .allowsHitTesting(false)
         }
+        .overlay(alignment: .topLeading) {
+            if isSelected {
+                Label("已选中", systemImage: "checkmark.circle.fill")
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.accentColor.opacity(0.92), in: Capsule())
+                    .padding(8)
+                    .accessibilityHidden(true)
+            }
+        }
         .onHover { isHovered = $0 }
     }
 
@@ -593,8 +722,30 @@ struct ClipboardCard: View {
                 style: .continuous
             )
         )
-        .onTapGesture(count: 2, perform: onDoubleClick)
+        .onTapGesture(count: 2) {
+            if item.isSensitive, !isSensitiveRevealed {
+                isSensitiveRevealed = true
+            } else {
+                onDoubleClick()
+            }
+        }
         .onTapGesture(perform: onSelect)
+        .onChange(of: item.id) { _, _ in
+            isSensitiveRevealed = false
+            isTextExpanded = false
+        }
+        .onChange(of: item) { _, _ in
+            isSensitiveRevealed = false
+            isTextExpanded = false
+        }
+        .onAppear {
+            isSensitiveRevealed = false
+            isTextExpanded = false
+        }
+        .onDisappear {
+            isSensitiveRevealed = false
+            isTextExpanded = false
+        }
     }
 }
 

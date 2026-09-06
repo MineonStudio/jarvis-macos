@@ -69,7 +69,7 @@ extension AppModel {
             return
         }
         clipboardService.markCurrentPasteboardAsHandled()
-        showToast("已复制 \(item.preview)")
+        showToast(item.isSensitive ? "已复制敏感内容" : "已复制 \(item.preview)")
     }
 
     func showClipboardMediaPreview(_ item: ClipboardItem) {

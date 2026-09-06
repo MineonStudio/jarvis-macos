@@ -56,7 +56,7 @@ struct ContentView: View {
                 selectedSkill = skill
                 selectedSidebarSecondary = .skill(skill)
                 navigationSelection = .skillLibrary
-            case .overview, .conversation:
+            case .conversation:
                 navigationSelection = .conversation
             case .aiConversation:
                 navigationSelection = .aiConversation
@@ -99,7 +99,7 @@ struct ContentView: View {
             selectedSkill = .screenshot
             selectedSidebarSecondary = .skill(.screenshot)
             app.selectedSection = .skill(.screenshot)
-        case .conversation, .overview:
+        case .conversation:
             app.selectedSection = .conversation
         case .aiConversation, .entertainment, .settings:
             app.selectedSection = section.appSection
@@ -180,7 +180,7 @@ struct ContentView: View {
         switch navigationSelection {
         case .skillLibrary:
             "skill-library|\(selectedSkill.id)"
-        case .conversation, .overview:
+        case .conversation:
             "conversation"
         case .aiConversation:
             "ai-conversation|\(app.selectedAIProvider.id)"
@@ -193,7 +193,7 @@ struct ContentView: View {
 
     private func contentSection(for section: TopLevelSection) -> AppSection {
         switch section {
-        case .overview, .conversation:
+        case .conversation:
             .conversation
         case .aiConversation:
             .aiConversation
@@ -209,7 +209,7 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch loadedSection {
-        case .overview, .conversation: HermesConversationView()
+        case .conversation: HermesConversationView()
         case .aiConversation: AIConversationView()
         case .entertainment: EntertainmentView()
         case .skill(.screenshot): ScreenshotView()
@@ -267,7 +267,6 @@ enum SidebarSecondaryItem: Hashable, Identifiable {
 }
 
 private enum TopLevelSection: Hashable, Identifiable {
-    case overview
     case conversation
     case aiConversation
     case entertainment
@@ -276,7 +275,6 @@ private enum TopLevelSection: Hashable, Identifiable {
 
     var id: String {
         switch self {
-        case .overview: "overview"
         case .conversation: "conversation"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
@@ -287,7 +285,6 @@ private enum TopLevelSection: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: "首页"
         case .conversation: "对话"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
@@ -298,7 +295,6 @@ private enum TopLevelSection: Hashable, Identifiable {
 
     var icon: String {
         switch self {
-        case .overview: "rectangle.grid.2x2"
         case .conversation: "bubble.left.and.bubble.right"
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
@@ -309,7 +305,6 @@ private enum TopLevelSection: Hashable, Identifiable {
 
     var appSection: AppSection {
         switch self {
-        case .overview: .overview
         case .conversation: .conversation
         case .aiConversation: .aiConversation
         case .entertainment: .entertainment

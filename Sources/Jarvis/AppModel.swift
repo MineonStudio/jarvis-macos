@@ -5,7 +5,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum AppSection: Hashable, Identifiable {
-    case overview
     case conversation
     case aiConversation
     case entertainment
@@ -14,7 +13,6 @@ enum AppSection: Hashable, Identifiable {
 
     var id: String {
         switch self {
-        case .overview: "overview"
         case .conversation: "conversation"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
@@ -25,7 +23,6 @@ enum AppSection: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: "首页"
         case .conversation: "对话"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
@@ -36,7 +33,6 @@ enum AppSection: Hashable, Identifiable {
 
     var navigationTitle: String {
         switch self {
-        case .overview: "首页"
         case .conversation: "对话"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
@@ -51,7 +47,6 @@ enum AppSection: Hashable, Identifiable {
 
     var icon: String {
         switch self {
-        case .overview: "square.grid.2x2"
         case .conversation: "bubble.left.and.bubble.right"
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"

@@ -308,7 +308,13 @@ struct JarvisWebPlatformBrowserPage: View {
             JarvisWebPlatformWebView(controller: controller)
                 .equatable()
 
-            if let loadError = controller.loadError {
+            if case .loading = controller.loadState {
+                JarvisInlineLoadingState()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+            }
+
+            if case let .failed(loadError) = controller.loadState {
                 VStack(spacing: 12) {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.system(size: 28, weight: .medium))
@@ -335,7 +341,7 @@ struct JarvisWebPlatformBrowserPage: View {
         .jarvisFloatingPanel(cornerRadius: 16)
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: controller.loadError
+            value: controller.loadState
         )
     }
 }

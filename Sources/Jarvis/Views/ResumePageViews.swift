@@ -238,7 +238,7 @@ struct ResumePageView: View {
             if document.hasContent {
                 templateLayout(content)
             } else if showsEmptyState {
-                emptyState
+                templatePlaceholderLayout
             } else {
                 Spacer(minLength: 0)
             }
@@ -261,6 +261,87 @@ struct ResumePageView: View {
             minimalLayout(content)
         case .timeline:
             timelineLayout(content)
+        }
+    }
+
+    private var templatePlaceholderLayout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch document.template {
+            case .editorial:
+                ResumePageHeader(
+                    document: document,
+                    template: .editorial,
+                    showsPlaceholders: true
+                )
+                Rectangle()
+                    .fill(ResumePaperPalette.ink)
+                    .frame(height: 1)
+                    .padding(.top, 20)
+                    .padding(.bottom, 2)
+                placeholderPageSections(template: .editorial)
+            case .minimal:
+                ResumePageHeader(
+                    document: document,
+                    template: .minimal,
+                    showsPlaceholders: true
+                )
+                Rectangle()
+                    .fill(ResumePaperPalette.ink)
+                    .frame(height: 2)
+                    .padding(.top, 25)
+                    .padding(.bottom, 1)
+                placeholderPageSections(template: .minimal)
+            case .timeline:
+                ResumePageHeader(
+                    document: document,
+                    template: .timeline,
+                    showsPlaceholders: true
+                )
+                Rectangle()
+                    .fill(ResumePaperPalette.teal)
+                    .frame(height: 2)
+                    .padding(.top, 20)
+                placeholderPageSections(template: .timeline)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, document.template == .timeline ? 48 : 58)
+        .padding(.vertical, document.template == .timeline ? 43 : (document.template == .minimal ? 48 : 46))
+    }
+
+    @ViewBuilder
+    private func placeholderPageSections(template: ResumeTemplate) -> some View {
+        ResumePageSection(title: "教育经历", template: template) {
+            ResumePagePlaceholderRow(
+                fields: ["学校", "学历 · 专业", "时间"],
+                template: template
+            )
+        }
+        ResumePageSection(title: "工作经历", template: template) {
+            ResumePagePlaceholderRow(
+                fields: ["公司 · 职位", "时间"],
+                template: template
+            )
+        }
+        ResumePageSection(title: "掌握技能", template: template) {
+            HStack(spacing: 8) {
+                ForEach(Array(["技能", "技能", "技能"].enumerated()), id: \.offset) { _, field in
+                    ResumePagePlaceholderField(
+                        title: field,
+                        template: template
+                    )
+                }
+            }
+        }
+        ResumePageSection(title: "项目经历", template: template) {
+            VStack(alignment: .leading, spacing: 7) {
+                ResumePagePlaceholderRow(
+                    fields: ["项目名称", "时间"],
+                    template: template
+                )
+                ResumePagePlaceholderField(title: "项目简介", template: template)
+                ResumePagePlaceholderField(title: "项目要点", template: template)
+            }
         }
     }
 
@@ -354,22 +435,47 @@ struct ResumePageView: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Spacer(minLength: 0)
-            Image(systemName: "doc.text")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(ResumePaperPalette.accent(for: document.template))
-            Text("新简历")
-                .font(.system(size: 25, weight: .bold, design: .rounded))
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .multilineTextAlignment(.center)
-    }
-
     private func nonEmpty(_ value: String) -> Bool {
         !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+private struct ResumePagePlaceholderRow: View {
+    let fields: [String]
+    let template: ResumeTemplate
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            ForEach(Array(fields.dropLast().enumerated()), id: \.offset) { _, field in
+                ResumePagePlaceholderField(title: field, template: template)
+            }
+            Spacer(minLength: 8)
+            if let lastField = fields.last {
+                ResumePagePlaceholderField(title: lastField, template: template)
+            }
+        }
+    }
+}
+
+private struct ResumePagePlaceholderField: View {
+    let title: String
+    let template: ResumeTemplate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(
+                    size: template == .editorial ? 10 : 9.5,
+                    weight: .regular,
+                    design: template == .editorial ? .serif : .default
+                ))
+                .foregroundStyle(ResumePaperPalette.muted.opacity(0.78))
+                .lineLimit(1)
+            Rectangle()
+                .fill(ResumePaperPalette.softLine)
+                .frame(height: 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

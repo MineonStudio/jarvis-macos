@@ -326,6 +326,10 @@ enum ResumeSection: String, CaseIterable, Identifiable, Sendable {
         case .projects: "folder"
         }
     }
+
+    var requirementTitle: String {
+        self == .basicInfo ? "必填" : "可选"
+    }
 }
 
 enum ResumeExportFormat: String, CaseIterable, Identifiable {

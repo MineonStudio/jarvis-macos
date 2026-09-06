@@ -121,6 +121,7 @@ struct ScreenshotHistoryActionToolbar: View {
         .buttonStyle(JarvisToolbarIconButtonStyle())
         .opacity(isEnabled ? 1 : 0.38)
         .disabled(!isEnabled)
+        .accessibilityLabel(help)
         .jarvisHoverFeedback(
             in: Circle(),
             scale: 1.06
@@ -344,15 +345,6 @@ struct ScreenshotHistoryCard: View {
     let onDoubleClick: () -> Void
     @State private var isHovered = false
 
-    private var fileSizeDescription: String? {
-        guard let fileSize = app.screenshotHistoryFileSize(for: item) else { return nil }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.includesCount = true
-        return formatter.string(fromByteCount: fileSize)
-    }
-
     private var thumbnailCacheKey: String {
         "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
     }
@@ -405,17 +397,14 @@ struct ScreenshotHistoryCard: View {
 
     private var metadataRow: some View {
         HStack(spacing: 6) {
+            Label("PNG", systemImage: "photo")
+                .font(JarvisTypography.captionEmphasis)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            Spacer(minLength: 4)
             Text(JarvisHistoryDateFormatting.string(from: item.updatedAt))
                 .font(JarvisTypography.caption)
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
-            Spacer(minLength: 0)
-            if let fileSizeDescription {
-                Text(fileSizeDescription)
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-            }
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,
@@ -462,6 +451,18 @@ struct ScreenshotHistoryCard: View {
                 lineWidth: isSelected ? 2 : 0
             )
             .allowsHitTesting(false)
+        }
+        .overlay(alignment: .topLeading) {
+            if isSelected {
+                Label("已选中", systemImage: "checkmark.circle.fill")
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.accentColor.opacity(0.92), in: Capsule())
+                    .padding(8)
+                    .accessibilityHidden(true)
+            }
         }
         .onHover { isHovered = $0 }
     }

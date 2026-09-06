@@ -200,6 +200,19 @@ struct JarvisEmptyState: View {
     }
 }
 
+struct JarvisInlineLoadingState: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("正在加载")
+        }
+        .foregroundStyle(Color.jarvisTextSecondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("正在加载")
+    }
+}
+
 struct SectionHeader: View {
     let title: String
 

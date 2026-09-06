@@ -4,22 +4,39 @@ import Translation
 extension ScreenshotEditorModel {
     var renderedTranslationBlocks: [ScreenshotTranslationRenderBlock] {
         guard translationVisible else { return [] }
-        let selection = selectionRect ?? CGRect(origin: .zero, size: canvasSize)
+        let selection = translationSourceRect
+            ?? selectionRect
+            ?? CGRect(origin: .zero, size: canvasSize)
         let rawBlocks = translationBlocks.map { block in
             let bounds = ScreenshotTranslationGeometry.canvasBounds(
                 for: block.normalizedBounds,
                 in: selection
             )
+            let sourceLines = block.sourceLines.map { line in
+                ScreenshotTranslationLine(
+                    text: line.text,
+                    bounds: ScreenshotTranslationGeometry.canvasBounds(
+                        for: line.bounds,
+                        in: selection
+                    ),
+                    lineHeight: line.lineHeight * selection.height
+                )
+            }
             return ScreenshotTranslationRenderBlock(
                 id: block.id,
                 sourceText: block.sourceText,
                 translatedText: block.translatedText,
                 bounds: bounds,
                 confidence: block.confidence,
-                sourceLineHeight: block.lineHeight * selection.height
+                sourceLineHeight: block.lineHeight * selection.height,
+                sourceLines: sourceLines
             )
         }
-        return ScreenshotTranslationLayout.apply(to: rawBlocks, canvasSize: canvasSize)
+        return ScreenshotTranslationLayout.apply(
+            to: rawBlocks,
+            canvasSize: canvasSize,
+            translationRegion: selection
+        )
     }
 
     func enterTranslationMode() {
@@ -37,11 +54,18 @@ extension ScreenshotEditorModel {
         let generation = translationGeneration
         translationBlocks.removeAll()
         appleTranslationSourceBlocks.removeAll()
+        translationProgress = nil
         translationVisible = true
         translationState = .recognizing
         pendingAppleTranslationJob = nil
         appleTranslationConfiguration = nil
-        let sourceData = originalOutputData
+        let sourceRect = selectionRect ?? CGRect(origin: .zero, size: canvasSize)
+        guard let sourceData = translationSourceData(for: selectionRect) else {
+            translationSourceRect = nil
+            translationState = .failed("无法准备当前翻译选区")
+            return
+        }
+        translationSourceRect = sourceRect
         let targetLanguage = translationTargetLanguage
 
         translationTask = Task { [weak self] in
@@ -59,6 +83,7 @@ extension ScreenshotEditorModel {
         translationTask = nil
         pendingAppleTranslationJob = nil
         appleTranslationSourceBlocks.removeAll()
+        translationProgress = nil
         appleTranslationConfiguration = nil
         resumeAppleTranslationJob(.failure(CancellationError()))
         if translationState.isRunning {
@@ -69,6 +94,7 @@ extension ScreenshotEditorModel {
     func clearTranslation() {
         cancelTranslation()
         translationBlocks.removeAll()
+        translationSourceRect = nil
         translationVisible = true
         translationState = .idle
     }
@@ -98,7 +124,10 @@ extension ScreenshotEditorModel {
             try Task.checkCancellation()
             guard translationGeneration == generation else { return }
 
-            let plan = service.classify(ocrBlocks, targetLanguage: targetLanguage)
+            let plan = await ScreenshotTranslationService.classifyAsync(
+                ocrBlocks,
+                targetLanguage: targetLanguage
+            )
             try await translate(
                 plan: plan,
                 targetLanguage: targetLanguage,
@@ -122,13 +151,15 @@ extension ScreenshotEditorModel {
         generation: Int
     ) async throws {
         let total = plan.translatableCount
+        translationProgress = ScreenshotTranslationProgress(
+            expectedIDs: Set(plan.groups.flatMap(\.blocks).map(\.id))
+        )
         translationState = .translating(completed: 0, total: total)
         guard total > 0 else {
             translationState = .completed(count: 0)
             return
         }
 
-        var completed = 0
         var lastError: Error?
         for group in plan.groups {
             try Task.checkCancellation()
@@ -139,9 +170,8 @@ extension ScreenshotEditorModel {
                     targetLanguage: targetLanguage,
                     generation: generation
                 )
-                completed += group.blocks.count
                 guard translationGeneration == generation else { return }
-                translationState = .translating(completed: min(completed, total), total: total)
+                updateTranslationProgress(generation: generation, total: total)
             } catch {
                 if Task.isCancelled || Self.isCancellation(error) {
                     throw error
@@ -151,10 +181,17 @@ extension ScreenshotEditorModel {
         }
 
         guard translationGeneration == generation else { return }
-        if translationBlocks.isEmpty {
+        let progress = translationProgress
+        if progress?.isComplete == true {
+            translationState = .completed(count: progress?.successCount ?? 0)
+        } else if let progress, progress.successCount > 0 {
+            translationState = .partiallyCompleted(
+                completed: progress.successCount,
+                total: total
+            )
+        } else {
             throw lastError ?? ScreenshotTranslationError.noTextFound
         }
-        translationState = .completed(count: translationBlocks.count)
     }
 
     private func translate(
@@ -266,12 +303,15 @@ extension ScreenshotEditorModel {
         _ response: TranslationSession.Response,
         generation: Int
     ) {
-        guard translationGeneration == generation,
-              let identifier = response.clientIdentifier,
-              let blockID = UUID(uuidString: identifier)
-        else { return }
+        guard translationGeneration == generation else { return }
+        let blockID = response.clientIdentifier.flatMap(UUID.init(uuidString:))
         let translatedText = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !translatedText.isEmpty else { return }
+        guard translationProgress?.recordResponse(
+            blockID: blockID,
+            translatedText: translatedText
+        ) == true,
+            let blockID
+        else { return }
 
         if let index = translationBlocks.firstIndex(where: { $0.id == blockID }) {
             translationBlocks[index].translatedText = translatedText
@@ -286,7 +326,8 @@ extension ScreenshotEditorModel {
                 translatedText: translatedText,
                 normalizedBounds: sourceBlock.normalizedBounds,
                 confidence: sourceBlock.confidence,
-                lineHeight: sourceBlock.lineHeight
+                lineHeight: sourceBlock.lineHeight,
+                sourceLines: sourceBlock.sourceLines
             )
         )
     }
@@ -303,6 +344,16 @@ extension ScreenshotEditorModel {
         } else {
             translationBlocks.append(block)
         }
+    }
+
+    private func updateTranslationProgress(generation: Int, total: Int) {
+        guard translationGeneration == generation,
+              let progress = translationProgress
+        else { return }
+        translationState = .translating(
+            completed: min(progress.successCount, total),
+            total: total
+        )
     }
 
     private func completeAppleTranslationJob(generation: Int) {
@@ -330,6 +381,23 @@ extension ScreenshotEditorModel {
     private func resetRunningTranslationIfNeeded(generation: Int) {
         guard translationGeneration == generation, translationState.isRunning else { return }
         translationState = .idle
+    }
+
+    private func translationSourceData(for selection: CGRect?) -> Data? {
+        guard let selection else { return originalData }
+        let capture = ScreenshotCapture(
+            data: originalData,
+            screenFrame: CGRect(origin: .zero, size: canvasSize)
+        )
+        let outputRect = ScreenshotCoordinateSpace(
+            screenFrame: CGRect(origin: .zero, size: canvasSize),
+            canvasSize: canvasSize
+        ).outputRect(fromCanvasRect: selection)
+        return try? ScreenshotService().crop(
+            capture,
+            to: outputRect,
+            on: CGRect(origin: .zero, size: canvasSize)
+        ).data
     }
 
     private static func isCancellation(_ error: Error) -> Bool {

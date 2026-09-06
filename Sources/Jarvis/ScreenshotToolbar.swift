@@ -155,10 +155,14 @@ extension ScreenshotToolbar {
     }
 
     private var translationRetryHelp: String {
-        if case let .failed(message) = editor.translationState {
-            return message
+        switch editor.translationState {
+        case let .failed(message):
+            message
+        case let .partiallyCompleted(completed, total):
+            "部分翻译完成：成功 \(completed)/\(total)，失败 \(max(0, total - completed))，点击重新翻译"
+        default:
+            "使用系统本地翻译，首次可能下载语言包"
         }
-        return "使用系统本地翻译，首次可能下载语言包"
     }
 
     private struct MosaicToolIcon: View {
@@ -234,6 +238,16 @@ extension ScreenshotToolbar {
             Rectangle()
                 .fill(Color.primary.opacity(0.16))
                 .frame(width: 1, height: 22)
+
+            if let status = editor.translationState.statusMessage {
+                Text(status)
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(editor.translationState.isFailure ? Color.red : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .help(status)
+            }
 
             Button("重新翻译") {
                 onAction(.startTranslation)

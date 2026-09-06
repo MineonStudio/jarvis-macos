@@ -91,6 +91,87 @@ extension ScreenshotTranslationTests {
         XCTAssertGreaterThan(laidOutBlock.lineLimit, 1)
     }
 
+    func testTranslationLayoutStaysInsideTheActualTranslationRegion() throws {
+        let block = ScreenshotTranslationRenderBlock(
+            id: UUID(),
+            sourceText: "Edge",
+            translatedText: "这是一个很长的译文，必须限制在选区内部",
+            bounds: CGRect(x: 180, y: 90, width: 24, height: 20),
+            confidence: 0.9
+        )
+        let region = CGRect(x: 40, y: 30, width: 180, height: 100)
+
+        let laidOut = try XCTUnwrap(
+            ScreenshotTranslationLayout.apply(
+                to: [block],
+                canvasSize: CGSize(width: 320, height: 200),
+                translationRegion: region
+            ).first
+        )
+
+        XCTAssertGreaterThanOrEqual(laidOut.bounds.minX, region.minX)
+        XCTAssertGreaterThanOrEqual(laidOut.bounds.minY, region.minY)
+        XCTAssertLessThanOrEqual(laidOut.bounds.maxX, region.maxX)
+        XCTAssertLessThanOrEqual(laidOut.bounds.maxY, region.maxY)
+        XCTAssertFalse(laidOut.displayLines.isEmpty)
+    }
+
+    func testTranslationLayoutPreservesSourceLineCountAsTheMinimumDisplayLimit() throws {
+        let sourceLines = [
+            ScreenshotTranslationLine(
+                text: "第一行",
+                bounds: CGRect(x: 40, y: 40, width: 180, height: 20),
+                lineHeight: 20
+            ),
+            ScreenshotTranslationLine(
+                text: "第二行",
+                bounds: CGRect(x: 40, y: 64, width: 180, height: 20),
+                lineHeight: 20
+            ),
+            ScreenshotTranslationLine(
+                text: "第三行",
+                bounds: CGRect(x: 40, y: 88, width: 180, height: 20),
+                lineHeight: 20
+            )
+        ]
+        let block = ScreenshotTranslationRenderBlock(
+            id: UUID(),
+            sourceText: "第一行 第二行 第三行",
+            translatedText: "第一段译文",
+            bounds: CGRect(x: 40, y: 40, width: 180, height: 68),
+            confidence: 0.9,
+            sourceLineHeight: 20,
+            sourceLines: sourceLines
+        )
+
+        let laidOut = try XCTUnwrap(
+            ScreenshotTranslationLayout.apply(
+                to: [block],
+                canvasSize: CGSize(width: 320, height: 200)
+            ).first
+        )
+
+        XCTAssertEqual(laidOut.sourceLines.count, 3)
+        XCTAssertGreaterThanOrEqual(laidOut.lineLimit, 3)
+        XCTAssertEqual(laidOut.displayLines.count, 3)
+        XCTAssertEqual(laidOut.displayLineBounds.count, 3)
+        XCTAssertEqual(laidOut.displayLineBounds[0].minY, sourceLines[0].bounds.minY)
+        XCTAssertEqual(laidOut.displayLineBounds[1].minY, sourceLines[1].bounds.minY)
+        XCTAssertEqual(laidOut.displayLineBounds[2].minY, sourceLines[2].bounds.minY)
+    }
+
+    func testSharedTextLayoutKeepsGraphemeClustersTogether() {
+        let text = "👩‍💻 设置窗口"
+        let lines = ScreenshotTranslationTextLayout.wrappedLines(
+            text,
+            fontSize: 16,
+            maximumWidth: 42
+        )
+
+        XCTAssertEqual(lines.joined(separator: "").replacingOccurrences(of: " ", with: ""), "👩‍💻设置窗口")
+        XCTAssertTrue(lines.allSatisfy { !$0.contains("\u{200D}") || $0.contains("👩‍💻") })
+    }
+
     func testOCRParagraphMergingJoinsWrappedLinesIntoOneTranslationUnit() {
         let firstLine = ScreenshotOCRBlock(
             id: UUID(),
@@ -124,6 +205,31 @@ extension ScreenshotTranslationTests {
         )
         XCTAssertEqual(paragraphs.first?.normalizedBounds.minY, firstLine.normalizedBounds.minY)
         XCTAssertEqual(paragraphs.first?.normalizedBounds.maxY, thirdLine.normalizedBounds.maxY)
+        XCTAssertEqual(paragraphs.first?.sourceLines.map(\.text), [
+            firstLine.text,
+            secondLine.text,
+            thirdLine.text
+        ])
+    }
+
+    func testOCRParagraphMergingKeepsCompactAdjacentRowsIndependentWithoutListMarkers() {
+        let file = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "File",
+            normalizedBounds: CGRect(x: 0.10, y: 0.20, width: 0.20, height: 0.04),
+            confidence: 0.9
+        )
+        let edit = ScreenshotOCRBlock(
+            id: UUID(),
+            text: "Edit",
+            normalizedBounds: CGRect(x: 0.10, y: 0.245, width: 0.20, height: 0.04),
+            confidence: 0.9
+        )
+
+        let rows = ScreenshotTranslationService.mergedParagraphBlocks(from: [edit, file])
+
+        XCTAssertEqual(rows.map(\.text), ["File", "Edit"])
+        XCTAssertEqual(rows.map(\.sourceLines.count), [1, 1])
     }
 
     func testOCRParagraphMergingKeepsSeparatedRowsAndListItemsIndependent() {

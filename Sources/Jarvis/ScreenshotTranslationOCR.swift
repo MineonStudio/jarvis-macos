@@ -22,15 +22,18 @@ extension ScreenshotTranslationService {
             let previousLineBounds = lastLineBounds[merged.count - 1]
             let sameParagraph = isParagraphContinuation(
                 block,
+                previous: last,
                 previousLineBounds: previousLineBounds
             )
             if sameParagraph {
+                let mergedBounds = last.normalizedBounds.union(block.normalizedBounds)
                 merged[merged.count - 1] = ScreenshotOCRBlock(
                     id: last.id,
                     text: joinedParagraphText(last.text, block.text),
-                    normalizedBounds: last.normalizedBounds.union(block.normalizedBounds),
+                    normalizedBounds: mergedBounds,
                     confidence: min(last.confidence, block.confidence),
-                    lineHeight: previousLineBounds.height
+                    lineHeight: last.lineHeight,
+                    sourceLines: last.sourceLines + block.sourceLines
                 )
                 lastLineBounds[merged.count - 1] = block.normalizedBounds
             } else {
@@ -43,6 +46,7 @@ extension ScreenshotTranslationService {
 
     private static func isParagraphContinuation(
         _ block: ScreenshotOCRBlock,
+        previous: ScreenshotOCRBlock,
         previousLineBounds: CGRect
     ) -> Bool {
         let currentBounds = block.normalizedBounds
@@ -63,7 +67,31 @@ extension ScreenshotTranslationService {
             return false
         }
 
-        return !startsListItem(block.text)
+        guard !startsListItem(block.text),
+              !startsListItem(previous.text)
+        else {
+            return false
+        }
+
+        return !isLikelyStandaloneRow(block, previous: previous)
+    }
+
+    private static func isLikelyStandaloneRow(
+        _ block: ScreenshotOCRBlock,
+        previous: ScreenshotOCRBlock
+    ) -> Bool {
+        let currentText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousText = previous.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shortText = currentText.count <= 32 && previousText.count <= 32
+        let compactWidth = max(
+            block.normalizedBounds.width,
+            previous.normalizedBounds.width
+        ) <= 0.55
+        let aligned = abs(block.normalizedBounds.minX - previous.normalizedBounds.minX) <= 0.04
+        let similarWidth = abs(
+            block.normalizedBounds.width - previous.normalizedBounds.width
+        ) <= 0.12
+        return shortText && compactWidth && aligned && similarWidth
     }
 
     private static func startsListItem(_ text: String) -> Bool {

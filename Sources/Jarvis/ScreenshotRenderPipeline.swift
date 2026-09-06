@@ -310,6 +310,15 @@ final class ScreenshotRenderPipeline {
             .foregroundColor: NSColor.white
         ]
         let horizontalPadding = max(0, translation.horizontalPadding)
+        let displayLines = translation.displayLines.isEmpty
+            ? [translation.translatedText]
+            : Array(translation.displayLines.prefix(max(1, translation.lineLimit)))
+        let displayLineBounds = translationLineBounds(
+            for: displayLines,
+            translation: translation,
+            bounds: bounds,
+            lineHeight: ScreenshotTranslationTextLayout.measuredLineHeight(fontSize: fontSize)
+        )
         let textRect = CGRect(
             x: bounds.minX + horizontalPadding,
             y: bounds.minY,
@@ -332,26 +341,21 @@ final class ScreenshotRenderPipeline {
 
         context.saveGState()
         context.scaleBy(x: scale, y: scale)
+        context.clip(to: CGRect(
+            x: textRect.minX,
+            y: canvasSize.height - textRect.maxY,
+            width: textRect.width,
+            height: textRect.height
+        ))
         let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphicsContext
-        let attributedText = NSAttributedString(string: translation.translatedText, attributes: attributes)
-        let measuredText = attributedText.boundingRect(
-            with: textRect.size,
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        let verticalInset = max(0, (textRect.height - measuredText.height) / 2)
-        let flippedTextRect = NSRect(
-            x: textRect.minX,
-            y: canvasSize.height - textRect.maxY + verticalInset,
-            width: textRect.width,
-            height: min(textRect.height, max(1, measuredText.height))
-        )
-        attributedText.draw(
-            with: flippedTextRect,
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            context: nil
-        )
+        for (index, line) in displayLines.enumerated() {
+            let lineBounds = displayLineBounds[index]
+            let baselineY = canvasSize.height - (lineBounds.minY + font.ascender)
+            NSAttributedString(string: line, attributes: attributes)
+                .draw(at: NSPoint(x: lineBounds.minX + horizontalPadding, y: baselineY))
+        }
         NSGraphicsContext.restoreGraphicsState()
         context.restoreGState()
     }
@@ -359,6 +363,33 @@ final class ScreenshotRenderPipeline {
     private func cgImage(from image: NSImage) -> CGImage? {
         var proposedRect = NSRect(origin: .zero, size: image.size)
         return image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
+    }
+}
+
+private func translationLineBounds(
+    for lines: [String],
+    translation: ScreenshotTranslationRenderBlock,
+    bounds: CGRect,
+    lineHeight: CGFloat
+) -> [CGRect] {
+    guard translation.displayLineBounds.count >= lines.count else {
+        let height = max(8, bounds.height / CGFloat(lines.count))
+        return lines.indices.map { index in
+            CGRect(
+                x: bounds.minX,
+                y: bounds.minY + CGFloat(index) * height,
+                width: bounds.width,
+                height: height
+            )
+        }
+    }
+    return Array(translation.displayLineBounds.prefix(lines.count)).map { line in
+        CGRect(
+            x: line.minX,
+            y: line.minY,
+            width: bounds.width,
+            height: max(line.height, lineHeight)
+        )
     }
 }
 

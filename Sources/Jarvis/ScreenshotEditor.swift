@@ -235,6 +235,7 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published var translationTargetLanguage: ScreenshotTranslationLanguage
     @Published var translationBlocks: [ScreenshotTranslationBlock] = []
     @Published var translationState: ScreenshotTranslationState = .idle
+    @Published var translationSourceRect: CGRect?
     @Published var appleTranslationConfiguration: TranslationSession.Configuration?
 
     private let coordinateSpace: ScreenshotCoordinateSpace
@@ -246,6 +247,7 @@ final class ScreenshotEditorModel: ObservableObject {
     var pendingAppleTranslationJob: ScreenshotAppleTranslationJob?
     var appleTranslationJobContinuation: CheckedContinuation<Void, Error>?
     var appleTranslationSourceBlocks: [UUID: ScreenshotOCRBlock] = [:]
+    var translationProgress: ScreenshotTranslationProgress?
     init(
         image: NSImage,
         data: Data,
@@ -271,6 +273,8 @@ final class ScreenshotEditorModel: ObservableObject {
         blurredImageCache = nil
         pixelatedImageCache = nil
         translationTargetLanguage = ScreenshotTranslationConfiguration.loadTargetLanguage()
+        translationSourceRect = nil
+        translationProgress = nil
     }
 
     deinit {
@@ -295,6 +299,9 @@ extension ScreenshotEditorModel {
     func updateSelectionRect(_ rect: CGRect) {
         guard let clamped = coordinateSpace.clampedCanvasRect(rect) else { return }
         guard clamped != selectionRect else { return }
+        if translationSourceRect != nil || !translationBlocks.isEmpty || translationState.isRunning {
+            clearTranslation()
+        }
         selectionRect = clamped
     }
 

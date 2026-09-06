@@ -3,6 +3,33 @@ import AppKit
 import XCTest
 
 final class ScreenshotTranslationTests: XCTestCase {
+    @MainActor
+    func testChangingSelectionInvalidatesTheTranslationSnapshot() {
+        let image = NSImage(size: NSSize(width: 320, height: 200))
+        let model = ScreenshotEditorModel(
+            image: image,
+            data: Data(),
+            outputData: Data(),
+            canvasSize: CGSize(width: 320, height: 200),
+            outputRect: CGRect(x: 20, y: 20, width: 180, height: 120)
+        )
+        model.translationSourceRect = CGRect(x: 20, y: 60, width: 180, height: 120)
+        model.translationBlocks = [ScreenshotTranslationBlock(
+            id: UUID(),
+            sourceText: "Settings",
+            translatedText: "设置",
+            normalizedBounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.1),
+            confidence: 0.9
+        )]
+        model.translationState = .completed(count: 1)
+
+        model.updateSelectionRect(CGRect(x: 40, y: 40, width: 180, height: 120))
+
+        XCTAssertTrue(model.translationBlocks.isEmpty)
+        XCTAssertNil(model.translationSourceRect)
+        XCTAssertEqual(model.translationState, .idle)
+    }
+
     func testTranslationGeometryMapsVisionBoundsIntoSelectedCanvasRect() {
         let selection = CGRect(x: 100, y: 80, width: 800, height: 500)
         let normalized = CGRect(x: 0.25, y: 0.1, width: 0.5, height: 0.2)
@@ -18,7 +45,31 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertTrue(ScreenshotTranslationState.recognizing.isRunning)
         XCTAssertTrue(ScreenshotTranslationState.translating(completed: 1, total: 2).isRunning)
         XCTAssertFalse(ScreenshotTranslationState.completed(count: 2).isRunning)
+        XCTAssertFalse(ScreenshotTranslationState.partiallyCompleted(completed: 1, total: 2).isRunning)
         XCTAssertFalse(ScreenshotTranslationState.failed("失败").isRunning)
+    }
+
+    func testPartialTranslationProgressCountsOnlyExpectedNonEmptyResponses() {
+        let firstID = UUID()
+        let secondID = UUID()
+        var progress = ScreenshotTranslationProgress(expectedIDs: [firstID, secondID])
+
+        XCTAssertTrue(progress.recordResponse(blockID: firstID, translatedText: "第一项"))
+        XCTAssertFalse(progress.recordResponse(blockID: secondID, translatedText: "   "))
+        XCTAssertFalse(progress.recordResponse(blockID: UUID(), translatedText: "未知项"))
+        XCTAssertFalse(progress.recordResponse(blockID: nil, translatedText: "缺少 ID"))
+
+        XCTAssertEqual(progress.successCount, 1)
+        XCTAssertEqual(progress.failureCount, 1)
+        XCTAssertEqual(progress.invalidResponseCount, 3)
+        XCTAssertFalse(progress.isComplete)
+    }
+
+    func testPartialTranslationStateExposesSuccessAndFailureCounts() {
+        let state = ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5)
+
+        XCTAssertEqual(state.statusMessage, "部分完成：成功 2/5，失败 3")
+        XCTAssertTrue(state.isFailure)
     }
 
     func testTranslationConfigurationLoadsTargetLanguageAndIgnoresLegacyAPIKeys() throws {
@@ -269,7 +320,12 @@ final class ScreenshotTranslationTests: XCTestCase {
                 sourceText: "Hello",
                 translatedText: "你好",
                 bounds: CGRect(x: 10, y: 10, width: 70, height: 24),
-                confidence: 0.98
+                confidence: 0.98,
+                fontSize: 16,
+                lineLimit: 1,
+                horizontalPadding: 6,
+                displayLines: ["你好"],
+                displayLineBounds: [CGRect(x: 10, y: 10, width: 70, height: 24)]
             )],
             showsTranslation: true
         )

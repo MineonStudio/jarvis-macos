@@ -17,32 +17,60 @@ struct ScreenshotTranslationBlockView: View {
 
     var body: some View {
         let bounds = block.bounds
-        Text(block.translatedText)
-            .font(.system(size: fontSize, weight: .medium))
-            .foregroundStyle(.white)
-            .lineLimit(maxLineCount)
-            .minimumScaleFactor(0.35)
-            .multilineTextAlignment(.leading)
-            .lineSpacing(0)
-            .padding(.horizontal, block.horizontalPadding)
-            .frame(
-                width: max(8, bounds.width),
-                height: max(8, bounds.height),
-                alignment: .leading
-            )
-            .background(.black.opacity(0.72), in: RoundedRectangle(
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(
                 cornerRadius: min(8, max(3, bounds.height / 3)),
                 style: .continuous
-            ))
-            .position(x: bounds.midX, y: bounds.midY)
-            .allowsHitTesting(false)
+            )
+            .fill(.black.opacity(0.72))
+
+            ForEach(Array(zip(displayLines.indices, displayLines)), id: \.0) { index, line in
+                let lineBounds = displayLineBounds[index]
+                Text(line)
+                    .font(.system(size: fontSize, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .multilineTextAlignment(.leading)
+                    .lineSpacing(0)
+                    .padding(.horizontal, block.horizontalPadding)
+                    .frame(
+                        width: max(8, lineBounds.width),
+                        height: max(8, lineBounds.height),
+                        alignment: .leading
+                    )
+                    .position(
+                        x: lineBounds.midX - bounds.minX,
+                        y: lineBounds.midY - bounds.minY
+                    )
+            }
+        }
+        .frame(width: max(8, bounds.width), height: max(8, bounds.height))
+        .clipped()
+        .position(x: bounds.midX, y: bounds.midY)
+        .allowsHitTesting(false)
     }
 
     private var fontSize: CGFloat {
         max(1, block.fontSize > 0 ? block.fontSize : block.bounds.height - 2)
     }
 
-    private var maxLineCount: Int {
-        max(1, block.lineLimit)
+    private var displayLines: [String] {
+        block.displayLines.isEmpty ? [block.translatedText] : block.displayLines
+    }
+
+    private var displayLineBounds: [CGRect] {
+        guard block.displayLineBounds.count >= displayLines.count else {
+            let height = max(8, block.bounds.height / CGFloat(displayLines.count))
+            return displayLines.indices.map { index in
+                CGRect(
+                    x: block.bounds.minX,
+                    y: block.bounds.minY + CGFloat(index) * height,
+                    width: block.bounds.width,
+                    height: height
+                )
+            }
+        }
+        return Array(block.displayLineBounds.prefix(displayLines.count))
     }
 }

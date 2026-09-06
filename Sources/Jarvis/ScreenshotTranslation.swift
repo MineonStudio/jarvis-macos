@@ -81,19 +81,28 @@ struct ScreenshotOCRBlock: Equatable, Identifiable, Sendable {
     let normalizedBounds: CGRect
     let confidence: Float
     let lineHeight: CGFloat
+    let sourceLines: [ScreenshotTranslationLine]
 
     init(
         id: UUID,
         text: String,
         normalizedBounds: CGRect,
         confidence: Float,
-        lineHeight: CGFloat? = nil
+        lineHeight: CGFloat? = nil,
+        sourceLines: [ScreenshotTranslationLine] = []
     ) {
         self.id = id
         self.text = text
         self.normalizedBounds = normalizedBounds
         self.confidence = confidence
         self.lineHeight = max(0.001, lineHeight ?? normalizedBounds.height)
+        self.sourceLines = sourceLines.isEmpty
+            ? [ScreenshotTranslationLine(
+                text: text,
+                bounds: normalizedBounds,
+                lineHeight: lineHeight ?? normalizedBounds.height
+            )]
+            : sourceLines
     }
 }
 
@@ -105,6 +114,7 @@ struct ScreenshotTranslationBlock: Equatable, Identifiable, Sendable {
     let normalizedBounds: CGRect
     let confidence: Float
     let lineHeight: CGFloat
+    let sourceLines: [ScreenshotTranslationLine]
 
     init(
         id: UUID,
@@ -112,7 +122,8 @@ struct ScreenshotTranslationBlock: Equatable, Identifiable, Sendable {
         translatedText: String,
         normalizedBounds: CGRect,
         confidence: Float,
-        lineHeight: CGFloat? = nil
+        lineHeight: CGFloat? = nil,
+        sourceLines: [ScreenshotTranslationLine] = []
     ) {
         self.id = id
         self.sourceText = sourceText
@@ -120,6 +131,13 @@ struct ScreenshotTranslationBlock: Equatable, Identifiable, Sendable {
         self.normalizedBounds = normalizedBounds
         self.confidence = confidence
         self.lineHeight = max(0.001, lineHeight ?? normalizedBounds.height)
+        self.sourceLines = sourceLines.isEmpty
+            ? [ScreenshotTranslationLine(
+                text: sourceText,
+                bounds: normalizedBounds,
+                lineHeight: lineHeight ?? normalizedBounds.height
+            )]
+            : sourceLines
     }
 }
 
@@ -133,6 +151,9 @@ struct ScreenshotTranslationRenderBlock: Equatable, Identifiable, Sendable {
     let fontSize: CGFloat
     let lineLimit: Int
     let horizontalPadding: CGFloat
+    let sourceLines: [ScreenshotTranslationLine]
+    let displayLines: [String]
+    let displayLineBounds: [CGRect]
 
     init(
         id: UUID,
@@ -143,7 +164,10 @@ struct ScreenshotTranslationRenderBlock: Equatable, Identifiable, Sendable {
         sourceLineHeight: CGFloat = 0,
         fontSize: CGFloat = 0,
         lineLimit: Int = 1,
-        horizontalPadding: CGFloat = 6
+        horizontalPadding: CGFloat = 6,
+        sourceLines: [ScreenshotTranslationLine] = [],
+        displayLines: [String] = [],
+        displayLineBounds: [CGRect] = []
     ) {
         self.id = id
         self.sourceText = sourceText
@@ -154,6 +178,9 @@ struct ScreenshotTranslationRenderBlock: Equatable, Identifiable, Sendable {
         self.fontSize = fontSize
         self.lineLimit = lineLimit
         self.horizontalPadding = horizontalPadding
+        self.sourceLines = sourceLines
+        self.displayLines = displayLines
+        self.displayLineBounds = displayLineBounds
     }
 }
 
@@ -175,6 +202,36 @@ private struct ScreenshotOCRCharacter {
     let normalizedBounds: CGRect
 }
 
+private final class ScreenshotOCRRequestBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: VNRecognizeTextRequest?
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func setRequest(_ request: VNRecognizeTextRequest) {
+        lock.lock()
+        self.request = request
+        let shouldCancel = cancelled
+        lock.unlock()
+        if shouldCancel {
+            request.cancel()
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let request = self.request
+        lock.unlock()
+        request?.cancel()
+    }
+}
+
 enum ScreenshotTranslationGeometry {
     static func canvasBounds(for normalizedBounds: CGRect, in canvasRect: CGRect) -> CGRect {
         CGRect(
@@ -183,21 +240,6 @@ enum ScreenshotTranslationGeometry {
             width: normalizedBounds.width * canvasRect.width,
             height: normalizedBounds.height * canvasRect.height
         )
-    }
-}
-
-enum ScreenshotTranslationState: Equatable {
-    case idle
-    case recognizing
-    case translating(completed: Int, total: Int)
-    case completed(count: Int)
-    case failed(String)
-
-    var isRunning: Bool {
-        switch self {
-        case .recognizing, .translating: true
-        default: false
-        }
     }
 }
 
@@ -217,58 +259,63 @@ enum ScreenshotTranslationError: LocalizedError, Equatable {
 
 struct ScreenshotTranslationService: Sendable {
     func recognizeText(in data: Data) async throws -> [ScreenshotOCRBlock] {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    guard let image = Self.ocrImage(from: data) else {
-                        throw ScreenshotTranslationError.invalidImage
-                    }
-
-                    let request = VNRecognizeTextRequest()
-                    request.recognitionLevel = .accurate
-                    request.usesLanguageCorrection = true
-                    request.automaticallyDetectsLanguage = true
-
-                    let handler = VNImageRequestHandler(cgImage: image, options: [:])
-                    try handler.perform([request])
-
-                    let blocks = (request.results ?? []).flatMap { observation -> [ScreenshotOCRBlock] in
-                        guard let candidate = observation.topCandidates(1).first else { return [] }
-                        guard !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                            return []
+        let requestBox = ScreenshotOCRRequestBox()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        guard !requestBox.isCancelled else {
+                            throw CancellationError()
                         }
-                        let box = observation.boundingBox
-                        let topLeftBounds = CGRect(
-                            x: box.minX,
-                            y: 1 - box.maxY,
-                            width: box.width,
-                            height: box.height
-                        )
-                        return Self.visualTextBlocks(
-                            from: candidate,
-                            fallbackBounds: topLeftBounds,
-                            confidence: candidate.confidence
-                        )
-                    }
+                        guard let image = Self.ocrImage(from: data) else {
+                            throw ScreenshotTranslationError.invalidImage
+                        }
 
-                    let lineBlocks = Self.mergedLineBlocks(from: blocks)
-                    let merged = Self.mergedParagraphBlocks(from: lineBlocks)
-                    guard !merged.isEmpty else {
-                        throw ScreenshotTranslationError.noTextFound
+                        let request = VNRecognizeTextRequest()
+                        request.recognitionLevel = .accurate
+                        request.usesLanguageCorrection = true
+                        request.automaticallyDetectsLanguage = true
+                        requestBox.setRequest(request)
+
+                        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+                        try handler.perform([request])
+                        guard !requestBox.isCancelled else {
+                            throw CancellationError()
+                        }
+
+                        let blocks = (request.results ?? []).flatMap { observation -> [ScreenshotOCRBlock] in
+                            guard let candidate = observation.topCandidates(1).first else { return [] }
+                            guard !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                                return []
+                            }
+                            let box = observation.boundingBox
+                            let topLeftBounds = CGRect(
+                                x: box.minX,
+                                y: 1 - box.maxY,
+                                width: box.width,
+                                height: box.height
+                            )
+                            return Self.visualTextBlocks(
+                                from: candidate,
+                                fallbackBounds: topLeftBounds,
+                                confidence: candidate.confidence
+                            )
+                        }
+
+                        let lineBlocks = Self.mergedLineBlocks(from: blocks)
+                        let merged = Self.mergedParagraphBlocks(from: lineBlocks)
+                        guard !merged.isEmpty else {
+                            throw ScreenshotTranslationError.noTextFound
+                        }
+                        continuation.resume(returning: merged)
+                    } catch {
+                        continuation.resume(throwing: error)
                     }
-                    continuation.resume(returning: merged)
-                } catch {
-                    continuation.resume(throwing: error)
                 }
             }
+        } onCancel: {
+            requestBox.cancel()
         }
-    }
-
-    func classify(
-        _ blocks: [ScreenshotOCRBlock],
-        targetLanguage: ScreenshotTranslationLanguage
-    ) -> ScreenshotTranslationPlan {
-        Self.classify(blocks, targetLanguage: targetLanguage)
     }
 
     static func classify(
@@ -352,12 +399,18 @@ struct ScreenshotTranslationService: Sendable {
             let lineHeight = max(last.normalizedBounds.height, block.normalizedBounds.height)
             let close = gap <= visualRunGapThreshold(for: lineHeight)
             if sameLine, close, gap > -0.02 {
+                let mergedBounds = last.normalizedBounds.union(block.normalizedBounds)
                 merged[merged.count - 1] = ScreenshotOCRBlock(
                     id: last.id,
                     text: joinedText(last.text, block.text),
-                    normalizedBounds: last.normalizedBounds.union(block.normalizedBounds),
+                    normalizedBounds: mergedBounds,
                     confidence: min(last.confidence, block.confidence),
-                    lineHeight: max(last.lineHeight, block.lineHeight)
+                    lineHeight: max(last.lineHeight, block.lineHeight),
+                    sourceLines: [ScreenshotTranslationLine(
+                        text: joinedText(last.text, block.text),
+                        bounds: mergedBounds,
+                        lineHeight: max(last.lineHeight, block.lineHeight)
+                    )]
                 )
             } else {
                 merged.append(block)
@@ -519,5 +572,23 @@ struct ScreenshotTranslationService: Sendable {
         return CGImageSourceCreateImageAtIndex(source, 0, [
             kCGImageSourceShouldCache: true
         ] as CFDictionary)
+    }
+}
+
+extension ScreenshotTranslationService {
+    func classify(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage
+    ) -> ScreenshotTranslationPlan {
+        Self.classify(blocks, targetLanguage: targetLanguage)
+    }
+
+    static func classifyAsync(
+        _ blocks: [ScreenshotOCRBlock],
+        targetLanguage: ScreenshotTranslationLanguage
+    ) async -> ScreenshotTranslationPlan {
+        await Task.detached(priority: .userInitiated) {
+            classify(blocks, targetLanguage: targetLanguage)
+        }.value
     }
 }

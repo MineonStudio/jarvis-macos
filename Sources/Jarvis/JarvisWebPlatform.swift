@@ -244,6 +244,34 @@ final class JarvisWebPlatformViewContainer: NSView {
 
 typealias AIConversationLayoutMetrics = JarvisWebPlatformLayoutMetrics
 
+enum JarvisWebLoadState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(String)
+
+    func applying(_ event: JarvisWebLoadEvent) -> JarvisWebLoadState {
+        switch event {
+        case .begin, .retry:
+            .loading
+        case .finish:
+            .loaded
+        case let .fail(message):
+            .failed(message)
+        case .reset:
+            .idle
+        }
+    }
+}
+
+enum JarvisWebLoadEvent: Equatable {
+    case begin
+    case finish
+    case fail(String)
+    case retry
+    case reset
+}
+
 @MainActor
 final class JarvisWebPlatformController: NSObject, ObservableObject {
     let platform: JarvisWebPlatformDescriptor
@@ -253,14 +281,30 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
 
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
-    @Published private(set) var isLoading = false
-    @Published private(set) var loadError: String?
+    @Published private(set) var loadState: JarvisWebLoadState = .idle
     @Published private(set) var currentURL: URL?
+
+    var isLoading: Bool {
+        loadState == .loading
+    }
+
+    var loadError: String? {
+        guard case let .failed(message) = loadState else { return nil }
+        return message
+    }
 
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
     private var fullscreenObservation: NSKeyValueObservation?
     private var popupWebViews: [WKWebView] = []
+    private var loadTimeoutTask: Task<Void, Never>?
+
+    deinit {
+        loadTimeoutTask?.cancel()
+        canGoBackObservation?.invalidate()
+        canGoForwardObservation?.invalidate()
+        fullscreenObservation?.invalidate()
+    }
 
     init(
         platform: JarvisWebPlatformDescriptor,
@@ -299,7 +343,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     }
 
     func goHome() {
-        loadError = nil
+        resetLoadState()
         webView.load(URLRequest(url: platform.url))
     }
 
@@ -316,13 +360,42 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     }
 
     func reloadOrStop() {
-        if webView.isLoading {
+        if isLoading, webView.isLoading {
             webView.stopLoading()
-            isLoading = false
+            finishLoading()
         } else {
-            loadError = nil
+            resetLoadState()
             webView.reload()
         }
+    }
+
+    private func resetLoadState() {
+        loadTimeoutTask?.cancel()
+        loadTimeoutTask = nil
+        loadState = loadState.applying(.reset)
+    }
+
+    private func beginLoading() {
+        loadTimeoutTask?.cancel()
+        loadState = loadState.applying(.begin)
+        loadTimeoutTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 20_000_000_000)
+            } catch {
+                return
+            }
+            guard let self, self.isLoading else { return }
+            self.loadState = self.loadState.applying(
+                .fail("页面响应时间较长，请检查网络后重试。")
+            )
+            self.loadTimeoutTask = nil
+        }
+    }
+
+    private func finishLoading() {
+        loadTimeoutTask?.cancel()
+        loadTimeoutTask = nil
+        loadState = loadState.applying(.finish)
     }
 
     private func updateNavigationState() {
@@ -465,19 +538,12 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
     }
 
     func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation?) {
-        if !isLoading {
-            isLoading = true
-        }
-        if loadError != nil {
-            loadError = nil
-        }
+        beginLoading()
         updateNavigationState()
     }
 
     func webView(_: WKWebView, didFinish _: WKNavigation?) {
-        if isLoading {
-            isLoading = false
-        }
+        finishLoading()
         updateNavigationState()
     }
 
@@ -486,11 +552,9 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
         didFailProvisionalNavigation _: WKNavigation?,
         withError error: Error
     ) {
-        if isLoading {
-            isLoading = false
-        }
+        finishLoading()
         if !Self.isCancellation(error) {
-            loadError = error.localizedDescription
+            loadState = loadState.applying(.fail(error.localizedDescription))
         }
         updateNavigationState()
     }
@@ -500,11 +564,9 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
         didFail _: WKNavigation?,
         withError error: Error
     ) {
-        if isLoading {
-            isLoading = false
-        }
+        finishLoading()
         if !Self.isCancellation(error) {
-            loadError = error.localizedDescription
+            loadState = loadState.applying(.fail(error.localizedDescription))
         }
         updateNavigationState()
     }

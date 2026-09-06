@@ -66,4 +66,34 @@ final class AIConversationProviderTests: XCTestCase {
             .openExternally
         )
     }
+
+    func testWebLoadStateIsEquatableAndPreservesFailureMessage() {
+        XCTAssertEqual(JarvisWebLoadState.idle, .idle)
+        XCTAssertEqual(JarvisWebLoadState.loading, .loading)
+        XCTAssertEqual(JarvisWebLoadState.loaded, .loaded)
+        XCTAssertEqual(
+            JarvisWebLoadState.failed("网络不可用"),
+            .failed("网络不可用")
+        )
+        XCTAssertNotEqual(JarvisWebLoadState.failed("网络不可用"), .loaded)
+    }
+
+    func testWebLoadStateTransitionsCoverInitialLoadFinishFailureAndRetry() {
+        var state = JarvisWebLoadState.idle
+
+        state = state.applying(.begin)
+        XCTAssertEqual(state, .loading)
+
+        state = state.applying(.finish)
+        XCTAssertEqual(state, .loaded)
+
+        state = state.applying(.fail("网络不可用"))
+        XCTAssertEqual(state, .failed("网络不可用"))
+
+        state = state.applying(.retry)
+        XCTAssertEqual(state, .loading)
+
+        state = state.applying(.reset)
+        XCTAssertEqual(state, .idle)
+    }
 }

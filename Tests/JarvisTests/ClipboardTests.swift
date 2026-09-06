@@ -20,6 +20,47 @@ final class ClipboardTests: XCTestCase {
         XCTAssertTrue(ClipboardPasteboardPrivacy.shouldIgnore(pasteboard))
     }
 
+    func testSensitiveContentDetectorCoversCredentialsWithoutMaskingNormalText() {
+        XCTAssertEqual(
+            SensitiveContentDetector.detect("api_key=sk-abcdefghijklmnopqrstuvwxyz123456"),
+            .authentication
+        )
+        XCTAssertEqual(
+            SensitiveContentDetector.detect("-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----"),
+            .privateKey
+        )
+        XCTAssertEqual(
+            SensitiveContentDetector.detect("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghijklmno.signaturevalue123"),
+            .jsonWebToken
+        )
+        XCTAssertNil(SensitiveContentDetector.detect("这是普通的 Swift 代码和日志文本。"))
+        XCTAssertNil(SensitiveContentDetector.detect("https://example.com/docs?query=swift"))
+    }
+
+    func testSensitivePresentationMasksOriginalTextUntilExplicitReveal() {
+        let secret = "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456"
+        let masked = SensitiveContentDetector.presentation(for: secret)
+        XCTAssertTrue(masked.requiresReveal)
+        XCTAssertFalse(masked.displayText.contains("sk-abcdefghijklmnopqrstuvwxyz123456"))
+        XCTAssertFalse(masked.accessibilityText.contains("sk-abcdefghijklmnopqrstuvwxyz123456"))
+
+        let revealed = SensitiveContentDetector.presentation(for: secret, revealed: true)
+        XCTAssertFalse(revealed.requiresReveal)
+        XCTAssertEqual(revealed.displayText, secret)
+        XCTAssertFalse(revealed.accessibilityText.contains("sk-abcdefghijklmnopqrstuvwxyz123456"))
+        XCTAssertTrue(revealed.accessibilityText.contains("已临时显示"))
+    }
+
+    func testSensitiveClipboardPresentationDoesNotChangePersistedItem() throws {
+        let item = ClipboardItem(kind: .text, text: "password=correct-horse-battery-staple")
+        let encoded = try JSONEncoder().encode(item)
+        let decoded = try JSONDecoder().decode(ClipboardItem.self, from: encoded)
+
+        XCTAssertEqual(decoded.resolvedText, item.resolvedText)
+        XCTAssertEqual(decoded.clipboardSensitivity, .authentication)
+        XCTAssertFalse(decoded.sensitivePresentation()?.displayText.contains("correct-horse") == true)
+    }
+
     func testClipboardServiceExtractsAllFileURLsFromPasteboard() {
         let pasteboard = NSPasteboard(
             name: NSPasteboard.Name("JarvisClipboardTests-\(UUID().uuidString)")

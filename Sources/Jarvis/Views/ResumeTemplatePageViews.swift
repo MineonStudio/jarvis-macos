@@ -24,14 +24,30 @@ enum ResumePaperPalette {
 struct ResumePageHeader: View {
     let document: ResumeDocument
     let template: ResumeTemplate
+    let showsPlaceholders: Bool
+
+    init(
+        document: ResumeDocument,
+        template: ResumeTemplate,
+        showsPlaceholders: Bool = false
+    ) {
+        self.document = document
+        self.template = template
+        self.showsPlaceholders = showsPlaceholders
+    }
 
     private var contact: [String] {
-        [
+        let values = [
             document.basicInfo.location,
             document.basicInfo.email,
             document.basicInfo.jobStatus,
             document.basicInfo.workYears
-        ].filter(nonEmpty)
+        ]
+        if showsPlaceholders {
+            return zip(values, ["所在地", "联系方式", "岗位状态", "工作年限"])
+                .map { value, placeholder in nonEmpty(value) ? value : placeholder }
+        }
+        return values.filter(nonEmpty)
     }
 
     var body: some View {
@@ -80,6 +96,9 @@ struct ResumePageHeader: View {
         if nonEmpty(document.basicInfo.name) {
             Text(document.basicInfo.name)
                 .foregroundStyle(ResumePaperPalette.ink)
+        } else if showsPlaceholders {
+            Text("姓名")
+                .foregroundStyle(ResumePaperPalette.muted.opacity(0.78))
         }
     }
 
@@ -89,6 +108,10 @@ struct ResumePageHeader: View {
             Text(document.basicInfo.headline)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(accent)
+        } else if showsPlaceholders {
+            Text("职位标题")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(ResumePaperPalette.muted.opacity(0.78))
         }
     }
 

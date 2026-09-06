@@ -175,7 +175,7 @@ struct WallpaperView: View {
     @ViewBuilder
     private var onlineGallery: some View {
         if model.isLoading, model.items.isEmpty {
-            ProgressView("正在加载壁纸…")
+            JarvisInlineLoadingState()
                 .frame(maxWidth: .infinity, minHeight: 250)
         } else if let errorMessage = model.errorMessage, model.items.isEmpty {
             WallpaperErrorState(message: errorMessage, retry: refreshOnline)
@@ -446,22 +446,23 @@ private struct WallpaperLoadMoreButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-                Text("正在加载…")
-            } else if errorMessage != nil {
-                Label("重试", systemImage: "arrow.clockwise")
-            } else {
-                Label("加载更多", systemImage: "arrow.down.circle")
+        if isLoading {
+            JarvisInlineLoadingState()
+                .frame(maxWidth: .infinity)
+                .padding(.top, HistoryGridMetrics.clipboardGridSpacing)
+        } else {
+            Button(action: action) {
+                if errorMessage != nil {
+                    Label("重试", systemImage: "arrow.clockwise")
+                } else {
+                    Label("加载更多", systemImage: "arrow.down.circle")
+                }
             }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .frame(maxWidth: .infinity)
+            .padding(.top, HistoryGridMetrics.clipboardGridSpacing)
+            .help(errorMessage ?? "加载下一批壁纸")
         }
-        .buttonStyle(JarvisSecondaryButtonStyle())
-        .disabled(isLoading)
-        .frame(maxWidth: .infinity)
-        .padding(.top, HistoryGridMetrics.clipboardGridSpacing)
-        .help(errorMessage ?? "加载下一批壁纸")
     }
 }
 
@@ -596,7 +597,6 @@ private struct WallpaperCard: View {
     let onToggleFavorite: () -> Void
     let showsDelete: Bool
     let onDelete: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     private var previewContent: some View {
@@ -646,60 +646,70 @@ private struct WallpaperCard: View {
                 .accessibilityLabel("正在加载原图")
             }
         }
-        .overlay(alignment: .top) {
-            if isHovered {
-                HStack(spacing: 6) {
-                    Button(action: onToggleFavorite) {
-                        Image(systemName: item.isFavorite ? "heart.fill" : "heart")
+        .overlay(alignment: .bottom) {
+            HStack(spacing: 6) {
+                Button(action: onToggleFavorite) {
+                    Image(systemName: item.isFavorite ? "heart.fill" : "heart")
+                        .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
+                        .foregroundStyle(item.isFavorite ? Color.pink : Color.white)
+                }
+                .buttonStyle(JarvisToolbarIconButtonStyle())
+                .jarvisIconGlass(
+                    tint: item.isFavorite ? .pink : .white,
+                    in: Circle(),
+                    interactive: true
+                )
+                .accessibilityLabel(item.isFavorite ? "取消收藏" : "收藏")
+                .help(item.isFavorite ? "取消收藏" : "收藏")
+
+                if showsDelete {
+                    Button(role: .destructive, action: onDelete) {
+                        Image(systemName: "trash")
                             .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
-                            .foregroundStyle(item.isFavorite ? Color.pink : Color.white)
+                            .foregroundStyle(Color.red)
                     }
                     .buttonStyle(JarvisToolbarIconButtonStyle())
-                    .jarvisIconGlass(
-                        tint: item.isFavorite ? .pink : .white,
-                        in: Circle(),
-                        interactive: true
-                    )
-                    .help(item.isFavorite ? "取消收藏" : "收藏")
-
-                    if showsDelete {
-                        Button(role: .destructive, action: onDelete) {
-                            Image(systemName: "trash")
-                                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
-                                .foregroundStyle(Color.red)
-                        }
-                        .buttonStyle(JarvisToolbarIconButtonStyle())
-                        .jarvisIconGlass(tint: .red, in: Circle(), interactive: true)
-                        .accessibilityLabel("删除")
-                        .help("从已下载壁纸中删除")
-                    }
-
-                    Spacer(minLength: 0)
-
-                    Button(
-                        isApplied
-                            ? "已设为壁纸"
-                            : (isDownloading ? "正在设置…" : "设为壁纸"),
-                        action: onSet
-                    )
-                    .buttonStyle(JarvisPrimaryButtonStyle())
-                    .disabled(isDownloading || isApplied)
+                    .jarvisIconGlass(tint: .red, in: Circle(), interactive: true)
+                    .accessibilityLabel("删除")
+                    .help("从已下载壁纸中删除")
                 }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .top)
-                .transition(.opacity)
+
+                Spacer(minLength: 0)
+
+                Button(
+                    isApplied
+                        ? "当前壁纸"
+                        : (isDownloading ? "正在设置…" : "设为壁纸"),
+                    action: onSet
+                )
+                .buttonStyle(JarvisPrimaryButtonStyle())
+                .disabled(isDownloading || isApplied)
+                .accessibilityLabel(
+                    isApplied
+                        ? "当前壁纸"
+                        : (isDownloading ? "正在设置壁纸" : "设为壁纸")
+                )
             }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.78)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .allowsHitTesting(false)
+            )
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
+            .animation(.easeInOut(duration: 0.16), value: isHovered)
         }
-        .onHover { isHovered = $0 }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: isHovered
-        )
     }
 
     var body: some View {
         previewContent
             .onTapGesture(count: 2, perform: onDoubleClick)
+            .onHover { isHovered = $0 }
     }
 }
 

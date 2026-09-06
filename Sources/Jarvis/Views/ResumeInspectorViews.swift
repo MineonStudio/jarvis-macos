@@ -10,8 +10,12 @@ struct ResumeInspector: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("编辑简历")
+                Text("编辑内容")
                     .font(JarvisTypography.pageTitle)
+                Text("填写右侧信息，左侧预览会实时更新")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .padding(.bottom, 4)
 
                 ForEach(ResumeSection.allCases) { section in
                     accordionSection(section)
@@ -45,7 +49,8 @@ struct ResumeInspector: View {
     }
 
     private func accordionSection(_ section: ResumeSection) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let requirementTitle = section.requirementTitle
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(JarvisMotion.content) {
                     expandedSection = expandedSection == section ? nil : section
@@ -57,6 +62,13 @@ struct ResumeInspector: View {
                         .frame(width: 20)
                     Text(section.title)
                         .font(JarvisTypography.controlEmphasis)
+                    Text(requirementTitle)
+                        .font(JarvisTypography.captionEmphasis)
+                        .foregroundStyle(
+                            section == .basicInfo
+                                ? Color.accentColor
+                                : Color.jarvisTextSecondary
+                        )
                     Spacer(minLength: 0)
                     Image(systemName: expandedSection == section ? "chevron.up" : "chevron.down")
                         .font(.system(size: 11, weight: .semibold))

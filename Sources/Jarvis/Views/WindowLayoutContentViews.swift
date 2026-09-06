@@ -74,9 +74,9 @@ struct WindowLayoutView: View {
                     .jarvisIconGlass(in: Circle())
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("把当前窗口快速放到屏幕的指定区域")
+                    Text("窗口布局快捷键参考")
                         .font(JarvisTypography.bodyEmphasis)
-                    Text("快捷键提示仅用于展示；请从菜单栏执行窗口调整。")
+                    Text("这些卡片仅展示快捷键，不会直接调整窗口。请从菜单栏执行窗口布局。")
                         .font(JarvisTypography.secondary)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .lineSpacing(2)
@@ -122,8 +122,8 @@ private struct WindowLayoutDisplayCard: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .jarvisGlass(cornerRadius: 13)
-        .jarvisHoverPanelFeedback(scale: 1.012)
         .accessibilityElement(children: .combine)
+        .accessibilityHint("仅用于查看快捷键，请从菜单栏执行窗口布局")
     }
 }
 

@@ -155,6 +155,91 @@ struct SettingsView: View {
         }
     }
 
+    private var versionAndUpdateCard: some View {
+        JarvisCard {
+            HStack(spacing: 14) {
+                SettingsCardHeader(
+                    title: "版本与更新",
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+                Spacer(minLength: 8)
+                updateControls
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var updateControls: some View {
+        switch app.updateState {
+        case let .available(release):
+            HStack(spacing: 10) {
+                Text(displayVersion(release.version))
+                    .font(JarvisTypography.monospaced)
+                    .foregroundStyle(Color.accentColor)
+                    .lineLimit(1)
+                Button("下载新版本") {
+                    app.downloadAndInstallUpdate()
+                }
+                .buttonStyle(JarvisPrimaryButtonStyle())
+                .accessibilityLabel("下载新版本 \(displayVersion(release.version))")
+            }
+        case .checking:
+            HStack(spacing: 8) {
+                versionLabel
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("正在检查更新")
+            }
+        case let .downloading(version):
+            HStack(spacing: 8) {
+                Text(displayVersion(version))
+                    .font(JarvisTypography.monospaced)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("正在下载更新")
+            }
+        case let .installing(version):
+            HStack(spacing: 8) {
+                Text(displayVersion(version))
+                    .font(JarvisTypography.monospaced)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(1)
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("正在安装更新")
+            }
+        default:
+            HStack(spacing: 10) {
+                versionLabel
+                Button {
+                    app.checkForUpdates()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .contentShape(Circle())
+                .accessibilityLabel("检查更新")
+                .help("检查更新")
+            }
+        }
+    }
+
+    private var versionLabel: some View {
+        Text("v\(JarvisAppVersion.shortVersion)")
+            .font(JarvisTypography.monospaced)
+            .foregroundStyle(Color.jarvisTextSecondary)
+            .lineLimit(1)
+    }
+
+    private func displayVersion(_ version: String) -> String {
+        version.lowercased().hasPrefix("v") ? version : "v\(version)"
+    }
+
     private var permissionStatusRow: some View {
         HStack(spacing: 10) {
             SettingsPermissionCapsule(
@@ -211,106 +296,6 @@ struct SettingsView: View {
                     value: app.launchAtLoginEnabled
                 )
             }
-        }
-    }
-
-    private var versionAndUpdateCard: some View {
-        JarvisCard {
-            HStack(spacing: 14) {
-                HStack(spacing: 8) {
-                    SettingsCardHeader(
-                        title: "版本与更新",
-                        systemImage: "arrow.triangle.2.circlepath"
-                    )
-                    Text("v\(JarvisAppVersion.shortVersion)")
-                        .font(JarvisTypography.monospaced)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                Spacer(minLength: 8)
-                updateControls
-            }
-        }
-    }
-
-    private var updateControls: some View {
-        Group {
-            switch app.updateState {
-            case let .available(release):
-                HStack(spacing: 10) {
-                    Text(release.version)
-                        .font(JarvisTypography.monospaced)
-                        .foregroundStyle(Color.accentColor)
-                        .lineLimit(1)
-                    Button("下载最新版") {
-                        app.downloadAndInstallUpdate()
-                    }
-                    .buttonStyle(JarvisPrimaryButtonStyle())
-                }
-            case .checking:
-                HStack(spacing: 8) {
-                    updateStatusLabel
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            case .downloading, .installing:
-                HStack(spacing: 8) {
-                    updateStatusLabel
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            default:
-                HStack(spacing: 10) {
-                    updateStatusLabel
-                    Button(updateActionTitle) {
-                        app.checkForUpdates()
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(isUpdating)
-                }
-            }
-        }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: app.updateState
-        )
-    }
-
-    private var updateStatusLabel: some View {
-        Group {
-            switch app.updateState {
-            case .idle:
-                EmptyView()
-            case .checking:
-                Text("正在检查更新…")
-            case .upToDate:
-                EmptyView()
-            case let .available(release):
-                Text("发现新版本 \(release.version)")
-                    .foregroundStyle(Color.accentColor)
-            case let .downloading(version):
-                Text("正在下载 \(version)…")
-            case let .installing(version):
-                Text("正在安装 \(version)…")
-            case let .failed(message):
-                Text(message)
-            }
-        }
-        .font(JarvisTypography.caption)
-        .foregroundStyle(Color.jarvisTextSecondary)
-        .lineLimit(1)
-    }
-
-    private var updateActionTitle: String {
-        if case .failed = app.updateState {
-            return "重新检查"
-        }
-        return "检查更新"
-    }
-
-    private var isUpdating: Bool {
-        switch app.updateState {
-        case .checking, .downloading, .installing: true
-        default: false
         }
     }
 }

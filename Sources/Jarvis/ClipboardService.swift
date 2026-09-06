@@ -53,6 +53,96 @@ enum ClipboardKind: String, Codable, CaseIterable {
     }
 }
 
+enum ClipboardSensitivity: Equatable {
+    case apiToken
+    case authentication
+    case jsonWebToken
+    case privateKey
+
+    var title: String {
+        switch self {
+        case .apiToken: "疑似 API Token"
+        case .authentication: "疑似认证信息"
+        case .jsonWebToken: "疑似 JWT"
+        case .privateKey: "疑似私钥"
+        }
+    }
+}
+
+struct ClipboardSensitivePresentation: Equatable {
+    let sensitivity: ClipboardSensitivity?
+    let displayText: String
+    let accessibilityText: String
+    let isRevealed: Bool
+
+    var requiresReveal: Bool {
+        sensitivity != nil && !isRevealed
+    }
+}
+
+enum SensitiveContentDetector {
+    private static let privateKeyPattern = #"-----BEGIN [A-Z ]*PRIVATE KEY-----"#
+    private static let jwtPattern = #"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"#
+    private static let providerTokenPattern = #"\b(?:sk|pk|ghp|github_pat|xoxb|xoxp|AKIA)[A-Za-z0-9_\-]{16,}\b"#
+    private static let credentialAssignmentPattern = #"(?i)\b(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|secret|password|passwd|cookie|private[_-]?key)\s*[:=]\s*[\"']?[^\s\"']{8,}"#
+
+    static func detect(_ text: String) -> ClipboardSensitivity? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        if matches(privateKeyPattern, in: text) {
+            return .privateKey
+        }
+        if matches(jwtPattern, in: text) {
+            return .jsonWebToken
+        }
+        if matches(credentialAssignmentPattern, in: text) {
+            return .authentication
+        }
+        if matches(providerTokenPattern, in: text) || containsHighConfidenceOpaqueSecret(in: text) {
+            return .apiToken
+        }
+        return nil
+    }
+
+    static func presentation(
+        for text: String,
+        revealed: Bool = false
+    ) -> ClipboardSensitivePresentation {
+        let sensitivity = detect(text)
+        guard let sensitivity, !revealed else {
+            return ClipboardSensitivePresentation(
+                sensitivity: sensitivity,
+                displayText: text,
+                accessibilityText: sensitivity.map { "\($0.title)，已临时显示" } ?? text,
+                isRevealed: revealed
+            )
+        }
+
+        return ClipboardSensitivePresentation(
+            sensitivity: sensitivity,
+            displayText: "已隐藏 · \(sensitivity.title)",
+            accessibilityText: "\(sensitivity.title)，点击显示一次",
+            isRevealed: false
+        )
+    }
+
+    private static func matches(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private static func containsHighConfidenceOpaqueSecret(in text: String) -> Bool {
+        text.split(whereSeparator: { $0.isWhitespace }).contains { component in
+            let value = String(component)
+            guard value.count >= 32, value.count <= 256 else { return false }
+            let hasUppercase = value.rangeOfCharacter(from: .uppercaseLetters) != nil
+            let hasLowercase = value.rangeOfCharacter(from: .lowercaseLetters) != nil
+            let hasNumber = value.rangeOfCharacter(from: .decimalDigits) != nil
+            let hasSeparator = value.rangeOfCharacter(from: CharacterSet(charactersIn: "-_+/=")) != nil
+            let looksLikeSentence = value.rangeOfCharacter(from: CharacterSet(charactersIn: ".,;:{}[]()<>")) != nil
+            return hasUppercase && hasLowercase && hasNumber && hasSeparator && !looksLikeSentence
+        }
+    }
+}
+
 enum JarvisHistoryDateFormatting {
     static func string(from date: Date) -> String {
         let formatter = DateFormatter()
@@ -177,6 +267,20 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
         }
         guard let textPath else { return nil }
         return try? String(contentsOf: URL(fileURLWithPath: textPath), encoding: .utf8)
+    }
+
+    var clipboardSensitivity: ClipboardSensitivity? {
+        guard let resolvedText else { return nil }
+        return SensitiveContentDetector.detect(resolvedText)
+    }
+
+    var isSensitive: Bool {
+        clipboardSensitivity != nil
+    }
+
+    func sensitivePresentation(revealed: Bool = false) -> ClipboardSensitivePresentation? {
+        guard let resolvedText else { return nil }
+        return SensitiveContentDetector.presentation(for: resolvedText, revealed: revealed)
     }
 
     var canFullscreenPreview: Bool {

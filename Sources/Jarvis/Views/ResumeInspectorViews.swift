@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ResumeInspector: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Binding var draft: ResumeDocument
     @Binding var expandedSection: ResumeSection?
     @State private var projectGenerationDomain = ""

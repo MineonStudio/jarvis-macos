@@ -2,6 +2,7 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
+@MainActor
 final class ScreenshotCoordinateSpaceTests: XCTestCase {
     func testScreenshotCacheRoundTrip() {
         let fileURL = FileManager.default.temporaryDirectory

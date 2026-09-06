@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct EntertainmentView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @State private var showsDownloadManager = false
 
     var body: some View {

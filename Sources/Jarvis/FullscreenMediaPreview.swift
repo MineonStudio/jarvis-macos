@@ -270,8 +270,10 @@ final class FullscreenMediaPreviewController {
             context.duration = 0.18
             previewPanel?.animator().alphaValue = 0
         } completionHandler: {
-            previewPanel?.orderOut(nil)
-            previewPanel?.close()
+            Task { @MainActor in
+                previewPanel?.orderOut(nil)
+                previewPanel?.close()
+            }
         }
     }
 }

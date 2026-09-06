@@ -3,6 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 import XCTest
 
+@MainActor
 final class ScreenshotSharingTests: XCTestCase {
     func testScreenshotDragProviderPublishesPNGDataAndSuggestedName() {
         let data = Data([0x89, 0x50, 0x4E, 0x47])
@@ -15,14 +16,14 @@ final class ScreenshotSharingTests: XCTestCase {
         XCTAssertTrue(provider.registeredTypeIdentifiers.contains(UTType.png.identifier))
 
         let expectation = expectation(description: "PNG data representation loads")
-        var loadedData: Data?
+        let loadedData = TestDataBox()
         provider.loadDataRepresentation(forTypeIdentifier: UTType.png.identifier) { data, error in
-            loadedData = data
+            loadedData.value = data
             XCTAssertNil(error)
             expectation.fulfill()
         }
         waitForExpectations(timeout: 1)
-        XCTAssertEqual(loadedData, data)
+        XCTAssertEqual(loadedData.value, data)
     }
 
     func testScreenshotDragProviderAddsPNGExtensionWhenNameHasNone() {
@@ -82,4 +83,8 @@ final class ScreenshotSharingTests: XCTestCase {
             XCTAssertNotNil(ClipboardSharing.itemProvider(for: item))
         }
     }
+}
+
+private final class TestDataBox: @unchecked Sendable {
+    var value: Data?
 }

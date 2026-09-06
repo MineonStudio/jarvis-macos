@@ -3,12 +3,10 @@ import Foundation
 import ImageIO
 
 enum JarvisThumbnailCache {
-    private static let imageCache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 256
-        cache.totalCostLimit = 64 * 1024 * 1024
-        return cache
-    }()
+    private static let imageCache = JarvisThreadSafeImageCache(
+        countLimit: 256,
+        totalCostLimit: 64 * 1024 * 1024
+    )
 
     static func loadAsync(fileURL: URL, maxPixelSize: Int) async -> NSImage? {
         await withCheckedContinuation { continuation in
@@ -19,6 +17,10 @@ enum JarvisThumbnailCache {
                 }
             }
         }
+    }
+
+    static func purge() {
+        imageCache.removeAllObjects()
     }
 
     private static func load(fileURL: URL, maxPixelSize: Int) -> NSImage? {
@@ -59,5 +61,35 @@ enum JarvisThumbnailCache {
         let modificationDate = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
         let fileSize = values?.fileSize ?? 0
         return "\(fileURL.path)|\(fileSize)|\(modificationDate)|\(maxPixelSize)" as NSString
+    }
+}
+
+final class JarvisThreadSafeImageCache: @unchecked Sendable {
+    private let cache: NSCache<NSString, NSImage>
+    private let lock = NSLock()
+
+    init(countLimit: Int, totalCostLimit: Int) {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = countLimit
+        cache.totalCostLimit = totalCostLimit
+        self.cache = cache
+    }
+
+    func object(forKey key: NSString) -> NSImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache.object(forKey: key)
+    }
+
+    func setObject(_ object: NSImage, forKey key: NSString, cost: Int) {
+        lock.lock()
+        cache.setObject(object, forKey: key, cost: cost)
+        lock.unlock()
+    }
+
+    func removeAllObjects() {
+        lock.lock()
+        cache.removeAllObjects()
+        lock.unlock()
     }
 }

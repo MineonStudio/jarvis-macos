@@ -2,6 +2,7 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
+@MainActor
 final class JarvisMainWindowControllerTests: XCTestCase {
     func testMinimumWindowSizeKeepsTheMainInterfaceUsable() {
         XCTAssertEqual(

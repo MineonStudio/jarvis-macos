@@ -43,24 +43,38 @@ extension AppModel {
             return
         }
 
-        let previousItems = clipboardItems
         clipboardItems.removeAll { $0.fingerprint == item.fingerprint }
         clipboardItems.append(item)
         clipboardItems = ClipboardOrdering.newestFirst(clipboardItems)
         let overflowItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
         clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
         trimClipboardCacheIfNeeded()
-        guard clipboardStore.save(clipboardItems) else {
-            clipboardItems = previousItems
-            showToast("剪贴板历史保存失败")
-            return
-        }
+        scheduleClipboardHistorySave()
 
         let preservedPaths = Set(item.cachePaths)
         let stalePaths = matchingItems.flatMap(\.cachePaths).filter { !preservedPaths.contains($0) }
             + overflowItems.flatMap(\.cachePaths)
         clipboardCacheStore.removeLegacyFiles(atPaths: stalePaths)
         refreshClipboardCacheUsage()
+    }
+
+    private func scheduleClipboardHistorySave() {
+        let snapshot = clipboardItems
+        clipboardSaveTask?.cancel()
+        clipboardSaveTask = Task { @MainActor [weak self, clipboardHistoryWriter] in
+            do {
+                try await Task.sleep(nanoseconds: 150_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard await clipboardHistoryWriter.save(snapshot) else {
+                self?.showToast("剪贴板历史保存失败")
+                return
+            }
+            self?.clipboardSaveTask = nil
+        }
     }
 
     func copyClipboard(_ item: ClipboardItem) {

@@ -329,7 +329,7 @@ enum WallpaperHTTP {
     }
 }
 
-final class WallhavenWallpaperSource: WallpaperSourceProviding {
+final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Sendable {
     let source: WallpaperSource = .wallhaven
     private let session: URLSession
 
@@ -622,7 +622,7 @@ enum WallpaperStoreError: LocalizedError, Equatable {
     }
 }
 
-final class WallpaperDownloadService {
+final class WallpaperDownloadService: @unchecked Sendable {
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -1410,7 +1410,14 @@ enum WallpaperSystemSettings {
 }
 
 enum WallpaperImageLoader {
-    private static let imageCache = NSCache<NSString, NSImage>()
+    private static let imageCache = JarvisThreadSafeImageCache(
+        countLimit: 64,
+        totalCostLimit: 128 * 1024 * 1024
+    )
+
+    static func purgeCache() {
+        imageCache.removeAllObjects()
+    }
 
     static func loadOriginal(url: URL) async -> NSImage? {
         let data: Data
@@ -1477,7 +1484,11 @@ enum WallpaperImageLoader {
             cgImage: cgImage,
             size: NSSize(width: cgImage.width, height: cgImage.height)
         )
-        imageCache.setObject(image, forKey: cacheKey)
+        imageCache.setObject(
+            image,
+            forKey: cacheKey,
+            cost: max(1, cgImage.width * cgImage.height)
+        )
         return image
     }
 }

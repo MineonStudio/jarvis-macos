@@ -22,7 +22,7 @@ private struct WallpaperLoadMoreTriggerPreferenceKey: PreferenceKey {
 }
 
 struct WallpaperView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = WallpaperViewModel()
     @StateObject private var previewController = WallpaperPreviewController()
@@ -429,6 +429,7 @@ private func wallpaperMenuItemLabel(_ title: String, isSelected: Bool) -> some V
     }
 }
 
+@MainActor
 private func wallpaperFilterMenuLabel(_ title: String) -> some View {
     Text(title)
         .font(JarvisTypography.control)

@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct HermesConversationView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @FocusState private var inputFocused: Bool
     @State private var showingURLPrompt = false
     @State private var urlDraft = ""
@@ -449,7 +449,14 @@ struct HermesConversationView: View {
 
             HStack(alignment: .center, spacing: 6) {
                 attachmentMenu
-                TextField("和 JARVIS 对话", text: $app.hermesChatDraft, axis: .vertical)
+                TextField(
+                    "和 JARVIS 对话",
+                    text: Binding(
+                        get: { app.hermesChatDraft },
+                        set: { app.hermesChatDraft = $0 }
+                    ),
+                    axis: .vertical
+                )
                     .textFieldStyle(.plain)
                     .font(JarvisTypography.body)
                     .lineLimit(1 ... 5)

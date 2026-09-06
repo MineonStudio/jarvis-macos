@@ -86,7 +86,7 @@ struct HermesInstaller {
 
     func install(
         control: HermesInstallerControl,
-        onOutput: @escaping (String) -> Void
+        onOutput: @escaping @Sendable (String) -> Void
     ) async throws {
         do {
             try Task.checkCancellation()
@@ -133,7 +133,7 @@ struct HermesInstaller {
     private func runInstaller(
         at scriptURL: URL,
         control: HermesInstallerControl,
-        onOutput: @escaping (String) -> Void
+        onOutput: @escaping @Sendable (String) -> Void
     ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -147,7 +147,7 @@ struct HermesInstaller {
         process.standardOutput = standardOutput
         process.standardError = standardError
 
-        let consume: (FileHandle) -> Void = { handle in
+        let consume: @Sendable (FileHandle) -> Void = { handle in
             let data = handle.availableData
             guard !data.isEmpty,
                   let text = String(data: data, encoding: .utf8)
@@ -293,7 +293,7 @@ struct HermesTirithInstaller {
 
     func install(
         control: HermesInstallerControl,
-        onOutput: @escaping (String) -> Void
+        onOutput: @escaping @Sendable (String) -> Void
     ) throws {
         let adapter = HermesAdapter.live()
         let agentDirectory = adapter.homeDirectory.appendingPathComponent("hermes-agent")
@@ -321,7 +321,7 @@ struct HermesTirithInstaller {
         process.standardOutput = standardOutput
         process.standardError = standardError
 
-        let consume: (FileHandle) -> Void = { handle in
+        let consume: @Sendable (FileHandle) -> Void = { handle in
             let data = handle.availableData
             guard !data.isEmpty,
                   let text = String(data: data, encoding: .utf8)

@@ -2,6 +2,7 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
+@MainActor
 final class WindowLayoutTests: XCTestCase {
     func testUserFacingTitlesAndMenuIconsUseSixteenByNineRegionDiagrams() {
         XCTAssertEqual(WindowLayout.halfLeft.title, "左半屏")

@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ResumeContentView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @EnvironmentObject private var workspace: ResumeWorkspace
 
     @State private var expandedSection: ResumeSection? = .basicInfo

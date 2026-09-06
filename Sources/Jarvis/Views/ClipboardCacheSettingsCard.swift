@@ -68,7 +68,7 @@ private enum ClipboardCacheCleanupRequest: Identifiable {
 }
 
 struct ClipboardCacheSettingsCard: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedCleanupMode: ClipboardCacheCleanupMode = .time
     @State private var pendingCleanup: ClipboardCacheCleanupRequest?

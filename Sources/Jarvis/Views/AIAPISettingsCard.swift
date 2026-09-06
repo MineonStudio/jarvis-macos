@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AIAPISettingsCard: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @State private var name = ""
     @State private var baseURL = ""
     @State private var model = ""

@@ -206,7 +206,7 @@ struct ClipboardCategoryFilterSelector: View {
 }
 
 struct ClipboardView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searchText = ""
     @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
@@ -350,7 +350,7 @@ struct ClipboardView: View {
 }
 
 struct ClipboardHistoryActionToolbar: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     let selectedItem: ClipboardItem?
     let onClearSelection: () -> Void
     @State private var showingDeleteConfirmation = false
@@ -799,7 +799,7 @@ struct ClipboardGrid: View {
 }
 
 struct ClipboardPanelView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         ClipboardView()

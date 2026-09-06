@@ -3,10 +3,13 @@ import AVFoundation
 import Foundation
 
 enum ClipboardVideoThumbnailGenerator {
-    static func makeCGImageAsync(for url: URL, completion: @escaping (CGImage?) -> Void) {
+    static func makeCGImageAsync(
+        for url: URL,
+        completion: @escaping @MainActor @Sendable (CGImage?) -> Void
+    ) {
         DispatchQueue.global(qos: .utility).async {
             guard FileManager.default.fileExists(atPath: url.path) else {
-                DispatchQueue.main.async { completion(nil) }
+                Task { @MainActor in completion(nil) }
                 return
             }
 
@@ -19,7 +22,7 @@ enum ClipboardVideoThumbnailGenerator {
             // leave every card black, then fall back to the first frame for
             // very short or unusual containers.
             generateFrame(
-                with: generator,
+                with: AVAssetImageGeneratorBox(generator),
                 at: [0.1, 0.0],
                 index: 0,
                 completion: completion
@@ -28,25 +31,26 @@ enum ClipboardVideoThumbnailGenerator {
     }
 
     private static func generateFrame(
-        with generator: AVAssetImageGenerator,
+        with generatorBox: AVAssetImageGeneratorBox,
         at seconds: [Double],
         index: Int,
-        completion: @escaping (CGImage?) -> Void
+        completion: @escaping @MainActor @Sendable (CGImage?) -> Void
     ) {
         guard index < seconds.count else {
-            DispatchQueue.main.async { completion(nil) }
+            Task { @MainActor in completion(nil) }
             return
         }
 
+        let generator = generatorBox.generator
         generator.generateCGImageAsynchronously(
             for: CMTime(seconds: seconds[index], preferredTimescale: 600)
         ) { image, _, _ in
-            withExtendedLifetime(generator) {
+            withExtendedLifetime(generatorBox) {
                 if let image {
-                    DispatchQueue.main.async { completion(image) }
+                    Task { @MainActor in completion(image) }
                 } else {
                     generateFrame(
-                        with: generator,
+                        with: generatorBox,
                         at: seconds,
                         index: index + 1,
                         completion: completion
@@ -54,5 +58,13 @@ enum ClipboardVideoThumbnailGenerator {
                 }
             }
         }
+    }
+}
+
+private final class AVAssetImageGeneratorBox: @unchecked Sendable {
+    let generator: AVAssetImageGenerator
+
+    init(_ generator: AVAssetImageGenerator) {
+        self.generator = generator
     }
 }

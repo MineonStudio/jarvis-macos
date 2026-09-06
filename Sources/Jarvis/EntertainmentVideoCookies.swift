@@ -52,13 +52,7 @@ enum WKWebsiteCookieExport {
     }
 
     private static func allCookies() async -> [HTTPCookie] {
-        await withCheckedContinuation { continuation in
-            Task { @MainActor in
-                WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-                    continuation.resume(returning: cookies)
-                }
-            }
-        }
+        await WKWebsiteDataStore.default().httpCookieStore.allCookies()
     }
 }
 

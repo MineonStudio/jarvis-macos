@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 enum JarvisWindowAppearance {
     static func configure(for window: NSWindow) {
         window.titlebarSeparatorStyle = .none
@@ -108,6 +109,7 @@ enum JarvisWindowLayoutMetrics {
 /// Owns the main window's AppKit lifecycle independently from SwiftUI's view
 /// redraws. The window frame is restored once when the NSWindow is attached and
 /// persisted from window lifecycle notifications afterward.
+@MainActor
 final class JarvisMainWindowController: NSObject, ObservableObject {
     static let frameAutosaveName = "Jarvis.MainWindow"
     static var defaultWindowSize: CGSize {
@@ -141,12 +143,7 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
     private let frameStore = JarvisWindowFrameStore()
     private weak var window: NSWindow?
     private var frameObservers: [NSObjectProtocol] = []
-    private var pendingFrameSave: DispatchWorkItem?
-
-    deinit {
-        pendingFrameSave?.cancel()
-        removeFrameObservers()
-    }
+    private var pendingFrameSave: Task<Void, Never>?
 
     func attach(to window: NSWindow?) {
         guard let window, self.window !== window else { return }
@@ -201,32 +198,42 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                self?.scheduleFrameSave()
+                Task { @MainActor [weak self] in
+                    self?.scheduleFrameSave()
+                }
             },
             notificationCenter.addObserver(
                 forName: NSWindow.didResizeNotification,
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                self?.scheduleFrameSave()
+                Task { @MainActor [weak self] in
+                    self?.scheduleFrameSave()
+                }
             },
             notificationCenter.addObserver(
                 forName: NSWindow.willCloseNotification,
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                self?.saveFrameImmediately()
+                Task { @MainActor [weak self] in
+                    self?.saveFrameImmediately()
+                }
             }
         ]
     }
 
     private func scheduleFrameSave() {
         pendingFrameSave?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
+        pendingFrameSave = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             self?.saveFrameImmediately()
         }
-        pendingFrameSave = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
     }
 
     private func saveFrameImmediately() {

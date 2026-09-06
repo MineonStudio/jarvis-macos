@@ -250,7 +250,7 @@ extension AIConversationDownloadManager: WKDownloadDelegate {
         _ download: WKDownload,
         decideDestinationUsing _: URLResponse,
         suggestedFilename: String,
-        completionHandler: @escaping (URL?) -> Void
+        completionHandler: @escaping @MainActor @Sendable (URL?) -> Void
     ) {
         guard let id = downloadIDs[ObjectIdentifier(download)] else {
             completionHandler(nil)

@@ -1,6 +1,6 @@
 import Foundation
 
-struct ScreenshotHistoryItem: Codable, Identifiable, Equatable {
+struct ScreenshotHistoryItem: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let createdAt: Date
     var updatedAt: Date

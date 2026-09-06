@@ -306,7 +306,6 @@ struct JarvisWebPlatformBrowserPage: View {
     var body: some View {
         ZStack {
             JarvisWebPlatformWebView(controller: controller)
-                .equatable()
 
             if case .loading = controller.loadState {
                 JarvisInlineLoadingState()
@@ -346,12 +345,8 @@ struct JarvisWebPlatformBrowserPage: View {
     }
 }
 
-private struct JarvisWebPlatformWebView: NSViewRepresentable, Equatable {
+private struct JarvisWebPlatformWebView: NSViewRepresentable {
     let controller: JarvisWebPlatformController
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.controller === rhs.controller
-    }
 
     func makeNSView(context _: Context) -> JarvisWebPlatformViewContainer {
         let container = controller.webViewContainer
@@ -360,6 +355,9 @@ private struct JarvisWebPlatformWebView: NSViewRepresentable, Equatable {
     }
 
     func updateNSView(_ container: JarvisWebPlatformViewContainer, context _: Context) {
+        // `embed` also synchronizes the fullscreen corner cover. Keep that
+        // synchronization, while making the no-op path inside the container
+        // cheap enough for SwiftUI's frequent representable updates.
         container.embed(controller.webView)
     }
 }

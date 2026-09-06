@@ -1,6 +1,6 @@
 import AppKit
-import Combine
 import Foundation
+import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -71,111 +71,116 @@ private struct ScreenshotSaveRequest {
 }
 
 @MainActor
-final class AppModel: ObservableObject {
-    @Published var selectedSection: AppSection = .conversation
-    @Published var clipboardItems: [ClipboardItem] = []
-    @Published var latestScreenshotData: Data?
-    @Published var screenshotHistory: [ScreenshotHistoryItem] = []
-    @Published var isCapturing = false
-    @Published var statusMessage = "系统就绪"
-    @Published var toastMessage: String?
-    @Published var screenshotShortcut = ScreenshotShortcut.default
-    @Published var screenshotShortcutConflictMessage = ""
-    @Published var clipboardShortcut = ScreenshotShortcut.clipboardDefault
-    @Published var clipboardShortcutConflictMessage = ""
-    @Published var themePreference: JarvisTheme = .system
-    @Published var systemColorScheme: ColorScheme = .light
-    @Published var updateState: JarvisUpdateState = .idle
-    @Published var selectedAIProvider: AIConversationProvider = .deepSeek
-    @Published var selectedEntertainmentPlatform: EntertainmentPlatform = .x
-    @Published var providerEndpoint = AIAPIConfiguration.defaultEndpoint
-    @Published var providerName = ""
-    @Published var providerModel = AIAPIConfiguration.defaultModel
-    @Published var hermesCurrentProvider = ""
-    @Published var hermesCurrentModel = ""
-    @Published var aiAPIKeyConfigured = false
-    @Published var aiAPIKeyMask = ""
-    @Published var aiSettingsLocked = false
-    @Published var aiConnectionTesting = false
-    @Published var availableAIModelOptions: [AIModelOption] = []
-    @Published var aiModelsLoading = false
-    var aiModelsGeneration = 0
-    @Published var hermesStatusMessage = "正在检测 Hermes…"
-    @Published var hermesIsInstalled = false
-    @Published var hermesProfileReady = false
-    @Published var hermesNeedsAIConfiguration = false
-    @Published var hermesIsBusy = false
-    @Published var hermesDeploymentPhase: HermesDeploymentPhase = .idle
-    @Published var hermesDeploymentMessage = ""
-    @Published var hermesDeploymentDetail = ""
-    @Published var hermesDeploymentErrorMessage: String?
-    @Published var hermesUninstallIsBusy = false
-    @Published var hermesUninstallErrorMessage: String?
-    @Published var hermesCLIPath = ""
-    @Published var hermesSyncedModel = ""
-    @Published var hermesBots: [HermesBot] = []
-    @Published var selectedHermesBotID = HermesAdapter.profileName
-    @Published var hermesChatTranscripts: [String: [HermesChatMessage]] = [:]
-    @Published var hermesChatDraft = ""
-    @Published var hermesChatAttachments: [HermesChatAttachment] = []
-    @Published var hermesChatIsSending = false
-    @Published var hermesChatProgress = "JARVIS 正在处理…"
-    @Published var hermesChatProgressSteps: [String] = []
-    @Published var jarvisIdentityName = ""
-    @Published var jarvisAvatarPath = ""
-    @Published var screenCapturePermissionGranted = false
-    @Published var accessibilityPermissionGranted = false
-    @Published var microphonePermissionGranted = false
-    @Published var cameraPermissionGranted = false
-    @Published var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
-    @Published var clipboardCacheDirectoryURL: URL
-    @Published var clipboardCacheMaximumBytes: Int64
-    @Published var clipboardCacheAutoCleanupEnabled = false
-    @Published var clipboardCacheAutoCleanupPeriod: ClipboardCacheCleanupPeriod = .sevenDays
-    @Published var clipboardCacheUsage = ClipboardCacheUsage(
+@Observable
+final class AppModel {
+    var selectedSection: AppSection = .conversation
+    var clipboardItems: [ClipboardItem] = []
+    var latestScreenshotData: Data?
+    var screenshotHistory: [ScreenshotHistoryItem] = []
+    var isCapturing = false
+    var statusMessage = "系统就绪"
+    var toastMessage: String?
+    var screenshotShortcut = ScreenshotShortcut.default
+    var screenshotShortcutConflictMessage = ""
+    var clipboardShortcut = ScreenshotShortcut.clipboardDefault
+    var clipboardShortcutConflictMessage = ""
+    var themePreference: JarvisTheme = .system
+    var systemColorScheme: ColorScheme = .light
+    var updateState: JarvisUpdateState = .idle
+    var selectedAIProvider: AIConversationProvider = .deepSeek
+    var selectedEntertainmentPlatform: EntertainmentPlatform = .x
+    var providerEndpoint = AIAPIConfiguration.defaultEndpoint
+    var providerName = ""
+    var providerModel = AIAPIConfiguration.defaultModel
+    var hermesCurrentProvider = ""
+    var hermesCurrentModel = ""
+    var aiAPIKeyConfigured = false
+    var aiAPIKeyMask = ""
+    var aiSettingsLocked = false
+    var aiConnectionTesting = false
+    var availableAIModelOptions: [AIModelOption] = []
+    var aiModelsLoading = false
+    @ObservationIgnored var aiModelsGeneration = 0
+    var hermesStatusMessage = "正在检测 Hermes…"
+    var hermesIsInstalled = false
+    var hermesProfileReady = false
+    var hermesNeedsAIConfiguration = false
+    var hermesIsBusy = false
+    var hermesDeploymentPhase: HermesDeploymentPhase = .idle
+    var hermesDeploymentMessage = ""
+    var hermesDeploymentDetail = ""
+    var hermesDeploymentErrorMessage: String?
+    var hermesUninstallIsBusy = false
+    var hermesUninstallErrorMessage: String?
+    var hermesCLIPath = ""
+    var hermesSyncedModel = ""
+    var hermesBots: [HermesBot] = []
+    var selectedHermesBotID = HermesAdapter.profileName
+    var hermesChatTranscripts: [String: [HermesChatMessage]] = [:]
+    var hermesChatDraft = ""
+    var hermesChatAttachments: [HermesChatAttachment] = []
+    var hermesChatIsSending = false
+    var hermesChatProgress = "JARVIS 正在处理…"
+    var hermesChatProgressSteps: [String] = []
+    var jarvisIdentityName = ""
+    var jarvisAvatarPath = ""
+    var screenCapturePermissionGranted = false
+    var accessibilityPermissionGranted = false
+    var microphonePermissionGranted = false
+    var cameraPermissionGranted = false
+    var launchAtLoginEnabled = JarvisLaunchAtLoginPreference.defaultValue
+    var clipboardCacheDirectoryURL: URL
+    var clipboardCacheMaximumBytes: Int64
+    var clipboardCacheAutoCleanupEnabled = false
+    var clipboardCacheAutoCleanupPeriod: ClipboardCacheCleanupPeriod = .sevenDays
+    var clipboardCacheUsage = ClipboardCacheUsage(
         usedBytes: 0,
         capacityBytes: ClipboardCacheStore.defaultMaximumBytes,
         fileCount: 0
     )
 
-    let clipboardCacheStore: ClipboardCacheStore
-    let clipboardService: ClipboardService
-    let clipboardStore = ClipboardStore()
-    let clipboardPanelController = ClipboardPanelController()
-    let screenshotCacheStore = ScreenshotCacheStore()
-    let screenshotHistoryStore = ScreenshotHistoryStore()
-    let screenshotController = ScreenshotCaptureController()
-    let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
-    let clipboardMediaPreviewController = ClipboardMediaPreviewController()
-    let updateService = JarvisUpdateService()
-    let aiConversationDownloadManager = AIConversationDownloadManager()
-    let entertainmentDownloadManager = AIConversationDownloadManager()
-    let entertainmentVideoDownloads = EntertainmentVideoDownloadManager()
-    let resumeWorkspace = ResumeWorkspace()
-    let launchAtLoginService = JarvisLaunchAtLoginService.shared
-    let aiAPIConnectionTester: any AIAPIConnectionTesting
-    private var aiConversationControllers: [AIConversationProvider: JarvisWebPlatformController] = [:]
-    private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
-    var hermesDeploymentTask: Task<Void, Never>?
-    var hermesInstallerControl: HermesInstallerControl?
-    var hermesUninstallTask: Task<Void, Never>?
-    var screenshotShortcutManager: ScreenshotShortcutManager?
-    var clipboardShortcutManager: ScreenshotShortcutManager?
-    var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]
-    var windowLayoutController: WindowLayoutController?
-    var systemAppearanceObservation: NSKeyValueObservation?
-    var editingHistoryID: UUID?
-    var clipboardCacheCleanupTimer: Timer?
+    @ObservationIgnored let clipboardCacheStore: ClipboardCacheStore
+    @ObservationIgnored let clipboardService: ClipboardService
+    @ObservationIgnored lazy var clipboardStore = ClipboardStore()
+    @ObservationIgnored lazy var clipboardHistoryWriter = ClipboardHistoryWriter()
+    @ObservationIgnored lazy var startupRepository = JarvisStartupRepository()
+    @ObservationIgnored let clipboardPanelController = ClipboardPanelController()
+    @ObservationIgnored lazy var screenshotCacheStore = ScreenshotCacheStore()
+    @ObservationIgnored lazy var screenshotHistoryStore = ScreenshotHistoryStore()
+    @ObservationIgnored let screenshotController = ScreenshotCaptureController()
+    @ObservationIgnored let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
+    @ObservationIgnored let clipboardMediaPreviewController = ClipboardMediaPreviewController()
+    @ObservationIgnored let updateService = JarvisUpdateService()
+    @ObservationIgnored let aiConversationDownloadManager = AIConversationDownloadManager()
+    @ObservationIgnored let entertainmentDownloadManager = AIConversationDownloadManager()
+    @ObservationIgnored let entertainmentVideoDownloads = EntertainmentVideoDownloadManager()
+    @ObservationIgnored let resumeWorkspace = ResumeWorkspace()
+    @ObservationIgnored let launchAtLoginService = JarvisLaunchAtLoginService.shared
+    @ObservationIgnored let aiAPIConnectionTester: any AIAPIConnectionTesting
+    @ObservationIgnored private var aiConversationControllers: [AIConversationProvider: JarvisWebPlatformController] = [:]
+    @ObservationIgnored private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
+    @ObservationIgnored var hermesDeploymentTask: Task<Void, Never>?
+    @ObservationIgnored var hermesInstallerControl: HermesInstallerControl?
+    @ObservationIgnored var hermesUninstallTask: Task<Void, Never>?
+    @ObservationIgnored var startupTask: Task<Void, Never>?
+    @ObservationIgnored var clipboardSaveTask: Task<Void, Never>?
+    @ObservationIgnored var screenshotShortcutManager: ScreenshotShortcutManager?
+    @ObservationIgnored var clipboardShortcutManager: ScreenshotShortcutManager?
+    @ObservationIgnored var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]
+    @ObservationIgnored var windowLayoutController: WindowLayoutController?
+    @ObservationIgnored var systemAppearanceObservation: NSKeyValueObservation?
+    @ObservationIgnored var editingHistoryID: UUID?
+    @ObservationIgnored var clipboardCacheCleanupTimer: Timer?
 
-    let screenshotShortcutKey = "jarvis.screenshot.shortcut"
-    let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
-    let clipboardShortcutKey = "jarvis.clipboard.shortcut"
-    let themePreferenceKey = "jarvis.theme.preference"
-    let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
-    let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
-    let selectedAIProviderKey = "jarvis.web.conversation.provider"
-    let selectedEntertainmentPlatformKey = "jarvis.entertainment.platform"
-    var toastDismissTask: Task<Void, Never>?
+    @ObservationIgnored let screenshotShortcutKey = "jarvis.screenshot.shortcut"
+    @ObservationIgnored let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
+    @ObservationIgnored let clipboardShortcutKey = "jarvis.clipboard.shortcut"
+    @ObservationIgnored let themePreferenceKey = "jarvis.theme.preference"
+    @ObservationIgnored let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
+    @ObservationIgnored let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
+    @ObservationIgnored let selectedAIProviderKey = "jarvis.web.conversation.provider"
+    @ObservationIgnored let selectedEntertainmentPlatformKey = "jarvis.entertainment.platform"
+    @ObservationIgnored var toastDismissTask: Task<Void, Never>?
 
     func aiConversationController(for provider: AIConversationProvider) -> JarvisWebPlatformController {
         if let controller = aiConversationControllers[provider] {
@@ -210,27 +215,11 @@ final class AppModel: ObservableObject {
         clipboardService = ClipboardService(cacheStore: cacheStore)
         clipboardCacheDirectoryURL = cacheStore.currentDirectoryURL
         clipboardCacheMaximumBytes = cacheStore.currentMaximumBytes
-        clipboardItems = clipboardStore.load()
-        clipboardCacheUsage = cacheStore.usage()
-        migrateClipboardTextCache()
-        clipboardCacheUsage = cacheStore.usage()
-        screenshotHistory = screenshotHistoryStore.load()
-        // Preserve the cache created by older builds as the first history item
-        // when upgrading to the persistent history format.
-        if screenshotHistory.isEmpty,
-           let cachedScreenshot = screenshotCacheStore.load(),
-           let migratedItem = screenshotHistoryStore.add(data: cachedScreenshot)
-        {
-            latestScreenshotData = cachedScreenshot
-            screenshotHistory = [migratedItem]
-        }
-        trimClipboardCacheIfNeeded()
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadAIAPISettings()
         loadJarvisIdentity()
-        refreshHermesStatus()
         loadThemePreference()
         loadLaunchAtLoginPreference()
         refreshSystemColorScheme()
@@ -238,10 +227,6 @@ final class AppModel: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.refreshSystemColorScheme()
             }
-        }
-
-        if latestScreenshotData != nil {
-            statusMessage = "已恢复上次缓存的截图"
         }
 
         screenshotShortcutManager = ScreenshotShortcutManager(binding: screenshotShortcut) { [weak self] in
@@ -276,6 +261,37 @@ final class AppModel: ObservableObject {
         loadSelectedEntertainmentPlatform()
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()
+        startDeferredStartup()
+    }
+
+    private func startDeferredStartup() {
+        startupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            let snapshot = await startupRepository.load()
+            guard !Task.isCancelled else { return }
+            applyStartupSnapshot(snapshot)
+        }
+    }
+
+    private func applyStartupSnapshot(_ snapshot: JarvisStartupSnapshot) {
+        clipboardItems = snapshot.clipboardItems
+        screenshotHistory = snapshot.screenshotHistory
+        latestScreenshotData = snapshot.cachedScreenshot
+        clipboardCacheUsage = snapshot.clipboardCacheUsage
+
+        // Preserve the cache created by older builds as the first history item
+        // when upgrading to the persistent history format.
+        if screenshotHistory.isEmpty,
+           let cachedScreenshot = snapshot.cachedScreenshot,
+           let migratedItem = screenshotHistoryStore.add(data: cachedScreenshot)
+        {
+            screenshotHistory = [migratedItem]
+        }
+
+        trimClipboardCacheIfNeeded()
+        migrateClipboardTextCache()
+        refreshHermesStatus()
 
         clipboardService.start(
             onChange: { [weak self] item in
@@ -283,18 +299,16 @@ final class AppModel: ObservableObject {
                     self?.receiveClipboardItem(item)
                 }
             },
-            prepareCacheSpace: { [weak self] additionalBytes in
-                let trim = {
-                    self?.trimClipboardCacheIfNeeded(forAdditionalBytes: additionalBytes)
-                }
-                if Thread.isMainThread {
-                    trim()
-                } else {
-                    DispatchQueue.main.sync(execute: trim)
-                }
-            }
+            // ClipboardCacheStore enforces the hard byte limit atomically.
+            // History cleanup runs on the main actor after the item arrives,
+            // so the capture worker never synchronously hops into AppModel.
+            prepareCacheSpace: { _ in }
         )
         configureClipboardCacheAutoCleanup()
+        if latestScreenshotData != nil {
+            statusMessage = "已恢复上次缓存的截图"
+        }
+        JarvisPerformance.emit("startup services ready")
     }
 
     func loadLatestScreenshotIfNeeded() -> Data? {
@@ -309,7 +323,10 @@ final class AppModel: ObservableObject {
 
     deinit {
         toastDismissTask?.cancel()
-        clipboardCacheCleanupTimer?.invalidate()
+        startupTask?.cancel()
+        clipboardSaveTask?.cancel()
+        hermesDeploymentTask?.cancel()
+        hermesUninstallTask?.cancel()
     }
 }
 

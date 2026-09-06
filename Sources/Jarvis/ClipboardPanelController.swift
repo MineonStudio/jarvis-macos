@@ -60,7 +60,7 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         panel.delegate = self
         let hostingView = NSHostingView(
             rootView: ClipboardPanelView()
-                .environmentObject(app)
+                .environment(app)
                 .tint(.accentColor)
         )
         hostingView.sizingOptions = []

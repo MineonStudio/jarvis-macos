@@ -18,7 +18,7 @@ struct SettingsCardHeader: View {
 }
 
 struct ShortcutSettingsCard: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @State private var screenshotShortcut = ScreenshotShortcut.default
     @State private var clipboardShortcut = ScreenshotShortcut.clipboardDefault
     @State private var isRecordingScreenshotShortcut = false
@@ -110,7 +110,7 @@ struct ShortcutSettingsCard: View {
 }
 
 struct SettingsView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {

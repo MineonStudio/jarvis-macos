@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HermesSettingsCard: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @State private var showingUninstallOptions = false
     @State private var showingUninstallConfirmation = false
     @State private var pendingUninstallMode: HermesUninstallMode?

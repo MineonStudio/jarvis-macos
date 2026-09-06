@@ -59,28 +59,29 @@ enum JarvisPrivacyPermissionAccess {
 
     static func requestMediaAccess(
         for mediaType: AVMediaType,
-        completion: @escaping (Bool) -> Void
+        completion: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
         switch AVCaptureDevice.authorizationStatus(for: mediaType) {
         case .authorized:
-            completion(true)
+            Task { @MainActor in completion(true) }
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: mediaType) { granted in
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     completion(granted)
                 }
             }
         case .denied, .restricted:
-            completion(false)
+            Task { @MainActor in completion(false) }
         @unknown default:
-            completion(false)
+            Task { @MainActor in completion(false) }
         }
     }
 
     @discardableResult
+    @MainActor
     static func requestAccessibilityAccess() -> Bool {
         let options = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+            "AXTrustedCheckOptionPrompt": true
         ] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
         if !trusted {
@@ -90,6 +91,7 @@ enum JarvisPrivacyPermissionAccess {
     }
 
     @discardableResult
+    @MainActor
     static func openSettings(for permission: JarvisPrivacyPermission) -> Bool {
         let urls = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(permission.settingsAnchor)",

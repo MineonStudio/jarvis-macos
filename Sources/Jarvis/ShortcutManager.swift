@@ -197,7 +197,7 @@ enum ScreenshotShortcutValidation: Equatable {
 
 final class ScreenshotShortcutManager {
     private static let logger = Logger(subsystem: JarvisAppIdentity.bundleIdentifier, category: "shortcuts")
-    private let handler: () -> Void
+    private let handler: @MainActor @Sendable () -> Void
     private let hotKeyID: UInt32
     private var binding: ScreenshotShortcut
     private var hotKey: EventHotKeyRef?
@@ -209,7 +209,11 @@ final class ScreenshotShortcutManager {
     private var localSystemDefinedMonitor: Any?
     private var lastTriggeredAt = Date.distantPast
 
-    init(binding: ScreenshotShortcut, hotKeyID: UInt32 = 1, handler: @escaping () -> Void) {
+    init(
+        binding: ScreenshotShortcut,
+        hotKeyID: UInt32 = 1,
+        handler: @escaping @MainActor @Sendable () -> Void
+    ) {
         self.binding = binding
         self.hotKeyID = hotKeyID
         self.handler = handler
@@ -384,7 +388,7 @@ final class ScreenshotShortcutManager {
         let now = Date()
         guard now.timeIntervalSince(lastTriggeredAt) > 0.2 else { return }
         lastTriggeredAt = now
-        DispatchQueue.main.async { [handler] in
+        Task { @MainActor [handler] in
             handler()
         }
     }
@@ -412,10 +416,19 @@ struct ShortcutRecorderControl: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ShortcutRecorderNSView, context _: Context) {
-        nsView.shortcut = shortcut
-        nsView.isRecording = isRecording
-        nsView.needsDisplay = true
-        if isRecording {
+        let shortcutChanged = nsView.shortcut != shortcut
+        let recordingChanged = nsView.isRecording != isRecording
+
+        if shortcutChanged {
+            nsView.shortcut = shortcut
+        }
+        if recordingChanged {
+            nsView.isRecording = isRecording
+        }
+        if shortcutChanged || recordingChanged {
+            nsView.needsDisplay = true
+        }
+        if recordingChanged, isRecording {
             DispatchQueue.main.async {
                 nsView.window?.makeFirstResponder(nsView)
             }

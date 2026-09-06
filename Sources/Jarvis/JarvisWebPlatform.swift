@@ -124,6 +124,7 @@ enum JarvisWebPlatformUserAgent {
 }
 
 enum JarvisWebPlatformConfiguration {
+    @MainActor
     static func make() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore.default()
@@ -217,7 +218,9 @@ final class JarvisWebPlatformViewContainer: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         clipsToBounds = false
-        addSubview(cornerCover, positioned: .above, relativeTo: webView)
+        if cornerCover.superview !== self {
+            addSubview(cornerCover, positioned: .above, relativeTo: webView)
+        }
         if webView.frame != bounds {
             webView.frame = bounds
         }
@@ -469,7 +472,7 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
         let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? (webView === self.webView)
         switch JarvisWebPlatformNavigationPolicy.decision(
@@ -500,7 +503,7 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
     func webView(
         _: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
     ) {
         if !navigationResponse.canShowMIMEType {
             downloadManager.enqueue(
@@ -627,7 +630,7 @@ extension JarvisWebPlatformController: WKUIDelegate {
         _: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
         initiatedByFrame _: WKFrameInfo,
-        completionHandler: @escaping ([URL]?) -> Void
+        completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
@@ -644,7 +647,7 @@ extension JarvisWebPlatformController: WKUIDelegate {
         requestMediaCapturePermissionFor origin: WKSecurityOrigin,
         initiatedByFrame _: WKFrameInfo,
         type: WKMediaCaptureType,
-        decisionHandler: @escaping (WKPermissionDecision) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void
     ) {
         let protocolName = origin.protocol.lowercased()
         let host = origin.host.lowercased()

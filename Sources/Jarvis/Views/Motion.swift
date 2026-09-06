@@ -163,7 +163,7 @@ extension View {
 }
 
 private struct JarvisSegmentedItemFramePreferenceKey: PreferenceKey {
-    static let defaultValue: [AnyHashable: CGRect] = [:]
+    nonisolated(unsafe) static let defaultValue: [AnyHashable: CGRect] = [:]
 
     static func reduce(
         value: inout [AnyHashable: CGRect],

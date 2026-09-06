@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 
+@MainActor
 enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     case halfLeft
     case halfRight
@@ -9,7 +10,7 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     case lowerLeft
     case lowerRight
 
-    var id: String {
+    nonisolated var id: String {
         rawValue
     }
 
@@ -197,6 +198,7 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+@MainActor
 enum WindowLayoutScreenArea {
     static func visibleFrame(for screen: NSScreen) -> NSRect {
         safeVisibleFrame(
@@ -396,7 +398,7 @@ final class WindowLayoutController {
         )
         guard result == .success, let value else { return nil }
         guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        let window = unsafeBitCast(value, to: AXUIElement.self)
+        let window = unsafeDowncast(value, to: AXUIElement.self)
         return FocusedWindow(application: application, window: window)
     }
 
@@ -418,8 +420,8 @@ final class WindowLayoutController {
         else {
             return nil
         }
-        let positionAXValue = unsafeBitCast(positionValue, to: AXValue.self)
-        let sizeAXValue = unsafeBitCast(sizeValue, to: AXValue.self)
+        let positionAXValue = unsafeDowncast(positionValue, to: AXValue.self)
+        let sizeAXValue = unsafeDowncast(sizeValue, to: AXValue.self)
         guard AXValueGetType(positionAXValue) == .cgPoint,
               AXValueGetType(sizeAXValue) == .cgSize,
               AXValueGetValue(positionAXValue, .cgPoint, &position),

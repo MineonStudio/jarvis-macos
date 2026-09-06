@@ -2,6 +2,7 @@
 import WebKit
 import XCTest
 
+@MainActor
 final class EntertainmentPlatformTests: XCTestCase {
     func testPlatformsExposeOfficialWebAddresses() {
         XCTAssertEqual(

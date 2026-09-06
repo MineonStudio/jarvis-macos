@@ -28,7 +28,7 @@ enum ClipboardOrdering {
     }
 }
 
-enum ClipboardKind: String, Codable, CaseIterable {
+enum ClipboardKind: String, Codable, CaseIterable, Sendable {
     case text
     case image
     case file
@@ -153,7 +153,7 @@ enum JarvisHistoryDateFormatting {
     }
 }
 
-struct ClipboardItem: Codable, Identifiable, Equatable {
+struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let createdAt: Date
     let kind: ClipboardKind
@@ -328,20 +328,22 @@ struct ClipboardItem: Codable, Identifiable, Equatable {
     }
 }
 
-final class ClipboardService {
+/// The timer and pasteboard state are main-thread owned; worker closures only
+/// use the thread-safe cache store and immutable snapshots captured below.
+final class ClipboardService: @unchecked Sendable {
     private let cacheStore: ClipboardCacheStore
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
-    private var onChange: ((ClipboardItem) -> Void)?
-    private var prepareCacheSpace: ((Int64) -> Void)?
+    private var onChange: (@MainActor @Sendable (ClipboardItem) -> Void)?
+    private var prepareCacheSpace: (@Sendable (Int64) -> Void)?
 
     init(cacheStore: ClipboardCacheStore = ClipboardCacheStore()) {
         self.cacheStore = cacheStore
     }
 
     func start(
-        onChange: @escaping (ClipboardItem) -> Void,
-        prepareCacheSpace: @escaping (Int64) -> Void = { _ in }
+        onChange: @escaping @MainActor @Sendable (ClipboardItem) -> Void,
+        prepareCacheSpace: @escaping @Sendable (Int64) -> Void = { _ in }
     ) {
         self.onChange = onChange
         self.prepareCacheSpace = prepareCacheSpace
@@ -385,20 +387,22 @@ final class ClipboardService {
 
         if let text, !text.isEmpty {
             let callback = onChange
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                guard let self else { return }
+            let cacheStore = self.cacheStore
+            let prepareCacheSpace = self.prepareCacheSpace
+            DispatchQueue.global(qos: .utility).async {
                 let data = Data(text.utf8)
-                let path = self.saveData(data, fileExtension: "txt")
+                prepareCacheSpace?(Int64(data.count))
+                let path = cacheStore.storeData(data, fileExtension: "txt")
                 let item = ClipboardItem(
                     createdAt: capturedAt,
                     kind: .text,
                     text: text,
                     textPath: path,
                     fileSize: Int64(data.count),
-                    fingerprintValue: self.digest(data),
+                    fingerprintValue: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                     isStoredCopy: path != nil
                 )
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     callback?(item)
                 }
             }
@@ -410,9 +414,11 @@ final class ClipboardService {
             return
         }
         if let tiffData {
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                guard let self, let imageData = Self.pngData(fromTIFF: tiffData) else { return }
-                self.captureImage(imageData, createdAt: capturedAt)
+            DispatchQueue.global(qos: .utility).async {
+                guard let imageData = Self.pngData(fromTIFF: tiffData) else { return }
+                Task { @MainActor [weak self] in
+                    self?.captureImage(imageData, createdAt: capturedAt)
+                }
             }
         }
     }
@@ -432,20 +438,28 @@ final class ClipboardService {
 
     private func captureFile(_ url: URL, createdAt: Date) {
         let callback = onChange
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self,
-                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .contentModificationDateKey])
+        let cacheStore = self.cacheStore
+        let prepareCacheSpace = self.prepareCacheSpace
+        DispatchQueue.global(qos: .utility).async {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .contentModificationDateKey])
             else {
                 return
             }
 
             let fileSize = Int64(values.fileSize ?? 0)
             let contentType = values.contentType
+            let modificationTimestamp = values.contentModificationDate?.timeIntervalSince1970 ?? 0
             let kind = Self.kind(for: url, contentType: contentType)
-            let storedPath = storeFile(url, fileSize: fileSize)
+            let storedPath: String?
+            if fileSize <= ClipboardLimits.maximumStoredFileSize {
+                prepareCacheSpace?(fileSize)
+                storedPath = cacheStore.storeFile(url, fileSize: fileSize)
+            } else {
+                storedPath = nil
+            }
             let path = storedPath ?? url.path
-            let finishCapture: (String?) -> Void = { thumbnailPath in
-                let fingerprint = "\(url.path)|\(fileSize)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+                let finishCapture: @Sendable (String?) -> Void = { thumbnailPath in
+                let fingerprint = "\(url.path)|\(fileSize)|\(modificationTimestamp)"
                 let item = ClipboardItem(
                     createdAt: createdAt,
                     kind: kind,
@@ -457,7 +471,7 @@ final class ClipboardService {
                     fingerprintValue: fingerprint,
                     isStoredCopy: storedPath != nil
                 )
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     callback?(item)
                 }
             }
@@ -467,16 +481,18 @@ final class ClipboardService {
                 return
             }
 
-            ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: path)) { [weak self] image in
-                guard let self,
-                      let image,
+            let cacheStore = self.cacheStore
+            let prepareCacheSpace = self.prepareCacheSpace
+            ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: path)) { image in
+                guard let image,
                       let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
                 else {
                     finishCapture(nil)
                     return
                 }
                 DispatchQueue.global(qos: .utility).async {
-                    finishCapture(self.saveData(data, fileExtension: "png"))
+                    prepareCacheSpace?(Int64(data.count))
+                    finishCapture(cacheStore.storeData(data, fileExtension: "png"))
                 }
             }
         }
@@ -484,9 +500,11 @@ final class ClipboardService {
 
     private func captureImage(_ data: Data, createdAt: Date) {
         let callback = onChange
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-            let path = self.saveData(data, fileExtension: "png")
+        let cacheStore = self.cacheStore
+        let prepareCacheSpace = self.prepareCacheSpace
+        DispatchQueue.global(qos: .utility).async {
+            prepareCacheSpace?(Int64(data.count))
+            let path = cacheStore.storeData(data, fileExtension: "png")
             let item = ClipboardItem(
                 createdAt: createdAt,
                 kind: .image,
@@ -494,10 +512,10 @@ final class ClipboardService {
                 fileName: "图片.png",
                 fileSize: Int64(data.count),
                 fileUTI: UTType.png.identifier,
-                fingerprintValue: self.digest(data),
+                fingerprintValue: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                 isStoredCopy: path != nil
             )
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 callback?(item)
             }
         }

@@ -79,7 +79,7 @@ enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
     }
 }
 
-struct ClipboardCacheUsage: Equatable {
+struct ClipboardCacheUsage: Equatable, Sendable {
     let usedBytes: Int64
     let capacityBytes: Int64
     let fileCount: Int

@@ -15,6 +15,7 @@ final class ScreenshotService {
         return CGRequestScreenCaptureAccess()
     }
 
+    @MainActor
     func openScreenCaptureSettings() {
         JarvisPrivacyPermissionAccess.openSettings(for: .screenCapture)
     }
@@ -22,6 +23,7 @@ final class ScreenshotService {
     /// Freezes every connected display before Jarvis presents its own overlay.
     /// Window picking then works against these pixels, so no system content
     /// sharing picker is needed for the normal screenshot flow.
+    @MainActor
     func captureFullScreens(screenFrames: [CGRect]) async throws -> [ScreenshotCapture] {
         guard !screenFrames.isEmpty else {
             throw ScreenshotError.noDisplays
@@ -30,7 +32,7 @@ final class ScreenshotService {
         return try await withThrowingTaskGroup(of: (Int, ScreenshotCapture).self) { group in
             for (index, screenFrame) in screenFrames.enumerated() {
                 group.addTask {
-                    try await (index, self.capture(screenRect: screenFrame))
+                    try await (index, Self.capture(screenRect: screenFrame))
                 }
             }
 
@@ -46,7 +48,7 @@ final class ScreenshotService {
     /// window, including Jarvis's own main window and pinned screenshots.
     /// The direct rectangle API can omit the caller's own surfaces, so use an
     /// explicit display filter with no excluded applications.
-    func capture(screenRect: CGRect) async throws -> ScreenshotCapture {
+    private static func capture(screenRect: CGRect) async throws -> ScreenshotCapture {
         guard !screenRect.isEmpty else {
             throw ScreenshotError.captureFailed("无法识别要截图的显示器")
         }
@@ -71,7 +73,7 @@ final class ScreenshotService {
         }
     }
 
-    private func captureDisplayFilter(for screenRect: CGRect) async throws -> CGImage {
+    private static func captureDisplayFilter(for screenRect: CGRect) async throws -> CGImage {
         let shareableContent = try await SCShareableContent.current
         let displayID = displayID(for: screenRect)
         guard let display = shareableContent.displays.first(where: { display in
@@ -100,7 +102,7 @@ final class ScreenshotService {
         )
     }
 
-    private func displayID(for screenFrame: CGRect) -> CGDirectDisplayID? {
+    private static func displayID(for screenFrame: CGRect) -> CGDirectDisplayID? {
         let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
         guard let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }),
               let number = screen.deviceDescription[screenNumberKey] as? NSNumber

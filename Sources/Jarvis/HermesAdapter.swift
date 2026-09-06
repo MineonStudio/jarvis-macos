@@ -155,7 +155,7 @@ struct HermesProcessRunner {
     }
 }
 
-struct HermesAdapter {
+struct HermesAdapter: @unchecked Sendable {
     static let profileName = "jarvis"
     static let installPage = "https://github.com/NousResearch/hermes-agent"
 
@@ -528,14 +528,11 @@ struct HermesAdapter {
             }
         }
 
-        let stdoutLock = NSLock()
-        var stdoutData = Data()
+        let stdoutBuffer = HermesOutputBuffer()
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
-            stdoutLock.lock()
-            stdoutData.append(chunk)
-            stdoutLock.unlock()
+            stdoutBuffer.append(chunk)
         }
         stderr.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
@@ -559,10 +556,8 @@ struct HermesAdapter {
         stderr.fileHandleForReading.readabilityHandler = nil
         pollAgentLogs(logHandles, onProgress: onProgress)
 
-        stdoutLock.lock()
-        stdoutData.append(stdout.fileHandleForReading.readDataToEndOfFile())
-        let output = String(data: stdoutData, encoding: .utf8) ?? ""
-        stdoutLock.unlock()
+        stdoutBuffer.append(stdout.fileHandleForReading.readDataToEndOfFile())
+        let output = String(data: stdoutBuffer.data, encoding: .utf8) ?? ""
         let errorOutput = String(
             data: stderr.fileHandleForReading.readDataToEndOfFile(),
             encoding: .utf8
@@ -731,5 +726,22 @@ struct HermesAdapter {
         } catch {
             throw HermesError.writeFailed(error.localizedDescription)
         }
+    }
+}
+
+private final class HermesOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Data()
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        value.append(chunk)
+        lock.unlock()
     }
 }

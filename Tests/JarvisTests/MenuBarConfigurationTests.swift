@@ -2,14 +2,15 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
+@MainActor
 final class MenuBarConfigurationTests: XCTestCase {
     func testApplicationUsesRegularPolicySoTheDockIconRemainsVisible() {
         XCTAssertEqual(JarvisApplicationPresentation.activationPolicy, .regular)
     }
 
-    func testConfiguredMenuItemsHaveExplicitControllerTargets() async {
-        let controller = await JarvisMenuBarController()
-        let menu = await controller.configuredMenuForTesting()
+    func testConfiguredMenuItemsHaveExplicitControllerTargets() {
+        let controller = JarvisMenuBarController()
+        let menu = controller.configuredMenuForTesting()
         let actionableItems = menu.items.filter { !$0.isSeparatorItem }
 
         XCTAssertEqual(actionableItems.count, 4 + WindowLayout.allCases.count)
@@ -20,9 +21,9 @@ final class MenuBarConfigurationTests: XCTestCase {
         }
     }
 
-    func testWindowLayoutMenuItemsExposeTheirShortcuts() async throws {
-        let controller = await JarvisMenuBarController()
-        let menu = await controller.configuredMenuForTesting()
+    func testWindowLayoutMenuItemsExposeTheirShortcuts() throws {
+        let controller = JarvisMenuBarController()
+        let menu = controller.configuredMenuForTesting()
         let layoutTitles = Set(WindowLayout.allCases.map(\.title))
         let layoutItems = menu.items.filter { layoutTitles.contains($0.title) }
 
@@ -40,8 +41,8 @@ final class MenuBarConfigurationTests: XCTestCase {
         }
     }
 
-    func testStatusItemUsesStableNamespacedAutosaveName() async {
-        let autosaveName = await JarvisMenuBarController.menuBarAutosaveName
+    func testStatusItemUsesStableNamespacedAutosaveName() {
+        let autosaveName = JarvisMenuBarController.menuBarAutosaveName
 
         XCTAssertEqual(
             autosaveName,
@@ -49,7 +50,6 @@ final class MenuBarConfigurationTests: XCTestCase {
         )
     }
 
-    @MainActor
     func testMenuBarUsesConfiguredIconResourceWithAccessibleTitle() {
         XCTAssertEqual(JarvisMenuBarController.menuBarIconResourceName, "JarvisMenuBarIcon")
         XCTAssertEqual(JarvisMenuBarController.menuBarIconFileExtension, "png")

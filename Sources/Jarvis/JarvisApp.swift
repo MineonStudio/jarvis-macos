@@ -10,13 +10,24 @@ enum JarvisApplicationPresentation {
 struct JarvisApp: App {
     @NSApplicationDelegateAdaptor(JarvisApplicationDelegate.self) private var applicationDelegate
     private let menuBarController = JarvisMenuBarController.shared
-    @StateObject private var appModel: AppModel
+    @State private var appModel: AppModel
+    private let mainThreadHealthMonitor = MainThreadHealthMonitor()
+    private let memoryPressureMonitor: JarvisMemoryPressureMonitor
 
     init() {
         NSApplication.shared.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
 
         let appModel = AppModel()
-        _appModel = StateObject(wrappedValue: appModel)
+        _appModel = State(initialValue: appModel)
+        memoryPressureMonitor = JarvisMemoryPressureMonitor {
+            Task { @MainActor in
+                JarvisThumbnailCache.purge()
+                ClipboardItemPreview.purgeVideoThumbnailCache()
+                WallpaperImageLoader.purgeCache()
+            }
+        }
+        mainThreadHealthMonitor.start()
+        JarvisPerformance.emit("application initialized")
         // Bind before the status item is installed. Menu actions must remain
         // usable even when the main window has not appeared yet.
         menuBarController.bind(app: appModel)
@@ -36,14 +47,14 @@ struct JarvisApp: App {
 }
 
 private struct JarvisRootView: View {
-    @ObservedObject var appModel: AppModel
+    let appModel: AppModel
     @Environment(\.openWindow) private var openWindow
 
     @StateObject private var mainWindowController = JarvisMainWindowController()
 
     var body: some View {
         ContentView()
-            .environmentObject(appModel)
+            .environment(appModel)
             .environmentObject(appModel.resumeWorkspace)
             .tint(.accentColor)
             .jarvisTheme(
@@ -60,6 +71,7 @@ private struct JarvisRootView: View {
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .toolbar(removing: .title)
             .background(JarvisMainWindowAccessor(controller: mainWindowController))
+            .background(JarvisFirstFrameProbe().frame(width: 1, height: 1))
             .onAppear {
                 JarvisMenuBarController.shared.bind {
                     openWindow(id: JarvisAppIdentity.mainWindowSceneID)

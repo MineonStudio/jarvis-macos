@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 enum PreviewWindowSupport {
     static let titlebarHeight: CGFloat = 28
     static let screenInset: CGFloat = 80
@@ -93,6 +94,7 @@ enum PreviewWindowSupport {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     }
 
+    @MainActor
     static func configureDimmingPanel(
         _ panel: NSPanel,
         screenFrame: CGRect,

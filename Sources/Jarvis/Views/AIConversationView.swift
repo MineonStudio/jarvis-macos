@@ -81,7 +81,7 @@ enum AIConversationProvider: String, CaseIterable, Hashable, Identifiable {
 }
 
 struct AIConversationView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @State private var showsDownloadManager = false
 
     var body: some View {

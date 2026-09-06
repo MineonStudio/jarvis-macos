@@ -399,16 +399,11 @@ enum YTDLPProcessRunner {
         process.standardOutput = output
         process.standardError = output
 
-        var collected = Data()
-        var pending = Data()
-        let lock = NSLock()
+        let outputBuffer = YTDLPOutputBuffer()
         output.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
-            lock.lock()
-            collected.append(chunk)
-            emitLines(from: chunk, pending: &pending, onLine: onLine)
-            lock.unlock()
+            outputBuffer.append(chunk, onLine: onLine)
             if isCancelled?() == true, process.isRunning {
                 process.terminate()
             }
@@ -425,9 +420,7 @@ enum YTDLPProcessRunner {
         output.fileHandleForReading.readabilityHandler = nil
         let remainder = output.fileHandleForReading.readDataToEndOfFile()
         if !remainder.isEmpty {
-            lock.lock()
-            collected.append(remainder)
-            lock.unlock()
+            outputBuffer.append(remainder, onLine: nil)
         }
         process.waitUntilExit()
 
@@ -435,9 +428,9 @@ enum YTDLPProcessRunner {
             throw CancellationError()
         }
         if process.terminationStatus != 0 {
-            throw EntertainmentVideoDownloadError.failed(errorMessage(from: collected))
+            throw EntertainmentVideoDownloadError.failed(errorMessage(from: outputBuffer.data))
         }
-        return collected
+        return outputBuffer.data
     }
 
     static func errorMessage(from output: Data) -> String {
@@ -452,7 +445,7 @@ enum YTDLPProcessRunner {
         return lines.last ?? "yt-dlp 下载失败"
     }
 
-    private static func emitLines(
+    fileprivate static func emitLines(
         from chunk: Data,
         pending: inout Data,
         onLine: (@Sendable (String) -> Void)?
@@ -474,6 +467,25 @@ enum YTDLPProcessRunner {
                 onLine?(text)
             }
         }
+    }
+}
+
+private final class YTDLPOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var collected = Data()
+    private var pending = Data()
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return collected
+    }
+
+    func append(_ chunk: Data, onLine: (@Sendable (String) -> Void)?) {
+        lock.lock()
+        collected.append(chunk)
+        YTDLPProcessRunner.emitLines(from: chunk, pending: &pending, onLine: onLine)
+        lock.unlock()
     }
 }
 

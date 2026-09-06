@@ -62,12 +62,13 @@ extension AppModel {
         hermesInstallerControl = control
 
         hermesDeploymentTask = Task.detached { [weak self, control] in
+            let appModel = self
             do {
                 let adapter = HermesAdapter.live()
                 if adapter.inspect().cliPath == nil {
                     try await HermesInstaller().install(control: control) { line in
-                        Task { @MainActor [weak self] in
-                            self?.hermesDeploymentDetail = line
+                        Task { @MainActor in
+                            appModel?.hermesDeploymentDetail = line
                         }
                     }
                 }
@@ -78,8 +79,8 @@ extension AppModel {
                     message: "正在准备 Hermes 安全组件…"
                 )
                 try HermesTirithInstaller().install(control: control) { line in
-                    Task { @MainActor [weak self] in
-                        self?.hermesDeploymentDetail = line
+                    Task { @MainActor in
+                        appModel?.hermesDeploymentDetail = line
                     }
                 }
 

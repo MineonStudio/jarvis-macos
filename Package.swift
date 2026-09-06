@@ -13,13 +13,13 @@ let package = Package(
         .executableTarget(
             name: "Jarvis",
             path: "Sources/Jarvis",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "JarvisTests",
             dependencies: ["Jarvis"],
             path: "Tests/JarvisTests",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
 )

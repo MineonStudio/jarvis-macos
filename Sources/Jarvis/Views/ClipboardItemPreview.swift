@@ -2,7 +2,16 @@ import AppKit
 import SwiftUI
 
 struct ClipboardItemPreview: View {
-    private static let videoThumbnailCache = NSCache<NSString, NSImage>()
+    private static let videoThumbnailCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 128
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
+
+    static func purgeVideoThumbnailCache() {
+        videoThumbnailCache.removeAllObjects()
+    }
 
     let item: ClipboardItem
     @State private var image: NSImage?
@@ -57,7 +66,11 @@ struct ClipboardItemPreview: View {
                        maxPixelSize: 640
                    )
                 {
-                    Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
+                    Self.videoThumbnailCache.setObject(
+                        thumbnail,
+                        forKey: cacheKey,
+                        cost: max(1, Int(thumbnail.size.width * thumbnail.size.height))
+                    )
                     videoThumbnail = thumbnail
                     return
                 }
@@ -68,7 +81,11 @@ struct ClipboardItemPreview: View {
                         cgImage: image,
                         size: NSSize(width: image.width, height: image.height)
                     )
-                    Self.videoThumbnailCache.setObject(thumbnail, forKey: cacheKey)
+                    Self.videoThumbnailCache.setObject(
+                        thumbnail,
+                        forKey: cacheKey,
+                        cost: max(1, image.width * image.height)
+                    )
                     videoThumbnail = thumbnail
                 }
             case .file, .text:

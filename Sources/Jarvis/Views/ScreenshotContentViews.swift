@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ScreenshotView: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @State private var selectedTimeFilter: ScreenshotTimeFilter = .threeDays
     @State private var selectedItemID: UUID?
 
@@ -48,7 +48,7 @@ struct ScreenshotView: View {
 }
 
 struct ScreenshotHistoryActionToolbar: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     let selectedItem: ScreenshotHistoryItem?
     let onClearSelection: () -> Void
     @State private var showingDeleteConfirmation = false
@@ -200,7 +200,7 @@ enum HistoryGridMetrics {
 }
 
 struct ScreenshotHistorySection: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var currentPage = 1
     @Binding var selectedTimeFilter: ScreenshotTimeFilter
@@ -337,7 +337,7 @@ struct PaginationControl: View {
 }
 
 struct ScreenshotHistoryCard: View {
-    @EnvironmentObject private var app: AppModel
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ScreenshotHistoryItem
     let isSelected: Bool

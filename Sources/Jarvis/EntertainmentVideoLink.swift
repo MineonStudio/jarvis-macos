@@ -28,26 +28,48 @@ enum EntertainmentVideoLink {
         return nil
     }
 
+    static func preferredURL(initialURL: URL?, clipboardText: String?) -> URL? {
+        if let clipboardText,
+           let clipboardURL = match(clipboardText)?.url
+        {
+            return clipboardURL
+        }
+        if let initialURL, platform(for: initialURL) != nil {
+            return initialURL
+        }
+        return nil
+    }
+
     static func urlCandidates(in raw: String) -> [URL] {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
         var seen: Set<String> = []
         var urls: [URL] = []
-        let tokens = trimmed.components(separatedBy: .whitespacesAndNewlines)
-        let combined = [trimmed] + tokens
-        for token in combined {
-            let cleaned = token.trimmingCharacters(in: CharacterSet(charactersIn: "<>\"'"))
-            guard let url = URL(string: cleaned),
+        func append(_ url: URL?) {
+            guard let url,
                   let scheme = url.scheme?.lowercased(),
                   scheme == "http" || scheme == "https",
                   url.host != nil
             else {
-                continue
+                return
             }
             let key = url.absoluteString
-            guard seen.insert(key).inserted else { continue }
+            guard seen.insert(key).inserted else { return }
             urls.append(url)
+        }
+
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+            let range = NSRange(trimmed.startIndex ..< trimmed.endIndex, in: trimmed)
+            detector.enumerateMatches(in: trimmed, options: [], range: range) { result, _, _ in
+                append(result?.url)
+            }
+        }
+
+        // Keep a token fallback for URL forms that NSDataDetector does not recognize.
+        for token in trimmed.components(separatedBy: .whitespacesAndNewlines) {
+            let cleaned = token.trimmingCharacters(in: CharacterSet(charactersIn: "<>\"'"))
+            append(URL(string: cleaned))
         }
         return urls
     }

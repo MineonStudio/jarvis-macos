@@ -104,6 +104,12 @@ struct EntertainmentVideoDownloadView: View {
                 Task { await analyze() }
             }
         }
+        .onChange(of: initialURL) { _, _ in
+            prefillURL()
+            if EntertainmentVideoLink.match(urlText) != nil {
+                Task { await analyze() }
+            }
+        }
     }
 
     private func qualityBinding(for probe: EntertainmentVideoProbe) -> Binding<String> {
@@ -114,20 +120,29 @@ struct EntertainmentVideoDownloadView: View {
     }
 
     private func prefillURL() {
-        if let initialURL, EntertainmentVideoLink.platform(for: initialURL) != nil {
-            urlText = initialURL.absoluteString
-            return
-        }
-        if let clipboard = NSPasteboard.general.string(forType: .string),
-           EntertainmentVideoLink.match(clipboard) != nil
-        {
-            urlText = clipboard.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let sourceURL = EntertainmentVideoLink.preferredURL(
+            initialURL: initialURL,
+            clipboardText: NSPasteboard.general.string(forType: .string)
+        ) {
+            applyURLText(sourceURL.absoluteString)
         }
     }
 
     private func pasteFromClipboard() {
         guard let clipboard = NSPasteboard.general.string(forType: .string) else { return }
-        urlText = clipboard.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let matchedURL = EntertainmentVideoLink.match(clipboard)?.url {
+            applyURLText(matchedURL.absoluteString)
+        } else {
+            applyURLText(clipboard.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    private func applyURLText(_ text: String) {
+        guard urlText != text else { return }
+        urlText = text
+        probe = nil
+        selectedQualityID = nil
+        analyzeError = nil
     }
 
     private func analyze() async {

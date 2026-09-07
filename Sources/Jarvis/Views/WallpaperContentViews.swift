@@ -29,11 +29,8 @@ struct WallpaperView: View {
     @State private var libraryMode: WallpaperLibraryMode = .online
     @State private var deleteItem: WallpaperItem?
     @State private var tagInput = ""
-    @State private var wallpaperScrollOffset: CGFloat = 0
-
-    private var shouldShowScrollToTop: Bool {
-        wallpaperScrollOffset >= WallpaperScrollBehavior.backToTopThreshold
-    }
+    @State private var shouldShowScrollToTop = false
+    @State private var isLoadMoreScheduled = false
 
     var body: some View {
         JarvisContentArea(
@@ -91,13 +88,15 @@ struct WallpaperView: View {
                             .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                         }
                         .coordinateSpace(name: WallpaperScrollSpace.name)
-                        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.visibleRect.minY
-                        } action: { _, offset in
-                            wallpaperScrollOffset = offset
+                        .onScrollGeometryChange(for: Bool.self) { geometry in
+                            geometry.visibleRect.minY >= WallpaperScrollBehavior.backToTopThreshold
+                        } action: { _, shouldShow in
+                            shouldShowScrollToTop = shouldShow
                         }
                         .onPreferenceChange(WallpaperLoadMoreTriggerPreferenceKey.self) { triggerY in
                             guard model.hasNextPage,
+                                  !model.isLoadingMore,
+                                  !isLoadMoreScheduled,
                                   triggerY.isFinite,
                                   triggerY <= viewport.size.height + 160
                             else {
@@ -124,13 +123,8 @@ struct WallpaperView: View {
                                 .help("返回壁纸列表顶部")
                                 .padding(.trailing, 18)
                                 .padding(.bottom, 18)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
                         }
-                        .animation(
-                            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-                            value: shouldShowScrollToTop
-                        )
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -166,10 +160,6 @@ struct WallpaperView: View {
         .onDisappear {
             previewController.dismiss()
         }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: model.isLoading
-        )
     }
 
     @ViewBuilder
@@ -263,9 +253,16 @@ struct WallpaperView: View {
     }
 
     private func loadMore() {
-        guard libraryMode == .online else { return }
+        guard libraryMode == .online,
+              !model.isLoadingMore,
+              !isLoadMoreScheduled
+        else {
+            return
+        }
+        isLoadMoreScheduled = true
         Task {
             await model.loadMore()
+            isLoadMoreScheduled = false
         }
     }
 
@@ -509,10 +506,7 @@ private struct WallpaperFilterBar: View {
                 .help("清除标签")
             }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 4)
-        .frame(height: JarvisToolbarMetrics.controlSize)
-        .jarvisGlass(in: Capsule(), interactive: false)
+        .jarvisCapsuleInputField()
         .help("按标签搜索 Wallhaven")
     }
 
@@ -549,7 +543,6 @@ private struct WallpaperGrid: View {
     let onToggleFavorite: (WallpaperItem) -> Void
     let showsDelete: Bool
     let onDelete: (WallpaperItem) -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         LazyVGrid(
@@ -576,14 +569,9 @@ private struct WallpaperGrid: View {
                     showsDelete: showsDelete,
                     onDelete: { onDelete(item) }
                 )
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: items.map(\.id)
-        )
     }
 }
 
@@ -603,13 +591,6 @@ private struct WallpaperCard: View {
     private var previewContent: some View {
         ZStack {
             WallpaperThumbnail(url: imageURL)
-
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.66)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            .allowsHitTesting(false)
         }
         .frame(
             width: HistoryGridMetrics.clipboardCardWidth,
@@ -623,10 +604,14 @@ private struct WallpaperCard: View {
             )
         )
         .contentShape(Rectangle())
-        .jarvisGlass(
-            cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-            interactive: false
-        )
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+            .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
+            .allowsHitTesting(false)
+        }
         .overlay {
             if isPreviewLoading {
                 ZStack {
@@ -648,69 +633,91 @@ private struct WallpaperCard: View {
             }
         }
         .overlay(alignment: .bottom) {
-            HStack(spacing: 6) {
-                Button(action: onToggleFavorite) {
-                    Image(systemName: item.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
-                        .foregroundStyle(item.isFavorite ? Color.pink : Color.white)
-                }
-                .buttonStyle(JarvisToolbarIconButtonStyle())
-                .jarvisIconGlass(
-                    tint: item.isFavorite ? .pink : .white,
-                    in: Circle(),
-                    interactive: true
-                )
-                .accessibilityLabel(item.isFavorite ? "取消收藏" : "收藏")
-                .help(item.isFavorite ? "取消收藏" : "收藏")
-
-                if showsDelete {
-                    Button(role: .destructive, action: onDelete) {
-                        Image(systemName: "trash")
+            if isHovered {
+                HStack(spacing: 6) {
+                    Button(action: onToggleFavorite) {
+                        Image(systemName: item.isFavorite ? "heart.fill" : "heart")
                             .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
-                            .foregroundStyle(Color.red)
+                            .foregroundStyle(item.isFavorite ? Color.pink : Color.white)
                     }
                     .buttonStyle(JarvisToolbarIconButtonStyle())
-                    .jarvisIconGlass(tint: .red, in: Circle(), interactive: true)
-                    .accessibilityLabel("删除")
-                    .help("从已下载壁纸中删除")
+                    .background(
+                        Color.black.opacity(0.46),
+                        in: Circle()
+                    )
+                    .accessibilityLabel(item.isFavorite ? "取消收藏" : "收藏")
+                    .help(item.isFavorite ? "取消收藏" : "收藏")
+
+                    if showsDelete {
+                        Button(role: .destructive, action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
+                                .foregroundStyle(Color.red)
+                        }
+                        .buttonStyle(JarvisToolbarIconButtonStyle())
+                        .background(
+                            Color.black.opacity(0.46),
+                            in: Circle()
+                        )
+                        .accessibilityLabel("删除")
+                        .help("从已下载壁纸中删除")
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button(
+                        isApplied
+                            ? "当前壁纸"
+                            : (isDownloading ? "正在设置…" : "设为壁纸"),
+                        action: onSet
+                    )
+                    .buttonStyle(WallpaperCardPrimaryButtonStyle())
+                    .disabled(isDownloading || isApplied)
+                    .accessibilityLabel(
+                        isApplied
+                            ? "当前壁纸"
+                            : (isDownloading ? "正在设置壁纸" : "设为壁纸")
+                    )
                 }
-
-                Spacer(minLength: 0)
-
-                Button(
-                    isApplied
-                        ? "当前壁纸"
-                        : (isDownloading ? "正在设置…" : "设为壁纸"),
-                    action: onSet
-                )
-                .buttonStyle(JarvisPrimaryButtonStyle())
-                .disabled(isDownloading || isApplied)
-                .accessibilityLabel(
-                    isApplied
-                        ? "当前壁纸"
-                        : (isDownloading ? "正在设置壁纸" : "设为壁纸")
-                )
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.identity)
             }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.78)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .allowsHitTesting(false)
-            )
-            .opacity(isHovered ? 1 : 0)
-            .allowsHitTesting(isHovered)
-            .animation(.easeInOut(duration: 0.16), value: isHovered)
         }
     }
 
     var body: some View {
         previewContent
             .onTapGesture(count: 2, perform: onDoubleClick)
-            .onHover { isHovered = $0 }
+            .onHover { hovering in
+                guard hovering != isHovered else { return }
+                var transaction = Transaction()
+                transaction.animation = nil
+                withTransaction(transaction) {
+                    isHovered = hovering
+                }
+            }
+    }
+}
+
+private struct WallpaperCardPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(JarvisTypography.controlEmphasis)
+            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 8)
+            .background(
+                isEnabled ? Color.accentColor : Color.primary.opacity(0.16),
+                in: RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(isEnabled ? 0.18 : 0.08), lineWidth: 0.75)
+            }
+            .opacity(configuration.isPressed ? 0.78 : (isEnabled ? 1 : 0.78))
     }
 }
 
@@ -732,7 +739,7 @@ private struct WallpaperThumbnail: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .task(id: url) {
+        .task(id: url, priority: .utility) {
             image = await WallpaperImageLoader.load(url: url)
         }
     }

@@ -457,12 +457,12 @@ struct HermesConversationView: View {
                     ),
                     axis: .vertical
                 )
-                    .textFieldStyle(.plain)
-                    .font(JarvisTypography.body)
-                    .lineLimit(1 ... 5)
-                    .frame(minHeight: 28, alignment: .center)
-                    .focused($inputFocused)
-                    .onSubmit(app.sendHermesChatMessage)
+                .textFieldStyle(.plain)
+                .font(JarvisTypography.body)
+                .lineLimit(1 ... 5)
+                .frame(minHeight: 28, alignment: .center)
+                .focused($inputFocused)
+                .onSubmit(app.sendHermesChatMessage)
 
                 Button {
                     app.sendHermesChatMessage()
@@ -476,15 +476,11 @@ struct HermesConversationView: View {
                 .buttonStyle(.plain)
                 .disabled(app.hermesChatIsSending || !canSend)
             }
+            .jarvisCapsuleInputField()
         }
         .padding(.leading, 6)
         .padding(.trailing, 6)
         .padding(.vertical, 6)
-        .background(.regularMaterial, in: composerShape)
-        .overlay {
-            composerShape
-                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.75)
-        }
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
         .padding(.top, 6)
@@ -493,10 +489,6 @@ struct HermesConversationView: View {
     private var canSend: Bool {
         !app.hermesChatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !app.hermesChatAttachments.isEmpty
-    }
-
-    private var composerShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: app.hermesChatAttachments.isEmpty ? 22 : 18, style: .continuous)
     }
 
     private var attachmentMenu: some View {

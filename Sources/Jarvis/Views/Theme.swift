@@ -105,6 +105,17 @@ enum JarvisToolbarMetrics {
     static let iconSize: CGFloat = 13
 }
 
+/// Shared capsule surface for compact text-entry controls.
+struct JarvisCapsuleInputFieldModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .frame(minHeight: JarvisToolbarMetrics.controlSize)
+            .jarvisGlass(in: Capsule(), interactive: false)
+    }
+}
+
 /// Shared content-area shell for every module in the main window.
 ///
 /// The shell owns the window toolbar and the body inset. Modules provide only
@@ -285,6 +296,10 @@ struct JarvisFloatingPanelModifier: ViewModifier {
 extension View {
     func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {
         modifier(JarvisThemeModifier(theme: theme, systemColorScheme: systemColorScheme))
+    }
+
+    func jarvisCapsuleInputField() -> some View {
+        modifier(JarvisCapsuleInputFieldModifier())
     }
 
     func jarvisGlass(

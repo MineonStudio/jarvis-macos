@@ -458,7 +458,7 @@ final class ClipboardService: @unchecked Sendable {
                 storedPath = nil
             }
             let path = storedPath ?? url.path
-                let finishCapture: @Sendable (String?) -> Void = { thumbnailPath in
+            let finishCapture: @Sendable (String?) -> Void = { thumbnailPath in
                 let fingerprint = "\(url.path)|\(fileSize)|\(modificationTimestamp)"
                 let item = ClipboardItem(
                     createdAt: createdAt,

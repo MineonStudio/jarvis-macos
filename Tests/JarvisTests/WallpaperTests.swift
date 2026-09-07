@@ -100,6 +100,7 @@ final class WallpaperTests: XCTestCase {
         let query = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name, $0.value) })
 
         XCTAssertFalse(query.keys.contains("categories"))
+        XCTAssertEqual(query["purity"], "110")
         XCTAssertEqual(query["atleast"], "3440x1440")
         XCTAssertEqual(query["ratios"], "21x9")
         XCTAssertEqual(query["sorting"], "date_added")

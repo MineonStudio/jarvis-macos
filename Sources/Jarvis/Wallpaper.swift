@@ -350,7 +350,7 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Senda
     static func searchURL(page: Int, filters: WallpaperSearchFilters) throws -> URL {
         var components = URLComponents(string: "https://wallhaven.cc/api/v1/search")
         components?.queryItems = [
-            URLQueryItem(name: "purity", value: "100"),
+            URLQueryItem(name: "purity", value: "110"),
             URLQueryItem(name: "sorting", value: filters.sorting.apiValue),
             URLQueryItem(name: "order", value: "desc"),
             URLQueryItem(name: "page", value: "\(max(1, page))")
@@ -1411,8 +1411,8 @@ enum WallpaperSystemSettings {
 
 enum WallpaperImageLoader {
     private static let imageCache = JarvisThreadSafeImageCache(
-        countLimit: 64,
-        totalCostLimit: 128 * 1024 * 1024
+        countLimit: 48,
+        totalCostLimit: 64 * 1024 * 1024
     )
 
     static func purgeCache() {
@@ -1443,7 +1443,7 @@ enum WallpaperImageLoader {
         return image
     }
 
-    static func load(url: URL, maxPixelSize: Int = 900) async -> NSImage? {
+    static func load(url: URL, maxPixelSize: Int = 512) async -> NSImage? {
         let cacheKey = "\(url.absoluteString)|\(maxPixelSize)" as NSString
         if let cached = imageCache.object(forKey: cacheKey) {
             return cached
@@ -1487,7 +1487,7 @@ enum WallpaperImageLoader {
         imageCache.setObject(
             image,
             forKey: cacheKey,
-            cost: max(1, cgImage.width * cgImage.height)
+            cost: max(1, cgImage.bytesPerRow * cgImage.height)
         )
         return image
     }

@@ -77,7 +77,6 @@ final class MainThreadHealthMonitor {
         self.observer = nil
         activeSince = nil
     }
-
 }
 
 final class JarvisMemoryPressureMonitor {

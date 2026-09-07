@@ -54,6 +54,11 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
     func testLinkMatcherExtractsURLFromCopiedTextAndRejectsUnrelatedSites() {
         let mixed = "看看这个 https://youtu.be/dQw4w9WgXcQ 挺好看"
         XCTAssertEqual(EntertainmentVideoLink.match(mixed)?.platform, .youtube)
+        let xCopiedText = "来自 X 的分享：https://x.com/i/status/1234567890?s=20&t=abc。"
+        XCTAssertEqual(
+            EntertainmentVideoLink.match(xCopiedText)?.url.absoluteString,
+            "https://x.com/i/status/1234567890?s=20&t=abc"
+        )
         XCTAssertNil(EntertainmentVideoLink.match("https://example.com/watch?v=abc"))
         XCTAssertNil(EntertainmentVideoLink.match("https://accounts.google.com/"))
         XCTAssertNil(EntertainmentVideoLink.match("not a url"))
@@ -63,6 +68,26 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         XCTAssertEqual(
             EntertainmentVideoDownloadError.invalidLink.errorDescription,
             "请粘贴 YouTube、X、TikTok 或 Twitch 的视频链接"
+        )
+    }
+
+    func testPreferredURLUsesLatestClipboardLinkBeforePreviousPageURL() {
+        let previousURL = URL(string: "https://x.com/old/status/111")
+        let latestClipboard = "https://x.com/new/status/222\n"
+
+        XCTAssertEqual(
+            EntertainmentVideoLink.preferredURL(
+                initialURL: previousURL,
+                clipboardText: latestClipboard
+            )?.absoluteString,
+            "https://x.com/new/status/222"
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.preferredURL(
+                initialURL: previousURL,
+                clipboardText: nil
+            ),
+            previousURL
         )
     }
 

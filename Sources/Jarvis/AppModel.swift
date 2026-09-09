@@ -350,9 +350,9 @@ extension AppModel {
             return
         }
 
-        // Capture the desktop before activating Jarvis. The custom overlay is
-        // shown only after ScreenCaptureKit has returned frozen pixels, so the
-        // host window is never included in the screenshot.
+        // Capture the desktop before showing the nonactivating overlay. The
+        // custom overlay is shown only after ScreenCaptureKit has returned
+        // frozen pixels, so the host window is never included in the screenshot.
         isCapturing = true
         statusMessage = "请在屏幕上框选区域"
 
@@ -377,7 +377,6 @@ extension AppModel {
                     break
                 default:
                     showToast(error.localizedDescription)
-                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
         }

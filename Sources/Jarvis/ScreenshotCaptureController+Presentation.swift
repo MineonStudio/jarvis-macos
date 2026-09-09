@@ -78,11 +78,6 @@ extension ScreenshotCaptureController {
             )
         }
 
-        let currentProcessID = ProcessInfo.processInfo.processIdentifier
-        previousFrontmostApplication = NSWorkspace.shared.frontmostApplication?.processIdentifier == currentProcessID
-            ? nil
-            : NSWorkspace.shared.frontmostApplication
-        NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
         didPushCrosshairCursor = true
 
@@ -119,11 +114,11 @@ extension ScreenshotCaptureController {
         sessionID: UUID,
         completion: @escaping (Result<ScreenshotEditingSession, Error>) -> Void
     ) -> SelectionOverlayWindow? {
-        guard let frozenImage = NSImage(data: frozenScreen.data) else { return nil }
+        guard !frozenScreen.data.isEmpty else { return nil }
 
         let window = SelectionOverlayWindow(
             contentRect: screen.frame,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false,
             screen: screen
@@ -135,10 +130,13 @@ extension ScreenshotCaptureController {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hidesOnDeactivate = false
         window.acceptsMouseMovedEvents = true
+        window.becomesKeyOnlyIfNeeded = false
+        // A screenshot surface is an interaction layer, not a document window.
+        // Disable AppKit's default window animation so F1 feels immediate.
+        window.animationBehavior = .none
 
         let selectionView = SelectionOverlayView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
-            frozenImage: frozenImage,
             windowCandidates: candidates
         )
         selectionView.onFinish = { [weak self] localRect in
@@ -170,7 +168,8 @@ extension ScreenshotCaptureController {
             self?.cancelSelection(sessionID: sessionID, completion: completion)
         }
         window.contentView = selectionView
-        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        window.makeKey()
         window.makeFirstResponder(selectionView)
         return window
     }
@@ -209,7 +208,8 @@ extension ScreenshotCaptureController {
         resultWindow = panels.imagePanel
         toolbarWindow = panels.toolbarPanel
         toolbarLayout = panels.toolbarLayout
-        panels.imagePanel.makeKeyAndOrderFront(nil)
+        panels.imagePanel.orderFrontRegardless()
+        panels.imagePanel.makeKey()
         panels.toolbarPanel.orderFrontRegardless()
 
         editorObservation = editor.objectWillChange.sink { [weak self, weak editor] _ in
@@ -254,7 +254,6 @@ extension ScreenshotCaptureController {
         let cancelEditing: () -> Void = { [weak self] in
             guard let self else { return }
             dismissResult()
-            restorePreviousApplication()
             presentation.onAction(.cancel)
         }
         let quickCopyAndClose: () -> Void = { [weak self, weak editor = presentation.editor] in
@@ -306,6 +305,8 @@ extension ScreenshotCaptureController {
         imagePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         imagePanel.hidesOnDeactivate = false
         imagePanel.isReleasedWhenClosed = false
+        imagePanel.becomesKeyOnlyIfNeeded = false
+        imagePanel.animationBehavior = .none
         let canvasHostingView = ScreenshotCanvasHostingView(
             rootView: ScreenshotCanvasView(
                 image: presentation.image,
@@ -341,6 +342,7 @@ extension ScreenshotCaptureController {
         toolbarPanel.hasShadow = false
         toolbarPanel.hidesOnDeactivate = false
         toolbarPanel.isReleasedWhenClosed = false
+        toolbarPanel.animationBehavior = .none
         toolbarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let toolbarHostingView = NSHostingView(
             rootView: ScreenshotToolbar(
@@ -378,7 +380,6 @@ extension ScreenshotCaptureController {
             onAction(action)
         case .cancel:
             dismissResult()
-            restorePreviousApplication()
             onAction(.cancel)
         case let .tool(tool):
             resizeToolbar(for: editor, on: screenFrame)

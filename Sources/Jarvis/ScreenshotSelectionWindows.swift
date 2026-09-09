@@ -556,7 +556,7 @@ final class PinnedScreenshotItem {
         )
         window = PinnedScreenshotWindow(
             contentRect: frame.insetBy(dx: -contentInset, dy: -contentInset),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -569,5 +569,7 @@ final class PinnedScreenshotItem {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = false
+        window.animationBehavior = .none
+        window.becomesKeyOnlyIfNeeded = false
     }
 }

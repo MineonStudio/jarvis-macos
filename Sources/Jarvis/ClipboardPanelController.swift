@@ -28,8 +28,10 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         if !panel.isVisible {
             panel.center()
         }
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        // F2 is a transient utility surface. Keep the current app in the
+        // foreground while allowing this panel to receive keyboard input.
+        panel.orderFrontRegardless()
+        panel.makeKey()
     }
 
     func close() {
@@ -42,7 +44,13 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
                 origin: .zero,
                 size: Self.defaultPanelSize
             ),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [
+                .titled,
+                .closable,
+                .resizable,
+                .fullSizeContentView,
+                .nonactivatingPanel
+            ],
             backing: .buffered,
             defer: false
         )
@@ -55,6 +63,8 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.animationBehavior = .none
         panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
         panel.minSize = Self.minimumPanelSize
         panel.delegate = self

@@ -5,8 +5,6 @@ final class SelectionOverlayView: NSView {
     var onCancel: (() -> Void)?
     var onPin: ((CGRect) -> Void)?
 
-    private let frozenImage: NSImage
-    private let frozenCGImage: CGImage?
     private let windowCandidates: [WindowSelectionCandidate]
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
@@ -19,16 +17,8 @@ final class SelectionOverlayView: NSView {
 
     init(
         frame frameRect: NSRect,
-        frozenImage: NSImage,
         windowCandidates: [WindowSelectionCandidate]
     ) {
-        self.frozenImage = frozenImage
-        var proposedRect = NSRect(origin: .zero, size: frozenImage.size)
-        frozenCGImage = frozenImage.cgImage(
-            forProposedRect: &proposedRect,
-            context: nil,
-            hints: nil
-        )
         self.windowCandidates = windowCandidates
         super.init(frame: frameRect)
         updateTrackingArea()
@@ -40,6 +30,10 @@ final class SelectionOverlayView: NSView {
     }
 
     override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
         true
     }
 
@@ -188,25 +182,19 @@ final class SelectionOverlayView: NSView {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        context.interpolationQuality = .high
-        if let frozenCGImage {
-            context.draw(frozenCGImage, in: bounds)
-        } else {
-            frozenImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
-        }
-        context.setFillColor(NSColor.black.withAlphaComponent(0.58).cgColor)
+        // Keep the live desktop underneath the panel. The frozen capture is
+        // used for the final crop, but drawing it back into a full-screen view
+        // introduces a Retina resampling step that looks like edge zooming.
+        context.setFillColor(NSColor.black.withAlphaComponent(0.46).cgColor)
         context.fill(bounds)
 
         if let selectionRect {
             context.saveGState()
-            context.clip(to: selectionRect)
-            if let frozenCGImage {
-                context.draw(frozenCGImage, in: bounds)
-            } else {
-                frozenImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
-            }
+            context.setBlendMode(.clear)
+            context.fill(selectionRect)
             context.restoreGState()
 
+            context.setBlendMode(.normal)
             context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.95).cgColor)
             context.setLineWidth(2)
             context.stroke(selectionRect)
@@ -221,7 +209,6 @@ final class SelectionOverlayView: NSView {
             context.restoreGState()
         }
 
-        drawHint(in: bounds, context: context)
     }
 
     private var selectionRect: CGRect? {
@@ -257,27 +244,6 @@ final class SelectionOverlayView: NSView {
         moveAnchor = nil
         windowCandidateAtMouseDown = nil
         didDragSelection = false
-    }
-
-    private func drawHint(in bounds: CGRect, context _: CGContext) {
-        guard selectionRect == nil else { return }
-        let text = hoveredWindowCandidate == nil
-            ? "悬停窗口后单击自动选中  ·  拖动自定义框选  ·  ESC 取消"
-            : "单击选中窗口  ·  拖动自定义框选  ·  ESC 取消"
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.9)
-        ]
-        let size = text.size(withAttributes: attributes)
-        let rect = CGRect(
-            x: bounds.midX - size.width / 2 - 14,
-            y: bounds.maxY - 70,
-            width: size.width + 28,
-            height: size.height + 14
-        )
-        NSColor.black.withAlphaComponent(0.52).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 9, yRadius: 9).fill()
-        text.draw(at: CGPoint(x: rect.minX + 14, y: rect.minY + 7), withAttributes: attributes)
     }
 
     private func drawDimensionLabel(in rect: CGRect, context _: CGContext) {

@@ -139,7 +139,6 @@ final class ScreenshotCaptureController {
     var pinnedItems: [UUID: PinnedScreenshotItem] = [:]
     var selectedPinnedID: UUID?
     var activeCaptureScreenFrame: CGRect?
-    var previousFrontmostApplication: NSRunningApplication?
     var sessionPhase: ScreenshotSessionPhase = .idle
     var activeSessionID: UUID?
     var didPushCrosshairCursor = false

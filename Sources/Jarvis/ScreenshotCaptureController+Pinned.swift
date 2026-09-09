@@ -85,7 +85,8 @@ extension ScreenshotCaptureController {
         containerView.addSubview(hostingView)
         item.containerView = containerView
         item.window.contentView = containerView
-        item.window.makeKeyAndOrderFront(nil)
+        item.window.orderFrontRegardless()
+        item.window.makeKey()
 
         pinnedItems[item.id] = item
         selectPinnedScreenshot(item)
@@ -99,7 +100,8 @@ extension ScreenshotCaptureController {
 
         selectedPinnedID = item.id
         setPinnedSelectionAppearance(item, selected: true)
-        item.window.makeKeyAndOrderFront(nil)
+        item.window.orderFrontRegardless()
+        item.window.makeKey()
         if item.showsToolbar {
             showPinnedToolbar(for: item)
         } else {
@@ -150,6 +152,7 @@ extension ScreenshotCaptureController {
         toolbarPanel.hasShadow = false
         toolbarPanel.hidesOnDeactivate = false
         toolbarPanel.isReleasedWhenClosed = false
+        toolbarPanel.animationBehavior = .none
 
         let toolbarHostingView = NSHostingView(
             rootView: ScreenshotToolbar(
@@ -376,7 +379,6 @@ extension ScreenshotCaptureController {
               !selectionCompletionDelivered else { return }
         selectionCompletionDelivered = true
         dismissSelectionWindows()
-        restorePreviousApplication()
         activeSessionID = nil
         sessionPhase = .idle
         completion(.failure(error))
@@ -389,14 +391,6 @@ extension ScreenshotCaptureController {
         }
         selectionWindows.removeAll()
         popCrosshairCursorIfNeeded()
-    }
-
-    func restorePreviousApplication() {
-        guard let previousApplication = previousFrontmostApplication else { return }
-        previousFrontmostApplication = nil
-        guard !previousApplication.isTerminated else { return }
-
-        previousApplication.activate(options: [])
     }
 
     func popCrosshairCursorIfNeeded() {

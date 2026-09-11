@@ -5,6 +5,7 @@ struct ScreenshotView: View {
     @Environment(AppModel.self) private var app
     @State private var selectedTimeFilter: ScreenshotTimeFilter = .threeDays
     @State private var selectedItemID: UUID?
+    @State private var gridZoom: HistoryGridZoomLevel = .regular
 
     var body: some View {
         JarvisContentArea(
@@ -12,6 +13,12 @@ struct ScreenshotView: View {
                 ScreenshotTimeFilterBar(selectedFilter: $selectedTimeFilter)
             },
             trailingToolbar: {
+                ToolbarSpacer(.fixed, placement: .automatic)
+                ToolbarItem(id: "screenshot.grid-zoom", placement: .automatic) {
+                    HistoryGridZoomControl(selection: $gridZoom)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.fixed, placement: .automatic)
                 ToolbarItem(id: "screenshot.actions", placement: .automatic) {
                     ScreenshotHistoryActionToolbar(
                         selectedItem: selectedItem,
@@ -20,23 +27,17 @@ struct ScreenshotView: View {
                 }
             },
             content: {
-                GeometryReader { proxy in
-                    ScrollView {
-                        ScreenshotHistorySection(
-                            selectedTimeFilter: $selectedTimeFilter,
-                            selectedItemID: $selectedItemID,
-                            availableGridWidth: max(
-                                0,
-                                proxy.size.width - HistoryGridMetrics.historyPanelInset * 2
-                            ),
-                            availableGridHeight: max(0, proxy.size.height)
-                        )
-                        .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                        .padding(.vertical, HistoryGridMetrics.historyPanelInset)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .jarvisFloatingPanel(cornerRadius: 16)
+                ScrollView {
+                    ScreenshotHistorySection(
+                        selectedTimeFilter: $selectedTimeFilter,
+                        selectedItemID: $selectedItemID,
+                        gridZoom: gridZoom
+                    )
+                    .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                    .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .jarvisFloatingPanel(cornerRadius: 16)
             }
         )
     }
@@ -130,6 +131,104 @@ struct ScreenshotHistoryActionToolbar: View {
     }
 }
 
+enum HistoryGridZoomLevel: Int, CaseIterable, Sendable {
+    case compact
+    case small
+    case regular
+    case large
+    case extraLarge
+
+    private var widthScale: CGFloat {
+        switch self {
+        case .compact: 0.72
+        case .small: 0.86
+        case .regular: 1
+        case .large: 1.16
+        case .extraLarge: 1.34
+        }
+    }
+
+    var cardWidth: CGFloat {
+        HistoryGridMetrics.clipboardCardWidth * widthScale
+    }
+
+    var cardHeight: CGFloat {
+        cardWidth * 9 / 16
+    }
+
+    var canZoomOut: Bool {
+        rawValue > Self.compact.rawValue
+    }
+
+    var canZoomIn: Bool {
+        rawValue < Self.extraLarge.rawValue
+    }
+
+    var zoomedOut: Self {
+        Self(rawValue: rawValue - 1) ?? self
+    }
+
+    var zoomedIn: Self {
+        Self(rawValue: rawValue + 1) ?? self
+    }
+}
+
+struct HistoryGridZoomControl: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Binding var selection: HistoryGridZoomLevel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            zoomButton(
+                systemName: "minus",
+                help: "缩小宫格",
+                isEnabled: selection.canZoomOut
+            ) {
+                selection = selection.zoomedOut
+            }
+            Divider()
+                .frame(height: 16)
+                .opacity(0.35)
+            zoomButton(
+                systemName: "plus",
+                help: "放大宫格",
+                isEnabled: selection.canZoomIn
+            ) {
+                selection = selection.zoomedIn
+            }
+        }
+        .padding(2)
+        .frame(height: HistoryGridMetrics.topControlHeight)
+        .jarvisGlass(in: Capsule(), interactive: false)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func zoomButton(
+        systemName: String,
+        help: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            withAnimation(
+                JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion)
+            ) {
+                action()
+            }
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.92, pressedOpacity: 0.75))
+        .opacity(isEnabled ? 1 : 0.35)
+        .disabled(!isEnabled)
+        .accessibilityLabel(help)
+        .help(help)
+    }
+}
+
 enum HistoryGridMetrics {
     static let imageSpacing: CGFloat = 7
     static let historyPanelInset: CGFloat = 10
@@ -156,82 +255,21 @@ enum HistoryGridMetrics {
     static let topControlHeight = JarvisToolbarMetrics.controlSize
     static let clipboardSearchFieldHeight: CGFloat = topControlHeight
     static let clipboardFilterToGridSpacing: CGFloat = 10
-    static let paginationControlHeight: CGFloat = 34
     static let screenshotFilterBarHeight: CGFloat = topControlHeight
-    static let screenshotGridVerticalInset: CGFloat = historyPanelInset * 2
-    static let clipboardGridVerticalInset: CGFloat = historyPanelInset * 2
-
-    static func clipboardGridWidth(for columnCount: Int) -> CGFloat {
-        guard columnCount > 0 else { return 0 }
-        let cardWidth = clipboardCardWidth * CGFloat(columnCount)
-        let spacing = clipboardGridSpacing * CGFloat(max(0, columnCount - 1))
-        return cardWidth + spacing
-    }
-
-    static func columnCount(for availableWidth: CGFloat) -> Int {
-        guard availableWidth > 0 else { return 1 }
-        let columnUnit = clipboardCardWidth + clipboardGridSpacing
-        return max(1, Int(floor((availableWidth + clipboardGridSpacing) / columnUnit)))
-    }
-
-    static func rowCount(for availableHeight: CGFloat) -> Int {
-        guard availableHeight > 0 else { return 1 }
-        let rowUnit = clipboardCardHeight + clipboardGridSpacing
-        return max(1, Int(floor((availableHeight + clipboardGridSpacing) / rowUnit)))
-    }
-
-    static func pageSize(
-        for availableWidth: CGFloat,
-        availableHeight: CGFloat,
-        itemCount: Int,
-        verticalInset: CGFloat
-    ) -> Int {
-        let columns = columnCount(for: availableWidth)
-        let gridHeight = max(0, availableHeight - verticalInset)
-        let rowsWithoutPagination = rowCount(for: gridHeight)
-        let rowsWithPagination = rowCount(
-            for: gridHeight - paginationControlHeight - imageSpacing
-        )
-        let rows = itemCount > columns * rowsWithoutPagination
-            ? rowsWithPagination
-            : rowsWithoutPagination
-        return columns * rows
-    }
 }
 
 struct ScreenshotHistorySection: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var currentPage = 1
     @Binding var selectedTimeFilter: ScreenshotTimeFilter
     @Binding var selectedItemID: UUID?
-    let availableGridWidth: CGFloat
-    let availableGridHeight: CGFloat
+    let gridZoom: HistoryGridZoomLevel
 
     private var filteredItems: [ScreenshotHistoryItem] {
         ScreenshotTimeFilterLogic.filteredItems(
             from: app.screenshotHistory,
             filter: selectedTimeFilter
         )
-    }
-
-    private var pageSize: Int {
-        HistoryGridMetrics.pageSize(
-            for: availableGridWidth,
-            availableHeight: availableGridHeight,
-            itemCount: filteredItems.count,
-            verticalInset: HistoryGridMetrics.screenshotGridVerticalInset
-        )
-    }
-
-    private var totalPages: Int {
-        max(1, (filteredItems.count + pageSize - 1) / pageSize)
-    }
-
-    private var pageItems: [ScreenshotHistoryItem] {
-        let page = min(max(currentPage, 1), totalPages)
-        let startIndex = (page - 1) * pageSize
-        return Array(filteredItems.dropFirst(startIndex).prefix(pageSize))
     }
 
     var body: some View {
@@ -249,17 +287,18 @@ struct ScreenshotHistorySection: View {
                 LazyVGrid(
                     columns: [GridItem(
                         .adaptive(
-                            minimum: HistoryGridMetrics.clipboardCardWidth,
-                            maximum: HistoryGridMetrics.clipboardCardWidth
+                            minimum: gridZoom.cardWidth,
+                            maximum: gridZoom.cardWidth
                         ),
                         spacing: HistoryGridMetrics.clipboardGridSpacing
                     )],
                     alignment: .leading,
                     spacing: HistoryGridMetrics.clipboardGridSpacing
                 ) {
-                    ForEach(pageItems) { item in
+                    ForEach(filteredItems) { item in
                         ScreenshotHistoryCard(
                             item: item,
+                            gridZoom: gridZoom,
                             isSelected: selectedItemID == item.id,
                             onSelect: { selectedItemID = item.id },
                             onDoubleClick: { app.showScreenshotHistoryPreview(item) }
@@ -270,69 +309,18 @@ struct ScreenshotHistorySection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .animation(
                     JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-                    value: pageItems.map(\.id)
+                    value: filteredItems.map(\.id)
                 )
-
-                if totalPages > 1 {
-                    PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
-                        currentPage = max(1, currentPage - 1)
-                    } onNext: {
-                        currentPage = min(totalPages, currentPage + 1)
-                    }
-                }
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+                    value: gridZoom
+                )
             }
         }
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: selectedTimeFilter
         )
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: currentPage
-        )
-        .onChange(of: pageSize) { _, _ in
-            currentPage = min(currentPage, totalPages)
-        }
-        .onChange(of: selectedTimeFilter) { _, _ in
-            currentPage = 1
-        }
-        .onChange(of: filteredItems.count) { _, _ in
-            currentPage = min(currentPage, totalPages)
-        }
-    }
-}
-
-struct PaginationControl: View {
-    let currentPage: Int
-    let totalPages: Int
-    let onPrevious: () -> Void
-    let onNext: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text("第 \(currentPage) / \(totalPages) 页")
-                .font(JarvisTypography.monospaced)
-                .foregroundStyle(Color.jarvisTextSecondary)
-            Spacer()
-            Button(action: onPrevious) {
-                Image(systemName: "chevron.left")
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-            .disabled(currentPage <= 1)
-            .help("上一页")
-            Button(action: onNext) {
-                Image(systemName: "chevron.right")
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-            .disabled(currentPage >= totalPages)
-            .help("下一页")
-        }
-        .padding(.horizontal, 4)
-        .padding(.top, 2)
     }
 }
 
@@ -340,6 +328,7 @@ struct ScreenshotHistoryCard: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ScreenshotHistoryItem
+    let gridZoom: HistoryGridZoomLevel
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
@@ -354,7 +343,8 @@ struct ScreenshotHistoryCard: View {
             if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
                 ScreenshotHistoryThumbnail(
                     fileURL: app.screenshotHistoryFileURL(for: item),
-                    cacheKey: thumbnailCacheKey
+                    cacheKey: thumbnailCacheKey,
+                    gridZoom: gridZoom
                 )
             } else {
                 Image(systemName: "photo")
@@ -363,8 +353,8 @@ struct ScreenshotHistoryCard: View {
             }
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
-            height: HistoryGridMetrics.clipboardCardHeight,
+            width: gridZoom.cardWidth,
+            height: gridZoom.cardHeight,
             alignment: .center
         )
         .clipShape(
@@ -407,7 +397,7 @@ struct ScreenshotHistoryCard: View {
                 .lineLimit(1)
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
+            width: gridZoom.cardWidth,
             height: HistoryGridMetrics.clipboardMetadataHeight
         )
     }
@@ -427,8 +417,8 @@ struct ScreenshotHistoryCard: View {
                 )
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
-            height: HistoryGridMetrics.clipboardCardHeight,
+            width: gridZoom.cardWidth,
+            height: gridZoom.cardHeight,
             alignment: .center
         )
         .clipShape(
@@ -486,6 +476,7 @@ struct ScreenshotHistoryCard: View {
 struct ScreenshotHistoryThumbnail: View {
     let fileURL: URL
     let cacheKey: String
+    let gridZoom: HistoryGridZoomLevel
     @State private var image: NSImage?
 
     var body: some View {
@@ -501,8 +492,8 @@ struct ScreenshotHistoryThumbnail: View {
             }
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
-            height: HistoryGridMetrics.clipboardCardHeight
+            width: gridZoom.cardWidth,
+            height: gridZoom.cardHeight
         )
         .clipped()
         .task(id: cacheKey) {

@@ -208,7 +208,6 @@ final class SelectionOverlayView: NSView {
             context.stroke(hoveredWindowCandidate.localRect.insetBy(dx: 1.5, dy: 1.5))
             context.restoreGState()
         }
-
     }
 
     private var selectionRect: CGRect? {

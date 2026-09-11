@@ -212,9 +212,7 @@ struct ClipboardView: View {
     @State private var selectedTimeFilter: ClipboardTimeFilter = .threeDays
     @State private var selectedCategory: ClipboardViewFilter = .all
     @State private var selectedItemID: UUID?
-    @State private var currentPage = 1
-    @State private var availableGridWidth: CGFloat = 0
-    @State private var availableGridHeight: CGFloat = 0
+    @State private var gridZoom: HistoryGridZoomLevel = .regular
 
     private var filteredItems: [ClipboardItem] {
         ClipboardFilterLogic.filteredItems(
@@ -223,25 +221,6 @@ struct ClipboardView: View {
             timeFilter: selectedTimeFilter,
             category: selectedCategory
         )
-    }
-
-    private var pageSize: Int {
-        HistoryGridMetrics.pageSize(
-            for: availableGridWidth,
-            availableHeight: availableGridHeight,
-            itemCount: filteredItems.count,
-            verticalInset: HistoryGridMetrics.clipboardGridVerticalInset
-        )
-    }
-
-    private var totalPages: Int {
-        max(1, (filteredItems.count + pageSize - 1) / pageSize)
-    }
-
-    private var pageItems: [ClipboardItem] {
-        let page = min(max(currentPage, 1), totalPages)
-        let startIndex = (page - 1) * pageSize
-        return Array(filteredItems.dropFirst(startIndex).prefix(pageSize))
     }
 
     private var selectedItem: ClipboardItem? {
@@ -258,6 +237,11 @@ struct ClipboardView: View {
                 ToolbarItem(id: "clipboard.category", placement: .automatic) {
                     ClipboardCategoryFilterSelector(selection: $selectedCategory)
                 }
+                ToolbarSpacer(.fixed, placement: .automatic)
+                ToolbarItem(id: "clipboard.grid-zoom", placement: .automatic) {
+                    HistoryGridZoomControl(selection: $gridZoom)
+                }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.fixed, placement: .automatic)
                 ToolbarItem(id: "clipboard.actions", placement: .automatic) {
                     ClipboardHistoryActionToolbar(
@@ -276,70 +260,38 @@ struct ClipboardView: View {
                 }
             },
             content: {
-                GeometryReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if filteredItems.isEmpty {
-                                ClipboardEmptyState(
-                                    hasQuery: !searchText.isEmpty
-                                        || selectedTimeFilter != .all
-                                        || selectedCategory != .all
-                                )
-                                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-                            } else {
-                                VStack(spacing: 0) {
-                                    ClipboardGrid(
-                                        items: pageItems,
-                                        selectedItemID: selectedItemID,
-                                        onSelect: { selectedItemID = $0.id },
-                                        onDoubleClick: { item in
-                                            guard item.canFullscreenPreview else { return }
-                                            app.showClipboardMediaPreview(item)
-                                        }
-                                    )
-
-                                    if totalPages > 1 {
-                                        PaginationControl(currentPage: min(currentPage, totalPages), totalPages: totalPages) {
-                                            currentPage = max(1, currentPage - 1)
-                                        } onNext: {
-                                            currentPage = min(totalPages, currentPage + 1)
-                                        }
-                                    }
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if filteredItems.isEmpty {
+                            ClipboardEmptyState(
+                                hasQuery: !searchText.isEmpty
+                                    || selectedTimeFilter != .all
+                                    || selectedCategory != .all
+                            )
+                            .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+                        } else {
+                            ClipboardGrid(
+                                items: filteredItems,
+                                gridZoom: gridZoom,
+                                selectedItemID: selectedItemID,
+                                onSelect: { selectedItemID = $0.id },
+                                onDoubleClick: { item in
+                                    guard item.canFullscreenPreview else { return }
+                                    app.showClipboardMediaPreview(item)
                                 }
-                                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
-                            }
+                            )
+                            .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                        .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .jarvisFloatingPanel(cornerRadius: 16)
-                    .onAppear {
-                        availableGridWidth = max(0, proxy.size.width - HistoryGridMetrics.historyPanelInset * 2)
-                        availableGridHeight = max(0, proxy.size.height)
-                    }
-                    .onChange(of: proxy.size) { _, size in
-                        availableGridWidth = max(0, size.width - HistoryGridMetrics.historyPanelInset * 2)
-                        availableGridHeight = max(0, size.height)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+                    .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .jarvisFloatingPanel(cornerRadius: 16)
             }
         )
-        .onChange(of: pageSize) { _, _ in
-            currentPage = min(currentPage, totalPages)
-        }
-        .onChange(of: searchText) { _, _ in
-            currentPage = 1
-        }
-        .onChange(of: selectedTimeFilter) { _, _ in
-            currentPage = 1
-        }
-        .onChange(of: selectedCategory) { _, _ in
-            currentPage = 1
-        }
         .onChange(of: app.clipboardItems.count) { _, _ in
-            currentPage = min(currentPage, totalPages)
             if let selectedItemID,
                !app.clipboardItems.contains(where: { $0.id == selectedItemID })
             {
@@ -489,17 +441,20 @@ struct ClipboardCard: View {
     @State private var isSensitiveRevealed = false
     @State private var isTextExpanded = false
     let item: ClipboardItem
+    let gridZoom: HistoryGridZoomLevel
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
 
     init(
         item: ClipboardItem,
+        gridZoom: HistoryGridZoomLevel = .regular,
         isSelected: Bool = false,
         onSelect: @escaping () -> Void = {},
         onDoubleClick: @escaping () -> Void = {}
     ) {
         self.item = item
+        self.gridZoom = gridZoom
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -582,8 +537,8 @@ struct ClipboardCard: View {
             }
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
-            height: HistoryGridMetrics.clipboardCardHeight,
+            width: gridZoom.cardWidth,
+            height: gridZoom.cardHeight,
             alignment: .center
         )
         .clipShape(
@@ -651,7 +606,7 @@ struct ClipboardCard: View {
                 .lineLimit(1)
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
+            width: gridZoom.cardWidth,
             height: HistoryGridMetrics.clipboardMetadataHeight
         )
     }
@@ -671,8 +626,8 @@ struct ClipboardCard: View {
                 )
         }
         .frame(
-            width: HistoryGridMetrics.clipboardCardWidth,
-            height: HistoryGridMetrics.clipboardCardHeight,
+            width: gridZoom.cardWidth,
+            height: gridZoom.cardHeight,
             alignment: .topLeading
         )
         .clipShape(
@@ -751,6 +706,7 @@ struct ClipboardCard: View {
 
 struct ClipboardGrid: View {
     let items: [ClipboardItem]
+    let gridZoom: HistoryGridZoomLevel
     let selectedItemID: UUID?
     let onSelect: (ClipboardItem) -> Void
     let onDoubleClick: (ClipboardItem) -> Void
@@ -758,11 +714,13 @@ struct ClipboardGrid: View {
 
     init(
         items: [ClipboardItem],
+        gridZoom: HistoryGridZoomLevel = .regular,
         selectedItemID: UUID? = nil,
         onSelect: @escaping (ClipboardItem) -> Void = { _ in },
         onDoubleClick: @escaping (ClipboardItem) -> Void = { _ in }
     ) {
         self.items = items
+        self.gridZoom = gridZoom
         self.selectedItemID = selectedItemID
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -772,8 +730,8 @@ struct ClipboardGrid: View {
         LazyVGrid(
             columns: [GridItem(
                 .adaptive(
-                    minimum: HistoryGridMetrics.clipboardCardWidth,
-                    maximum: HistoryGridMetrics.clipboardCardWidth
+                    minimum: gridZoom.cardWidth,
+                    maximum: gridZoom.cardWidth
                 ),
                 spacing: HistoryGridMetrics.clipboardGridSpacing
             )],
@@ -783,6 +741,7 @@ struct ClipboardGrid: View {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
+                    gridZoom: gridZoom,
                     isSelected: selectedItemID == item.id,
                     onSelect: { onSelect(item) },
                     onDoubleClick: { onDoubleClick(item) }
@@ -794,6 +753,10 @@ struct ClipboardGrid: View {
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: items.map(\.id)
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: gridZoom
         )
     }
 }

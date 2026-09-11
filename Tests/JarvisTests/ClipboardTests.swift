@@ -263,41 +263,24 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(HistoryGridMetrics.clipboardGridSpacing, 10)
     }
 
-    func testHistoryGridPaginationKeepsEachPageToCompleteRows() {
-        let fiveColumnWidth = HistoryGridMetrics.clipboardGridWidth(for: 5)
-        XCTAssertEqual(HistoryGridMetrics.columnCount(for: fiveColumnWidth), 5)
+    func testHistoryGridZoomLevelsAdjustCardSizeAndKeepAspectRatio() {
+        XCTAssertEqual(HistoryGridZoomLevel.allCases.count, 5)
         XCTAssertEqual(
-            HistoryGridMetrics.pageSize(
-                for: fiveColumnWidth,
-                availableHeight: 700,
-                itemCount: 100,
-                verticalInset: 0
-            ),
-            25
+            HistoryGridZoomLevel.regular.cardWidth,
+            HistoryGridMetrics.clipboardCardWidth,
+            accuracy: 0.001
         )
 
-        let fourColumnWidth = HistoryGridMetrics.clipboardGridWidth(for: 4)
-        XCTAssertEqual(HistoryGridMetrics.columnCount(for: fourColumnWidth), 4)
-        XCTAssertEqual(
-            HistoryGridMetrics.pageSize(
-                for: fourColumnWidth,
-                availableHeight: 500,
-                itemCount: 100,
-                verticalInset: 0
-            ),
-            12
-        )
-    }
+        for level in HistoryGridZoomLevel.allCases {
+            XCTAssertEqual(level.cardHeight, level.cardWidth * 9 / 16, accuracy: 0.001)
+        }
 
-    func testHistoryGridRowsAdaptToAvailableHeight() {
-        let rowHeight = HistoryGridMetrics.clipboardCardHeight
-        let rowSpacing = HistoryGridMetrics.clipboardGridSpacing
-
-        XCTAssertEqual(HistoryGridMetrics.rowCount(for: rowHeight), 1)
-        XCTAssertEqual(
-            HistoryGridMetrics.rowCount(for: rowHeight * 4 + rowSpacing * 3),
-            4
-        )
+        XCTAssertFalse(HistoryGridZoomLevel.compact.canZoomOut)
+        XCTAssertTrue(HistoryGridZoomLevel.compact.canZoomIn)
+        XCTAssertEqual(HistoryGridZoomLevel.regular.zoomedOut, .small)
+        XCTAssertEqual(HistoryGridZoomLevel.regular.zoomedIn, .large)
+        XCTAssertTrue(HistoryGridZoomLevel.extraLarge.canZoomOut)
+        XCTAssertFalse(HistoryGridZoomLevel.extraLarge.canZoomIn)
     }
 
     func testClipboardTimestampUsesSlashDateAndTimeFormat() {

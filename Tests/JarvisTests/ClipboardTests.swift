@@ -380,6 +380,27 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(store.usage().usedBytes, 0)
     }
 
+    func testClipboardCacheCleanupRecognizesMissingManagedReferences() throws {
+        let suiteName = "jarvis-clipboard-cache-stale-reference-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-cache-stale-reference-\(UUID().uuidString)", isDirectory: true)
+        defaults.set(directory.path, forKey: "jarvis.clipboard.cache.directory")
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let store = ClipboardCacheStore(defaults: defaults)
+        let path = try XCTUnwrap(store.storeData(Data(repeating: 1, count: 16), fileExtension: "png"))
+        let item = ClipboardItem(kind: .image, imagePath: path, isStoredCopy: true)
+        try FileManager.default.removeItem(atPath: path)
+
+        XCTAssertFalse(store.hasManagedFiles(for: item))
+        XCTAssertTrue(store.hasManagedReferences(for: item))
+        XCTAssertTrue(store.removeManagedFiles(for: [item]))
+    }
+
     func testClipboardCacheRemovalHandlesTextCache() throws {
         let suiteName = "jarvis-clipboard-cache-text-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -431,6 +452,7 @@ final class ClipboardTests: XCTestCase {
         )
 
         XCTAssertFalse(store.hasManagedFiles(for: externalItem))
+        XCTAssertFalse(store.hasManagedReferences(for: externalItem))
         XCTAssertTrue(store.removeManagedFiles(for: [externalItem]))
         XCTAssertTrue(FileManager.default.fileExists(atPath: externalURL.path))
     }

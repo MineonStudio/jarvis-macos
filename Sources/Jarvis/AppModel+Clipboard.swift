@@ -37,8 +37,7 @@ extension AppModel {
         item.isPinned = wasPinned
 
         if item.kind != .text,
-           !item.hasLocalContent,
-           matchingItems.contains(where: \.hasLocalContent)
+           !item.hasLocalContent
         {
             return
         }
@@ -233,7 +232,7 @@ extension AppModel {
             return !item.isPinned
                 && category.matches(item)
                 && matchesAge
-                && clipboardCacheStore.hasManagedFiles(for: item)
+                && clipboardCacheStore.hasManagedReferences(for: item)
         }
 
         var removedIDs = Set<UUID>()
@@ -332,7 +331,7 @@ extension AppModel {
         guard additionalBytes <= usage.capacityBytes || usage.isOverCapacity else { return }
 
         let candidates = clipboardItems
-            .filter { !$0.isPinned && clipboardCacheStore.hasManagedFiles(for: $0) }
+            .filter { !$0.isPinned && clipboardCacheStore.hasManagedReferences(for: $0) }
             .sorted { $0.createdAt < $1.createdAt }
         var changed = false
         for item in candidates where needsRoom(usage) {

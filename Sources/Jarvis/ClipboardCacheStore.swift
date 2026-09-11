@@ -261,6 +261,16 @@ final class ClipboardCacheStore: @unchecked Sendable {
         }
     }
 
+    /// Returns whether the history item still points at a path owned by the
+    /// configured cache directory, even when that file has already gone
+    /// missing. Cleanup needs this distinction so stale history records can
+    /// be removed after the cache directory was cleared externally.
+    func hasManagedReferences(for item: ClipboardItem) -> Bool {
+        lock.withLock {
+            !managedFileURLsLocked(for: item).isEmpty
+        }
+    }
+
     @discardableResult
     func removeOrphanedManagedFiles(
         referencedPaths: Set<String>,

@@ -35,7 +35,7 @@ struct JarvisApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(JarvisAppIdentity.displayName, id: JarvisAppIdentity.mainWindowSceneID) {
+        Window(JarvisAppIdentity.displayName, id: JarvisAppIdentity.mainWindowSceneID) {
             JarvisRootView(appModel: appModel)
         }
         .defaultSize(

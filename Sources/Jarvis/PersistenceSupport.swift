@@ -1,9 +1,4 @@
 import Foundation
-import OSLog
-
-enum JarvisPersistenceLog {
-    static let logger = Logger(subsystem: JarvisAppIdentity.bundleIdentifier, category: "persistence")
-}
 
 enum JarvisProtectedStorage {
     static func prepareDirectory(_ url: URL, fileManager: FileManager = .default) {

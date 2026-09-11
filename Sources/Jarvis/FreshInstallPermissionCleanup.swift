@@ -15,13 +15,22 @@ enum JarvisFreshInstallPermissionCleanup {
                 try JarvisUpdateService.resetPrivacyPermissions(bundleIdentifier: bundleIdentifier)
             }
             if didReset {
-                NSLog("Jarvis reset privacy permissions for a new installation")
+                JarvisLog.notice(
+                    category: .security,
+                    event: "privacyPermissions.reset.complete",
+                    result: "success",
+                    fields: ["reason": "installationChanged"]
+                )
             }
         } catch {
             // Do not prevent a newly installed app from launching. The marker
             // is only written after both resets succeed, so the next launch
             // will retry if tccutil was temporarily unavailable.
-            NSLog("Jarvis could not reset privacy permissions: \(error.localizedDescription)")
+            JarvisLog.error(
+                category: .security,
+                event: "privacyPermissions.reset.failed",
+                error: error
+            )
         }
     }
 

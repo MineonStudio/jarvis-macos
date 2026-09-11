@@ -348,6 +348,11 @@ final class ClipboardService: @unchecked Sendable {
         self.onChange = onChange
         self.prepareCacheSpace = prepareCacheSpace
         timer?.invalidate()
+        JarvisLog.info(
+            category: .clipboard,
+            event: "service.start",
+            fields: ["pollIntervalMilliseconds": "550"]
+        )
         let timer = Timer(timeInterval: 0.55, repeats: true) { [weak self] _ in
             self?.checkPasteboard()
         }
@@ -357,10 +362,18 @@ final class ClipboardService: @unchecked Sendable {
 
     func markCurrentPasteboardAsHandled() {
         lastChangeCount = NSPasteboard.general.changeCount
+        JarvisLog.debug(
+            category: .clipboard,
+            event: "pasteboard.markHandled"
+        )
     }
 
     deinit {
         timer?.invalidate()
+        JarvisLog.info(
+            category: .clipboard,
+            event: "service.stop"
+        )
     }
 
     private func checkPasteboard() {
@@ -369,6 +382,11 @@ final class ClipboardService: @unchecked Sendable {
         guard changeCount != lastChangeCount else { return }
         if ClipboardPasteboardPrivacy.shouldIgnore(pasteboard) {
             lastChangeCount = changeCount
+            JarvisLog.debug(
+                category: .clipboard,
+                event: "capture.ignored",
+                result: "privacyMarker"
+            )
             return
         }
         let capturedAt = Date()
@@ -379,6 +397,14 @@ final class ClipboardService: @unchecked Sendable {
         lastChangeCount = changeCount
 
         if !fileURLs.isEmpty {
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "capture.detected",
+                fields: [
+                    "kind": "file",
+                    "itemCount": String(fileURLs.count)
+                ]
+            )
             for (index, url) in fileURLs.enumerated() {
                 captureFile(url, createdAt: capturedAt.addingTimeInterval(Double(index) * 0.000001))
             }
@@ -386,6 +412,14 @@ final class ClipboardService: @unchecked Sendable {
         }
 
         if let text, !text.isEmpty {
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "capture.detected",
+                fields: [
+                    "kind": "text",
+                    "bytes": String(Data(text.utf8).count)
+                ]
+            )
             let callback = onChange
             let cacheStore = self.cacheStore
             let prepareCacheSpace = self.prepareCacheSpace
@@ -402,6 +436,16 @@ final class ClipboardService: @unchecked Sendable {
                     fingerprintValue: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                     isStoredCopy: path != nil
                 )
+                JarvisLog.info(
+                    category: .clipboard,
+                    event: "capture.complete",
+                    result: path == nil ? "inlineOnly" : "stored",
+                    fields: [
+                        "kind": "text",
+                        "bytes": String(data.count),
+                        "storedCopy": String(path != nil)
+                    ]
+                )
                 Task { @MainActor in
                     callback?(item)
                 }
@@ -410,12 +454,36 @@ final class ClipboardService: @unchecked Sendable {
         }
 
         if let pngData {
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "capture.detected",
+                fields: [
+                    "kind": "image",
+                    "bytes": String(pngData.count)
+                ]
+            )
             captureImage(pngData, createdAt: capturedAt)
             return
         }
         if let tiffData {
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "capture.detected",
+                fields: [
+                    "kind": "image",
+                    "sourceFormat": "tiff",
+                    "bytes": String(tiffData.count)
+                ]
+            )
             DispatchQueue.global(qos: .utility).async {
-                guard let imageData = Self.pngData(fromTIFF: tiffData) else { return }
+                guard let imageData = Self.pngData(fromTIFF: tiffData) else {
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "capture.convert.failed",
+                        fields: ["sourceFormat": "tiff"]
+                    )
+                    return
+                }
                 Task { @MainActor [weak self] in
                     self?.captureImage(imageData, createdAt: capturedAt)
                 }
@@ -443,6 +511,11 @@ final class ClipboardService: @unchecked Sendable {
         DispatchQueue.global(qos: .utility).async {
             guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .contentModificationDateKey])
             else {
+                JarvisLog.error(
+                    category: .clipboard,
+                    event: "capture.fileMetadata.failed",
+                    fields: ["kind": "file"]
+                )
                 return
             }
 
@@ -471,6 +544,17 @@ final class ClipboardService: @unchecked Sendable {
                     fingerprintValue: fingerprint,
                     isStoredCopy: storedPath != nil
                 )
+                JarvisLog.info(
+                    category: .clipboard,
+                    event: "capture.complete",
+                    result: storedPath == nil ? "sourceReference" : "stored",
+                    fields: [
+                        "kind": kind.rawValue,
+                        "bytes": String(fileSize),
+                        "storedCopy": String(storedPath != nil),
+                        "thumbnailStored": String(thumbnailPath != nil)
+                    ]
+                )
                 Task { @MainActor in
                     callback?(item)
                 }
@@ -487,6 +571,10 @@ final class ClipboardService: @unchecked Sendable {
                 guard let image,
                       let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
                 else {
+                    JarvisLog.debug(
+                        category: .clipboard,
+                        event: "capture.videoThumbnail.unavailable"
+                    )
                     finishCapture(nil)
                     return
                 }
@@ -514,6 +602,16 @@ final class ClipboardService: @unchecked Sendable {
                 fileUTI: UTType.png.identifier,
                 fingerprintValue: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                 isStoredCopy: path != nil
+            )
+            JarvisLog.info(
+                category: .clipboard,
+                event: "capture.complete",
+                result: path == nil ? "unavailable" : "stored",
+                fields: [
+                    "kind": "image",
+                    "bytes": String(data.count),
+                    "storedCopy": String(path != nil)
+                ]
             )
             Task { @MainActor in
                 callback?(item)
@@ -566,17 +664,46 @@ final class ClipboardStore {
     }
 
     func load() -> [ClipboardItem] {
+        let operationID = JarvisLog.operationID()
+        JarvisLog.debug(
+            category: .clipboard,
+            event: "history.load.begin",
+            operationID: operationID,
+            fields: ["path": JarvisLogRedactor.path(fileURL.path)]
+        )
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            JarvisLog.info(
+                category: .clipboard,
+                event: "history.load.complete",
+                operationID: operationID,
+                result: "empty",
+                fields: ["recordCount": "0"]
+            )
             return []
         }
 
         do {
             let data = try Data(contentsOf: fileURL)
             let items = try JSONDecoder().decode([ClipboardItem].self, from: data)
-            return ClipboardOrdering.newestFirst(items)
+            let orderedItems = ClipboardOrdering.newestFirst(items)
+            JarvisLog.info(
+                category: .clipboard,
+                event: "history.load.complete",
+                operationID: operationID,
+                result: "success",
+                fields: [
+                    "recordCount": String(orderedItems.count),
+                    "bytes": String(data.count)
+                ]
+            )
+            return orderedItems
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "读取剪贴板历史失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .clipboard,
+                event: "history.load.failed",
+                error: error,
+                operationID: operationID,
+                fields: ["path": JarvisLogRedactor.path(fileURL.path)]
             )
             return []
         }
@@ -584,13 +711,37 @@ final class ClipboardStore {
 
     @discardableResult
     func save(_ items: [ClipboardItem]) -> Bool {
+        let operationID = JarvisLog.operationID()
+        JarvisLog.debug(
+            category: .clipboard,
+            event: "history.save.begin",
+            operationID: operationID,
+            fields: [
+                "recordCount": String(items.count),
+                "path": JarvisLogRedactor.path(fileURL.path)
+            ]
+        )
         do {
             let data = try JSONEncoder().encode(items)
             try JarvisProtectedStorage.write(data, to: fileURL)
+            JarvisLog.info(
+                category: .clipboard,
+                event: "history.save.complete",
+                operationID: operationID,
+                result: "success",
+                fields: [
+                    "recordCount": String(items.count),
+                    "bytes": String(data.count)
+                ]
+            )
             return true
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "写入剪贴板历史失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .clipboard,
+                event: "history.save.failed",
+                error: error,
+                operationID: operationID,
+                fields: ["recordCount": String(items.count)]
             )
             return false
         }

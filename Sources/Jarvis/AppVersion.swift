@@ -8,8 +8,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "1.2.20"
-    private static let fallbackBuild = "254"
+    private static let fallbackShortVersion = "1.2.21"
+    private static let fallbackBuild = "255"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -112,6 +112,12 @@ struct JarvisUpdateService {
     }
 
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
+        let operationID = JarvisLog.operationID()
+        JarvisLog.info(
+            category: .update,
+            event: "release.check.begin",
+            operationID: operationID
+        )
         let endpoint = URL(string: "https://api.github.com/repos/MineonStudio/jarvis-macos/releases/latest")!
         var request = URLRequest(url: endpoint)
         request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
@@ -133,12 +139,24 @@ struct JarvisUpdateService {
             let name = asset.name.lowercased()
             return name.contains("jarvis") && name.hasSuffix(".zip")
         }
-        return JarvisReleaseInfo(
+        let releaseInfo = JarvisReleaseInfo(
             version: release.tagName,
             releaseURL: release.htmlURL,
             downloadURL: asset?.browserDownloadURL,
             assetDigest: asset?.digest
         )
+        JarvisLog.info(
+            category: .update,
+            event: "release.check.complete",
+            operationID: operationID,
+            result: "success",
+            fields: [
+                "version": releaseInfo.version,
+                "hasDownload": String(releaseInfo.downloadURL != nil),
+                "hasDigest": String(releaseInfo.assetDigest != nil)
+            ]
+        )
+        return releaseInfo
     }
 
     func isNewer(_ remote: String, than local: String) -> Bool {
@@ -159,6 +177,26 @@ struct JarvisUpdateService {
     /// Downloads, validates, stages, and hands the update to a detached
     /// installer. The current app is not replaced until this method returns.
     func downloadAndInstall(_ release: JarvisReleaseInfo) async throws {
+        let operationID = JarvisLog.operationID()
+        var handedOffToInstaller = false
+        JarvisLog.notice(
+            category: .update,
+            event: "install.begin",
+            operationID: operationID,
+            fields: [
+                "version": release.version,
+                "hasDigest": String(release.assetDigest != nil)
+            ]
+        )
+        defer {
+            JarvisLog.notice(
+                category: .update,
+                event: "install.complete",
+                operationID: operationID,
+                result: handedOffToInstaller ? "handedOffToInstaller" : "failed",
+                fields: ["version": release.version]
+            )
+        }
         guard let downloadURL = release.downloadURL else {
             throw JarvisUpdateError.downloadUnavailable
         }
@@ -194,8 +232,6 @@ struct JarvisUpdateService {
             .appendingPathComponent("JarvisUpdate-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: temporaryDirectory.path)
-        var handedOffToInstaller = false
-
         defer {
             if !handedOffToInstaller {
                 try? fileManager.removeItem(at: temporaryDirectory)

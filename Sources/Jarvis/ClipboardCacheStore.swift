@@ -95,6 +95,44 @@ struct ClipboardCacheUsage: Equatable, Sendable {
     }
 }
 
+struct ClipboardCacheAudit: Codable, Equatable, Sendable {
+    let historyCount: Int
+    let referenceCount: Int
+    let missingReferenceCount: Int
+    let missingByKind: [String: Int]
+    let missingByReferenceType: [String: Int]
+    let unusableRecordCount: Int
+    let cacheFileCount: Int
+    let cacheBytes: Int64
+    let capacityBytes: Int64
+
+    var usableRecordCount: Int {
+        max(historyCount - unusableRecordCount, 0)
+    }
+
+    func logFields(autoCleanupEnabled: Bool) -> [String: String] {
+        [
+            "historyCount": String(historyCount),
+            "referenceCount": String(referenceCount),
+            "missingReferenceCount": String(missingReferenceCount),
+            "missingByKind": missingByKind
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key):\($0.value)" }
+                .joined(separator: ","),
+            "missingByReferenceType": missingByReferenceType
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key):\($0.value)" }
+                .joined(separator: ","),
+            "usableRecordCount": String(usableRecordCount),
+            "unusableRecordCount": String(unusableRecordCount),
+            "cacheFileCount": String(cacheFileCount),
+            "cacheBytes": String(cacheBytes),
+            "capacityBytes": String(capacityBytes),
+            "autoCleanupEnabled": String(autoCleanupEnabled)
+        ]
+    }
+}
+
 struct ClipboardCacheMigration {
     let items: [ClipboardItem]
     let legacyPaths: [String]
@@ -132,6 +170,15 @@ final class ClipboardCacheStore: @unchecked Sendable {
         maximumBytes = Self.normalizedMaximumBytes(storedMaximum?.int64Value ?? Self.defaultMaximumBytes)
 
         JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
+        JarvisLog.info(
+            category: .clipboard,
+            event: "cache.initialized",
+            fields: [
+                "directory": JarvisLogRedactor.path(directoryURL.path),
+                "configuredDirectory": String(storedDirectory != nil),
+                "capacityBytes": String(maximumBytes)
+            ]
+        )
     }
 
     var currentDirectoryURL: URL {
@@ -148,13 +195,90 @@ final class ClipboardCacheStore: @unchecked Sendable {
             maximumBytes = clamped
             defaults.set(clamped, forKey: Self.maximumBytesKey)
         }
+        JarvisLog.info(
+            category: .clipboard,
+            event: "cache.capacityChanged",
+            fields: ["capacityBytes": String(clamped)]
+        )
     }
 
     func usage() -> ClipboardCacheUsage {
         lock.withLock { usageLocked() }
     }
 
-    func storeFile(_ sourceURL: URL, fileSize _: Int64) -> String? {
+    func audit(items: [ClipboardItem]) -> ClipboardCacheAudit {
+        lock.withLock {
+            var referenceCount = 0
+            var missingReferenceCount = 0
+            var missingByKind = Dictionary(
+                uniqueKeysWithValues: ClipboardKind.allCases.map { ($0.rawValue, 0) }
+            )
+            var missingByReferenceType = [
+                "textPath": 0,
+                "imagePath": 0,
+                "filePath": 0,
+                "thumbnailPath": 0
+            ]
+            var unusableRecordCount = 0
+
+            for item in items {
+                let references: [(String, String)] = [
+                    ("textPath", item.textPath),
+                    ("imagePath", item.imagePath),
+                    ("filePath", item.filePath),
+                    ("thumbnailPath", item.thumbnailPath)
+                ].compactMap { name, path in
+                    path.map { (name, $0) }
+                }
+                referenceCount += references.count
+                for (referenceType, path) in references where !fileManager.fileExists(atPath: path) {
+                    missingReferenceCount += 1
+                    missingByKind[item.kind.rawValue, default: 0] += 1
+                    missingByReferenceType[referenceType, default: 0] += 1
+                }
+
+                let isUsable: Bool = switch item.kind {
+                case .text:
+                    item.text != nil
+                        || (item.textPath.map { fileManager.fileExists(atPath: $0) } ?? false)
+                case .image:
+                    item.imagePath.map { fileManager.fileExists(atPath: $0) } ?? false
+                case .file, .video:
+                    item.filePath.map { fileManager.fileExists(atPath: $0) } ?? false
+                }
+                if !isUsable {
+                    unusableRecordCount += 1
+                }
+            }
+
+            let usage = usageLocked()
+            return ClipboardCacheAudit(
+                historyCount: items.count,
+                referenceCount: referenceCount,
+                missingReferenceCount: missingReferenceCount,
+                missingByKind: missingByKind,
+                missingByReferenceType: missingByReferenceType,
+                unusableRecordCount: unusableRecordCount,
+                cacheFileCount: usage.fileCount,
+                cacheBytes: usage.usedBytes,
+                capacityBytes: usage.capacityBytes
+            )
+        }
+    }
+
+    func storeFile(_ sourceURL: URL, fileSize: Int64) -> String? {
+        let operationID = JarvisLog.operationID()
+        let startedAt = Date()
+        JarvisLog.debug(
+            category: .clipboard,
+            event: "cache.write.begin",
+            operationID: operationID,
+            fields: [
+                "kind": "file",
+                "requestedBytes": String(fileSize),
+                "extension": sourceURL.pathExtension.lowercased()
+            ]
+        )
         let destination: URL? = lock.withLock {
             guard
                 let values = try? sourceURL.resourceValues(
@@ -170,7 +294,19 @@ final class ClipboardCacheStore: @unchecked Sendable {
             }
             return makeDestinationLocked(extension: sourceURL.pathExtension)
         }
-        guard let destination else { return nil }
+        guard let destination else {
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "cache.write.rejected",
+                operationID: operationID,
+                result: "capacityOrSourceRejected",
+                fields: [
+                    "kind": "file",
+                    "requestedBytes": String(fileSize)
+                ]
+            )
+            return nil
+        }
 
         do {
             try fileManager.copyItem(at: sourceURL, to: destination)
@@ -178,17 +314,46 @@ final class ClipboardCacheStore: @unchecked Sendable {
                 [.posixPermissions: 0o600],
                 ofItemAtPath: destination.path
             )
+            JarvisLog.info(
+                category: .clipboard,
+                event: "cache.write.complete",
+                operationID: operationID,
+                durationMilliseconds: Date().timeIntervalSince(startedAt) * 1000,
+                result: "success",
+                fields: [
+                    "kind": "file",
+                    "bytes": String(fileSize),
+                    "destination": JarvisLogRedactor.path(destination.path)
+                ]
+            )
             return destination.path
         } catch {
             try? fileManager.removeItem(at: destination)
-            JarvisPersistenceLog.logger.error(
-                "复制剪贴板文件失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .clipboard,
+                event: "cache.write.failed",
+                error: error,
+                operationID: operationID,
+                durationMilliseconds: Date().timeIntervalSince(startedAt) * 1000,
+                fields: ["kind": "file"]
             )
             return nil
         }
     }
 
     func storeData(_ data: Data, fileExtension: String) -> String? {
+        let operationID = JarvisLog.operationID()
+        let startedAt = Date()
+        JarvisLog.debug(
+            category: .clipboard,
+            event: "cache.write.begin",
+            operationID: operationID,
+            fields: [
+                "kind": fileExtension.lowercased() == "txt" ? "text" : "image",
+                "requestedBytes": String(data.count),
+                "extension": fileExtension.lowercased()
+            ]
+        )
         let destination: URL? = lock.withLock {
             let dataSize = Int64(data.count)
             guard
@@ -199,60 +364,153 @@ final class ClipboardCacheStore: @unchecked Sendable {
             }
             return makeDestinationLocked(extension: fileExtension)
         }
-        guard let destination else { return nil }
+        guard let destination else {
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "cache.write.rejected",
+                operationID: operationID,
+                result: "capacityExceeded",
+                fields: [
+                    "kind": fileExtension.lowercased() == "txt" ? "text" : "image",
+                    "requestedBytes": String(data.count)
+                ]
+            )
+            return nil
+        }
 
         do {
             try JarvisProtectedStorage.write(data, to: destination)
+            JarvisLog.info(
+                category: .clipboard,
+                event: "cache.write.complete",
+                operationID: operationID,
+                durationMilliseconds: Date().timeIntervalSince(startedAt) * 1000,
+                result: "success",
+                fields: [
+                    "kind": fileExtension.lowercased() == "txt" ? "text" : "image",
+                    "bytes": String(data.count),
+                    "destination": JarvisLogRedactor.path(destination.path)
+                ]
+            )
             return destination.path
         } catch {
             try? fileManager.removeItem(at: destination)
-            JarvisPersistenceLog.logger.error(
-                "写入剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .clipboard,
+                event: "cache.write.failed",
+                error: error,
+                operationID: operationID,
+                durationMilliseconds: Date().timeIntervalSince(startedAt) * 1000,
+                fields: [
+                    "kind": fileExtension.lowercased() == "txt" ? "text" : "image",
+                    "bytes": String(data.count)
+                ]
             )
             return nil
         }
     }
 
     func removeStoredFile(atPath path: String) {
+        let operationID = JarvisLog.operationID()
         do {
             try fileManager.removeItem(atPath: path)
+            JarvisLog.info(
+                category: .clipboard,
+                event: "cache.fileDelete.complete",
+                operationID: operationID,
+                result: "success",
+                fields: ["path": JarvisLogRedactor.path(path)]
+            )
         } catch CocoaError.fileNoSuchFile {
-            return
+            JarvisLog.notice(
+                category: .clipboard,
+                event: "cache.fileDelete.complete",
+                operationID: operationID,
+                result: "alreadyMissing",
+                fields: ["path": JarvisLogRedactor.path(path)]
+            )
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "删除剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .clipboard,
+                event: "cache.fileDelete.failed",
+                error: error,
+                operationID: operationID,
+                fields: ["path": JarvisLogRedactor.path(path)]
             )
         }
     }
 
-    func removeLegacyFiles(atPaths paths: [String]) {
+    func removeLegacyFiles(atPaths paths: [String], reason: String = "legacyCleanup") {
+        guard !paths.isEmpty else { return }
+        JarvisLog.debug(
+            category: .clipboard,
+            event: "cache.legacyDelete.begin",
+            fields: [
+                "pathCount": String(paths.count),
+                "reason": reason
+            ]
+        )
         for path in paths {
             removeStoredFile(atPath: path)
         }
+        JarvisLog.info(
+            category: .clipboard,
+            event: "cache.legacyDelete.complete",
+            result: "success",
+            fields: [
+                "pathCount": String(paths.count),
+                "reason": reason
+            ]
+        )
     }
 
     /// Removes only files owned by the configured cache directory.
     /// External source files referenced by clipboard history are never touched.
     @discardableResult
-    func removeManagedFiles(for items: [ClipboardItem]) -> Bool {
-        lock.withLock {
+    func removeManagedFiles(for items: [ClipboardItem], reason: String = "manual") -> Bool {
+        let operationID = JarvisLog.operationID()
+        let result = lock.withLock {
             var succeeded = true
+            var removedFileCount = 0
             for item in items {
                 for url in managedFileURLsLocked(for: item) {
                     guard fileManager.fileExists(atPath: url.path) else { continue }
                     do {
                         try fileManager.removeItem(at: url)
+                        removedFileCount += 1
                     } catch {
                         succeeded = false
-                        JarvisPersistenceLog.logger.error(
-                            "删除剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+                        JarvisLog.error(
+                            category: .clipboard,
+                            event: "cache.delete.failed",
+                            error: error,
+                            operationID: operationID,
+                            fields: [
+                                "reason": reason,
+                                "kind": item.kind.rawValue
+                            ]
                         )
                     }
                 }
             }
-            return succeeded
-                && items.allSatisfy { managedFileURLsLocked(for: $0).allSatisfy { !fileManager.fileExists(atPath: $0.path) } }
+            return (
+                succeeded
+                    && items.allSatisfy { managedFileURLsLocked(for: $0).allSatisfy { !fileManager.fileExists(atPath: $0.path) } },
+                removedFileCount
+            )
         }
+        JarvisLog.info(
+            category: .clipboard,
+            event: "cache.delete.complete",
+            operationID: operationID,
+            result: result.0 ? "success" : "partialFailure",
+            fields: [
+                "reason": reason,
+                "itemCount": String(items.count),
+                "fileCount": String(result.1)
+            ]
+        )
+        return result.0
     }
 
     func hasManagedFiles(for item: ClipboardItem) -> Bool {
@@ -264,19 +522,22 @@ final class ClipboardCacheStore: @unchecked Sendable {
     @discardableResult
     func removeOrphanedManagedFiles(
         referencedPaths: Set<String>,
-        olderThan: Date? = nil
+        olderThan: Date? = nil,
+        reason: String = "orphanCleanup"
     ) -> Bool {
-        lock.withLock {
+        let operationID = JarvisLog.operationID()
+        let removed: (Bool, Int) = lock.withLock {
             guard let enumerator = fileManager.enumerator(
                 at: directoryURL,
                 includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             ) else {
-                return false
+                return (false, 0)
             }
 
             let referenced = Set(referencedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
-            var removed = false
+            var didRemove = false
+            var removedFileCount = 0
             for case let url as URL in enumerator {
                 let standardizedURL = url.standardizedFileURL
                 guard
@@ -293,15 +554,31 @@ final class ClipboardCacheStore: @unchecked Sendable {
 
                 do {
                     try fileManager.removeItem(at: standardizedURL)
-                    removed = true
+                    didRemove = true
+                    removedFileCount += 1
                 } catch {
-                    JarvisPersistenceLog.logger.error(
-                        "删除孤立剪贴板缓存失败：\(error.localizedDescription, privacy: .public)"
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "cache.orphanDelete.failed",
+                        error: error,
+                        operationID: operationID,
+                        fields: ["reason": reason]
                     )
                 }
             }
-            return removed
+            return (didRemove, removedFileCount)
         }
+        JarvisLog.info(
+            category: .clipboard,
+            event: "cache.orphanDelete.complete",
+            operationID: operationID,
+            result: "success",
+            fields: [
+                "reason": reason,
+                "fileCount": String(removed.1)
+            ]
+        )
+        return removed.0
     }
 
     private func managedFileURLsLocked(for item: ClipboardItem) -> [URL] {
@@ -329,89 +606,125 @@ final class ClipboardCacheStore: @unchecked Sendable {
         for items: [ClipboardItem],
         to newDirectoryURL: URL
     ) throws -> ClipboardCacheMigration {
-        try lock.withLock {
-            let oldDirectoryURL = directoryURL.standardizedFileURL
-            let destinationDirectoryURL = newDirectoryURL.standardizedFileURL
-            guard oldDirectoryURL != destinationDirectoryURL else {
-                return ClipboardCacheMigration(items: items, legacyPaths: [])
-            }
+        let operationID = JarvisLog.operationID()
+        let oldDirectory = currentDirectoryURL
+        let destinationDirectory = newDirectoryURL.standardizedFileURL
+        JarvisLog.notice(
+            category: .clipboard,
+            event: "cache.migration.begin",
+            operationID: operationID,
+            fields: [
+                "sourceDirectory": JarvisLogRedactor.path(oldDirectory.path),
+                "destinationDirectory": JarvisLogRedactor.path(destinationDirectory.path),
+                "itemCount": String(items.count)
+            ]
+        )
 
-            try fileManager.createDirectory(
-                at: destinationDirectoryURL,
-                withIntermediateDirectories: true
+        do {
+            let migration = try lock.withLock {
+                let oldDirectoryURL = directoryURL.standardizedFileURL
+                let destinationDirectoryURL = newDirectoryURL.standardizedFileURL
+                guard oldDirectoryURL != destinationDirectoryURL else {
+                    return ClipboardCacheMigration(items: items, legacyPaths: [])
+                }
+
+                try fileManager.createDirectory(
+                    at: destinationDirectoryURL,
+                    withIntermediateDirectories: true
+                )
+
+                var migratedItems = items
+                var copiedPaths: [String] = []
+                var oldPaths: [String] = []
+
+                do {
+                    for index in migratedItems.indices {
+                        var item = migratedItems[index]
+                        if let textPath = item.textPath,
+                           let migration = try copyManagedFile(
+                               textPath,
+                               from: oldDirectoryURL,
+                               to: destinationDirectoryURL
+                           )
+                        {
+                            item.textPath = migration.path
+                            if migration.didCopy {
+                                copiedPaths.append(migration.path)
+                            }
+                            oldPaths.append(textPath)
+                        }
+                        if let imagePath = item.imagePath,
+                           let migration = try copyManagedFile(
+                               imagePath,
+                               from: oldDirectoryURL,
+                               to: destinationDirectoryURL
+                           )
+                        {
+                            item.imagePath = migration.path
+                            if migration.didCopy {
+                                copiedPaths.append(migration.path)
+                            }
+                            oldPaths.append(imagePath)
+                        }
+                        if let filePath = item.filePath,
+                           let migration = try copyManagedFile(
+                               filePath,
+                               from: oldDirectoryURL,
+                               to: destinationDirectoryURL
+                           )
+                        {
+                            item.filePath = migration.path
+                            if migration.didCopy {
+                                copiedPaths.append(migration.path)
+                            }
+                            oldPaths.append(filePath)
+                        }
+                        if let thumbnailPath = item.thumbnailPath,
+                           let migration = try copyManagedFile(
+                               thumbnailPath,
+                               from: oldDirectoryURL,
+                               to: destinationDirectoryURL
+                           )
+                        {
+                            item.thumbnailPath = migration.path
+                            if migration.didCopy {
+                                copiedPaths.append(migration.path)
+                            }
+                            oldPaths.append(thumbnailPath)
+                        }
+                        migratedItems[index] = item
+                    }
+
+                    directoryURL = destinationDirectoryURL
+                    defaults.set(destinationDirectoryURL.path, forKey: Self.directoryKey)
+                    return ClipboardCacheMigration(items: migratedItems, legacyPaths: oldPaths)
+                } catch {
+                    for copiedPath in copiedPaths {
+                        try? fileManager.removeItem(atPath: copiedPath)
+                    }
+                    throw error
+                }
+            }
+            JarvisLog.info(
+                category: .clipboard,
+                event: "cache.migration.complete",
+                operationID: operationID,
+                result: "success",
+                fields: [
+                    "itemCount": String(migration.items.count),
+                    "legacyPathCount": String(migration.legacyPaths.count)
+                ]
             )
-
-            var migratedItems = items
-            var copiedPaths: [String] = []
-            var oldPaths: [String] = []
-
-            do {
-                for index in migratedItems.indices {
-                    var item = migratedItems[index]
-                    if let textPath = item.textPath,
-                       let migration = try copyManagedFile(
-                           textPath,
-                           from: oldDirectoryURL,
-                           to: destinationDirectoryURL
-                       )
-                    {
-                        item.textPath = migration.path
-                        if migration.didCopy {
-                            copiedPaths.append(migration.path)
-                        }
-                        oldPaths.append(textPath)
-                    }
-                    if let imagePath = item.imagePath,
-                       let migration = try copyManagedFile(
-                           imagePath,
-                           from: oldDirectoryURL,
-                           to: destinationDirectoryURL
-                       )
-                    {
-                        item.imagePath = migration.path
-                        if migration.didCopy {
-                            copiedPaths.append(migration.path)
-                        }
-                        oldPaths.append(imagePath)
-                    }
-                    if let filePath = item.filePath,
-                       let migration = try copyManagedFile(
-                           filePath,
-                           from: oldDirectoryURL,
-                           to: destinationDirectoryURL
-                       )
-                    {
-                        item.filePath = migration.path
-                        if migration.didCopy {
-                            copiedPaths.append(migration.path)
-                        }
-                        oldPaths.append(filePath)
-                    }
-                    if let thumbnailPath = item.thumbnailPath,
-                       let migration = try copyManagedFile(
-                           thumbnailPath,
-                           from: oldDirectoryURL,
-                           to: destinationDirectoryURL
-                       )
-                    {
-                        item.thumbnailPath = migration.path
-                        if migration.didCopy {
-                            copiedPaths.append(migration.path)
-                        }
-                        oldPaths.append(thumbnailPath)
-                    }
-                    migratedItems[index] = item
-                }
-
-                directoryURL = destinationDirectoryURL
-                defaults.set(destinationDirectoryURL.path, forKey: Self.directoryKey)
-                return ClipboardCacheMigration(items: migratedItems, legacyPaths: oldPaths)
-            } catch {
-                for copiedPath in copiedPaths {
-                    try? fileManager.removeItem(atPath: copiedPath)
-                }
-                throw error
-            }
+            return migration
+        } catch {
+            JarvisLog.error(
+                category: .clipboard,
+                event: "cache.migration.failed",
+                error: error,
+                operationID: operationID,
+                fields: ["itemCount": String(items.count)]
+            )
+            throw error
         }
     }
 
@@ -452,8 +765,10 @@ final class ClipboardCacheStore: @unchecked Sendable {
                 isDirectory: false
             )
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "创建剪贴板缓存目录失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .clipboard,
+                event: "cache.directoryCreate.failed",
+                error: error
             )
             return nil
         }

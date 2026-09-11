@@ -249,7 +249,11 @@ struct HermesAdapter: @unchecked Sendable {
                 try createProfileWithCLI(URL(fileURLWithPath: cliPath))
                 shouldWriteSoul = true
             } catch {
-                NSLog("Jarvis could not create Hermes profile via CLI: \(error.localizedDescription)")
+                JarvisLog.error(
+                    category: .storage,
+                    event: "hermes.profile.create.failed",
+                    error: error
+                )
             }
         }
 

@@ -652,17 +652,29 @@ extension JarvisWebPlatformController: WKUIDelegate {
         let protocolName = origin.protocol.lowercased()
         let host = origin.host.lowercased()
         guard protocolName == "https", platform.allowsHost(host) else {
-            NSLog("Jarvis denied media capture for untrusted origin: %@://%@", protocolName, host)
+            JarvisLog.notice(
+                category: .security,
+                event: "web.mediaCapture.permission.denied",
+                result: "untrustedOrigin",
+                fields: [
+                    "platform": platform.id,
+                    "protocol": protocolName,
+                    "host": host
+                ]
+            )
             decisionHandler(.deny)
             return
         }
 
-        NSLog(
-            "Jarvis requesting media capture permission for platform=%@ origin=%@://%@ type=%@",
-            platform.id,
-            protocolName,
-            host,
-            String(describing: type)
+        JarvisLog.info(
+            category: .security,
+            event: "web.mediaCapture.permission.requested",
+            fields: [
+                "platform": platform.id,
+                "protocol": protocolName,
+                "host": host,
+                "type": String(describing: type)
+            ]
         )
 
         Task { @MainActor [weak self] in
@@ -672,12 +684,16 @@ extension JarvisWebPlatformController: WKUIDelegate {
             }
 
             let granted = await requestSystemMediaAccess(for: type)
-            NSLog(
-                "Jarvis media capture permission result platform=%@ origin=%@://%@ granted=%@",
-                platform.id,
-                protocolName,
-                host,
-                granted ? "true" : "false"
+            JarvisLog.info(
+                category: .security,
+                event: "web.mediaCapture.permission.complete",
+                result: granted ? "granted" : "denied",
+                fields: [
+                    "platform": platform.id,
+                    "protocol": protocolName,
+                    "host": host,
+                    "type": String(describing: type)
+                ]
             )
             decisionHandler(granted ? .grant : .deny)
         }

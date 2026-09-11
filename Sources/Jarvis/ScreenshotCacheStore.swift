@@ -34,8 +34,10 @@ final class ScreenshotCacheStore: @unchecked Sendable {
             } catch CocoaError.fileReadNoSuchFile {
                 return nil
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "读取截图缓存失败：\(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.cache.read.failed",
+                    error: error
                 )
                 return nil
             }
@@ -50,8 +52,10 @@ final class ScreenshotCacheStore: @unchecked Sendable {
                 try JarvisProtectedStorage.write(data, to: fileURL)
                 return true
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "写入截图缓存失败：\(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.cache.write.failed",
+                    error: error
                 )
                 return false
             }
@@ -67,8 +71,10 @@ final class ScreenshotCacheStore: @unchecked Sendable {
             } catch CocoaError.fileNoSuchFile {
                 return true
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "清除截图缓存失败：\(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.cache.clear.failed",
+                    error: error
                 )
                 return false
             }

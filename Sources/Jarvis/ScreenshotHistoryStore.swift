@@ -59,8 +59,10 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
                 }
                 .sorted { $0.updatedAt > $1.updatedAt }
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "读取截图历史索引失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.load.failed",
+                error: error
             )
             return []
         }
@@ -69,14 +71,20 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     func data(for item: ScreenshotHistoryItem) -> Data? {
         lock.withLock {
             guard let url = safeFileURL(for: item.fileName) else {
-                JarvisPersistenceLog.logger.error("拒绝读取越界的截图历史路径")
+                JarvisLog.error(
+                    category: .security,
+                    event: "screenshot.history.pathRejected",
+                    fields: ["operation": "read"]
+                )
                 return nil
             }
             do {
                 return try Data(contentsOf: url)
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "读取历史截图失败：\(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.history.read.failed",
+                    error: error
                 )
                 return nil
             }
@@ -139,7 +147,11 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
         lock.withLock {
             do {
                 guard let url = safeFileURL(for: item.fileName) else {
-                    JarvisPersistenceLog.logger.error("拒绝删除越界的截图历史路径")
+                    JarvisLog.error(
+                        category: .security,
+                        event: "screenshot.history.pathRejected",
+                        fields: ["operation": "delete"]
+                    )
                     return false
                 }
                 try fileManager.removeItem(at: url)
@@ -147,8 +159,10 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
                 // The metadata index still needs to be cleaned when the PNG was
                 // already removed by an earlier failed cleanup.
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "删除历史截图文件失败：\(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.history.delete.failed",
+                    error: error
                 )
                 return false
             }
@@ -160,15 +174,21 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
 
     private func write(_ data: Data, for item: ScreenshotHistoryItem) -> Bool {
         guard let url = safeFileURL(for: item.fileName) else {
-            JarvisPersistenceLog.logger.error("拒绝写入越界的截图历史路径")
+            JarvisLog.error(
+                category: .security,
+                event: "screenshot.history.pathRejected",
+                fields: ["operation": "write"]
+            )
             return false
         }
         do {
             try JarvisProtectedStorage.write(data, to: url)
             return true
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "写入历史截图失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.write.failed",
+                error: error
             )
             return false
         }
@@ -181,8 +201,11 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             try JarvisProtectedStorage.write(data, to: metadataURL)
             return true
         } catch {
-            JarvisPersistenceLog.logger.error(
-                "写入截图历史索引失败：\(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.indexSave.failed",
+                error: error,
+                fields: ["recordCount": String(items.count)]
             )
             return false
         }
@@ -201,8 +224,10 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             } catch CocoaError.fileNoSuchFile {
                 continue
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "清理超量历史截图失败：\(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.history.trim.failed",
+                    error: error
                 )
             }
         }

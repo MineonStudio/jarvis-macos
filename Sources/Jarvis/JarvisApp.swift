@@ -16,6 +16,14 @@ struct JarvisApp: App {
 
     init() {
         NSApplication.shared.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
+        JarvisLog.notice(
+            category: .lifecycle,
+            event: "process.started",
+            fields: [
+                "processID": String(ProcessInfo.processInfo.processIdentifier),
+                "bundlePath": JarvisLogRedactor.path(Bundle.main.bundleURL.path)
+            ]
+        )
 
         let appModel = AppModel()
         _appModel = State(initialValue: appModel)
@@ -83,15 +91,25 @@ private struct JarvisRootView: View {
 @MainActor
 private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
+    private let instanceCoordinator = JarvisInstanceCoordinator()
     weak var appModel: AppModel?
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
         menuBarController.install()
         NSApp.activate()
+        JarvisLog.info(
+            category: .lifecycle,
+            event: "application.didFinishLaunching"
+        )
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        JarvisLog.info(
+            category: .window,
+            event: "application.reopen",
+            fields: ["hasVisibleWindows": String(flag)]
+        )
         if !flag {
             menuBarController.reopenMainWindow()
         }

@@ -328,7 +328,11 @@ extension AppModel {
             refreshHermesStatus()
             return nil
         } catch {
-            NSLog("Jarvis could not inject API into Hermes: \(error.localizedDescription)")
+            JarvisLog.error(
+                category: .security,
+                event: "hermes.apiConfiguration.sync.failed",
+                error: error
+            )
             return error
         }
     }
@@ -438,7 +442,11 @@ extension AppModel {
         do {
             try launchAtLoginService.register()
         } catch {
-            NSLog("Jarvis could not register as a login item: \(error.localizedDescription)")
+            JarvisLog.error(
+                category: .lifecycle,
+                event: "launchAtLogin.register.failed",
+                error: error
+            )
         }
     }
 

@@ -10,11 +10,6 @@ enum JarvisPerformance {
         category: .pointsOfInterest
     )
 
-    static let logger = Logger(
-        subsystem: JarvisAppIdentity.bundleIdentifier,
-        category: "performance"
-    )
-
     static func emit(_ name: StaticString) {
         signposter.emitEvent(name)
     }
@@ -58,8 +53,13 @@ final class MainThreadHealthMonitor {
                         + String(format: "%.2f ms", milliseconds)
                         + "\u{001B}[0m"
                 )
-                JarvisPerformance.logger.warning(
-                    "主线程连续占用超过阈值：\(milliseconds, privacy: .public) ms"
+                JarvisLog.error(
+                    category: .performance,
+                    event: "mainThread.hitch",
+                    fields: [
+                        "durationMilliseconds": String(format: "%.2f", milliseconds),
+                        "thresholdMilliseconds": String(self.thresholdNanoseconds / 1_000_000)
+                    ]
                 )
             default:
                 break

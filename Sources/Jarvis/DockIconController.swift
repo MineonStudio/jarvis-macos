@@ -51,7 +51,11 @@ final class JarvisDockIconController {
             withExtension: "icns",
             subdirectory: "DockIcons"
         ), let image = NSImage(contentsOf: url) else {
-            NSLog("Jarvis could not load Dock icon resource: \(resourceName).icns")
+            JarvisLog.error(
+                category: .lifecycle,
+                event: "dockIcon.load.failed",
+                fields: ["resource": resourceName]
+            )
             return nil
         }
 

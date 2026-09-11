@@ -43,20 +43,59 @@ struct ClipboardItemPreview: View {
         .task(id: thumbnailTaskID) {
             image = nil
             videoThumbnail = nil
+            let operationID = JarvisLog.operationID()
 
             switch item.kind {
             case .image:
-                guard let path = item.imagePath else { return }
-                image = await JarvisThumbnailCache.loadAsync(
+                guard let path = item.imagePath else {
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "preview.read.failed",
+                        operationID: operationID,
+                        result: "missingReference",
+                        fields: ["kind": item.kind.rawValue]
+                    )
+                    return
+                }
+                guard let loadedImage = await JarvisThumbnailCache.loadAsync(
                     fileURL: URL(fileURLWithPath: path),
                     maxPixelSize: 640
-                )
+                ) else {
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "preview.read.failed",
+                        operationID: operationID,
+                        result: "unreadable",
+                        fields: [
+                            "kind": item.kind.rawValue,
+                            "pathExists": String(FileManager.default.fileExists(atPath: path))
+                        ]
+                    )
+                    return
+                }
+                image = loadedImage
             case .video:
-                guard let videoPath = item.filePath else { return }
+                guard let videoPath = item.filePath else {
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "preview.read.failed",
+                        operationID: operationID,
+                        result: "missingReference",
+                        fields: ["kind": item.kind.rawValue]
+                    )
+                    return
+                }
 
                 let cacheKey = (item.thumbnailPath ?? videoPath) as NSString
                 if let cached = Self.videoThumbnailCache.object(forKey: cacheKey) {
                     videoThumbnail = cached
+                    JarvisLog.debug(
+                        category: .clipboard,
+                        event: "preview.read.complete",
+                        operationID: operationID,
+                        result: "memoryCache",
+                        fields: ["kind": item.kind.rawValue]
+                    )
                     return
                 }
 
@@ -76,7 +115,19 @@ struct ClipboardItemPreview: View {
                 }
 
                 ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: videoPath)) { image in
-                    guard let image else { return }
+                    guard let image else {
+                        JarvisLog.error(
+                            category: .clipboard,
+                            event: "preview.read.failed",
+                            operationID: operationID,
+                            result: "unreadable",
+                            fields: [
+                                "kind": item.kind.rawValue,
+                                "pathExists": String(FileManager.default.fileExists(atPath: videoPath))
+                            ]
+                        )
+                        return
+                    }
                     let thumbnail = NSImage(
                         cgImage: image,
                         size: NSSize(width: image.width, height: image.height)

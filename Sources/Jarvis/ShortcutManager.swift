@@ -1,6 +1,5 @@
 import AppKit
 import Carbon.HIToolbox
-import OSLog
 import SwiftUI
 
 struct ScreenshotShortcut: Codable, Equatable {
@@ -196,7 +195,6 @@ enum ScreenshotShortcutValidation: Equatable {
 }
 
 final class ScreenshotShortcutManager {
-    private static let logger = Logger(subsystem: JarvisAppIdentity.bundleIdentifier, category: "shortcuts")
     private let handler: @MainActor @Sendable () -> Void
     private let hotKeyID: UInt32
     private var binding: ScreenshotShortcut
@@ -298,7 +296,14 @@ final class ScreenshotShortcutManager {
             &eventHandler
         )
         if status != noErr {
-            Self.logger.error("InstallEventHandler failed for hotKeyID=\(self.hotKeyID, privacy: .public), status=\(status, privacy: .public)")
+            JarvisLog.error(
+                category: .shortcut,
+                event: "hotKey.eventHandler.install.failed",
+                fields: [
+                    "hotKeyID": String(self.hotKeyID),
+                    "status": String(status)
+                ]
+            )
         }
     }
 
@@ -306,7 +311,16 @@ final class ScreenshotShortcutManager {
     private func registerHotKey() -> Bool {
         let status = registerHotKey(for: binding)
         if status != noErr {
-            Self.logger.error("RegisterEventHotKey failed for hotKeyID=\(self.hotKeyID, privacy: .public), keyCode=\(self.binding.keyCode, privacy: .public), modifiers=\(self.binding.modifiers, privacy: .public), status=\(status, privacy: .public)")
+            JarvisLog.error(
+                category: .shortcut,
+                event: "hotKey.register.failed",
+                fields: [
+                    "hotKeyID": String(self.hotKeyID),
+                    "keyCode": String(self.binding.keyCode),
+                    "modifiers": String(self.binding.modifiers),
+                    "status": String(status)
+                ]
+            )
         }
         return status == noErr
     }

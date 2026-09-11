@@ -262,15 +262,38 @@ final class AppModel {
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()
         startDeferredStartup()
+        JarvisLog.info(
+            category: .lifecycle,
+            event: "appModel.initialized",
+            fields: [
+                "clipboardCacheDirectory": JarvisLogRedactor.path(clipboardCacheDirectoryURL.path),
+                "clipboardCacheCapacityBytes": String(clipboardCacheMaximumBytes)
+            ]
+        )
     }
 
     private func startDeferredStartup() {
+        let startedAt = Date()
+        JarvisLog.info(
+            category: .lifecycle,
+            event: "startup.load.begin"
+        )
         startupTask = Task { @MainActor [weak self] in
             guard let self else { return }
             await Task.yield()
             let snapshot = await startupRepository.load()
             guard !Task.isCancelled else { return }
             applyStartupSnapshot(snapshot)
+            JarvisLog.info(
+                category: .lifecycle,
+                event: "startup.load.complete",
+                durationMilliseconds: Date().timeIntervalSince(startedAt) * 1000,
+                result: "success",
+                fields: [
+                    "clipboardRecordCount": String(snapshot.clipboardItems.count),
+                    "screenshotRecordCount": String(snapshot.screenshotHistory.count)
+                ]
+            )
         }
     }
 
@@ -279,6 +302,19 @@ final class AppModel {
         screenshotHistory = snapshot.screenshotHistory
         latestScreenshotData = snapshot.cachedScreenshot
         clipboardCacheUsage = snapshot.clipboardCacheUsage
+
+        let audit = clipboardCacheStore.audit(items: clipboardItems)
+        JarvisLog.notice(
+            category: .clipboard,
+            event: "cache.startupAudit",
+            result: audit.missingReferenceCount == 0 ? "healthy" : "missingReferences",
+            fields: audit.logFields(autoCleanupEnabled: clipboardCacheAutoCleanupEnabled).merging(
+                [
+                    "directory": JarvisLogRedactor.path(clipboardCacheDirectoryURL.path)
+                ],
+                uniquingKeysWith: { _, new in new }
+            )
+        )
 
         // Preserve the cache created by older builds as the first history item
         // when upgrading to the persistent history format.
@@ -309,6 +345,15 @@ final class AppModel {
             statusMessage = "已恢复上次缓存的截图"
         }
         JarvisPerformance.emit("startup services ready")
+        JarvisLog.info(
+            category: .lifecycle,
+            event: "startup.servicesReady",
+            fields: [
+                "clipboardService": "running",
+                "clipboardRecordCount": String(clipboardItems.count),
+                "screenshotRecordCount": String(screenshotHistory.count)
+            ]
+        )
     }
 
     func loadLatestScreenshotIfNeeded() -> Data? {

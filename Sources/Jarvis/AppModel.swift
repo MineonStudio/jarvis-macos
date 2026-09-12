@@ -5,7 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum AppSection: Hashable, Identifiable {
-    case conversation
+    case home
     case aiConversation
     case entertainment
     case skill(SkillID)
@@ -13,7 +13,7 @@ enum AppSection: Hashable, Identifiable {
 
     var id: String {
         switch self {
-        case .conversation: "conversation"
+        case .home: "home"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
         case let .skill(skill): "skill.\(skill.id)"
@@ -23,7 +23,7 @@ enum AppSection: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .conversation: "对话"
+        case .home: "首页"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
         case let .skill(skill): skill.title
@@ -33,7 +33,7 @@ enum AppSection: Hashable, Identifiable {
 
     var navigationTitle: String {
         switch self {
-        case .conversation: "对话"
+        case .home: "首页"
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
         case .skill(.screenshot): "截图"
@@ -47,7 +47,7 @@ enum AppSection: Hashable, Identifiable {
 
     var icon: String {
         switch self {
-        case .conversation: "bubble.left.and.bubble.right"
+        case .home: "house"
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
         case let .skill(skill): skill.icon
@@ -73,7 +73,7 @@ private struct ScreenshotSaveRequest {
 @MainActor
 @Observable
 final class AppModel {
-    var selectedSection: AppSection = .conversation
+    var selectedSection: AppSection = .home
     var clipboardItems: [ClipboardItem] = []
     var latestScreenshotData: Data?
     var screenshotHistory: [ScreenshotHistoryItem] = []
@@ -89,41 +89,16 @@ final class AppModel {
     var updateState: JarvisUpdateState = .idle
     var selectedAIProvider: AIConversationProvider = .deepSeek
     var selectedEntertainmentPlatform: EntertainmentPlatform = .x
+    var apiProvider: AIAPIProvider = .openAI
     var providerEndpoint = AIAPIConfiguration.defaultEndpoint
-    var providerName = ""
     var providerModel = AIAPIConfiguration.defaultModel
-    var hermesCurrentProvider = ""
-    var hermesCurrentModel = ""
+    var availableAIModels: [String] = []
+    var aiModelsLoading = false
+    var aiModelsRefreshError: String?
     var aiAPIKeyConfigured = false
     var aiAPIKeyMask = ""
     var aiSettingsLocked = false
     var aiConnectionTesting = false
-    var availableAIModelOptions: [AIModelOption] = []
-    var aiModelsLoading = false
-    @ObservationIgnored var aiModelsGeneration = 0
-    var hermesStatusMessage = "正在检测 Hermes…"
-    var hermesIsInstalled = false
-    var hermesProfileReady = false
-    var hermesNeedsAIConfiguration = false
-    var hermesIsBusy = false
-    var hermesDeploymentPhase: HermesDeploymentPhase = .idle
-    var hermesDeploymentMessage = ""
-    var hermesDeploymentDetail = ""
-    var hermesDeploymentErrorMessage: String?
-    var hermesUninstallIsBusy = false
-    var hermesUninstallErrorMessage: String?
-    var hermesCLIPath = ""
-    var hermesSyncedModel = ""
-    var hermesBots: [HermesBot] = []
-    var selectedHermesBotID = HermesAdapter.profileName
-    var hermesChatTranscripts: [String: [HermesChatMessage]] = [:]
-    var hermesChatDraft = ""
-    var hermesChatAttachments: [HermesChatAttachment] = []
-    var hermesChatIsSending = false
-    var hermesChatProgress = "JARVIS 正在处理…"
-    var hermesChatProgressSteps: [String] = []
-    var jarvisIdentityName = ""
-    var jarvisAvatarPath = ""
     var screenCapturePermissionGranted = false
     var accessibilityPermissionGranted = false
     var microphonePermissionGranted = false
@@ -159,11 +134,9 @@ final class AppModel {
     @ObservationIgnored let aiAPIConnectionTester: any AIAPIConnectionTesting
     @ObservationIgnored private var aiConversationControllers: [AIConversationProvider: JarvisWebPlatformController] = [:]
     @ObservationIgnored private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
-    @ObservationIgnored var hermesDeploymentTask: Task<Void, Never>?
-    @ObservationIgnored var hermesInstallerControl: HermesInstallerControl?
-    @ObservationIgnored var hermesUninstallTask: Task<Void, Never>?
     @ObservationIgnored var startupTask: Task<Void, Never>?
     @ObservationIgnored var clipboardSaveTask: Task<Void, Never>?
+    @ObservationIgnored var aiModelsRefreshTask: Task<Void, Never>?
     @ObservationIgnored var screenshotShortcutManager: ScreenshotShortcutManager?
     @ObservationIgnored var clipboardShortcutManager: ScreenshotShortcutManager?
     @ObservationIgnored var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]
@@ -178,7 +151,7 @@ final class AppModel {
     @ObservationIgnored let themePreferenceKey = "jarvis.theme.preference"
     @ObservationIgnored let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     @ObservationIgnored let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
-    @ObservationIgnored let selectedAIProviderKey = "jarvis.web.conversation.provider"
+    @ObservationIgnored let selectedAIProviderKey = "jarvis.web.ai-provider"
     @ObservationIgnored let selectedEntertainmentPlatformKey = "jarvis.entertainment.platform"
     @ObservationIgnored var toastDismissTask: Task<Void, Never>?
 
@@ -219,7 +192,6 @@ final class AppModel {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadAIAPISettings()
-        loadJarvisIdentity()
         loadThemePreference()
         loadLaunchAtLoginPreference()
         refreshSystemColorScheme()
@@ -327,8 +299,6 @@ final class AppModel {
 
         trimClipboardCacheIfNeeded()
         migrateClipboardTextCache()
-        refreshHermesStatus()
-
         clipboardService.start(
             onChange: { [weak self] item in
                 Task { @MainActor [weak self] in
@@ -370,8 +340,7 @@ final class AppModel {
         toastDismissTask?.cancel()
         startupTask?.cancel()
         clipboardSaveTask?.cancel()
-        hermesDeploymentTask?.cancel()
-        hermesUninstallTask?.cancel()
+        aiModelsRefreshTask?.cancel()
     }
 }
 

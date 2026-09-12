@@ -111,8 +111,8 @@ final class EntertainmentPlatformTests: XCTestCase {
     }
 
     func testWebModuleSectionsUseMatchingSymbols() {
-        XCTAssertEqual(AppSection.conversation.icon, "bubble.left.and.bubble.right")
-        XCTAssertEqual(AppSection.conversation.navigationTitle, "对话")
+        XCTAssertEqual(AppSection.home.icon, "house")
+        XCTAssertEqual(AppSection.home.navigationTitle, "首页")
         XCTAssertEqual(AppSection.aiConversation.icon, "sparkles")
         XCTAssertEqual(AppSection.aiConversation.navigationTitle, "AI聚合")
         XCTAssertEqual(AppSection.entertainment.icon, "play.rectangle")

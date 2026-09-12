@@ -4,10 +4,8 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var navigationSelection: TopLevelSection = .conversation
-    @State private var selectedSkill: SkillID = .screenshot
-    @State private var selectedSidebarSecondary: SidebarSecondaryItem = .skill(.screenshot)
-    @State private var loadedSection: AppSection = .conversation
+    @State private var navigationSelection: TopLevelSection = .home
+    @State private var loadedSection: AppSection = .home
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
@@ -18,10 +16,6 @@ struct ContentView: View {
                 selection: selectedSectionBinding,
                 title: { $0.title },
                 icon: { $0.icon },
-                secondaryMenus: secondaryMenus,
-                secondarySelection: selectedSidebarSecondaryBinding,
-                secondaryTitle: sidebarSecondaryTitle,
-                secondaryIcon: sidebarSecondaryIcon,
                 footerTitle: "设置",
                 footerIcon: "gearshape",
                 footerIsSelected: navigationSelection == .settings,
@@ -53,11 +47,9 @@ struct ContentView: View {
             // the section task below mounts the page after the tab settles.
             switch newSection {
             case let .skill(skill):
-                selectedSkill = skill
-                selectedSidebarSecondary = .skill(skill)
-                navigationSelection = .skillLibrary
-            case .conversation:
-                navigationSelection = .conversation
+                navigationSelection = .skill(skill)
+            case .home:
+                navigationSelection = .home
             case .aiConversation:
                 navigationSelection = .aiConversation
             case .entertainment:
@@ -81,29 +73,16 @@ struct ContentView: View {
                 }
             }
             guard !Task.isCancelled, nextSection == contentSection(for: navigationSelection) else { return }
-            if reduceMotion {
-                loadedSection = nextSection
-            } else {
-                // The sidebar indicator has settled. Replace the page in one
-                // transaction so old and new module hierarchies never overlap.
-                loadedSection = nextSection
-            }
+            // The sidebar indicator has settled. Replace the page in one
+            // transaction so old and new module hierarchies never overlap.
+            loadedSection = nextSection
         }
     }
 
     private func selectSection(_ section: TopLevelSection) {
         guard navigationSelection != section || app.selectedSection != section.appSection else { return }
         navigationSelection = section
-        switch section {
-        case .skillLibrary:
-            selectedSkill = .screenshot
-            selectedSidebarSecondary = .skill(.screenshot)
-            app.selectedSection = .skill(.screenshot)
-        case .conversation:
-            app.selectedSection = .conversation
-        case .aiConversation, .entertainment, .settings:
-            app.selectedSection = section.appSection
-        }
+        app.selectedSection = section.appSection
     }
 
     private var selectedSectionBinding: Binding<TopLevelSection> {
@@ -119,88 +98,38 @@ struct ContentView: View {
     }
 
     private var topNavigationItems: [TopLevelSection] {
-        [.conversation, .skillLibrary]
+        [.home] + SkillID.allCases.map(TopLevelSection.skill)
     }
 
     private var bottomNavigationItems: [TopLevelSection] {
         [.aiConversation, .entertainment]
     }
 
-    private var secondaryMenus: [JarvisSidebarSecondaryMenu<TopLevelSection, SidebarSecondaryItem>] {
-        [
-            JarvisSidebarSecondaryMenu(
-                parent: .skillLibrary,
-                items: SkillID.allCases.map { .skill($0) }
-            )
-        ]
-    }
-
-    private var selectedSidebarSecondaryBinding: Binding<SidebarSecondaryItem> {
-        Binding(
-            get: { selectedSidebarSecondary },
-            set: { selectSidebarSecondary($0) }
-        )
-    }
-
-    private func sidebarSecondaryTitle(_ item: SidebarSecondaryItem) -> String {
-        switch item {
-        case let .skill(skill):
-            skill.navigationTitle
-        }
-    }
-
-    private func sidebarSecondaryIcon(
-        _ item: SidebarSecondaryItem,
-        isSelected _: Bool
-    ) -> AnyView {
-        switch item {
-        case let .skill(skill):
-            AnyView(Image(systemName: skill.icon))
-        }
-    }
-
-    private func selectSidebarSecondary(_ item: SidebarSecondaryItem) {
-        let isAlreadyShowing: Bool = switch item {
-        case let .skill(skill):
-            navigationSelection == .skillLibrary && app.selectedSection == .skill(skill)
-        }
-        guard !isAlreadyShowing else { return }
-
-        selectedSidebarSecondary = item
-
-        switch item {
-        case let .skill(skill):
-            selectedSkill = skill
-            navigationSelection = .skillLibrary
-            app.selectedSection = .skill(skill)
-        }
-    }
-
     private var navigationTargetID: String {
         switch navigationSelection {
-        case .skillLibrary:
-            "skill-library|\(selectedSkill.id)"
-        case .conversation:
-            "conversation"
+        case .home:
+            "home"
+        case let .skill(skill):
+            "skill|\(skill.id)"
         case .aiConversation:
             "ai-conversation|\(app.selectedAIProvider.id)"
         case .entertainment:
             "entertainment|\(app.selectedEntertainmentPlatform.id)"
         case .settings:
-            navigationSelection.id
+            "settings"
         }
     }
 
     private func contentSection(for section: TopLevelSection) -> AppSection {
         switch section {
-        case .conversation:
-            .conversation
+        case .home:
+            .home
+        case let .skill(skill):
+            .skill(skill)
         case .aiConversation:
             .aiConversation
         case .entertainment:
             .entertainment
-        case .skillLibrary:
-            .skill(selectedSkill)
         case .settings:
             .settings
         }
@@ -209,7 +138,7 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch loadedSection {
-        case .conversation: HermesConversationView()
+        case .home: JarvisHomeView()
         case .aiConversation: AIConversationView()
         case .entertainment: EntertainmentView()
         case .skill(.screenshot): ScreenshotView()
@@ -222,11 +151,6 @@ struct ContentView: View {
     }
 
     private var loadedSectionView: some View {
-        selectedContentView
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var selectedContentView: some View {
         detailView
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -250,65 +174,49 @@ struct JarvisToastHost: View {
     }
 }
 
-enum SidebarSecondaryItem: Hashable, Identifiable {
-    case skill(SkillID)
-
-    var id: String {
-        switch self {
-        case let .skill(skill): "skill.\(skill.id)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case let .skill(skill): skill.navigationTitle
-        }
-    }
-}
-
 private enum TopLevelSection: Hashable, Identifiable {
-    case conversation
+    case home
+    case skill(SkillID)
     case aiConversation
     case entertainment
-    case skillLibrary
     case settings
 
     var id: String {
         switch self {
-        case .conversation: "conversation"
+        case .home: "home"
+        case let .skill(skill): "skill.\(skill.id)"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
-        case .skillLibrary: "skill-library"
         case .settings: "settings"
         }
     }
 
     var title: String {
         switch self {
-        case .conversation: "对话"
+        case .home: "首页"
+        case let .skill(skill): skill.navigationTitle
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
-        case .skillLibrary: "技能库"
         case .settings: "设置"
         }
     }
 
     var icon: String {
         switch self {
-        case .conversation: "bubble.left.and.bubble.right"
+        case .home: "house"
+        case let .skill(skill): skill.icon
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
-        case .skillLibrary: "square.stack.3d.up"
         case .settings: "gearshape"
         }
     }
 
     var appSection: AppSection {
         switch self {
-        case .conversation: .conversation
+        case .home: .home
+        case let .skill(skill): .skill(skill)
         case .aiConversation: .aiConversation
         case .entertainment: .entertainment
-        case .skillLibrary: .skill(.screenshot)
         case .settings: .settings
         }
     }

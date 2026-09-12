@@ -5,13 +5,12 @@ struct AIAPIConfiguration: Equatable, Sendable {
     static let apiEndpointKey = "jarvis.ai.api.endpoint"
     static let apiModelKey = "jarvis.ai.api.model"
     static let apiNameKey = "jarvis.ai.api.name"
-    static let apiModelsKey = "jarvis.ai.api.models"
+    static let apiProviderKey = "jarvis.ai.api.provider"
     static let endpointKey = "jarvis.ai.endpoint"
     static let modelKey = "jarvis.ai.model"
     static let providerEndpointKey = "jarvis.ai.provider.endpoint"
     static let paidEndpointKey = "jarvis.ai.paid-endpoint"
     static let paidModelKey = "jarvis.ai.paid-model"
-    static let paidModelsKey = "jarvis.ai.paid-models"
     static let legacyEndpointKey = "jarvis.screenshot.translation.endpoint"
     static let legacyModelKey = "jarvis.screenshot.translation.model"
     static let defaultEndpoint = "https://api.openai.com/v1/chat/completions"
@@ -22,13 +21,12 @@ struct AIAPIConfiguration: Equatable, Sendable {
         apiEndpointKey,
         apiModelKey,
         apiNameKey,
-        apiModelsKey,
+        apiProviderKey,
         endpointKey,
         modelKey,
         providerEndpointKey,
         paidEndpointKey,
         paidModelKey,
-        paidModelsKey,
         legacyEndpointKey,
         legacyModelKey
     ]
@@ -36,22 +34,28 @@ struct AIAPIConfiguration: Equatable, Sendable {
     var endpoint: String
     var model: String
     var apiKey: String
-    var name: String = ""
+    var providerID: String = AIAPIProvider.custom.rawValue
 
-    var isKeyless: Bool {
-        Self.isKeylessEndpoint(endpoint)
+    init(
+        endpoint: String,
+        model: String,
+        apiKey: String,
+        providerID: String? = nil
+    ) {
+        self.endpoint = endpoint
+        self.model = model
+        self.apiKey = apiKey
+        self.providerID = providerID ?? AIAPIProvider.detect(endpoint: endpoint).rawValue
+    }
+
+    var provider: AIAPIProvider {
+        AIAPIProvider(rawValue: providerID) ?? .custom
     }
 
     var isConfigured: Bool {
         !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && (isKeyless || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-
-    static func isKeylessEndpoint(_ rawValue: String) -> Bool {
-        let host = URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))?.host?
-            .lowercased() ?? ""
-        return host == "opencode.ai" || host.hasSuffix(".opencode.ai")
+            && !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static func load(
@@ -72,26 +76,25 @@ struct AIAPIConfiguration: Equatable, Sendable {
         defaults: UserDefaults = .standard,
         resolvedAPIKey: String?
     ) -> Self {
-        let endpoint = nonKeyless(defaults.string(forKey: apiEndpointKey))
-            ?? nonKeyless(defaults.string(forKey: providerEndpointKey))
-            ?? nonKeyless(defaults.string(forKey: paidEndpointKey))
-            ?? nonKeyless(defaults.string(forKey: endpointKey))
-            ?? nonKeyless(defaults.string(forKey: legacyEndpointKey))
+        let endpoint = nonEmpty(defaults.string(forKey: apiEndpointKey))
+            ?? nonEmpty(defaults.string(forKey: providerEndpointKey))
+            ?? nonEmpty(defaults.string(forKey: paidEndpointKey))
+            ?? nonEmpty(defaults.string(forKey: endpointKey))
+            ?? nonEmpty(defaults.string(forKey: legacyEndpointKey))
             ?? defaultEndpoint
-        let model = nonFreeModel(defaults.string(forKey: apiModelKey))
-            ?? nonFreeModel(defaults.string(forKey: paidModelKey))
-            ?? nonFreeModel(defaults.string(forKey: modelKey))
-            ?? nonFreeModel(defaults.string(forKey: legacyModelKey))
+        let model = nonEmpty(defaults.string(forKey: apiModelKey))
+            ?? nonEmpty(defaults.string(forKey: paidModelKey))
+            ?? nonEmpty(defaults.string(forKey: modelKey))
+            ?? nonEmpty(defaults.string(forKey: legacyModelKey))
             ?? defaultModel
-        let storedName = defaults.string(forKey: apiNameKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let provider = defaults.string(forKey: apiProviderKey)
+            .flatMap(AIAPIProvider.init(rawValue:))
+            ?? AIAPIProvider.detect(endpoint: endpoint)
         return Self(
             endpoint: endpoint,
             model: model,
             apiKey: resolvedAPIKey ?? "",
-            name: storedName.isEmpty
-                ? AIModelOption.providerTitle(for: endpoint, isFree: false)
-                : storedName
+            providerID: provider.rawValue
         )
     }
 
@@ -104,7 +107,7 @@ struct AIAPIConfiguration: Equatable, Sendable {
 
     static func migrateLegacyKeys(defaults: UserDefaults = .standard) {
         if defaults.string(forKey: apiEndpointKey) == nil,
-           let endpoint = nonKeyless(
+           let endpoint = nonEmpty(
                defaults.string(forKey: providerEndpointKey)
                    ?? defaults.string(forKey: paidEndpointKey)
                    ?? defaults.string(forKey: endpointKey)
@@ -114,7 +117,7 @@ struct AIAPIConfiguration: Equatable, Sendable {
             defaults.set(endpoint, forKey: apiEndpointKey)
         }
         if defaults.string(forKey: apiModelKey) == nil,
-           let model = nonFreeModel(
+           let model = nonEmpty(
                defaults.string(forKey: paidModelKey)
                    ?? defaults.string(forKey: modelKey)
                    ?? defaults.string(forKey: legacyModelKey)
@@ -122,26 +125,16 @@ struct AIAPIConfiguration: Equatable, Sendable {
         {
             defaults.set(model, forKey: apiModelKey)
         }
-        if defaults.string(forKey: apiModelsKey) == nil,
-           let models = defaults.stringArray(forKey: paidModelsKey),
-           !models.isEmpty
+        if defaults.string(forKey: apiProviderKey) == nil,
+           let endpoint = nonEmpty(defaults.string(forKey: apiEndpointKey))
         {
-            defaults.set(models, forKey: apiModelsKey)
-        }
-        if defaults.string(forKey: apiNameKey) == nil {
-            let endpoint = defaults.string(forKey: apiEndpointKey)
-                ?? defaults.string(forKey: providerEndpointKey)
-                ?? ""
-            let inferred = AIModelOption.providerTitle(for: endpoint, isFree: false)
-            if inferred != "已配置" {
-                defaults.set(inferred, forKey: apiNameKey)
-            }
+            defaults.set(AIAPIProvider.detect(endpoint: endpoint).rawValue, forKey: apiProviderKey)
         }
     }
 
     static func hasStoredAPIEndpoint(defaults: UserDefaults = .standard) -> Bool {
-        nonKeyless(defaults.string(forKey: apiEndpointKey)) != nil
-            || nonKeyless(defaults.string(forKey: providerEndpointKey)) != nil
+        [apiEndpointKey, providerEndpointKey, paidEndpointKey, endpointKey, legacyEndpointKey]
+            .contains { nonEmpty(defaults.string(forKey: $0)) != nil }
     }
 
     static func removeStoredConfiguration(defaults: UserDefaults = .standard) {
@@ -150,22 +143,10 @@ struct AIAPIConfiguration: Equatable, Sendable {
         }
     }
 
-    static func nonKeyless(_ rawValue: String?) -> String? {
-        guard let rawValue, !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !isKeylessEndpoint(rawValue)
-        else {
-            return nil
-        }
-        return rawValue
-    }
-
-    static func nonFreeModel(_ rawValue: String?) -> String? {
+    static func nonEmpty(_ rawValue: String?) -> String? {
         guard let rawValue else { return nil }
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !HermesFreeModelCatalog.isAnonymousFreeModel(trimmed) else {
-            return nil
-        }
-        return trimmed
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     var openAIBaseURL: String {
@@ -183,7 +164,7 @@ struct AIAPIConfiguration: Equatable, Sendable {
         }
         let path = components.path
         if path.isEmpty || path == "/" {
-            return stripped + "/v1"
+            return provider == .deepSeek ? stripped : stripped + "/v1"
         }
         return stripped
     }
@@ -206,6 +187,7 @@ enum AIAPIError: LocalizedError, Equatable {
     case invalidEndpoint
     case invalidTransportResponse
     case invalidCompletionEnvelope(String)
+    case invalidModelsEnvelope(String)
     case invalidJSON(context: String, reason: String)
     case invalidSchema(context: String, reason: String)
     case emptyGeneratedContent(context: String)
@@ -222,6 +204,8 @@ enum AIAPIError: LocalizedError, Equatable {
             "AI 服务响应异常：未收到有效的 HTTP 响应"
         case let .invalidCompletionEnvelope(reason):
             "AI 服务响应格式错误：\(reason)"
+        case let .invalidModelsEnvelope(reason):
+            "模型列表响应格式错误：\(reason)"
         case let .invalidJSON(context, reason):
             "\(context)结果不是有效 JSON：\(reason)"
         case let .invalidSchema(context, reason):
@@ -278,7 +262,10 @@ enum AIAPIError: LocalizedError, Equatable {
 struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, Sendable {
     func testConnection(configuration: AIAPIConfiguration) async throws {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
+        guard let endpoint = Self.normalizedEndpointURL(
+            from: configuration.endpoint,
+            provider: configuration.provider
+        ) else {
             throw AIAPIError.invalidEndpoint
         }
 
@@ -316,7 +303,10 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         configuration: AIAPIConfiguration
     ) async throws -> String {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = Self.normalizedEndpointURL(from: configuration.endpoint) else {
+        guard let endpoint = Self.normalizedEndpointURL(
+            from: configuration.endpoint,
+            provider: configuration.provider
+        ) else {
             throw AIAPIError.invalidEndpoint
         }
 
@@ -348,15 +338,20 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         return try Self.chatCompletionContent(from: data)
     }
 
-    func listModels(configuration: AIAPIConfiguration) async throws -> [String] {
-        guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
-        guard let endpoint = Self.normalizedModelsURL(from: configuration.endpoint) else {
+    func fetchModels(configuration: AIAPIConfiguration) async throws -> [String] {
+        let apiKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else { throw AIAPIError.missingConfiguration }
+        guard let endpoint = Self.normalizedModelsURL(
+            from: configuration.endpoint,
+            provider: configuration.provider
+        ) else {
             throw AIAPIError.invalidEndpoint
         }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
-        request.timeoutInterval = 20
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         Self.applyAuthentication(to: &request, configuration: configuration)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -365,9 +360,10 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             let message = Self.serverMessage(from: data)
-                ?? "AI 服务请求失败（\(httpResponse.statusCode)）"
+                ?? "获取模型列表失败（\(httpResponse.statusCode)）"
             throw AIAPIError.server(message)
         }
+
         return try Self.modelIdentifiers(from: data)
     }
 
@@ -375,17 +371,15 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         to request: inout URLRequest,
         configuration: AIAPIConfiguration
     ) {
-        if configuration.isKeyless {
-            request.setValue("https://hermes-agent.nousresearch.com", forHTTPHeaderField: "HTTP-Referer")
-            request.setValue("Jarvis", forHTTPHeaderField: "X-Title")
-            return
-        }
         let apiKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else { return }
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     }
 
-    static func normalizedEndpointURL(from rawValue: String) -> URL? {
+    static func normalizedEndpointURL(
+        from rawValue: String,
+        provider: AIAPIProvider? = nil
+    ) -> URL? {
         let trimmed = rawValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -395,12 +389,13 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         else {
             return nil
         }
+        let resolvedProvider = provider ?? AIAPIProvider.detect(endpoint: trimmed)
         let path = components.path
         if path.hasSuffix("/chat/completions") {
             return components.url
         }
-        if path.isEmpty || path == "/" || path == "/v1" {
-            components.path = "/v1/chat/completions"
+        if path.isEmpty || path == "/" {
+            components.path = resolvedProvider.chatCompletionsPath
         } else {
             components.path = path.hasSuffix("/")
                 ? path + "chat/completions"
@@ -409,37 +404,48 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         return components.url
     }
 
-    static func normalizedModelsURL(from rawValue: String) -> URL? {
-        guard let chatURL = normalizedEndpointURL(from: rawValue),
-              var components = URLComponents(url: chatURL, resolvingAgainstBaseURL: false)
+    static func normalizedModelsURL(
+        from rawValue: String,
+        provider: AIAPIProvider? = nil
+    ) -> URL? {
+        let resolvedProvider = provider ?? AIAPIProvider.detect(endpoint: rawValue)
+        let baseURL = AIAPIConfiguration(
+            endpoint: rawValue,
+            model: "model",
+            apiKey: "",
+            providerID: resolvedProvider.rawValue
+        ).openAIBaseURL
+        guard var components = URLComponents(string: baseURL),
+              components.scheme?.lowercased() == "https",
+              let host = components.host,
+              !host.isEmpty
         else {
             return nil
         }
-        let path = components.path
-        if path.hasSuffix("/chat/completions") {
-            components.path = String(path.dropLast("/chat/completions".count)) + "/models"
-        } else {
-            components.path = path.hasSuffix("/") ? path + "models" : path + "/models"
-        }
+        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.path = path.isEmpty ? "/models" : "/\(path)/models"
         return components.url
     }
 
     static func modelIdentifiers(from data: Data) throws -> [String] {
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AIAPIError.invalidCompletionEnvelope("模型列表不是 JSON 对象")
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let values = root["data"] as? [[String: Any]]
+        else {
+            throw AIAPIError.invalidModelsEnvelope("缺少 data 数组")
         }
-        guard let items = root["data"] as? [[String: Any]] else {
-            throw AIAPIError.invalidCompletionEnvelope("缺少 data 数组")
+
+        let identifiers: [String] = values.compactMap { value -> String? in
+            guard let identifier = value["id"] as? String else { return nil }
+            let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
         }
-        let identifiers = items.compactMap { item -> String? in
-            let identifier = (item["id"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return identifier.isEmpty ? nil : identifier
+        let uniqueIdentifiers = Array(Set(identifiers)).sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
         }
-        guard !identifiers.isEmpty else {
-            throw AIAPIError.invalidCompletionEnvelope("模型列表为空")
+        guard !uniqueIdentifiers.isEmpty else {
+            throw AIAPIError.invalidModelsEnvelope("data 数组中没有有效模型")
         }
-        return identifiers
+        return uniqueIdentifiers
     }
 
     private static func chatCompletionContent(from data: Data) throws -> String {

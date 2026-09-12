@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+private enum SettingsLayout {
+    static let contentMaxWidth: CGFloat = 760
+}
+
 struct SettingsCardHeader: View {
     let title: String
     let systemImage: String
@@ -134,7 +138,6 @@ struct SettingsView: View {
 
                         launchAtLoginSettingsCard
                         AIAPISettingsCard()
-                        HermesSettingsCard()
                         ClipboardCacheSettingsCard()
                         DiagnosticsSettingsCard()
 
@@ -144,6 +147,8 @@ struct SettingsView: View {
 
                         permissionStatusRow
                     }
+                    .frame(maxWidth: SettingsLayout.contentMaxWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(JarvisMetrics.pageInset)
                 }
             }

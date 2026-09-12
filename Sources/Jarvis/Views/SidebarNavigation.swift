@@ -1,23 +1,13 @@
 import SwiftUI
 
-struct JarvisSidebarSecondaryMenu<Parent: Hashable, Item: Identifiable & Hashable> {
-    let parent: Parent
-    let items: [Item]
-}
-
 struct JarvisSidebarNavigation<
-    Item: Identifiable & Hashable,
-    SecondaryItem: Identifiable & Hashable
+    Item: Identifiable & Hashable
 >: View {
     let topItems: [Item]
     let bottomItems: [Item]
     @Binding var selection: Item
     let title: (Item) -> String
     let icon: (Item) -> String
-    let secondaryMenus: [JarvisSidebarSecondaryMenu<Item, SecondaryItem>]
-    @Binding var secondarySelection: SecondaryItem
-    let secondaryTitle: (SecondaryItem) -> String
-    let secondaryIcon: (SecondaryItem, Bool) -> AnyView
     let footerTitle: String?
     let footerIcon: String?
     let footerIsSelected: Bool
@@ -31,10 +21,6 @@ struct JarvisSidebarNavigation<
         selection: Binding<Item>,
         title: @escaping (Item) -> String,
         icon: @escaping (Item) -> String,
-        secondaryMenus: [JarvisSidebarSecondaryMenu<Item, SecondaryItem>],
-        secondarySelection: Binding<SecondaryItem>,
-        secondaryTitle: @escaping (SecondaryItem) -> String,
-        secondaryIcon: @escaping (SecondaryItem, Bool) -> AnyView,
         footerTitle: String? = nil,
         footerIcon: String? = nil,
         footerIsSelected: Bool = false,
@@ -45,10 +31,6 @@ struct JarvisSidebarNavigation<
         _selection = selection
         self.title = title
         self.icon = icon
-        self.secondaryMenus = secondaryMenus
-        _secondarySelection = secondarySelection
-        self.secondaryTitle = secondaryTitle
-        self.secondaryIcon = secondaryIcon
         self.footerTitle = footerTitle
         self.footerIcon = footerIcon
         self.footerIsSelected = footerIsSelected
@@ -127,24 +109,13 @@ struct JarvisSidebarNavigation<
         VStack(spacing: 4) {
             ForEach(items) { item in
                 primaryRow(item)
-
-                if let secondaryItems = secondaryItems(for: item) {
-                    secondaryMenu(items: secondaryItems, parent: item)
-                }
             }
         }
     }
 
     private func primaryRow(_ item: Item) -> some View {
         let isSelected = selection == item
-        let hasSelectedSecondary = secondaryItems(for: item) != nil && selection == item
-        let foregroundColor: Color = if isSelected, !hasSelectedSecondary {
-            .white
-        } else if hasSelectedSecondary {
-            .primary
-        } else {
-            .secondary
-        }
+        let foregroundColor: Color = isSelected ? .white : .secondary
 
         return Button {
             withAnimation(
@@ -166,69 +137,17 @@ struct JarvisSidebarNavigation<
             .background {
                 Capsule()
                     .fill(JarvisMotion.selectionPillTint)
-                    .opacity(isSelected && !hasSelectedSecondary ? 1 : 0)
-                    .scaleEffect(isSelected && !hasSelectedSecondary ? 1 : 0.96)
+                    .opacity(isSelected ? 1 : 0)
+                    .scaleEffect(isSelected ? 1 : 0.96)
             }
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(
             JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion),
-            value: isSelected && !hasSelectedSecondary
+            value: isSelected
         )
         .help(title(item))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func secondaryMenu(items: [SecondaryItem], parent: Item) -> some View {
-        VStack(spacing: 3) {
-            ForEach(items) { item in
-                let isSelected = selection == parent && secondarySelection == item
-
-                Button {
-                    withAnimation(
-                        JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion)
-                    ) {
-                        secondarySelection = item
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        secondaryIcon(item, isSelected)
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 18, height: 18)
-                        Text(secondaryTitle(item))
-                            .font(
-                                isSelected
-                                    ? JarvisTypography.controlEmphasis
-                                    : JarvisTypography.control
-                            )
-                    }
-                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .background {
-                        Capsule()
-                            .fill(JarvisMotion.selectionPillTint)
-                            .opacity(isSelected ? 1 : 0)
-                            .scaleEffect(isSelected ? 1 : 0.96)
-                    }
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion),
-                    value: isSelected
-                )
-                .help(secondaryTitle(item))
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .padding(.leading, 20)
-        .padding(.top, 1)
-        .padding(.bottom, 2)
-    }
-
-    private func secondaryItems(for parent: Item) -> [SecondaryItem]? {
-        secondaryMenus.first { $0.parent == parent }?.items
     }
 }

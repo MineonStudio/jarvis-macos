@@ -3,6 +3,7 @@ import SwiftUI
 
 enum JarvisApplicationPresentation {
     static let activationPolicy: NSApplication.ActivationPolicy = .regular
+    static let terminateAfterLastWindowClosed = false
 }
 
 @main
@@ -114,6 +115,10 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
             menuBarController.reopenMainWindow()
         }
         return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        JarvisApplicationPresentation.terminateAfterLastWindowClosed
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {

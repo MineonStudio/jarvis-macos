@@ -8,6 +8,10 @@ final class MenuBarConfigurationTests: XCTestCase {
         XCTAssertEqual(JarvisApplicationPresentation.activationPolicy, .regular)
     }
 
+    func testClosingLastWindowKeepsTheMenuBarApplicationRunning() {
+        XCTAssertFalse(JarvisApplicationPresentation.terminateAfterLastWindowClosed)
+    }
+
     func testConfiguredMenuItemsHaveExplicitControllerTargets() {
         let controller = JarvisMenuBarController()
         let menu = controller.configuredMenuForTesting()

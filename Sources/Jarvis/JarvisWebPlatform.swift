@@ -69,30 +69,6 @@ enum JarvisWebPlatformNavigationPolicy {
     }
 }
 
-typealias AIConversationNavigationDecision = JarvisWebPlatformNavigationDecision
-
-enum AIConversationNavigationPolicy {
-    static func decision(
-        url: URL?,
-        isMainFrame: Bool,
-        isPrimaryWebView: Bool,
-        shouldDownload: Bool,
-        provider: AIConversationProvider
-    ) -> AIConversationNavigationDecision {
-        JarvisWebPlatformNavigationPolicy.decision(
-            url: url,
-            isMainFrame: isMainFrame,
-            isPrimaryWebView: isPrimaryWebView,
-            shouldDownload: shouldDownload,
-            allowsHost: provider.allowsHost
-        )
-    }
-
-    static func isAllowedNavigation(_ url: URL, for provider: AIConversationProvider) -> Bool {
-        JarvisWebPlatformNavigationPolicy.isAllowedNavigation(url, allowsHost: provider.allowsHost)
-    }
-}
-
 enum JarvisWebPlatformLayoutMetrics {
     static let topBarSpacing: CGFloat = 12
     static let browserControlSize = JarvisToolbarMetrics.controlSize
@@ -244,8 +220,6 @@ final class JarvisWebPlatformViewContainer: NSView {
         webView.frame = bounds
     }
 }
-
-typealias AIConversationLayoutMetrics = JarvisWebPlatformLayoutMetrics
 
 enum JarvisWebLoadState: Equatable {
     case idle
@@ -700,5 +674,3 @@ extension JarvisWebPlatformController: WKUIDelegate {
         return microphoneGranted && cameraGranted
     }
 }
-
-typealias AIConversationWebController = JarvisWebPlatformController

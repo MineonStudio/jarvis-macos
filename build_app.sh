@@ -63,18 +63,12 @@ fi
 rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleDark.png" \
-      "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png"
+      "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png" \
+      "$APP_DIR/Contents/Resources/HermesIcon.png"
 
 if [[ -f "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" ]]; then
   cp "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" \
      "$APP_DIR/Contents/Resources/JarvisMenuBarIcon.png"
-fi
-
-if [[ -f "$ROOT_DIR/Resources/HermesIcon.png" ]]; then
-  cp "$ROOT_DIR/Resources/HermesIcon.png" \
-     "$APP_DIR/Contents/Resources/HermesIcon.png"
-else
-  rm -f "$APP_DIR/Contents/Resources/HermesIcon.png"
 fi
 
 # Use the native Icon Composer asset as the Dock/Finder icon source. This

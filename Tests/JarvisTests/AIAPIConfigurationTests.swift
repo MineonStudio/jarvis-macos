@@ -13,16 +13,8 @@ final class AIAPIConfigurationTests: XCTestCase {
             model: "test-model",
             apiKey: "test-key"
         )
-        let keylessFree = AIAPIConfiguration(
-            endpoint: HermesFreeModelCatalog.endpoint,
-            model: "laguna-s-2.1-free",
-            apiKey: ""
-        )
-
         XCTAssertFalse(missingKey.isConfigured)
         XCTAssertTrue(configured.isConfigured)
-        XCTAssertTrue(keylessFree.isKeyless)
-        XCTAssertTrue(keylessFree.isConfigured)
     }
 
     func testLoadUsesDefaultsWithoutStoredProviderValues() throws {
@@ -47,13 +39,12 @@ final class AIAPIConfigurationTests: XCTestCase {
             AIAPIConfiguration.apiEndpointKey,
             AIAPIConfiguration.apiModelKey,
             AIAPIConfiguration.apiNameKey,
-            AIAPIConfiguration.apiModelsKey,
+            AIAPIConfiguration.apiProviderKey,
             AIAPIConfiguration.endpointKey,
             AIAPIConfiguration.modelKey,
             AIAPIConfiguration.providerEndpointKey,
             AIAPIConfiguration.paidEndpointKey,
             AIAPIConfiguration.paidModelKey,
-            AIAPIConfiguration.paidModelsKey,
             AIAPIConfiguration.legacyEndpointKey,
             AIAPIConfiguration.legacyModelKey
         ]
@@ -89,64 +80,20 @@ final class AIAPIConfigurationTests: XCTestCase {
         XCTAssertEqual(fromNew.model, "new-model")
     }
 
-    func testMigrateDoesNotTreatOpenCodeAsProvider() throws {
-        let suiteName = "AIAPIOpenCodeMigration.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        defaults.set(HermesFreeModelCatalog.endpoint, forKey: AIAPIConfiguration.endpointKey)
-        defaults.set("laguna-s-2.1-free", forKey: AIAPIConfiguration.modelKey)
-        AIAPIConfiguration.migrateLegacyKeys(defaults: defaults)
-
-        XCTAssertNil(defaults.string(forKey: AIAPIConfiguration.apiEndpointKey))
-        XCTAssertFalse(AIAPIConfiguration.hasStoredAPIEndpoint(defaults: defaults))
-        XCTAssertEqual(
-            AIAPIConfiguration.loadProvider(defaults: defaults, resolvedAPIKey: "sk-deepseek").endpoint,
-            AIAPIConfiguration.defaultEndpoint
-        )
-    }
-
-    func testLoadProviderPrefersPaidEndpointWhenConversationIsFree() throws {
+    func testLoadProviderPrefersTheDedicatedProviderEndpoint() throws {
         let suiteName = "AIAPIPaidFallback.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         defaults.set("https://api.deepseek.com/v1/chat/completions", forKey: AIAPIConfiguration.paidEndpointKey)
         defaults.set("deepseek-v4-flash", forKey: AIAPIConfiguration.paidModelKey)
-        defaults.set(HermesFreeModelCatalog.endpoint, forKey: AIAPIConfiguration.endpointKey)
-        defaults.set("laguna-s-2.1-free", forKey: AIAPIConfiguration.modelKey)
+        defaults.set("https://legacy.example/v1/chat/completions", forKey: AIAPIConfiguration.endpointKey)
+        defaults.set("legacy-model", forKey: AIAPIConfiguration.modelKey)
 
         let provider = AIAPIConfiguration.loadProvider(defaults: defaults, resolvedAPIKey: "sk-deepseek")
         XCTAssertEqual(provider.endpoint, "https://api.deepseek.com/v1/chat/completions")
         XCTAssertEqual(provider.model, "deepseek-v4-flash")
-        XCTAssertFalse(provider.isKeyless)
-    }
-
-    func testCombineDropsFreeNamesFromConfiguredProviderSection() {
-        let options = AIModelOption.combine(
-            paidModels: ["deepseek-v4-flash", "laguna-s-2.1-free"],
-            paidEndpoint: "https://api.deepseek.com/v1/chat/completions",
-            freeModels: ["laguna-s-2.1-free"]
-        )
-        XCTAssertEqual(options.filter { !$0.isFree }.map(\.model), ["deepseek-v4-flash"])
-        XCTAssertTrue(options.filter(\.isFree).isEmpty)
-    }
-
-    func testJarvisAPIIgnoresConversationFreeEndpointKeys() throws {
-        let suiteName = "AIAPIProviderConversationSplit.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        defaults.set("https://api.deepseek.com/v1/chat/completions", forKey: AIAPIConfiguration.apiEndpointKey)
-        defaults.set("deepseek-v4-flash", forKey: AIAPIConfiguration.apiModelKey)
-        defaults.set(HermesFreeModelCatalog.endpoint, forKey: AIAPIConfiguration.endpointKey)
-        defaults.set("laguna-s-2.1-free", forKey: AIAPIConfiguration.modelKey)
-
-        let provider = AIAPIConfiguration.load(defaults: defaults, resolvedAPIKey: "sk-deepseek")
-        XCTAssertEqual(provider.endpoint, "https://api.deepseek.com/v1/chat/completions")
-        XCTAssertEqual(provider.model, "deepseek-v4-flash")
         XCTAssertEqual(provider.apiKey, "sk-deepseek")
-        XCTAssertFalse(provider.isKeyless)
     }
 
     func testMigrateLegacyKeysWritesSharedAIKeysOnce() throws {
@@ -163,6 +110,10 @@ final class AIAPIConfigurationTests: XCTestCase {
             "https://legacy.example/v1/chat/completions"
         )
         XCTAssertEqual(defaults.string(forKey: AIAPIConfiguration.apiModelKey), "legacy-model")
+        XCTAssertEqual(
+            defaults.string(forKey: AIAPIConfiguration.apiProviderKey),
+            AIAPIProvider.custom.rawValue
+        )
 
         defaults.set("https://new.example/v1/chat/completions", forKey: AIAPIConfiguration.apiEndpointKey)
         AIAPIConfiguration.migrateLegacyKeys(defaults: defaults)
@@ -192,7 +143,7 @@ final class AIAPIConfigurationTests: XCTestCase {
             model: "deepseek-chat",
             apiKey: "test-key"
         )
-        XCTAssertEqual(deepSeekHost.openAIBaseURL, "https://api.deepseek.com/v1")
+        XCTAssertEqual(deepSeekHost.openAIBaseURL, "https://api.deepseek.com")
     }
 
     func testAPIConnectionTestRejectsMissingConfigurationBeforeNetworkCall() async {
@@ -268,21 +219,62 @@ final class AIAPIConfigurationTests: XCTestCase {
             OpenAICompatibleAPIClient.normalizedEndpointURL(from: "https://example.com/v1/chat/completions")?.absoluteString,
             "https://example.com/v1/chat/completions"
         )
+    }
+
+    func testProviderCatalogOffersPresetsAndRegionalBaseURLs() {
+        XCTAssertTrue(AIAPIProvider.allCases.contains(.openAI))
+        XCTAssertTrue(AIAPIProvider.allCases.contains(.deepSeek))
+        XCTAssertTrue(AIAPIProvider.allCases.contains(.googleGemini))
+        XCTAssertTrue(AIAPIProvider.allCases.contains(.doubao))
+        XCTAssertTrue(AIAPIProvider.allCases.contains(.custom))
+        XCTAssertEqual(AIAPIProvider.dashScope.baseURLs.count, 3)
+        XCTAssertEqual(AIAPIProvider.zhipu.baseURLs.count, 2)
+        XCTAssertEqual(AIAPIProvider.deepSeek.defaultBaseURL, "https://api.deepseek.com")
+        XCTAssertEqual(AIAPIProvider.doubao.defaultBaseURL, "https://ark.cn-beijing.volces.com/api/v3")
+    }
+
+    func testProviderDetectionAndProviderSpecificEndpointPaths() {
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.deepseek.com"), .deepSeek)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.groq.com/openai/v1"), .groq)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://ark.cn-beijing.volces.com/api/v3"), .doubao)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://unknown.example/v1"), .custom)
         XCTAssertEqual(
-            OpenAICompatibleAPIClient.normalizedModelsURL(from: "https://api.deepseek.com/v1/chat/completions")?.absoluteString,
-            "https://api.deepseek.com/v1/models"
-        )
-        XCTAssertEqual(
-            OpenAICompatibleAPIClient.normalizedModelsURL(from: HermesFreeModelCatalog.endpoint)?.absoluteString,
-            "https://opencode.ai/zen/v1/models"
+            OpenAICompatibleAPIClient.normalizedEndpointURL(
+                from: "https://api.deepseek.com",
+                provider: .deepSeek
+            )?.absoluteString,
+            "https://api.deepseek.com/chat/completions"
         )
     }
 
-    func testModelIdentifiersReadOpenAICompatibleDataArray() throws {
-        let data = Data(#"{"data":[{"id":"deepseek-chat"},{"id":"deepseek-v4-flash"}]}"#.utf8)
+    func testModelListURLAndResponseParserUseOpenAICompatibleShape() throws {
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedModelsURL(
+                from: "https://api.openai.com/v1",
+                provider: .openAI
+            )?.absoluteString,
+            "https://api.openai.com/v1/models"
+        )
+        XCTAssertEqual(
+            OpenAICompatibleAPIClient.normalizedModelsURL(
+                from: "https://api.deepseek.com",
+                provider: .deepSeek
+            )?.absoluteString,
+            "https://api.deepseek.com/models"
+        )
+
+        let response: [String: Any] = [
+            "data": [
+                ["id": "model-z"],
+                ["id": "model-a"],
+                ["id": " model-a "],
+                ["object": "model"]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: response)
         XCTAssertEqual(
             try OpenAICompatibleAPIClient.modelIdentifiers(from: data),
-            ["deepseek-chat", "deepseek-v4-flash"]
+            ["model-a", "model-z"]
         )
     }
 

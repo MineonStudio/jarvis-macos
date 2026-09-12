@@ -17,7 +17,7 @@ final class JarvisMainWindowControllerTests: XCTestCase {
             JarvisMainWindowController.minimumWindowSize.width,
             JarvisMetrics.sidebarMinimumWidth
                 + JarvisMetrics.shellHorizontalPadding * 2
-                + AIConversationLayoutMetrics.minimumTopBarWidth
+                + JarvisWebPlatformLayoutMetrics.minimumTopBarWidth
         )
         XCTAssertLessThan(JarvisMainWindowController.minimumWindowSize.width, 1380)
         XCTAssertLessThan(JarvisMainWindowController.minimumWindowSize.height, 660)

@@ -57,7 +57,7 @@ enum JarvisWindowLayoutMetrics {
         let detailWidth = max(
             clipboardDetailWidth,
             windowLayoutDetailWidth,
-            AIConversationLayoutMetrics.minimumTopBarWidth
+            JarvisWebPlatformLayoutMetrics.minimumTopBarWidth
         )
         return ceil(
             JarvisMetrics.sidebarMinimumWidth

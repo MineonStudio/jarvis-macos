@@ -44,6 +44,17 @@ struct WallpaperView: View {
             },
             trailingToolbar: {
                 WallpaperLibraryToolbar(libraryMode: $libraryMode)
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(id: "wallpaper.tag-search", placement: .primaryAction) {
+                    ClipboardSearchField(
+                        text: $tagInput,
+                        placeholder: "搜索标签",
+                        onSubmit: submitTag,
+                        onClear: clearTag,
+                        help: "按标签搜索 Wallhaven",
+                        accessibilityTitle: "搜索标签"
+                    )
+                }
             },
             content: {
                 GeometryReader { viewport in
@@ -54,15 +65,6 @@ struct WallpaperView: View {
                                     .frame(height: 1)
                                     .id(WallpaperScrollTarget.top)
                                     .accessibilityHidden(true)
-
-                                if libraryMode == .online {
-                                    WallpaperFilterBar(
-                                        tagInput: $tagInput,
-                                        onSubmitTag: submitTag,
-                                        onSelectTag: selectTag,
-                                        onClearTag: clearTag
-                                    )
-                                }
 
                                 switch libraryMode {
                                 case .online:
@@ -272,15 +274,14 @@ struct WallpaperView: View {
     }
 
     private func submitTag() {
-        tagInput = tagInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        model.selectedTag = tagInput
-        applyOnlineFilters()
-    }
-
-    private func selectTag(_ suggestion: WallpaperTagSuggestion) {
-        tagInput = suggestion.query
-        model.selectedTag = suggestion.query
-        applyOnlineFilters()
+        let tag = tagInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        tagInput = tag
+        model.selectedTag = tag
+        if libraryMode == .online {
+            applyOnlineFilters()
+        } else {
+            libraryMode = .online
+        }
     }
 
     private func clearTag() {
@@ -338,14 +339,6 @@ private struct WallpaperLibraryToolbar: ToolbarContent {
             }
             .help("查看我的收藏")
         }
-        ToolbarItem(id: "wallpaper.system-settings", placement: .primaryAction) {
-            Button {
-                WallpaperSystemSettings.open()
-            } label: {
-                Label("系统设置", systemImage: "gearshape")
-            }
-            .help("在 macOS 系统设置中管理桌面、锁屏和墙纸记录")
-        }
     }
 }
 
@@ -363,14 +356,14 @@ private struct WallpaperFilterToolbar: ToolbarContent {
                         selectedResolution = resolution
                         onFilterChange()
                     } label: {
-                        wallpaperMenuItemLabel(
+                        jarvisToolbarMenuItemLabel(
                             resolution.title,
                             isSelected: selectedResolution == resolution
                         )
                     }
                 }
             } label: {
-                wallpaperFilterMenuLabel(selectedResolution.title)
+                JarvisToolbarMenuLabel(title: selectedResolution.title)
             }
             .help("按最低分辨率筛选")
         }
@@ -381,14 +374,14 @@ private struct WallpaperFilterToolbar: ToolbarContent {
                         selectedRatio = ratio
                         onFilterChange()
                     } label: {
-                        wallpaperMenuItemLabel(
+                        jarvisToolbarMenuItemLabel(
                             ratio.title,
                             isSelected: selectedRatio == ratio
                         )
                     }
                 }
             } label: {
-                wallpaperFilterMenuLabel(selectedRatio.title)
+                JarvisToolbarMenuLabel(title: selectedRatio.title)
             }
             .help("按横竖屏或画面比例筛选")
         }
@@ -399,43 +392,18 @@ private struct WallpaperFilterToolbar: ToolbarContent {
                         selectedSorting = sorting
                         onFilterChange()
                     } label: {
-                        wallpaperMenuItemLabel(
+                        jarvisToolbarMenuItemLabel(
                             sorting.title,
                             isSelected: selectedSorting == sorting
                         )
                     }
                 }
             } label: {
-                wallpaperFilterMenuLabel(selectedSorting.title)
+                JarvisToolbarMenuLabel(title: selectedSorting.title)
             }
             .help("选择 Wallhaven 排序方式")
         }
     }
-}
-
-private func wallpaperMenuItemLabel(_ title: String, isSelected: Bool) -> some View {
-    HStack(spacing: 8) {
-        if isSelected {
-            Image(systemName: "checkmark")
-                .frame(width: 12)
-        } else {
-            Color.clear
-                .frame(width: 12, height: 1)
-        }
-        Text(title)
-    }
-}
-
-@MainActor
-private func wallpaperFilterMenuLabel(_ title: String) -> some View {
-    Text(title)
-        .font(JarvisTypography.control)
-        .foregroundStyle(Color.primary)
-        .padding(.horizontal, 12)
-        .frame(height: JarvisToolbarMetrics.controlSize)
-        .contentShape(Capsule())
-        .fixedSize(horizontal: true, vertical: false)
-        .jarvisGlass(in: Capsule(), interactive: true)
 }
 
 private struct WallpaperLoadMoreButton: View {
@@ -461,74 +429,6 @@ private struct WallpaperLoadMoreButton: View {
             .padding(.top, HistoryGridMetrics.clipboardGridSpacing)
             .help(errorMessage ?? "加载下一批壁纸")
         }
-    }
-}
-
-private struct WallpaperFilterBar: View {
-    @Binding var tagInput: String
-    let onSubmitTag: () -> Void
-    let onSelectTag: (WallpaperTagSuggestion) -> Void
-    let onClearTag: () -> Void
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                popularTags
-                    .frame(maxWidth: .infinity)
-                tagSearch
-                    .frame(minWidth: 190, maxWidth: 250)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                tagSearch
-                    .frame(maxWidth: .infinity)
-                popularTags
-            }
-        }
-        .padding(.bottom, 12)
-    }
-
-    private var tagSearch: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "tag")
-                .foregroundStyle(Color.jarvisTextSecondary)
-
-            TextField("输入标签", text: $tagInput)
-                .textFieldStyle(.plain)
-                .onSubmit(onSubmitTag)
-
-            if !tagInput.isEmpty {
-                Button(action: onClearTag) {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisTextSecondary)
-                .help("清除标签")
-            }
-        }
-        .jarvisCapsuleInputField()
-        .help("按标签搜索 Wallhaven")
-    }
-
-    private var popularTags: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                Text("常用标签")
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .padding(.trailing, 4)
-
-                ForEach(WallpaperTags.popular) { suggestion in
-                    JarvisToolbarSelectionButton(
-                        title: suggestion.title,
-                        isSelected: tagInput == suggestion.query
-                    ) {
-                        onSelectTag(suggestion)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -103,6 +103,7 @@ enum JarvisToolbarMetrics {
     static let controlSize: CGFloat = 32
     static let controlSpacing: CGFloat = 8
     static let iconSize: CGFloat = 13
+    static let searchFieldWidth: CGFloat = 240
 }
 
 /// Marks a toolbar item whose view owns its own capsule, glass, or other
@@ -128,6 +129,106 @@ struct JarvisToolbarSurface<Content: View>: ToolbarContent {
             content
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+}
+
+/// Capsule menu trigger used by module toolbars such as wallpaper filters.
+struct JarvisToolbarMenuLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(JarvisTypography.control)
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, 12)
+            .frame(height: JarvisToolbarMetrics.controlSize)
+            .contentShape(Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+            .jarvisGlass(in: Capsule(), interactive: true)
+    }
+}
+
+func jarvisToolbarMenuItemLabel(_ title: String, isSelected: Bool) -> some View {
+    HStack(spacing: 8) {
+        if isSelected {
+            Image(systemName: "checkmark")
+                .frame(width: 12)
+        } else {
+            Color.clear
+                .frame(width: 12, height: 1)
+        }
+        Text(title)
+    }
+}
+
+/// Shared toolbar search field used by clipboard, wallpaper, and meetings.
+///
+/// Height comes from the native toolbar item surface, not a custom 32-point
+/// glass capsule. Hiding that surface and drawing our own glass made the
+/// field shorter than adjacent toolbar controls.
+struct JarvisToolbarSearchField: View {
+    @Binding var text: String
+    var placeholder: String
+    var help: String?
+    var accessibilityTitle: String?
+    var focusesOnAppear = false
+    var onSubmit: (() -> Void)?
+    var onClear: (() -> Void)?
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .frame(
+                    width: JarvisToolbarMetrics.iconSize,
+                    height: JarvisToolbarMetrics.iconSize
+                )
+
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(JarvisTypography.control)
+                .controlSize(.regular)
+                .focused($isFocused)
+                .onSubmit {
+                    onSubmit?()
+                }
+
+            if !text.isEmpty {
+                Button {
+                    if let onClear {
+                        onClear()
+                    } else {
+                        text = ""
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .semibold))
+                        .frame(
+                            width: JarvisToolbarMetrics.iconSize,
+                            height: JarvisToolbarMetrics.iconSize
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(width: JarvisToolbarMetrics.searchFieldWidth)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isFocused = true
+        }
+        .onAppear {
+            if focusesOnAppear {
+                isFocused = true
+            }
+        }
+        .help(help ?? placeholder)
+        .accessibilityLabel(accessibilityTitle ?? placeholder)
     }
 }
 

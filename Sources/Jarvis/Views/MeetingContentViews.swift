@@ -15,24 +15,21 @@ struct MeetingView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                ToolbarItemGroup(placement: .navigation) {}
+                JarvisToolbarSurface(id: "meeting.recording", placement: .navigation) {
+                    recordingToolbarButton
+                }
             },
             trailingToolbar: {
+                ToolbarItem(id: "meeting.export", placement: .automatic) {
+                    MeetingExportToolbar(record: selectedRecord)
+                }
+                ToolbarSpacer(.fixed, placement: .automatic)
                 ToolbarItem(id: "meeting.search", placement: .automatic) {
                     ClipboardSearchField(
                         text: $searchText,
                         placeholder: "搜索会议",
                         focusesOnAppear: false
                     )
-                    .frame(width: 220)
-                }
-                ToolbarSpacer(.fixed, placement: .automatic)
-                ToolbarItem(id: "meeting.export", placement: .automatic) {
-                    MeetingExportToolbar(record: selectedRecord)
-                }
-                ToolbarSpacer(.fixed, placement: .automatic)
-                JarvisToolbarSurface(id: "meeting.recording", placement: .primaryAction) {
-                    recordingToolbarButton
                 }
             },
             content: {

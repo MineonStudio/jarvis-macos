@@ -177,8 +177,10 @@ final class MeetingRepository: @unchecked Sendable {
             )
         } catch {
             writesDisabled = true
-            JarvisPersistenceLog.logger.error(
-                "Meeting index decode failed; refusing further writes: \(error.localizedDescription, privacy: .public)"
+            JarvisLog.error(
+                category: .storage,
+                event: "meeting.index.decode.failed",
+                error: error
             )
             return MeetingRepositoryLoadResult(
                 records: [],
@@ -217,8 +219,11 @@ final class MeetingRepository: @unchecked Sendable {
                 records.append(record)
             } catch {
                 failedCount += 1
-                JarvisPersistenceLog.logger.error(
-                    "Failed to decode meeting record \(fileURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "meeting.record.decode.failed",
+                    error: error,
+                    fields: ["file": fileURL.lastPathComponent]
                 )
             }
         }
@@ -237,8 +242,11 @@ final class MeetingRepository: @unchecked Sendable {
                 try writeRecordFile(record)
                 try writeDetailFile(record.detail, for: record.id)
             } catch {
-                JarvisPersistenceLog.logger.error(
-                    "Failed to migrate meeting \(record.id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                JarvisLog.error(
+                    category: .storage,
+                    event: "meeting.record.migrate.failed",
+                    error: error,
+                    fields: ["meetingID": record.id.uuidString]
                 )
             }
         }

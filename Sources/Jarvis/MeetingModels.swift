@@ -21,6 +21,7 @@ enum MeetingRecordStatus: String, Codable, Sendable {
     case transcribing
     case transcribed
     case summarizing
+    case summaryFailed
     case ready
     case failed
 
@@ -30,6 +31,7 @@ enum MeetingRecordStatus: String, Codable, Sendable {
         case .transcribing: "正在转写"
         case .transcribed: "转写已完成"
         case .summarizing: "正在生成总结"
+        case .summaryFailed: "纪要生成失败"
         case .ready: "纪要已完成"
         case .failed: "处理失败"
         }
@@ -47,6 +49,77 @@ enum MeetingProcessingStage: String, Sendable {
         case .diarizing: "正在识别说话人"
         case .summarizing: "正在生成会议总结"
         }
+    }
+}
+
+enum MeetingSummaryStage: String, Codable, Sendable {
+    case extractingFacts
+    case synthesizing
+    case completed
+    case failed
+}
+
+enum MeetingFactKind: String, Codable, Sendable {
+    case keyPoint
+    case decision
+    case actionItem
+    case openQuestion
+}
+
+struct MeetingFact: Codable, Equatable, Identifiable, Sendable {
+    let id: UUID
+    let kind: MeetingFactKind
+    var text: String
+    var owner: String
+    var dueDate: String
+    var sourceSegmentIDs: [UUID]
+
+    init(
+        id: UUID = UUID(),
+        kind: MeetingFactKind,
+        text: String,
+        owner: String = "",
+        dueDate: String = "",
+        sourceSegmentIDs: [UUID] = []
+    ) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.owner = owner
+        self.dueDate = dueDate
+        self.sourceSegmentIDs = sourceSegmentIDs
+    }
+}
+
+struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
+    static let currentPipelineVersion = 1
+
+    var pipelineVersion: Int
+    var transcriptFingerprint: String
+    var stage: MeetingSummaryStage
+    var completedChunkCount: Int
+    var totalChunkCount: Int
+    var facts: [MeetingFact]
+    var errorMessage: String?
+    var updatedAt: Date
+
+    init(
+        transcriptFingerprint: String,
+        stage: MeetingSummaryStage,
+        completedChunkCount: Int,
+        totalChunkCount: Int,
+        facts: [MeetingFact] = [],
+        errorMessage: String? = nil,
+        updatedAt: Date = Date()
+    ) {
+        pipelineVersion = Self.currentPipelineVersion
+        self.transcriptFingerprint = transcriptFingerprint
+        self.stage = stage
+        self.completedChunkCount = completedChunkCount
+        self.totalChunkCount = totalChunkCount
+        self.facts = facts
+        self.errorMessage = errorMessage
+        self.updatedAt = updatedAt
     }
 }
 
@@ -186,6 +259,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
     var speakers: [MeetingSpeaker]
     var transcript: [MeetingTranscriptSegment]
     var summary: MeetingSummary?
+    var summaryCheckpoint: MeetingSummaryCheckpoint?
     var errorMessage: String?
 
     init(
@@ -202,6 +276,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         speakers: [MeetingSpeaker] = [],
         transcript: [MeetingTranscriptSegment] = [],
         summary: MeetingSummary? = nil,
+        summaryCheckpoint: MeetingSummaryCheckpoint? = nil,
         errorMessage: String? = nil
     ) {
         self.id = id
@@ -217,6 +292,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         self.speakers = speakers
         self.transcript = transcript
         self.summary = summary
+        self.summaryCheckpoint = summaryCheckpoint
         self.errorMessage = errorMessage
     }
 
@@ -233,7 +309,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
 
     var canRetryProcessing: Bool {
         switch status {
-        case .failed, .transcribed, .transcribing, .summarizing:
+        case .failed, .summaryFailed, .transcribed, .transcribing, .summarizing:
             true
         case .recording, .ready:
             false
@@ -262,10 +338,10 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
                 status = .failed
                 errorMessage = "总结中断，原始录音已保留，可重新处理"
             } else {
-                status = .transcribed
-                errorMessage = nil
+                status = .summaryFailed
+                errorMessage = "总结中断，已保留逐字稿，可重新生成纪要"
             }
-        case .transcribed, .ready, .failed:
+        case .transcribed, .summaryFailed, .ready, .failed:
             break
         }
     }
@@ -287,15 +363,21 @@ struct MeetingRecordDetail: Codable, Equatable, Sendable {
     var speakers: [MeetingSpeaker]
     var transcript: [MeetingTranscriptSegment]
     var summary: MeetingSummary?
+    var summaryCheckpoint: MeetingSummaryCheckpoint?
 
     var isEmpty: Bool {
-        speakers.isEmpty && transcript.isEmpty && summary == nil
+        speakers.isEmpty && transcript.isEmpty && summary == nil && summaryCheckpoint == nil
     }
 }
 
 extension MeetingRecord {
     var detail: MeetingRecordDetail {
-        MeetingRecordDetail(speakers: speakers, transcript: transcript, summary: summary)
+        MeetingRecordDetail(
+            speakers: speakers,
+            transcript: transcript,
+            summary: summary,
+            summaryCheckpoint: summaryCheckpoint
+        )
     }
 
     var metadataCopy: MeetingRecord {
@@ -303,6 +385,7 @@ extension MeetingRecord {
         copy.speakers = []
         copy.transcript = []
         copy.summary = nil
+        copy.summaryCheckpoint = nil
         return copy
     }
 
@@ -310,6 +393,7 @@ extension MeetingRecord {
         speakers = detail.speakers
         transcript = detail.transcript
         summary = detail.summary
+        summaryCheckpoint = detail.summaryCheckpoint
     }
 
     func markdownDocument() -> String {

@@ -170,12 +170,81 @@ struct AIAPIConfiguration: Equatable, Sendable {
     }
 }
 
+struct AICompletionOptions: Equatable, Sendable {
+    enum ResponseFormat: Equatable, Sendable {
+        case jsonObject
+        case plainText
+    }
+
+    let task: String
+    let maxOutputTokens: Int?
+    let temperature: Double
+    let responseFormat: ResponseFormat
+
+    init(
+        task: String,
+        maxOutputTokens: Int? = nil,
+        temperature: Double = 0.7,
+        responseFormat: ResponseFormat = .jsonObject
+    ) {
+        self.task = task
+        self.maxOutputTokens = maxOutputTokens
+        self.temperature = temperature
+        self.responseFormat = responseFormat
+    }
+
+    static let standardJSON = Self(task: "generic-structured-json")
+
+    static let meetingFactExtraction = Self(
+        task: "meeting-fact-extraction",
+        maxOutputTokens: 900,
+        temperature: 0,
+        responseFormat: .jsonObject
+    )
+
+    static let meetingSummary = Self(
+        task: "meeting-summary",
+        maxOutputTokens: 1200,
+        temperature: 0,
+        responseFormat: .jsonObject
+    )
+
+    static let resumeStructured = Self(
+        task: "resume-structured-json",
+        maxOutputTokens: 1200,
+        temperature: 0.7,
+        responseFormat: .jsonObject
+    )
+}
+
 protocol AITextCompletionAPI: Sendable {
     func complete(
         systemPrompt: String,
         userPrompt: String,
         configuration: AIAPIConfiguration
     ) async throws -> String
+
+    func complete(
+        systemPrompt: String,
+        userPrompt: String,
+        configuration: AIAPIConfiguration,
+        options: AICompletionOptions
+    ) async throws -> String
+}
+
+extension AITextCompletionAPI {
+    func complete(
+        systemPrompt: String,
+        userPrompt: String,
+        configuration: AIAPIConfiguration,
+        options _: AICompletionOptions
+    ) async throws -> String {
+        try await complete(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            configuration: configuration
+        )
+    }
 }
 
 protocol AIAPIConnectionTesting: Sendable {
@@ -192,6 +261,7 @@ enum AIAPIError: LocalizedError, Equatable {
     case invalidSchema(context: String, reason: String)
     case emptyGeneratedContent(context: String)
     case duplicateGeneratedContent(context: String)
+    case outputTruncated
     case server(String)
 
     var errorDescription: String? {
@@ -214,6 +284,8 @@ enum AIAPIError: LocalizedError, Equatable {
             "\(context)没有生成有效内容"
         case let .duplicateGeneratedContent(context):
             "\(context)没有生成新的内容，请稍后再试"
+        case .outputTruncated:
+            "AI 服务输出未完成：模型达到了本次任务的输出预算"
         case let .server(message):
             message
         }
@@ -302,6 +374,20 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         userPrompt: String,
         configuration: AIAPIConfiguration
     ) async throws -> String {
+        try await complete(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            configuration: configuration,
+            options: .standardJSON
+        )
+    }
+
+    func complete(
+        systemPrompt: String,
+        userPrompt: String,
+        configuration: AIAPIConfiguration,
+        options: AICompletionOptions
+    ) async throws -> String {
         guard configuration.isConfigured else { throw AIAPIError.missingConfiguration }
         guard let endpoint = Self.normalizedEndpointURL(
             from: configuration.endpoint,
@@ -315,16 +401,21 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         request.timeoutInterval = 90
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         Self.applyAuthentication(to: &request, configuration: configuration)
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        var body: [String: Any] = [
             "model": configuration.model,
-            "temperature": 0.7,
-            "max_tokens": 2048,
-            "response_format": ["type": "json_object"],
+            "temperature": options.temperature,
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": userPrompt]
             ]
-        ])
+        ]
+        if let maxOutputTokens = options.maxOutputTokens {
+            body["max_tokens"] = maxOutputTokens
+        }
+        if options.responseFormat == .jsonObject {
+            body["response_format"] = ["type": "json_object"]
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -461,7 +552,7 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
         if let finishReason = choices[0]["finish_reason"] as? String,
            finishReason == "length"
         {
-            throw AIAPIError.invalidCompletionEnvelope("生成结果被截断，请减少输入或更换模型")
+            throw AIAPIError.outputTruncated
         }
         if let content = message["content"] as? String {
             guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

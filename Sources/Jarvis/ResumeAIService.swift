@@ -68,7 +68,8 @@ struct ResumeAIService: Sendable {
                     generationFocus: nil,
                     count: remaining
                 ),
-                configuration: configuration
+                configuration: configuration,
+                options: .resumeStructured
             )
             let decoded = try decodeSkills(from: content)
             var addedAny = false
@@ -155,7 +156,8 @@ struct ResumeAIService: Sendable {
                     rejectedSignatures: rejectedSignatures,
                     generationFocus: generationFocus
                 ),
-                configuration: configuration
+                configuration: configuration,
+                options: .resumeStructured
             )
             let candidate = try decode(section, from: content, document: document)
 

@@ -449,15 +449,60 @@ extension AppModel {
             persistMeeting(meetingRecords[index])
         }
         meetingProcessingState = .processing(stage: .summarizing, progress: 0.96)
+        let operationID = JarvisLog.operationID()
+        JarvisLog.notice(
+            category: .meeting,
+            event: "summary.begin",
+            operationID: operationID,
+            fields: [
+                "meetingID": record.id.uuidString,
+                "transcriptSegments": String(record.transcript.count),
+                "resuming": record.summaryCheckpoint == nil ? "false" : "true"
+            ]
+        )
         let summary = try await MeetingSummaryService(api: aiTextCompletionAPI).summarize(
             record: record,
-            configuration: configuration
+            configuration: configuration,
+            checkpoint: record.summaryCheckpoint,
+            onCheckpoint: { [weak self] checkpoint in
+                guard let self,
+                      let index = self.meetingRecords.firstIndex(where: { $0.id == record.id })
+                else { return }
+                self.meetingRecords[index].summaryCheckpoint = checkpoint
+                self.persistMeeting(self.meetingRecords[index])
+                JarvisLog.info(
+                    category: .meeting,
+                    event: "summary.checkpoint",
+                    operationID: operationID,
+                    fields: [
+                        "meetingID": record.id.uuidString,
+                        "stage": checkpoint.stage.rawValue,
+                        "completedChunks": String(checkpoint.completedChunkCount),
+                        "totalChunks": String(checkpoint.totalChunkCount),
+                        "factCount": String(checkpoint.facts.count)
+                    ]
+                )
+            }
         )
         guard let index = meetingRecords.firstIndex(where: { $0.id == record.id }) else { return }
         meetingRecords[index].summary = summary
         meetingRecords[index].status = .ready
+        meetingRecords[index].summaryCheckpoint = nil
         meetingRecords[index].errorMessage = nil
         persistMeeting(meetingRecords[index])
+        JarvisLog.notice(
+            category: .meeting,
+            event: "summary.complete",
+            operationID: operationID,
+            result: "success",
+            fields: [
+                "meetingID": record.id.uuidString,
+                "keyPoints": String(summary.keyPoints.count),
+                "decisions": String(summary.decisions.count),
+                "actionItems": String(summary.actionItems.count),
+                "openQuestions": String(summary.openQuestions.count)
+            ]
+        )
         meetingProcessingState = .ready
         showToast("会议总结已生成")
     }
@@ -547,13 +592,34 @@ extension AppModel {
     }
 
     private func updateMeetingFailure(recordID: UUID, message: String) {
+        var hasTranscript = false
         if let index = meetingRecords.firstIndex(where: { $0.id == recordID }) {
-            meetingRecords[index].status = .failed
+            hasTranscript = !meetingRecords[index].transcript.isEmpty
+            meetingRecords[index].status = hasTranscript ? .summaryFailed : .failed
             meetingRecords[index].errorMessage = message
+            if var checkpoint = meetingRecords[index].summaryCheckpoint {
+                checkpoint.stage = .failed
+                checkpoint.errorMessage = message
+                checkpoint.updatedAt = Date()
+                meetingRecords[index].summaryCheckpoint = checkpoint
+            }
             persistMeeting(meetingRecords[index])
+            let failureEvent = hasTranscript ? "summary.failed" : "processing.failed"
+            JarvisLog.error(
+                category: .meeting,
+                event: failureEvent,
+                fields: [
+                    "meetingID": recordID.uuidString,
+                    "hasTranscript": hasTranscript ? "true" : "false"
+                ]
+            )
         }
         meetingProcessingState = .failed(message)
-        showToast("会议处理失败：\(message)")
+        showToast(
+            hasTranscript
+                ? "会议纪要生成失败：\(message)"
+                : "会议处理失败：\(message)"
+        )
     }
 
     private func persistMeeting(_ record: MeetingRecord) {

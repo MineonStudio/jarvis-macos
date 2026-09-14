@@ -440,7 +440,9 @@ private struct MeetingDetailPane: View {
                             MeetingProcessingCard(state: app.meetingProcessingState)
                         }
 
-                        if record.status == .failed, let errorMessage = record.errorMessage {
+                        if record.status == .failed || record.status == .summaryFailed,
+                           let errorMessage = record.errorMessage
+                        {
                             MeetingFailureCard(record: record, message: errorMessage)
                         }
 
@@ -448,7 +450,8 @@ private struct MeetingDetailPane: View {
                             MeetingSummarySection(summary: summary)
                         } else if !record.transcript.isEmpty,
                                   record.status != .summarizing,
-                                  record.status != .failed
+                                  record.status != .failed,
+                                  record.status != .summaryFailed
                         {
                             MeetingNeedsSummaryCard(record: record)
                         }
@@ -534,7 +537,7 @@ private struct MeetingDetailPane: View {
 
     private func headerStatusColor(_ status: MeetingRecordStatus) -> Color {
         switch status {
-        case .recording, .failed: .red
+        case .recording, .failed, .summaryFailed: .red
         case .transcribing, .summarizing: .orange
         case .transcribed: Color.jarvisTextSecondary
         case .ready: .green
@@ -551,7 +554,7 @@ private struct MeetingDetailPane: View {
         switch record.status {
         case .recording, .transcribing, .summarizing:
             true
-        case .transcribed, .ready, .failed:
+        case .transcribed, .summaryFailed, .ready, .failed:
             false
         }
     }
@@ -864,7 +867,7 @@ private struct MeetingFailureCard: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("处理失败")
+                    Text(record.status == .summaryFailed ? "会议纪要生成失败" : "处理失败")
                         .font(JarvisTypography.bodyEmphasis)
                     Text(message)
                         .font(JarvisTypography.caption)
@@ -873,7 +876,7 @@ private struct MeetingFailureCard: View {
                 }
                 Spacer(minLength: 8)
                 if record.canRetryProcessing {
-                    Button("重新处理") {
+                    Button(record.status == .summaryFailed ? "重新生成纪要" : "重新处理") {
                         app.selectedMeetingID = record.id
                         app.retryMeetingProcessing(record)
                     }

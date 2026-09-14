@@ -24,6 +24,7 @@ enum JarvisLogLevel: String, Codable, CaseIterable, Sendable {
 enum JarvisLogCategory: String, Codable, CaseIterable, Sendable {
     case lifecycle
     case clipboard
+    case meeting
     case storage
     case window
     case shortcut

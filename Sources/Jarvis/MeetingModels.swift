@@ -26,11 +26,11 @@ enum MeetingRecordStatus: String, Codable, Sendable {
 
     var title: String {
         switch self {
-        case .recording: "录音中"
-        case .transcribing: "转写中"
-        case .transcribed: "待总结"
-        case .summarizing: "总结中"
-        case .ready: "已完成"
+        case .recording: "正在录音"
+        case .transcribing: "正在转写"
+        case .transcribed: "转写已完成"
+        case .summarizing: "正在生成总结"
+        case .ready: "纪要已完成"
         case .failed: "处理失败"
         }
     }
@@ -108,8 +108,8 @@ enum MeetingProcessingState: Equatable, Sendable {
         case .idle: "准备录音"
         case .recording: "正在录音"
         case let .processing(stage, _): stage.title
-        case .awaitingConfiguration: "逐字稿已完成"
-        case .ready: "会议已整理"
+        case .awaitingConfiguration: "转写已完成，待生成总结"
+        case .ready: "纪要已完成"
         case .failed: "处理失败"
         }
     }
@@ -178,6 +178,9 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
     var microphoneAudioFileName: String?
     /// The original system-audio track captured through ScreenCaptureKit.
     var systemAudioFileName: String?
+    /// Seconds to delay the system-audio track when mixing, because ScreenCaptureKit
+    /// capture starts after the microphone recorder. Older records treat this as 0.
+    var systemAudioStartOffset: TimeInterval?
     var language: MeetingLanguage
     var status: MeetingRecordStatus
     var speakers: [MeetingSpeaker]
@@ -193,6 +196,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         audioFileName: String,
         microphoneAudioFileName: String? = nil,
         systemAudioFileName: String? = nil,
+        systemAudioStartOffset: TimeInterval? = nil,
         language: MeetingLanguage = .simplifiedChinese,
         status: MeetingRecordStatus = .recording,
         speakers: [MeetingSpeaker] = [],
@@ -207,6 +211,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         self.audioFileName = audioFileName
         self.microphoneAudioFileName = microphoneAudioFileName
         self.systemAudioFileName = systemAudioFileName
+        self.systemAudioStartOffset = systemAudioStartOffset
         self.language = language
         self.status = status
         self.speakers = speakers
@@ -220,6 +225,150 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M月d日 HH:mm"
         return title == "会议 · \(formatter.string(from: createdAt))"
+    }
+
+    var resolvedSystemAudioStartOffset: TimeInterval {
+        max(0, systemAudioStartOffset ?? 0)
+    }
+
+    var canRetryProcessing: Bool {
+        switch status {
+        case .failed, .transcribed, .transcribing, .summarizing:
+            true
+        case .recording, .ready:
+            false
+        }
+    }
+
+    func matchesSearch(_ rawQuery: String) -> Bool {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        if title.meetingSearchContains(query) || status.title.meetingSearchContains(query) {
+            return true
+        }
+        return transcript.contains { $0.text.meetingSearchContains(query) }
+    }
+
+    mutating func applyInterruptedLaunchRecovery() {
+        switch status {
+        case .recording:
+            status = .failed
+            errorMessage = "应用上次退出时录音未正常结束；已保留已写入的原始录音，可重新处理"
+        case .transcribing:
+            status = .failed
+            errorMessage = "转写中断，原始录音已保留，可重新处理"
+        case .summarizing:
+            if transcript.isEmpty {
+                status = .failed
+                errorMessage = "总结中断，原始录音已保留，可重新处理"
+            } else {
+                status = .transcribed
+                errorMessage = nil
+            }
+        case .transcribed, .ready, .failed:
+            break
+        }
+    }
+}
+
+private extension String {
+    /// Substring match without locale word-breaking. Chinese locales treat
+    /// `localizedCaseInsensitiveContains` as a linguistic search, so a single
+    /// character like "会" does not match "会议".
+    func meetingSearchContains(_ query: String) -> Bool {
+        range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
+        ) != nil
+    }
+}
+
+struct MeetingRecordDetail: Codable, Equatable, Sendable {
+    var speakers: [MeetingSpeaker]
+    var transcript: [MeetingTranscriptSegment]
+    var summary: MeetingSummary?
+
+    var isEmpty: Bool {
+        speakers.isEmpty && transcript.isEmpty && summary == nil
+    }
+}
+
+extension MeetingRecord {
+    var detail: MeetingRecordDetail {
+        MeetingRecordDetail(speakers: speakers, transcript: transcript, summary: summary)
+    }
+
+    var metadataCopy: MeetingRecord {
+        var copy = self
+        copy.speakers = []
+        copy.transcript = []
+        copy.summary = nil
+        return copy
+    }
+
+    mutating func applyDetail(_ detail: MeetingRecordDetail) {
+        speakers = detail.speakers
+        transcript = detail.transcript
+        summary = detail.summary
+    }
+
+    func markdownDocument() -> String {
+        var lines: [String] = [
+            "# \(title)",
+            "",
+            "- 时间：\(createdAt.formatted(date: .long, time: .shortened))",
+            "- 时长：\(MeetingRecordingStyle.formatDuration(duration))",
+            "- 状态：\(status.title)"
+        ]
+        if let summary {
+            lines.append("")
+            lines.append("## 会议总结")
+            if !summary.overview.isEmpty {
+                lines.append("")
+                lines.append(summary.overview)
+            }
+            appendMarkdownList(title: "关键讨论", items: summary.keyPoints, to: &lines)
+            appendMarkdownList(title: "明确决策", items: summary.decisions, to: &lines)
+            if !summary.actionItems.isEmpty {
+                lines.append("")
+                lines.append("## 待办事项")
+                lines.append("")
+                for item in summary.actionItems {
+                    var task = "- \(item.task)"
+                    if !item.owner.isEmpty {
+                        task += "（负责人：\(item.owner)）"
+                    }
+                    if !item.dueDate.isEmpty {
+                        task += " 截止：\(item.dueDate)"
+                    }
+                    lines.append(task)
+                }
+            }
+            appendMarkdownList(title: "未解决问题", items: summary.openQuestions, to: &lines)
+        }
+        if !transcript.isEmpty {
+            lines.append("")
+            lines.append("## 逐字稿")
+            lines.append("")
+            for segment in transcript {
+                let speaker = speakers.first { $0.id == segment.speakerID }?.name ?? segment.speakerID
+                lines.append("**\(speaker)** \(MeetingRecordingStyle.formatTimestamp(segment.startTime))")
+                lines.append("")
+                lines.append(segment.text)
+                lines.append("")
+            }
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+    }
+
+    private func appendMarkdownList(title: String, items: [String], to lines: inout [String]) {
+        guard !items.isEmpty else { return }
+        lines.append("")
+        lines.append("## \(title)")
+        lines.append("")
+        for item in items {
+            lines.append("- \(item)")
+        }
     }
 }
 

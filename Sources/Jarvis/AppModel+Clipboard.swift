@@ -159,6 +159,7 @@ extension AppModel {
     }
 
     func showClipboardPanel() {
+        guard requireAllPermissions() else { return }
         clipboardPanelController.show(app: self)
     }
 

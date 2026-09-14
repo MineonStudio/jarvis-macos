@@ -61,6 +61,19 @@ final class AppVersionTests: XCTestCase {
     func testPrivacyPermissionSettingsUseDirectSystemSettingsAnchors() {
         XCTAssertEqual(JarvisPrivacyPermission.screenCapture.settingsAnchor, "Privacy_ScreenCapture")
         XCTAssertEqual(JarvisPrivacyPermission.accessibility.settingsAnchor, "Privacy_Accessibility")
+        XCTAssertEqual(JarvisPrivacyPermission.microphone.settingsAnchor, "Privacy_Microphone")
+        XCTAssertEqual(JarvisPrivacyPermission.camera.settingsAnchor, "Privacy_Camera")
+    }
+
+    func testRequiredPermissionsCoverScreenAccessibilityMicrophoneAndCamera() {
+        XCTAssertEqual(
+            JarvisRequiredPermission.allCases.map(\.id),
+            ["screenCapture", "accessibility", "microphone", "camera"]
+        )
+        XCTAssertEqual(JarvisRequiredPermission.screenCapture.title, "屏幕录制")
+        XCTAssertEqual(JarvisRequiredPermission.accessibility.privacyPermission, .accessibility)
+        XCTAssertEqual(JarvisRequiredPermission.microphone.privacyPermission, .microphone)
+        XCTAssertEqual(JarvisRequiredPermission.camera.privacyPermission, .camera)
     }
 
     func testPrivacyPermissionResetTreatsMissingBundleAsAlreadyClean() {

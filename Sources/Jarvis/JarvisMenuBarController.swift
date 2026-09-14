@@ -18,6 +18,9 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     private var menuConfigured = false
     private var isMeetingRecording = false
     private var meetingElapsed: TimeInterval = 0
+    private var meetingModelsReady = true
+    private var lastRenderedMeetingElapsedSeconds = -1
+    private var lastRenderedRecording = false
     private let menu = NSMenu()
     private let screenshotMenuItem = NSMenuItem(
         title: "框选截图",
@@ -43,7 +46,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         self.app = app
         updateMeetingRecordingState(
             isRecording: app.meetingCurrentRecordingID != nil,
-            elapsed: app.meetingElapsed
+            elapsed: app.meetingElapsed,
+            modelsReady: app.meetingModelsReady
         )
     }
 
@@ -81,10 +85,22 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    func updateMeetingRecordingState(isRecording: Bool, elapsed: TimeInterval) {
+    func updateMeetingRecordingState(
+        isRecording: Bool,
+        elapsed: TimeInterval,
+        modelsReady: Bool = true
+    ) {
         isMeetingRecording = isRecording
         meetingElapsed = max(0, elapsed)
-        refreshStatusItemPresentation()
+        meetingModelsReady = modelsReady
+        let seconds = Int(meetingElapsed.rounded(.down))
+        let shouldRefreshImage = isRecording != lastRenderedRecording
+            || (isRecording && seconds != lastRenderedMeetingElapsedSeconds)
+        if shouldRefreshImage {
+            lastRenderedRecording = isRecording
+            lastRenderedMeetingElapsedSeconds = seconds
+            refreshStatusItemPresentation()
+        }
         updateMeetingMenuItem()
     }
 
@@ -101,6 +117,16 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         configureMenuShortcut(clipboardMenuItem, with: app.clipboardShortcut)
         updateMeetingMenuItem()
         configureMenuShortcut(meetingMenuItem, with: app.meetingShortcut)
+        let allowed = app.hasAllRequiredPermissions
+        for item in menu.items where !item.isSeparatorItem {
+            if item.action == #selector(openMainWindow) || item.action == #selector(terminate) {
+                item.isEnabled = true
+            } else if item.action == #selector(toggleMeetingRecording) {
+                item.isEnabled = allowed || isMeetingRecording
+            } else {
+                item.isEnabled = allowed
+            }
+        }
     }
 
     private func configureMenuIfNeeded() {
@@ -213,7 +239,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         meetingMenuItem.title = isMeetingRecording
             ? MeetingRecordingStyle.stopActionTitle(for: meetingElapsed)
             : "开始录制"
-        meetingMenuItem.isEnabled = true
+        meetingMenuItem.isEnabled = isMeetingRecording || meetingModelsReady
     }
 
     private static func makeMenuBarIcon() -> NSImage? {

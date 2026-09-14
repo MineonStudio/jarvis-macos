@@ -74,6 +74,13 @@ private struct JarvisRootView: View {
                 minWidth: JarvisMainWindowController.minimumWindowSize.width,
                 minHeight: JarvisMainWindowController.minimumWindowSize.height
             )
+            .overlay {
+                if !appModel.hasAllRequiredPermissions {
+                    JarvisPermissionGateOverlay()
+                        .environment(appModel)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: appModel.hasAllRequiredPermissions)
             // Keep the system title-bar region and its native window controls.
             // Apple recommends removing only the title and toolbar background
             // when content should extend beneath that region.
@@ -82,9 +89,13 @@ private struct JarvisRootView: View {
             .background(JarvisMainWindowAccessor(controller: mainWindowController))
             .background(JarvisFirstFrameProbe().frame(width: 1, height: 1))
             .onAppear {
+                appModel.refreshPermissionStatus()
                 JarvisMenuBarController.shared.bind {
                     openWindow(id: JarvisAppIdentity.mainWindowSceneID)
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                appModel.refreshPermissionStatus()
             }
     }
 }
@@ -122,15 +133,36 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        guard let workspace = appModel?.resumeWorkspace, workspace.requiresSaveBeforeNewResume else {
-            return .terminateNow
+        guard let appModel else { return .terminateNow }
+
+        if appModel.meetingCurrentRecordingID != nil {
+            let alert = NSAlert()
+            alert.messageText = "正在录音"
+            alert.informativeText = "退出将停止录音并保留已写入的原始音频。转写不会在退出时继续，可稍后重新处理。"
+            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: "停止录音并退出")
+            guard alert.runModal() != .alertFirstButtonReturn else {
+                return .terminateCancel
+            }
+            Task { @MainActor in
+                await appModel.finalizeMeetingRecordingForTermination()
+                NSApp.reply(toApplicationShouldTerminate: Self.confirmResumeDiscardIfNeeded(appModel))
+            }
+            return .terminateLater
         }
 
+        return Self.confirmResumeDiscardIfNeeded(appModel) ? .terminateNow : .terminateCancel
+    }
+
+    private static func confirmResumeDiscardIfNeeded(_ appModel: AppModel) -> Bool {
+        guard appModel.resumeWorkspace.requiresSaveBeforeNewResume else {
+            return true
+        }
         let alert = NSAlert()
         alert.messageText = "简历尚未保存"
         alert.informativeText = "退出后未保存的简历内容会丢失。"
         alert.addButton(withTitle: "取消")
         alert.addButton(withTitle: "不保存并退出")
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
+        return alert.runModal() != .alertFirstButtonReturn
     }
 }

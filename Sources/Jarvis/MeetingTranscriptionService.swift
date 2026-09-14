@@ -11,6 +11,12 @@ protocol MeetingTranscribing: Sendable {
         language: MeetingLanguage,
         progress: @escaping @Sendable (MeetingProcessingStage, Double) -> Void
     ) async throws -> MeetingTranscriptionResult
+
+    func releaseCachedModels() async
+}
+
+extension MeetingTranscribing {
+    func releaseCachedModels() async {}
 }
 
 actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
@@ -65,30 +71,39 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
         let samples = try AudioConverter(sampleRate: 16000).resampleAudioFile(audioURL)
         let sampleRate = 16000
         let chunkSize = 24 * sampleRate
+        let overlapSize = 2 * sampleRate
+        let stride = max(1, chunkSize - overlapSize)
         var tokens: [TimedToken] = []
-        let chunkCount = max(1, Int(ceil(Double(samples.count) / Double(chunkSize))))
+        let chunkCount = max(1, Int(ceil(Double(max(0, samples.count - overlapSize)) / Double(stride))))
 
         for chunkIndex in 0 ..< chunkCount {
             try Task.checkCancellation()
-            let start = chunkIndex * chunkSize
+            let start = chunkIndex * stride
             let end = min(samples.count, start + chunkSize)
             guard start < end else { continue }
             let chunk = Array(samples[start ..< end])
             let timestamped = try await asr.transcribeWithTimestamps(audio: chunk)
             let offset = Double(start) / Double(sampleRate)
-            tokens.append(contentsOf: timestamped.map {
-                TimedToken(
-                    startTime: $0.startTime + offset,
-                    endTime: $0.endTime + offset,
-                    text: $0.text
+            let minimumLocalTime = chunkIndex == 0 ? 0.0 : Double(overlapSize) / Double(sampleRate)
+            tokens.append(contentsOf: timestamped.compactMap { token in
+                guard token.startTime + 0.02 >= minimumLocalTime else { return nil }
+                return TimedToken(
+                    startTime: token.startTime + offset,
+                    endTime: token.endTime + offset,
+                    text: token.text
                 )
             })
-            progress(.transcribing, 0.5 + 0.42 * Double(chunkIndex + 1) / Double(chunkCount))
+            progress(.transcribing, 0.5 + 0.48 * Double(chunkIndex + 1) / Double(chunkCount))
         }
 
         let result = makeResult(tokens: tokens, diarizationSegments: diarization.segments)
-        progress(.summarizing, 0.96)
+        progress(.transcribing, 1)
         return result
+    }
+
+    func releaseCachedModels() async {
+        chineseASR = nil
+        offlineDiarizer = nil
     }
 
     private struct TimedToken: Sendable {
@@ -110,7 +125,11 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
         var currentText = ""
 
         for token in sortedTokens where !token.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let speakerID = speakerID(for: token, in: diarizationSegments)
+            let speakerID = speakerID(
+                for: token,
+                in: diarizationSegments,
+                fallback: currentSpeakerID ?? "S1"
+            )
             if !orderedSpeakerIDs.contains(speakerID) {
                 orderedSpeakerIDs.append(speakerID)
             }
@@ -135,7 +154,7 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
                 currentStart = token.startTime
                 currentText = token.text
             } else {
-                currentText += token.text
+                appendToken(token.text, to: &currentText)
             }
             currentEnd = max(currentEnd, token.endTime)
 
@@ -174,14 +193,36 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
 
     private func speakerID(
         for token: TimedToken,
-        in segments: [TimedSpeakerSegment]
+        in segments: [TimedSpeakerSegment],
+        fallback: String
     ) -> String {
         let tokenStart = token.startTime
         let tokenEnd = max(token.endTime, token.startTime + 0.01)
         let best = segments.max { lhs, rhs in
             overlap(tokenStart, tokenEnd, lhs) < overlap(tokenStart, tokenEnd, rhs)
         }
-        return best?.speakerId ?? "S1"
+        guard let best, overlap(tokenStart, tokenEnd, best) > 0 else {
+            return fallback
+        }
+        return best.speakerId
+    }
+
+    private func appendToken(_ text: String, to current: inout String) {
+        guard !text.isEmpty else { return }
+        if current.isEmpty {
+            current = text
+            return
+        }
+        if needsSpace(between: current, and: text) {
+            current += " " + text
+        } else {
+            current += text
+        }
+    }
+
+    private func needsSpace(between lhs: String, and rhs: String) -> Bool {
+        guard let last = lhs.last, let first = rhs.first else { return false }
+        return last.isLetter && last.isASCII && first.isLetter && first.isASCII
     }
 
     private func overlap(

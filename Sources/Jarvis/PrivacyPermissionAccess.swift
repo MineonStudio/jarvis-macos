@@ -19,6 +19,44 @@ enum JarvisPrivacyPermission: Equatable {
     }
 }
 
+enum JarvisRequiredPermission: String, CaseIterable, Identifiable, Equatable {
+    case screenCapture
+    case accessibility
+    case microphone
+    case camera
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .screenCapture: "屏幕录制"
+        case .accessibility: "辅助功能"
+        case .microphone: "麦克风"
+        case .camera: "摄像头"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .screenCapture: "rectangle.dashed.badge.record"
+        case .accessibility: "accessibility"
+        case .microphone: "mic.fill"
+        case .camera: "camera.fill"
+        }
+    }
+
+    var privacyPermission: JarvisPrivacyPermission {
+        switch self {
+        case .screenCapture: .screenCapture
+        case .accessibility: .accessibility
+        case .microphone: .microphone
+        case .camera: .camera
+        }
+    }
+}
+
 enum JarvisPrivacyPermissionAccess {
     static func isScreenCaptureTrusted() -> Bool {
         CGPreflightScreenCaptureAccess()

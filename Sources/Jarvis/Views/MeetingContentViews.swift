@@ -1,8 +1,16 @@
 import AVFoundation
 import SwiftUI
 
+private enum MeetingDetailTypography {
+    static let h1 = Font.system(size: 26, weight: .semibold, design: .rounded)
+    static let h2 = Font.system(size: 20, weight: .semibold)
+    static let h3 = Font.system(size: 16, weight: .semibold)
+    static let body = Font.system(size: 15)
+}
+
 struct MeetingView: View {
     @Environment(AppModel.self) private var app
+    @State private var searchText = ""
 
     var body: some View {
         JarvisContentArea(
@@ -10,21 +18,38 @@ struct MeetingView: View {
                 ToolbarItemGroup(placement: .navigation) {}
             },
             trailingToolbar: {
+                ToolbarItem(id: "meeting.search", placement: .automatic) {
+                    ClipboardSearchField(
+                        text: $searchText,
+                        placeholder: "搜索会议",
+                        focusesOnAppear: false
+                    )
+                    .frame(width: 220)
+                }
+                ToolbarSpacer(.fixed, placement: .automatic)
+                ToolbarItem(id: "meeting.export", placement: .automatic) {
+                    MeetingExportToolbar(record: selectedRecord)
+                }
+                ToolbarSpacer(.fixed, placement: .automatic)
                 JarvisToolbarSurface(id: "meeting.recording", placement: .primaryAction) {
                     recordingToolbarButton
                 }
             },
             content: {
-                Group {
+                VStack(spacing: 0) {
+                    if let storageError = app.meetingStorageError {
+                        MeetingStorageErrorBanner(message: storageError)
+                    }
                     if app.meetingRecords.isEmpty {
                         MeetingEmptyState()
                     } else {
                         HStack(spacing: 0) {
-                            MeetingHistoryList()
+                            MeetingHistoryList(searchText: searchText)
                                 .frame(width: 246)
                             Divider()
                             MeetingDetailPane(record: selectedRecord)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -34,8 +59,28 @@ struct MeetingView: View {
             if app.selectedMeetingID == nil {
                 app.selectedMeetingID = app.meetingRecords.first?.id
             }
+            if let selectedMeetingID = app.selectedMeetingID {
+                app.ensureMeetingDetailLoaded(selectedMeetingID)
+            }
             app.refreshMeetingModelState()
         }
+        .onChange(of: app.selectedMeetingID) { _, newValue in
+            if let newValue {
+                app.ensureMeetingDetailLoaded(newValue)
+            }
+        }
+        .onChange(of: searchText) { _, _ in
+            let filteredIDs = Set(filteredRecords.map(\.id))
+            if let selectedMeetingID = app.selectedMeetingID,
+               !filteredIDs.contains(selectedMeetingID)
+            {
+                app.selectedMeetingID = filteredRecords.first?.id
+            }
+        }
+    }
+
+    private var filteredRecords: [MeetingRecord] {
+        MeetingHistoryList.filteredRecords(from: app.meetingRecords, searchText: searchText)
     }
 
     private var selectedRecord: MeetingRecord? {
@@ -123,6 +168,7 @@ private struct MeetingEmptyState: View {
                     .frame(minWidth: 150)
             }
             .buttonStyle(JarvisPrimaryButtonStyle())
+            .disabled(!app.meetingModelsReady)
 
             HStack(spacing: 6) {
                 Image(systemName: "lock.shield")
@@ -156,7 +202,7 @@ private struct MeetingModelDownloadPrompt: View {
                     HStack(spacing: 8) {
                         ProgressView(value: progress)
                             .tint(Color.accentColor)
-                        Text("\(stage.title) (Int(progress * 100))%")
+                        Text("\(stage.title) \(Int(progress * 100))%")
                             .font(JarvisTypography.caption)
                             .foregroundStyle(Color.jarvisTextSecondary)
                     }
@@ -176,8 +222,89 @@ private struct MeetingModelDownloadPrompt: View {
     }
 }
 
+private struct MeetingStorageErrorBanner: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+}
+
+private struct MeetingExportToolbar: View {
+    @Environment(AppModel.self) private var app
+    let record: MeetingRecord?
+
+    private var canExport: Bool {
+        record != nil
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            exportButton(
+                systemName: "doc.on.doc",
+                help: "复制纪要",
+                isEnabled: canExport
+            ) {
+                guard let record else { return }
+                app.copyMeetingMarkdown(record)
+            }
+            exportButton(
+                systemName: "square.and.arrow.up",
+                help: "导出 Markdown",
+                isEnabled: canExport
+            ) {
+                guard let record else { return }
+                app.exportMeetingMarkdown(record)
+            }
+        }
+        .padding(4)
+        .frame(height: JarvisToolbarMetrics.controlSize)
+    }
+
+    private func exportButton(
+        systemName: String,
+        help: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(JarvisToolbarIconButtonStyle())
+        .opacity(isEnabled ? 1 : 0.38)
+        .disabled(!isEnabled)
+        .accessibilityLabel(help)
+        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+        .help(help)
+    }
+}
+
 private struct MeetingHistoryList: View {
     @Environment(AppModel.self) private var app
+    let searchText: String
+    @State private var recordPendingDeletion: MeetingRecord?
+
+    static func filteredRecords(from records: [MeetingRecord], searchText: String) -> [MeetingRecord] {
+        records.filter { $0.matchesSearch(searchText) }
+    }
+
+    private var filteredRecords: [MeetingRecord] {
+        Self.filteredRecords(from: app.meetingRecords, searchText: searchText)
+    }
 
     var body: some View {
         ScrollView {
@@ -186,14 +313,25 @@ private struct MeetingHistoryList: View {
                     Text("会议记录")
                         .font(JarvisTypography.bodyEmphasis)
                     Spacer()
-                    Text("\(app.meetingRecords.count)")
+                    Text("\(filteredRecords.count)")
                         .font(JarvisTypography.captionEmphasis)
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
 
-                ForEach(app.meetingRecords) { record in
+                if filteredRecords.isEmpty {
+                    Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "还没有会议记录"
+                        : "没有匹配的会议")
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                }
+
+                ForEach(filteredRecords) { record in
                     MeetingHistoryRow(
                         record: record,
                         isSelected: app.selectedMeetingID == record.id
@@ -201,8 +339,16 @@ private struct MeetingHistoryList: View {
                         app.selectedMeetingID = record.id
                     }
                     .contextMenu {
+                        if app.meetingCurrentRecordingID == record.id {
+                            Button("停止并仅保存录音") {
+                                app.cancelMeetingRecording()
+                            }
+                        }
+                        Button("复制纪要") {
+                            app.copyMeetingMarkdown(record)
+                        }
                         Button("删除会议", role: .destructive) {
-                            app.deleteMeeting(record)
+                            recordPendingDeletion = record
                         }
                     }
                 }
@@ -212,6 +358,30 @@ private struct MeetingHistoryList: View {
         }
         .scrollIndicators(.automatic)
         .background(Color.jarvisPanel.opacity(0.34))
+        .confirmationDialog(
+            "删除会议",
+            isPresented: Binding(
+                get: { recordPendingDeletion != nil },
+                set: {
+                    if !$0 {
+                        recordPendingDeletion = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                if let recordPendingDeletion {
+                    app.deleteMeeting(recordPendingDeletion)
+                }
+                recordPendingDeletion = nil
+            }
+            Button("取消", role: .cancel) {
+                recordPendingDeletion = nil
+            }
+        } message: {
+            Text("将同时删除本机保存的原始录音和逐字稿，且无法恢复。")
+        }
     }
 }
 
@@ -229,22 +399,13 @@ private struct MeetingHistoryRow: View {
                 Color.clear
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 7) {
-                        Image(systemName: statusIcon)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(statusColor)
-                        Text(record.title)
-                            .font(JarvisTypography.controlEmphasis)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    HStack(spacing: 6) {
-                        Text(record.createdAt, style: .date)
-                        Text("·")
-                        Text(formatMeetingDuration(record.duration))
-                    }
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                    Text(record.title)
+                        .font(JarvisTypography.controlEmphasis)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(formatMeetingListDateTime(record.createdAt))
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -258,26 +419,7 @@ private struct MeetingHistoryRow: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("\(record.title)，\(record.status.title)")
-    }
-
-    private var statusIcon: String {
-        switch record.status {
-        case .recording: "record.circle.fill"
-        case .transcribing, .summarizing: "ellipsis.circle"
-        case .transcribed: "doc.text"
-        case .ready: "checkmark.circle.fill"
-        case .failed: "exclamationmark.circle.fill"
-        }
-    }
-
-    private var statusColor: Color {
-        switch record.status {
-        case .recording, .failed: .red
-        case .transcribing, .summarizing: .orange
-        case .transcribed: .secondary
-        case .ready: .green
-        }
+        .accessibilityLabel("\(record.title)，\(formatMeetingListDateTime(record.createdAt))")
     }
 }
 
@@ -285,6 +427,7 @@ private struct MeetingDetailPane: View {
     @Environment(AppModel.self) private var app
     @FocusState private var isTitleFocused: Bool
     @State private var draftTitle = ""
+    @State private var pendingSeekTime: TimeInterval?
     let record: MeetingRecord?
 
     var body: some View {
@@ -294,15 +437,22 @@ private struct MeetingDetailPane: View {
                     VStack(alignment: .leading, spacing: 18) {
                         meetingHeader(record)
 
-                        MeetingAudioSection(record: record)
+                        MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
 
                         if shouldShowProgress(for: record) {
                             MeetingProcessingCard(state: app.meetingProcessingState)
                         }
 
+                        if record.status == .failed, let errorMessage = record.errorMessage {
+                            MeetingFailureCard(record: record, message: errorMessage)
+                        }
+
                         if let summary = record.summary {
                             MeetingSummarySection(summary: summary)
-                        } else if !record.transcript.isEmpty {
+                        } else if !record.transcript.isEmpty,
+                                  record.status != .summarizing,
+                                  record.status != .failed
+                        {
                             MeetingNeedsSummaryCard(record: record)
                         }
 
@@ -311,7 +461,9 @@ private struct MeetingDetailPane: View {
                         }
 
                         if !record.transcript.isEmpty {
-                            MeetingTranscriptSection(record: record)
+                            MeetingTranscriptSection(record: record) { time in
+                                pendingSeekTime = time
+                            }
                         } else if !shouldShowProgress(for: record) {
                             JarvisEmptyState(
                                 icon: "waveform",
@@ -345,33 +497,50 @@ private struct MeetingDetailPane: View {
     }
 
     private func meetingHeader(_ record: MeetingRecord) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 TextField("未命名会议", text: $draftTitle)
                     .textFieldStyle(.plain)
-                    .font(JarvisTypography.pageTitle)
+                    .font(MeetingDetailTypography.h1)
                     .lineLimit(1)
                     .focused($isTitleFocused)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 120, maxWidth: 420, alignment: .leading)
                     .onSubmit {
                         commitTitle()
                         isTitleFocused = false
                     }
-                    .help("点击修改会议名称")
-                Spacer()
-                Text(record.status.title)
-                    .font(JarvisTypography.captionEmphasis)
-                    .foregroundStyle(record.status == .ready ? .green : Color.jarvisTextSecondary)
+                if !isTitleFocused {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Color.primary.opacity(isTitleFocused ? 0.08 : 0.05),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .help("点击修改会议名称")
+
             HStack(spacing: 12) {
-                Label(record.createdAt.formatted(date: .long, time: .shortened), systemImage: "calendar")
+                Label(formatMeetingDateTime(record.createdAt), systemImage: "calendar")
                 Label(formatMeetingDuration(record.duration), systemImage: "clock")
-                Label(record.language.title, systemImage: "character.book.closed")
+                Text(record.status.title)
+                    .foregroundStyle(headerStatusColor(record.status))
             }
             .font(JarvisTypography.caption)
             .foregroundStyle(Color.jarvisTextSecondary)
+        }
+    }
+
+    private func headerStatusColor(_ status: MeetingRecordStatus) -> Color {
+        switch status {
+        case .recording, .failed: .red
+        case .transcribing, .summarizing: .orange
+        case .transcribed: Color.jarvisTextSecondary
+        case .ready: .green
         }
     }
 
@@ -382,18 +551,19 @@ private struct MeetingDetailPane: View {
     }
 
     private func shouldShowProgress(for record: MeetingRecord) -> Bool {
-        record.id == app.selectedMeetingID && {
-            if case .processing = app.meetingProcessingState {
-                return true
-            }
-            return record.status == .recording
-        }()
+        switch record.status {
+        case .recording, .transcribing, .summarizing:
+            true
+        case .transcribed, .ready, .failed:
+            false
+        }
     }
 }
 
 private struct MeetingAudioSection: View {
     @Environment(AppModel.self) private var app
     let record: MeetingRecord
+    @Binding var pendingSeekTime: TimeInterval?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -405,14 +575,16 @@ private struct MeetingAudioSection: View {
                     title: "原始录音",
                     audioURL: app.meetingMicrophoneAudioURL(for: record),
                     isRecording: true,
-                    recordingElapsed: app.meetingElapsed
+                    recordingElapsed: app.meetingElapsed,
+                    pendingSeekTime: $pendingSeekTime
                 )
             } else {
                 MeetingAudioPlayer(
                     title: "原始录音",
                     audioURL: app.meetingAudioURL(for: record),
                     isRecording: false,
-                    recordingElapsed: 0
+                    recordingElapsed: 0,
+                    pendingSeekTime: $pendingSeekTime
                 )
             }
         }
@@ -537,6 +709,7 @@ private struct MeetingAudioPlayer: View {
     let audioURL: URL?
     let isRecording: Bool
     let recordingElapsed: TimeInterval
+    @Binding var pendingSeekTime: TimeInterval?
     @StateObject private var controller = MeetingAudioPlaybackController()
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
@@ -551,7 +724,7 @@ private struct MeetingAudioPlayer: View {
                             .background(Color.red.opacity(0.12), in: Circle())
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("\(title) · 正在录音")
+                            Text("正在录音")
                                 .font(JarvisTypography.bodyEmphasis)
                             Text("原始音频正在本机写入，录音结束后即可播放")
                                 .font(JarvisTypography.caption)
@@ -567,9 +740,6 @@ private struct MeetingAudioPlayer: View {
             } else if controller.isAvailable {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        Text(title)
-                            .font(JarvisTypography.bodyEmphasis)
-                        Spacer(minLength: 8)
                         Button {
                             controller.togglePlayback()
                         } label: {
@@ -601,7 +771,7 @@ private struct MeetingAudioPlayer: View {
                     ProgressView()
                         .controlSize(.small)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("正在保存\(title)")
+                        Text("正在保存录音")
                             .font(JarvisTypography.bodyEmphasis)
                         Text("音频文件正在完成写入，请稍候")
                             .font(JarvisTypography.caption)
@@ -613,7 +783,7 @@ private struct MeetingAudioPlayer: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(title)暂不可用")
+                        Text("录音暂不可用")
                             .font(JarvisTypography.bodyEmphasis)
                         Text("未找到本机录音文件，会议文字内容仍会保留")
                             .font(JarvisTypography.caption)
@@ -623,23 +793,32 @@ private struct MeetingAudioPlayer: View {
             }
         }
         .onAppear {
-            controller.load(url: audioURL)
+            if !isRecording {
+                controller.load(url: audioURL)
+            }
         }
         .onChange(of: audioURL) { _, newValue in
-            controller.load(url: newValue)
+            if !isRecording {
+                controller.load(url: newValue)
+            }
         }
         .onChange(of: isRecording) { _, newValue in
             if !newValue {
                 controller.load(url: audioURL, force: true)
             }
         }
-        .onReceive(playbackTimer) { _ in
-            if isRecording {
-                controller.refreshAvailability()
-            } else {
-                controller.refreshAvailability()
-                controller.refreshProgress()
+        .onChange(of: pendingSeekTime) { _, newValue in
+            guard let newValue, !isRecording else { return }
+            controller.seek(to: newValue)
+            if !controller.isPlaying {
+                controller.togglePlayback()
             }
+            pendingSeekTime = nil
+        }
+        .onReceive(playbackTimer) { _ in
+            guard !isRecording else { return }
+            controller.refreshAvailability()
+            controller.refreshProgress()
         }
         .onDisappear {
             controller.stop()
@@ -677,6 +856,37 @@ private struct MeetingProcessingCard: View {
     }
 }
 
+private struct MeetingFailureCard: View {
+    @Environment(AppModel.self) private var app
+    let record: MeetingRecord
+    let message: String
+
+    var body: some View {
+        JarvisCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("处理失败")
+                        .font(JarvisTypography.bodyEmphasis)
+                    Text(message)
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if record.canRetryProcessing {
+                    Button("重新处理") {
+                        app.selectedMeetingID = record.id
+                        app.retryMeetingProcessing(record)
+                    }
+                    .buttonStyle(JarvisPrimaryButtonStyle())
+                }
+            }
+        }
+    }
+}
+
 private struct MeetingNeedsSummaryCard: View {
     @Environment(AppModel.self) private var app
     let record: MeetingRecord
@@ -687,9 +897,9 @@ private struct MeetingNeedsSummaryCard: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(Color.accentColor)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("逐字稿已完成")
+                    Text("转写已完成")
                         .font(JarvisTypography.bodyEmphasis)
-                    Text("现在生成一份以结论和待办为中心的会议总结。")
+                    Text("现在可以生成一份以结论和待办为中心的会议总结。")
                         .font(JarvisTypography.caption)
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
@@ -714,8 +924,8 @@ private struct MeetingSummarySection: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if !summary.overview.isEmpty {
                         Text(summary.overview)
-                            .font(JarvisTypography.bodyEmphasis)
-                            .lineSpacing(4)
+                            .font(MeetingDetailTypography.body)
+                            .lineSpacing(5)
                     }
                     summaryList(title: "关键讨论", icon: "list.bullet", items: summary.keyPoints)
                     summaryList(title: "明确决策", icon: "checkmark.seal", items: summary.decisions)
@@ -731,16 +941,15 @@ private struct MeetingSummarySection: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: icon)
-                    .font(JarvisTypography.controlEmphasis)
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .font(MeetingDetailTypography.h3)
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
                             .fill(Color.accentColor)
                             .frame(width: 5, height: 5)
-                            .padding(.top, 6)
+                            .padding(.top, 8)
                         Text(item)
-                            .font(JarvisTypography.body)
+                            .font(MeetingDetailTypography.body)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -753,12 +962,11 @@ private struct MeetingSummarySection: View {
         if !summary.actionItems.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label("待办事项", systemImage: "checklist")
-                    .font(JarvisTypography.controlEmphasis)
-                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .font(MeetingDetailTypography.h3)
                 ForEach(summary.actionItems) { item in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(item.task)
-                            .font(JarvisTypography.body)
+                            .font(MeetingDetailTypography.body)
                         HStack(spacing: 8) {
                             if !item.owner.isEmpty {
                                 Text("负责人：\(item.owner)")
@@ -778,89 +986,69 @@ private struct MeetingSummarySection: View {
 }
 
 private struct MeetingSpeakerSection: View {
-    @Environment(AppModel.self) private var app
     let record: MeetingRecord
-    @State private var editingSpeakerID: String?
-    @State private var draftName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             MeetingSectionHeader(title: "说话人", systemImage: "person.2")
-            HStack(spacing: 8) {
+            MeetingChipFlowLayout(spacing: 8) {
                 ForEach(record.speakers) { speaker in
-                    if editingSpeakerID == speaker.id {
-                        TextField("说话人名称", text: $draftName)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 120)
-                            .onSubmit(saveSpeakerName)
-                    } else {
-                        Button {
-                            editingSpeakerID = speaker.id
-                            draftName = speaker.name
-                        } label: {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(speakerColor(speaker.colorIndex))
-                                    .frame(width: 8, height: 8)
-                                Text(speaker.name)
-                                    .font(JarvisTypography.captionEmphasis)
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(Color.jarvisPanel, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .help("点击重命名说话人")
-                        .accessibilityLabel("重命名\(speaker.name)")
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(speakerColor(speaker.colorIndex))
+                            .frame(width: 8, height: 8)
+                        Text(speaker.name)
+                            .font(MeetingDetailTypography.h3)
                     }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(Color.jarvisPanel, in: Capsule())
                 }
             }
         }
-        .onChange(of: record.id) { _, _ in
-            editingSpeakerID = nil
-        }
-    }
-
-    private func saveSpeakerName() {
-        guard let editingSpeakerID else { return }
-        app.updateMeetingSpeakerName(
-            recordID: record.id,
-            speakerID: editingSpeakerID,
-            name: draftName
-        )
-        self.editingSpeakerID = nil
     }
 }
 
 private struct MeetingTranscriptSection: View {
     let record: MeetingRecord
+    let onSeek: (TimeInterval) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             MeetingSectionHeader(title: "逐字稿", systemImage: "text.quote")
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(record.transcript) { segment in
                     let speaker = record.speakers.first { $0.id == segment.speakerID }
-                    HStack(alignment: .top, spacing: 12) {
-                        Circle()
-                            .fill(speakerColor(speaker?.colorIndex ?? 0))
-                            .frame(width: 9, height: 9)
-                            .padding(.top, 5)
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Text(speaker?.name ?? segment.speakerID)
-                                    .font(JarvisTypography.captionEmphasis)
-                                Text(formatMeetingTimestamp(segment.startTime))
-                                    .font(JarvisTypography.monospaced)
-                                    .foregroundStyle(Color.jarvisTextSecondary)
+                    Button {
+                        onSeek(segment.startTime)
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Circle()
+                                .fill(speakerColor(speaker?.colorIndex ?? 0))
+                                .frame(width: 9, height: 9)
+                                .padding(.top, 5)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    Text(speaker?.name ?? segment.speakerID)
+                                        .font(MeetingDetailTypography.h3)
+                                    Text(formatMeetingTimestamp(segment.startTime))
+                                        .font(JarvisTypography.monospaced)
+                                        .foregroundStyle(Color.jarvisTextSecondary)
+                                }
+                                Text(segment.text)
+                                    .font(MeetingDetailTypography.body)
+                                    .lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .multilineTextAlignment(.leading)
                             }
-                            Text(segment.text)
-                                .font(JarvisTypography.body)
-                                .lineSpacing(4)
-                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
                         }
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 12)
+                    .buttonStyle(.plain)
+                    .help("跳转到 \(formatMeetingTimestamp(segment.startTime))")
+                    .accessibilityLabel("从\(formatMeetingTimestamp(segment.startTime))开始播放")
                     if segment.id != record.transcript.last?.id {
                         Divider().opacity(0.55)
                     }
@@ -873,10 +1061,32 @@ private struct MeetingTranscriptSection: View {
 }
 
 private func formatMeetingDuration(_ duration: TimeInterval) -> String {
-    let total = max(0, Int(duration.rounded()))
-    return total >= 3600
-        ? String(format: "%d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
-        : String(format: "%02d:%02d", total / 60, total % 60)
+    MeetingRecordingStyle.formatDuration(duration)
+}
+
+private func formatMeetingDateTime(_ date: Date) -> String {
+    date.formatted(
+        .dateTime
+            .year()
+            .month()
+            .day()
+            .hour()
+            .minute()
+            .second()
+            .locale(Locale(identifier: "zh_CN"))
+    )
+}
+
+private func formatMeetingListDateTime(_ date: Date) -> String {
+    date.formatted(
+        .dateTime
+            .year()
+            .month()
+            .day()
+            .hour()
+            .minute()
+            .locale(Locale(identifier: "zh_CN"))
+    )
 }
 
 private struct MeetingSectionHeader: View {
@@ -885,15 +1095,56 @@ private struct MeetingSectionHeader: View {
 
     var body: some View {
         Label(title, systemImage: systemImage)
-            .font(JarvisTypography.bodyEmphasis)
+            .font(MeetingDetailTypography.h2)
     }
 }
 
 private func formatMeetingTimestamp(_ time: TimeInterval) -> String {
-    let total = max(0, Int(time.rounded()))
-    return String(format: "%02d:%02d", total / 60, total % 60)
+    MeetingRecordingStyle.formatTimestamp(time)
 }
 
 private func speakerColor(_ index: Int) -> Color {
     [Color.accentColor, .purple, .orange, .green, .pink, .indigo][index % 6]
+}
+
+private struct MeetingChipFlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        arrange(in: proposal.width ?? 0, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        let frames = arrange(in: bounds.width, subviews: subviews).frames
+        for (index, frame) in frames.enumerated() where index < subviews.count {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+    }
+
+    private func arrange(in width: CGFloat, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        let availableWidth = max(width, 1)
+        var frames: [CGRect] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var maxX: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > availableWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            maxX = max(maxX, x - spacing)
+        }
+
+        return (CGSize(width: max(maxX, availableWidth), height: y + rowHeight), frames)
+    }
 }

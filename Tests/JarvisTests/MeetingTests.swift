@@ -6,18 +6,22 @@ final class MeetingTests: XCTestCase {
     func testMeetingDefaultTitleAndLegacyTitleDetection() throws {
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)
-        components.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)
+        components.timeZone = .current
         components.year = 2026
         components.month = 9
         components.day = 14
         components.hour = 15
         components.minute = 0
         let createdAt = try XCTUnwrap(components.date)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = .current
+        formatter.dateFormat = "M月d日 HH:mm"
 
         XCTAssertEqual(MeetingRecord.defaultTitle, "未命名会议")
         XCTAssertTrue(
             MeetingRecord.isLegacyGeneratedTitle(
-                "会议 · 9月14日 15:00",
+                "会议 · \(formatter.string(from: createdAt))",
                 createdAt: createdAt
             )
         )

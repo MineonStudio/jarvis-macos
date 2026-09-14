@@ -95,11 +95,7 @@ struct MeetingSummaryService: Sendable {
     }
 
     private func decode(_ raw: String) throws -> MeetingSummary {
-        let normalized = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = Self.extractJSONObject(raw)
         guard let data = normalized.data(using: .utf8) else {
             throw AIAPIError.invalidJSON(context: "会议总结", reason: "返回内容为空")
         }
@@ -124,6 +120,21 @@ struct MeetingSummaryService: Sendable {
         } catch {
             throw AIAPIError.decodingError(error, context: "会议总结")
         }
+    }
+
+    static func extractJSONObject(_ raw: String) -> String {
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let start = normalized.firstIndex(of: "{"),
+              let end = normalized.lastIndex(of: "}"),
+              start < end
+        else {
+            return normalized
+        }
+        return String(normalized[start ... end])
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {

@@ -107,6 +107,7 @@ final class AppModel {
     var meetingProcessingState: MeetingProcessingState = .idle
     var meetingElapsed: TimeInterval = 0
     var meetingModelState: MeetingModelPreparationState = .checking
+    var meetingStorageError: String?
     var screenCapturePermissionGranted = false
     var accessibilityPermissionGranted = false
     var microphonePermissionGranted = false
@@ -161,6 +162,11 @@ final class AppModel {
     @ObservationIgnored var meetingProcessingTask: Task<Void, Never>?
     @ObservationIgnored var meetingModelPreparationTask: Task<Void, Never>?
     @ObservationIgnored var meetingCurrentRecordingID: UUID?
+    @ObservationIgnored var isStartingMeetingRecording = false
+    @ObservationIgnored var meetingProcessingQueue: [MeetingProcessingJob] = []
+    @ObservationIgnored var meetingActiveProcessingID: UUID?
+    @ObservationIgnored var lastMeetingProgressStage: MeetingProcessingStage?
+    @ObservationIgnored var lastMeetingProgressValue = -1.0
 
     @ObservationIgnored let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     @ObservationIgnored let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
@@ -214,25 +220,29 @@ final class AppModel {
         clipboardCacheMaximumBytes = cacheStore.currentMaximumBytes
         let repository = MeetingRepository()
         meetingRepository = repository
-        var loadedMeetingRecords = repository.load()
-        for index in loadedMeetingRecords.indices
-            where MeetingRecord.isLegacyGeneratedTitle(
-                loadedMeetingRecords[index].title,
-                createdAt: loadedMeetingRecords[index].createdAt
-            )
-        {
-            loadedMeetingRecords[index].title = MeetingRecord.defaultTitle
-            try? repository.save(loadedMeetingRecords[index])
-        }
-        for index in loadedMeetingRecords.indices
-            where loadedMeetingRecords[index].status == .recording
-        {
-            loadedMeetingRecords[index].status = .failed
-            loadedMeetingRecords[index].errorMessage = "应用上次退出时录音未正常结束；已保留已写入的原始录音"
-            try? repository.save(loadedMeetingRecords[index])
+        let loadedMeetings = repository.load()
+        meetingStorageError = loadedMeetings.errorMessage
+        var loadedMeetingRecords = loadedMeetings.records
+        for index in loadedMeetingRecords.indices {
+            let original = loadedMeetingRecords[index]
+            if MeetingRecord.isLegacyGeneratedTitle(original.title, createdAt: original.createdAt) {
+                loadedMeetingRecords[index].title = MeetingRecord.defaultTitle
+            }
+            if loadedMeetingRecords[index].status == .summarizing,
+               let detail = repository.loadDetail(for: loadedMeetingRecords[index].id)
+            {
+                loadedMeetingRecords[index].applyDetail(detail)
+            }
+            loadedMeetingRecords[index].applyInterruptedLaunchRecovery()
+            if loadedMeetingRecords[index] != original {
+                try? repository.save(loadedMeetingRecords[index])
+            }
         }
         meetingRecords = loadedMeetingRecords
         meetingRecorder = MeetingRecorder()
+        meetingRecorder.onUnexpectedStop = { [weak self] in
+            self?.handleUnexpectedMeetingStop()
+        }
         let modelAvailability = MeetingModelStorage.availability()
         meetingModelState = modelAvailability.isReady ? .ready : .notReady(modelAvailability)
         loadClipboardCacheCleanupSettings()
@@ -353,6 +363,9 @@ final class AppModel {
         startupTask?.cancel()
         clipboardSaveTask?.cancel()
         aiModelsRefreshTask?.cancel()
+        meetingRecordingTimer?.cancel()
+        meetingProcessingTask?.cancel()
+        meetingModelPreparationTask?.cancel()
     }
 }
 
@@ -364,6 +377,7 @@ extension AppModel {
     /// inside the main window can select the screenshot tab themselves before
     /// invoking this method.
     func captureScreenshot() {
+        guard requireAllPermissions() else { return }
         guard screenshotController.sessionPhase == .idle else {
             showToast("请先完成当前截图操作")
             return

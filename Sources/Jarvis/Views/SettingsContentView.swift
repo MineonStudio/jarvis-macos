@@ -172,8 +172,6 @@ struct SettingsView: View {
                         MeetingModelSettingsCard()
 
                         ShortcutSettingsCard()
-
-                        permissionStatusRow
                     }
                     .frame(maxWidth: SettingsLayout.contentMaxWidth, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -274,33 +272,6 @@ struct SettingsView: View {
         version.lowercased().hasPrefix("v") ? version : "v\(version)"
     }
 
-    private var permissionStatusRow: some View {
-        HStack(spacing: 10) {
-            SettingsPermissionCapsule(
-                title: "屏幕录制 / 系统音频",
-                isGranted: app.screenCapturePermissionGranted,
-                action: { _ = app.requestScreenCapturePermission() }
-            )
-            SettingsPermissionCapsule(
-                title: "辅助功能",
-                isGranted: app.accessibilityPermissionGranted,
-                action: app.requestAccessibilityPermission
-            )
-            SettingsPermissionCapsule(
-                title: "麦克风",
-                isGranted: app.microphonePermissionGranted,
-                action: app.requestMicrophonePermission
-            )
-            SettingsPermissionCapsule(
-                title: "摄像头",
-                isGranted: app.cameraPermissionGranted,
-                action: app.requestCameraPermission
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.top, 8)
-    }
-
     private var themeSettingsCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
@@ -340,15 +311,10 @@ struct MeetingModelSettingsCard: View {
     var body: some View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 12) {
-                SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person")
-
-                Text("说话人：FluidAudio Offline Diarizer；中文转写：Paraformer-large-zh（int8）。两者都在本机运行，首次使用前需下载，约占用 650 MB。")
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-
                 HStack(spacing: 12) {
-                    modelStatusLabel
+                    SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person.filled")
                     Spacer(minLength: 8)
+                    modelStatusLabel
                     modelAction
                 }
 
@@ -368,7 +334,7 @@ struct MeetingModelSettingsCard: View {
                 }
 
                 if case let .failed(message) = app.meetingModelState {
-                    Text("下载失败：\(message)")
+                    Text(message)
                         .font(JarvisTypography.caption)
                         .foregroundStyle(.red)
                 }
@@ -383,18 +349,18 @@ struct MeetingModelSettingsCard: View {
         Group {
             switch app.meetingModelState {
             case .checking:
-                Label("正在检查模型", systemImage: "arrow.triangle.2.circlepath")
-            case let .notReady(availability):
-                Label("待下载：\(availability.missingTitle)", systemImage: "arrow.down.circle")
+                Label("检查中", systemImage: "arrow.triangle.2.circlepath")
+            case .notReady:
+                Label("待下载", systemImage: "arrow.down.circle")
                     .foregroundStyle(Color.jarvisTextSecondary)
             case .downloading:
-                Label("正在准备本地模型", systemImage: "arrow.down.circle")
+                Label("下载中", systemImage: "arrow.down.circle")
                     .foregroundStyle(Color.accentColor)
             case .ready:
-                Label("模型已准备好", systemImage: "checkmark.circle.fill")
+                Label("已就绪", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             case .failed:
-                Label("模型未准备好", systemImage: "exclamationmark.triangle.fill")
+                Label("未就绪", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             }
         }
@@ -493,38 +459,5 @@ struct JarvisToast: View {
             }
             .shadow(color: Color.black.opacity(0.15), radius: 14, y: 6)
             .frame(maxWidth: 520)
-    }
-}
-
-private struct SettingsPermissionCapsule: View {
-    let title: String
-    let isGranted: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(JarvisTypography.captionEmphasis)
-                    .foregroundStyle(Color.primary)
-                Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isGranted ? Color.green : Color.orange)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill((isGranted ? Color.green : Color.orange).opacity(0.08))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke((isGranted ? Color.green : Color.orange).opacity(0.20), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(isGranted)
-        .accessibilityLabel("\(title)，\(isGranted ? "已授权" : "需要授权")")
-        .help(isGranted ? "\(title)已授权" : "点击获取\(title)权限")
     }
 }

@@ -12,6 +12,16 @@ struct MeetingRecordingSources: Sendable {
 struct MeetingRecordingStopResult: Sendable {
     let duration: TimeInterval
     let systemAudioStarted: Bool
+    let microphoneStartedAt: Date
+    let systemAudioStartedAt: Date?
+    let systemAudioErrorMessage: String?
+
+    var systemAudioStartOffset: TimeInterval {
+        MeetingAudioMixer.systemAudioInsertionDelay(
+            microphoneStartedAt: microphoneStartedAt,
+            systemAudioStartedAt: systemAudioStartedAt
+        )
+    }
 }
 
 @MainActor
@@ -20,6 +30,9 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
     private var startedAt: Date?
     private let systemAudioRecorder = MeetingSystemAudioRecorder()
     private var systemAudioStarted = false
+    private var systemAudioStartedAt: Date?
+    private var expectsStopCallback = false
+    var onUnexpectedStop: (@MainActor () -> Void)?
 
     var isRecording: Bool {
         recorder?.isRecording == true
@@ -30,7 +43,10 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
         systemAudioURL: URL
     ) async throws -> MeetingRecordingSources {
         guard !isRecording else {
-            return MeetingRecordingSources(systemAudioStarted: systemAudioStarted, systemAudioErrorMessage: nil)
+            return MeetingRecordingSources(
+                systemAudioStarted: systemAudioStarted,
+                systemAudioErrorMessage: nil
+            )
         }
 
         let settings: [String: Any] = [
@@ -51,13 +67,16 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
 
         self.recorder = recorder
         startedAt = Date()
+        expectsStopCallback = false
 
         do {
             try await systemAudioRecorder.start(to: systemAudioURL)
             systemAudioStarted = true
+            systemAudioStartedAt = Date()
             return MeetingRecordingSources(systemAudioStarted: true, systemAudioErrorMessage: nil)
         } catch {
             systemAudioStarted = false
+            systemAudioStartedAt = nil
             return MeetingRecordingSources(
                 systemAudioStarted: false,
                 systemAudioErrorMessage: error.localizedDescription
@@ -66,26 +85,59 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func stop() async -> MeetingRecordingStopResult {
+        expectsStopCallback = true
+        let microphoneStartedAt = startedAt ?? Date()
+        let recordedDuration = recorder?.currentTime ?? 0
         recorder?.stop()
-        let duration = Date().timeIntervalSince(startedAt ?? Date())
+        let fallbackDuration = Date().timeIntervalSince(microphoneStartedAt)
+        let duration = recordedDuration > 0 ? recordedDuration : fallbackDuration
         recorder = nil
         startedAt = nil
 
-        await systemAudioRecorder.stop()
+        let stats = await systemAudioRecorder.stop()
+        let capturedSystemAudio = systemAudioStarted && stats.didWriteAudio
         let result = MeetingRecordingStopResult(
             duration: max(duration, 0),
-            systemAudioStarted: systemAudioStarted
+            systemAudioStarted: capturedSystemAudio,
+            microphoneStartedAt: microphoneStartedAt,
+            systemAudioStartedAt: capturedSystemAudio ? stats.firstBufferAt : nil,
+            systemAudioErrorMessage: stats.failureMessage
         )
         systemAudioStarted = false
+        systemAudioStartedAt = nil
+        expectsStopCallback = false
         return result
     }
 
     func cancel() async {
+        expectsStopCallback = true
         recorder?.stop()
         recorder = nil
         startedAt = nil
-        await systemAudioRecorder.stop()
+        _ = await systemAudioRecorder.stop()
         systemAudioStarted = false
+        systemAudioStartedAt = nil
+        expectsStopCallback = false
+    }
+
+    nonisolated func audioRecorderDidFinishRecording(_: AVAudioRecorder, successfully flag: Bool) {
+        Task { @MainActor in
+            handleRecorderFinished(successfully: flag)
+        }
+    }
+
+    nonisolated func audioRecorderEncodeErrorDidOccur(_: AVAudioRecorder, error _: (any Error)?) {
+        Task { @MainActor in
+            handleRecorderFinished(successfully: false)
+        }
+    }
+
+    private func handleRecorderFinished(successfully flag: Bool) {
+        guard !expectsStopCallback else { return }
+        guard recorder != nil else { return }
+        if !flag || !isRecording {
+            onUnexpectedStop?()
+        }
     }
 }
 
@@ -116,6 +168,8 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
     private var outputURL: URL?
     private var audioFile: AVAudioFile?
     private var didWriteAudio = false
+    private var firstBufferAt: Date?
+    private var failureMessage: String?
 
     func start(to url: URL) async throws {
         guard CGPreflightScreenCaptureAccess() else {
@@ -167,7 +221,13 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
         }
     }
 
-    func stop() async {
+    struct CaptureStats: Sendable {
+        let didWriteAudio: Bool
+        let firstBufferAt: Date?
+        let failureMessage: String?
+    }
+
+    func stop() async -> CaptureStats {
         let stream = currentStream()
 
         if let stream {
@@ -177,7 +237,19 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
         // stopCapture finishes callbacks asynchronously. This synchronization
         // drains queued sample buffers before the CAF is used for transcription.
         writeQueue.sync {}
+        let stats = captureStats()
         clearCaptureState()
+        return stats
+    }
+
+    private func captureStats() -> CaptureStats {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return CaptureStats(
+            didWriteAudio: didWriteAudio,
+            firstBufferAt: firstBufferAt,
+            failureMessage: failureMessage
+        )
     }
 
     func stream(
@@ -207,6 +279,7 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
                         settings: format.settings
                     )
                 } catch {
+                    self.recordFailure("无法写入系统音频：\(error.localizedDescription)")
                     return
                 }
             }
@@ -214,19 +287,27 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
             do {
                 try self.audioFile?.write(from: buffer)
                 self.stateLock.lock()
+                if !didWriteAudio {
+                    firstBufferAt = Date()
+                }
                 didWriteAudio = true
                 self.stateLock.unlock()
             } catch {
-                // A malformed or interrupted sample must not crash the global
-                // shortcut recording path. The microphone source is preserved.
+                self.recordFailure("系统音频写入中断：\(error.localizedDescription)")
             }
         }
     }
 
     func stream(_: SCStream, didStopWithError error: Swift.Error) {
-        // The microphone track continues to be preserved if the system stream
-        // stops unexpectedly. MeetingRecorder finalizes the stream on stop.
-        _ = error
+        recordFailure("系统音频采集中断：\(error.localizedDescription)")
+    }
+
+    private func recordFailure(_ message: String) {
+        stateLock.lock()
+        if failureMessage == nil {
+            failureMessage = message
+        }
+        stateLock.unlock()
     }
 
     private func lockedOutputURL() -> URL? {
@@ -247,6 +328,8 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
         self.outputURL = outputURL
         audioFile = nil
         didWriteAudio = false
+        firstBufferAt = nil
+        failureMessage = nil
         stateLock.unlock()
     }
 
@@ -274,10 +357,19 @@ enum MeetingAudioMixer {
         }
     }
 
+    static func systemAudioInsertionDelay(
+        microphoneStartedAt: Date?,
+        systemAudioStartedAt: Date?
+    ) -> TimeInterval {
+        guard let microphoneStartedAt, let systemAudioStartedAt else { return 0 }
+        return max(0, systemAudioStartedAt.timeIntervalSince(microphoneStartedAt))
+    }
+
     static func makeMixedAudio(
         microphoneURL: URL,
         systemAudioURL: URL?,
-        outputURL: URL
+        outputURL: URL,
+        systemAudioDelay: TimeInterval = 0
     ) async throws {
         guard isReadyAudioFile(at: microphoneURL) else {
             throw Error.microphoneMissing
@@ -323,10 +415,11 @@ enum MeetingAudioMixer {
             of: microphoneTrack,
             at: .zero
         )
+        let delay = max(0, systemAudioDelay)
         try systemCompositionTrack.insertTimeRange(
             CMTimeRange(start: .zero, duration: systemDuration),
             of: systemTrack,
-            at: .zero
+            at: CMTime(seconds: delay, preferredTimescale: 600)
         )
 
         guard let exporter = AVAssetExportSession(
@@ -335,11 +428,41 @@ enum MeetingAudioMixer {
         ) else {
             throw Error.exportFailed
         }
+        let microphoneMix = AVMutableAudioMixInputParameters(track: microphoneCompositionTrack)
+        microphoneMix.setVolume(1.0, at: .zero)
+        let systemMix = AVMutableAudioMixInputParameters(track: systemCompositionTrack)
+        systemMix.setVolume(0.75, at: .zero)
+        let audioMix = AVMutableAudioMix()
+        audioMix.inputParameters = [microphoneMix, systemMix]
+        exporter.audioMix = audioMix
         exporter.shouldOptimizeForNetworkUse = false
         try await exporter.export(to: outputURL, as: .m4a)
     }
 
-    private static func isReadyAudioFile(at url: URL) -> Bool {
+    static func transcodeToM4A(inputURL: URL, outputURL: URL) async throws {
+        guard isReadyAudioFile(at: inputURL) else {
+            throw Error.noAudioTrack
+        }
+        if inputURL.standardizedFileURL == outputURL.standardizedFileURL {
+            return
+        }
+        try? FileManager.default.removeItem(at: outputURL)
+        let asset = AVURLAsset(url: inputURL)
+        guard let exporter = AVAssetExportSession(
+            asset: asset,
+            presetName: AVAssetExportPresetAppleM4A
+        ) else {
+            throw Error.exportFailed
+        }
+        exporter.shouldOptimizeForNetworkUse = false
+        try await exporter.export(to: outputURL, as: .m4a)
+    }
+
+    static func removeFileIfExists(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    static func isReadyAudioFile(at url: URL) -> Bool {
         guard FileManager.default.fileExists(atPath: url.path),
               let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let fileSize = attributes[.size] as? NSNumber

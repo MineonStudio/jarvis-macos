@@ -1,11 +1,50 @@
 import AVFoundation
 
 extension AppModel {
+    var hasAllRequiredPermissions: Bool {
+        screenCapturePermissionGranted
+            && accessibilityPermissionGranted
+            && microphonePermissionGranted
+            && cameraPermissionGranted
+    }
+
+    func isRequiredPermissionGranted(_ permission: JarvisRequiredPermission) -> Bool {
+        switch permission {
+        case .screenCapture: screenCapturePermissionGranted
+        case .accessibility: accessibilityPermissionGranted
+        case .microphone: microphonePermissionGranted
+        case .camera: cameraPermissionGranted
+        }
+    }
+
+    @discardableResult
+    func requireAllPermissions() -> Bool {
+        refreshPermissionStatus()
+        guard hasAllRequiredPermissions else {
+            JarvisMenuBarController.shared.reopenMainWindow()
+            return false
+        }
+        return true
+    }
+
     func refreshPermissionStatus() {
         screenCapturePermissionGranted = screenshotController.hasScreenCaptureAccess
         accessibilityPermissionGranted = windowLayoutController?.isAccessibilityTrusted ?? false
         microphonePermissionGranted = JarvisPrivacyPermissionAccess.isMicrophoneTrusted()
         cameraPermissionGranted = JarvisPrivacyPermissionAccess.isCameraTrusted()
+    }
+
+    func requestRequiredPermission(_ permission: JarvisRequiredPermission) {
+        switch permission {
+        case .screenCapture:
+            _ = requestScreenCapturePermission()
+        case .accessibility:
+            requestAccessibilityPermission()
+        case .microphone:
+            requestMicrophonePermission()
+        case .camera:
+            requestCameraPermission()
+        }
     }
 
     @discardableResult

@@ -39,7 +39,19 @@ enum MeetingRecordingStyle {
     }
 
     static func formatDuration(_ duration: TimeInterval) -> String {
-        let totalSeconds = max(0, Int(duration.rounded(.down)))
+        formatTimestamp(duration, roundedDown: true)
+    }
+
+    static func formatTimestamp(_ time: TimeInterval, roundedDown: Bool = false) -> String {
+        let totalSeconds = max(0, Int(roundedDown ? time.rounded(.down) : time.rounded()))
+        if totalSeconds >= 3600 {
+            return String(
+                format: "%d:%02d:%02d",
+                totalSeconds / 3600,
+                (totalSeconds / 60) % 60,
+                totalSeconds % 60
+            )
+        }
         return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 

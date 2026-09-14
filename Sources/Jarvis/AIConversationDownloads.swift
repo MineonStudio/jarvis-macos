@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import WebKit
 
-enum AIConversationDownloadState: Equatable {
+enum AIConversationDownloadState: String, Equatable, Codable {
     case queued
     case downloading
     case completed

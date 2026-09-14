@@ -337,6 +337,8 @@ struct JarvisWebPlatformBrowserPage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.jarvisPanel)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .jarvisFloatingPanel(cornerRadius: 16)
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),

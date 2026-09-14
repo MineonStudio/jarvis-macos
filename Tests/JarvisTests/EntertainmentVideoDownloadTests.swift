@@ -166,6 +166,102 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         let destination = directory.appendingPathComponent("copy.mp4")
         try EntertainmentVideoFileActions.copyFile(at: source, to: destination)
         XCTAssertEqual(try Data(contentsOf: destination), contents)
+
+        let record = try EntertainmentVideoDownloadRecord(
+            id: UUID(),
+            platform: .youtube,
+            title: "clip",
+            qualityTitle: "1080p",
+            filename: "clip.mp4",
+            sourceURL: XCTUnwrap(URL(string: "https://youtu.be/abc")),
+            destinationPath: source.path,
+            createdAt: Date(),
+            finishedAt: Date(),
+            state: .completed,
+            errorMessage: nil
+        )
+        XCTAssertTrue(record.canOpenFile)
+        XCTAssertTrue(EntertainmentVideoFileActions.copyFile(record.destinationURL, to: NSPasteboard.withUniqueName()))
+    }
+
+    func testDownloadHistoryRecordsNewestFirstAndCapsEntries() {
+        let first = sampleRecord(id: UUID(), title: "one")
+        let second = sampleRecord(id: UUID(), title: "two")
+        let recorded = EntertainmentVideoDownloadHistory.recording(
+            second,
+            into: EntertainmentVideoDownloadHistory.recording(first, into: [])
+        )
+        XCTAssertEqual(recorded.map(\.title), ["two", "one"])
+
+        let sameID = sampleRecord(id: first.id, title: "one-updated")
+        let replaced = EntertainmentVideoDownloadHistory.recording(sameID, into: recorded)
+        XCTAssertEqual(replaced.map(\.title), ["one-updated", "two"])
+
+        var overflow = (1 ... EntertainmentVideoDownloadHistory.maxCount).map {
+            sampleRecord(id: UUID(), title: "item-\($0)")
+        }
+        overflow = EntertainmentVideoDownloadHistory.recording(
+            sampleRecord(id: UUID(), title: "newest"),
+            into: overflow
+        )
+        XCTAssertEqual(overflow.first?.title, "newest")
+        XCTAssertEqual(overflow.count, EntertainmentVideoDownloadHistory.maxCount)
+    }
+
+    func testDownloadHistoryStoreRoundTripsAndRemovesRecords() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-video-history-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = EntertainmentVideoDownloadHistoryStore(directoryURL: directory)
+        let record = sampleRecord(id: UUID(), title: "saved-clip")
+        store.save([record])
+        XCTAssertEqual(store.load().map(\.title), ["saved-clip"])
+
+        let remaining = EntertainmentVideoDownloadHistory.removing(record.id, from: store.load())
+        store.save(remaining)
+        XCTAssertTrue(store.load().isEmpty)
+    }
+
+    @MainActor
+    func testDownloadManagerLoadsAndClearsPersistedHistory() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-video-history-manager-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = EntertainmentVideoDownloadHistoryStore(directoryURL: directory)
+        let record = sampleRecord(id: UUID(), title: "Persisted")
+        store.save([record])
+
+        let manager = EntertainmentVideoDownloadManager(historyStore: store)
+        XCTAssertEqual(manager.history.map(\.title), ["Persisted"])
+
+        try manager.removeFromHistory(XCTUnwrap(manager.history.first))
+        XCTAssertTrue(manager.history.isEmpty)
+        XCTAssertTrue(store.load().isEmpty)
+
+        store.save([record, sampleRecord(id: UUID(), title: "Other")])
+        let reloaded = EntertainmentVideoDownloadManager(historyStore: store)
+        XCTAssertEqual(reloaded.history.count, 2)
+        reloaded.clearHistory()
+        XCTAssertTrue(reloaded.history.isEmpty)
+        XCTAssertTrue(store.load().isEmpty)
+    }
+
+    private func sampleRecord(id: UUID, title: String) -> EntertainmentVideoDownloadRecord {
+        EntertainmentVideoDownloadRecord(
+            id: id,
+            platform: .youtube,
+            title: title,
+            qualityTitle: "1080p",
+            filename: "\(title).mp4",
+            sourceURL: URL(string: "https://youtu.be/\(id.uuidString)")!,
+            destinationPath: "/tmp/\(title).mp4",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            finishedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            state: .completed,
+            errorMessage: nil
+        )
     }
 
     func testDurationFormattingMatchesPlayerStyle() {

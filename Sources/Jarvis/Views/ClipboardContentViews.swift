@@ -64,43 +64,23 @@ enum ClipboardTimeFilterLogic {
 
 struct ClipboardSearchField: View {
     @Binding var text: String
-    let placeholder: String
-    let focusesOnAppear: Bool
-    @FocusState private var isFocused: Bool
+    var placeholder: String
+    var focusesOnAppear = false
+    var onSubmit: (() -> Void)?
+    var onClear: (() -> Void)?
+    var help: String?
+    var accessibilityTitle: String?
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(Color.jarvisTextSecondary)
-
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.plain)
-                .focused($isFocused)
-
-            if !text.isEmpty {
-                Button { text = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.75))
-                .foregroundStyle(Color.jarvisTextSecondary)
-            }
-        }
-        .padding(.horizontal, 15)
-        .frame(
-            minHeight: JarvisToolbarMetrics.controlSize,
-            maxHeight: JarvisToolbarMetrics.controlSize
+        JarvisToolbarSearchField(
+            text: $text,
+            placeholder: placeholder,
+            help: help,
+            accessibilityTitle: accessibilityTitle,
+            focusesOnAppear: focusesOnAppear,
+            onSubmit: onSubmit,
+            onClear: onClear
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            isFocused = true
-        }
-        .onAppear {
-            if focusesOnAppear {
-                isFocused = true
-            }
-        }
     }
 }
 
@@ -186,22 +166,21 @@ struct ClipboardCategoryFilterSelector: View {
     }
 
     var body: some View {
-        Picker(
-            "内容类型",
-            selection: $selection
-        ) {
+        Menu {
             ForEach(ClipboardViewFilter.allCases) { filter in
-                Text(categoryTitle(filter)).tag(filter)
+                Button {
+                    selection = filter
+                } label: {
+                    jarvisToolbarMenuItemLabel(
+                        categoryTitle(filter),
+                        isSelected: selection == filter
+                    )
+                }
             }
+        } label: {
+            JarvisToolbarMenuLabel(title: categoryTitle(selection))
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .buttonStyle(.plain)
-        .font(JarvisTypography.control)
-        .padding(.horizontal, 14)
-        .frame(height: JarvisToolbarMetrics.controlSize)
-        .contentShape(Rectangle())
-        .fixedSize(horizontal: true, vertical: false)
+        .help("按内容类型筛选")
     }
 }
 
@@ -238,7 +217,7 @@ struct ClipboardView: View {
                     ClipboardCategoryFilterSelector(selection: $selectedCategory)
                 }
                 ToolbarSpacer(.fixed, placement: .automatic)
-                JarvisToolbarSurface(id: "clipboard.grid-zoom", placement: .automatic) {
+                ToolbarItem(id: "clipboard.grid-zoom", placement: .automatic) {
                     HistoryGridZoomControl(selection: $gridZoom)
                 }
                 ToolbarSpacer(.fixed, placement: .automatic)
@@ -255,7 +234,6 @@ struct ClipboardView: View {
                         placeholder: "搜索文本、文件名…",
                         focusesOnAppear: false
                     )
-                    .frame(width: HistoryGridMetrics.clipboardSearchFieldWidth)
                 }
             },
             content: {

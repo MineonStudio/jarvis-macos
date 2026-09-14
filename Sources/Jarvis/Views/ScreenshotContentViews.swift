@@ -14,7 +14,7 @@ struct ScreenshotView: View {
             },
             trailingToolbar: {
                 ToolbarSpacer(.fixed, placement: .automatic)
-                JarvisToolbarSurface(id: "screenshot.grid-zoom", placement: .automatic) {
+                ToolbarItem(id: "screenshot.grid-zoom", placement: .automatic) {
                     HistoryGridZoomControl(selection: $gridZoom)
                 }
                 ToolbarSpacer(.fixed, placement: .automatic)
@@ -196,9 +196,10 @@ struct HistoryGridZoomControl: View {
                 selection = selection.zoomedIn
             }
         }
-        .padding(2)
-        .frame(height: HistoryGridMetrics.topControlHeight)
-        .jarvisGlass(in: Capsule(), interactive: false)
+        .padding(.horizontal, 2)
+        .frame(maxHeight: .infinity)
+        // Native toolbar item surface sets the control height. A custom
+        // 32-point glass capsule was shorter than adjacent toolbar controls.
         .accessibilityElement(children: .contain)
     }
 
@@ -242,7 +243,7 @@ enum HistoryGridMetrics {
     static let clipboardPreviewHeight: CGFloat = clipboardCardHeight
     static let clipboardContentSpacing: CGFloat = 4
     static let clipboardMetadataHeight: CGFloat = 16
-    static let clipboardSearchFieldWidth: CGFloat = 320
+    static let clipboardSearchFieldWidth = JarvisToolbarMetrics.searchFieldWidth
     static let clipboardActionButtonSize = JarvisToolbarMetrics.controlSize
     static let clipboardPreviewHoverScale: CGFloat = 1.08
     static let clipboardCornerRadius: CGFloat = 12

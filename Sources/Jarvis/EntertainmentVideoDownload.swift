@@ -30,6 +30,8 @@ struct EntertainmentVideoDownloadItem: Identifiable, Equatable, Sendable {
     let platform: EntertainmentPlatform
     let title: String
     let qualityTitle: String
+    let sourceURL: URL
+    let createdAt: Date
     var filename: String
     var state: AIConversationDownloadState
     var progress: Double?
@@ -505,21 +507,32 @@ private extension Data {
 @MainActor
 final class EntertainmentVideoDownloadManager: ObservableObject {
     @Published private(set) var items: [EntertainmentVideoDownloadItem] = []
+    @Published private(set) var history: [EntertainmentVideoDownloadRecord] = []
 
     private let service: EntertainmentVideoDownloadService
+    private let historyStore: EntertainmentVideoDownloadHistoryStore
     private let cancellation = EntertainmentDownloadCancellation()
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
-    init(service: EntertainmentVideoDownloadService = EntertainmentVideoDownloadService()) {
+    init(
+        service: EntertainmentVideoDownloadService = EntertainmentVideoDownloadService(),
+        historyStore: EntertainmentVideoDownloadHistoryStore = EntertainmentVideoDownloadHistoryStore()
+    ) {
         self.service = service
+        self.historyStore = historyStore
+        history = historyStore.load()
     }
 
     var activeCount: Int {
         items.count(where: { $0.state.isActive })
     }
 
+    var activeItems: [EntertainmentVideoDownloadItem] {
+        items.filter(\.state.isActive)
+    }
+
     var hasDownloads: Bool {
-        !items.isEmpty
+        !items.isEmpty || !history.isEmpty
     }
 
     var downloadsDirectory: URL {
@@ -547,6 +560,8 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
             platform: probe.platform,
             title: probe.title,
             qualityTitle: quality.title,
+            sourceURL: probe.url,
+            createdAt: Date(),
             filename: destination.lastPathComponent,
             state: .queued,
             progress: 0,
@@ -583,6 +598,16 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
         items.removeAll { !active.contains($0.id) }
     }
 
+    func removeFromHistory(_ record: EntertainmentVideoDownloadRecord) {
+        history = EntertainmentVideoDownloadHistory.removing(record.id, from: history)
+        historyStore.save(history)
+    }
+
+    func clearHistory() {
+        history = []
+        historyStore.save(history)
+    }
+
     func open(_ item: EntertainmentVideoDownloadItem) {
         guard let destinationURL = item.destinationURL else { return }
         NSWorkspace.shared.open(destinationURL)
@@ -610,6 +635,22 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     func revealInFinder(_ item: EntertainmentVideoDownloadItem) {
         guard let destinationURL = item.destinationURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([destinationURL])
+    }
+
+    func open(_ record: EntertainmentVideoDownloadRecord) {
+        guard record.canOpenFile else { return }
+        NSWorkspace.shared.open(record.destinationURL)
+    }
+
+    @discardableResult
+    func copyFile(_ record: EntertainmentVideoDownloadRecord) -> Bool {
+        guard record.canOpenFile else { return false }
+        return EntertainmentVideoFileActions.copyFile(record.destinationURL, to: .general)
+    }
+
+    func revealInFinder(_ record: EntertainmentVideoDownloadRecord) {
+        guard record.fileExists else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([record.destinationURL])
     }
 
     func openDownloadsFolder() {
@@ -660,6 +701,16 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     private func updateItem(_ id: UUID, _ update: (inout EntertainmentVideoDownloadItem) -> Void) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         update(&items[index])
+        persistIfFinished(items[index])
+    }
+
+    private func persistIfFinished(_ item: EntertainmentVideoDownloadItem) {
+        guard !item.state.isActive else { return }
+        history = EntertainmentVideoDownloadHistory.recording(
+            EntertainmentVideoDownloadRecord(item: item),
+            into: history
+        )
+        historyStore.save(history)
     }
 }
 

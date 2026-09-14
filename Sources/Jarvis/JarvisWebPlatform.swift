@@ -170,7 +170,9 @@ final class JarvisWebPlatformCornerCoverView: NSView {
             let path = NSBezierPath(rect: bounds)
             path.append(NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius))
             path.windingRule = .evenOdd
-            NSColor.textBackgroundColor.setFill()
+            // Match the SwiftUI floating panel fill so uncovered WKWebView
+            // corners do not show as light-gray squares.
+            NSColor.controlBackgroundColor.setFill()
             path.fill()
         }
     }
@@ -194,6 +196,7 @@ final class JarvisWebPlatformViewContainer: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         clipsToBounds = false
+        syncBackgroundColor()
         if cornerCover.superview !== self {
             addSubview(cornerCover, positioned: .above, relativeTo: webView)
         }
@@ -202,6 +205,18 @@ final class JarvisWebPlatformViewContainer: NSView {
         }
         if cornerCover.frame != bounds {
             cornerCover.frame = bounds
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        syncBackgroundColor()
+        cornerCover.needsDisplay = true
+    }
+
+    private func syncBackgroundColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         }
     }
 
@@ -298,7 +313,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.underPageBackgroundColor = .clear
+        webView.underPageBackgroundColor = .controlBackgroundColor
         webView.clipsToBounds = false
         webViewContainer.embed(webView)
         canGoBackObservation = webView.observe(\WKWebView.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
@@ -585,7 +600,7 @@ extension JarvisWebPlatformController: WKUIDelegate {
         popup.navigationDelegate = self
         popup.uiDelegate = self
         popup.autoresizingMask = [.width, .height]
-        popup.underPageBackgroundColor = .clear
+        popup.underPageBackgroundColor = .controlBackgroundColor
         popup.clipsToBounds = false
         webView.addSubview(popup)
         popupWebViews.append(popup)

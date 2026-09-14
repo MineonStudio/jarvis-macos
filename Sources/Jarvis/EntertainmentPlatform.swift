@@ -1,6 +1,6 @@
 import Foundation
 
-enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable {
+enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable, Codable {
     case x
     case youtube
     case tiktok

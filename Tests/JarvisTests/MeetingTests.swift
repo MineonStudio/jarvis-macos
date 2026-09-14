@@ -61,8 +61,12 @@ final class MeetingTests: XCTestCase {
             ]
         )
         summarizing.applyInterruptedLaunchRecovery()
-        XCTAssertEqual(summarizing.status, .transcribed)
-        XCTAssertNil(summarizing.errorMessage)
+        XCTAssertEqual(summarizing.status, .summaryFailed)
+        XCTAssertTrue(summarizing.canRetryProcessing)
+        XCTAssertEqual(
+            summarizing.errorMessage,
+            "总结中断，已保留逐字稿，可重新生成纪要"
+        )
     }
 
     func testRepositoryPersistsMeetingAndAudioURLIsSandboxed() throws {
@@ -274,19 +278,20 @@ final class MeetingTests: XCTestCase {
 
     func testSummaryServiceDecodesStructuredChineseSummary() async throws {
         let response = #"{"overview":"确定在本周完成首版","keyPoints":["用户需要本地记录"],"decisions":["先做录音和总结"],"actionItems":[{"task":"整理接口清单","owner":"小王","dueDate":"周五"}],"openQuestions":["是否需要系统音频"]}"#
-        let service = MeetingSummaryService(api: StubMeetingAPI(response: response))
+        let transcriptSegment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 2,
+            speakerID: "S1",
+            text: "我们本周完成首版。"
+        )
         let record = MeetingRecord(
             title: "规划会",
             audioFileName: "meeting-\(UUID().uuidString).m4a",
             speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
-            transcript: [
-                MeetingTranscriptSegment(
-                    startTime: 0,
-                    endTime: 2,
-                    speakerID: "S1",
-                    text: "我们本周完成首版。"
-                )
-            ]
+            transcript: [transcriptSegment]
+        )
+        let service = MeetingSummaryService(
+            api: MeetingTestAPI(sourceSegmentID: transcriptSegment.id, summaryResponse: response)
         )
         let configuration = AIAPIConfiguration(
             endpoint: "https://example.com/v1/chat/completions",
@@ -316,21 +321,23 @@ final class MeetingTests: XCTestCase {
     }
 
     func testSummaryServiceForwardsConfiguredAPIEndpointModelAndKey() async throws {
-        let api = RecordingMeetingAPI()
-        let service = MeetingSummaryService(api: api)
+        let transcriptSegment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 1,
+            speakerID: "S1",
+            text: "请使用设置里的接口生成总结。"
+        )
         let record = MeetingRecord(
             title: "配置验证",
             audioFileName: "meeting-\(UUID().uuidString).m4a",
             speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
-            transcript: [
-                MeetingTranscriptSegment(
-                    startTime: 0,
-                    endTime: 1,
-                    speakerID: "S1",
-                    text: "请使用设置里的接口生成总结。"
-                )
-            ]
+            transcript: [transcriptSegment]
         )
+        let api = MeetingTestAPI(
+            sourceSegmentID: transcriptSegment.id,
+            summaryResponse: #"{"overview":"配置生效","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[]}"#
+        )
+        let service = MeetingSummaryService(api: api)
         let configuration = AIAPIConfiguration(
             endpoint: "https://configured.example/v1/chat/completions",
             model: "configured-model",
@@ -341,11 +348,16 @@ final class MeetingTests: XCTestCase {
 
         let received = await api.receivedConfiguration
         XCTAssertEqual(received, configuration)
+        let options = await api.receivedOptions
+        XCTAssertEqual(
+            options.map(\.task),
+            [AICompletionOptions.meetingFactExtraction.task, AICompletionOptions.meetingSummary.task]
+        )
+        XCTAssertEqual(options.map(\.maxOutputTokens), [900, 1200])
     }
 
     func testSummaryServiceChunksLongTranscriptBeforeMerging() async throws {
         let response = #"{"overview":"已合并长会议摘要","keyPoints":["重点"],"decisions":[],"actionItems":[],"openQuestions":[]}"#
-        let service = MeetingSummaryService(api: StubMeetingAPI(response: response))
         let record = MeetingRecord(
             title: "长会",
             audioFileName: "meeting-\(UUID().uuidString).m4a",
@@ -359,6 +371,11 @@ final class MeetingTests: XCTestCase {
                 )
             ]
         )
+        let api = MeetingTestAPI(
+            sourceSegmentID: record.transcript[0].id,
+            summaryResponse: response
+        )
+        let service = MeetingSummaryService(api: api)
         let configuration = AIAPIConfiguration(
             endpoint: "https://example.com/v1/chat/completions",
             model: "test",
@@ -368,6 +385,87 @@ final class MeetingTests: XCTestCase {
         let summary = try await service.summarize(record: record, configuration: configuration)
 
         XCTAssertEqual(summary.overview, "已合并长会议摘要")
+        let factCallCount = await api.factCallCount
+        XCTAssertGreaterThan(factCallCount, 1)
+    }
+
+    func testSummaryServiceResumesFromCompletedFactCheckpoint() async throws {
+        let response = #"{"overview":"从检查点继续生成","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[]}"#
+        let transcriptSegment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 1,
+            speakerID: "S1",
+            text: "保留事实后继续生成纪要。"
+        )
+        let record = MeetingRecord(
+            title: "断点恢复",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
+            transcript: [transcriptSegment]
+        )
+        let configuration = AIAPIConfiguration(
+            endpoint: "https://example.com/v1/chat/completions",
+            model: "test",
+            apiKey: "test-key"
+        )
+        let firstAPI = MeetingTestAPI(
+            sourceSegmentID: transcriptSegment.id,
+            summaryResponse: response
+        )
+        let checkpointBox = LockedCheckpointBox()
+        _ = try await MeetingSummaryService(api: firstAPI).summarize(
+            record: record,
+            configuration: configuration,
+            onCheckpoint: { checkpointBox.set($0) }
+        )
+        let checkpoint = try XCTUnwrap(checkpointBox.value)
+
+        let resumedAPI = MeetingTestAPI(
+            sourceSegmentID: transcriptSegment.id,
+            summaryResponse: response
+        )
+        let resumedSummary = try await MeetingSummaryService(api: resumedAPI).summarize(
+            record: record,
+            configuration: configuration,
+            checkpoint: checkpoint
+        )
+
+        XCTAssertEqual(resumedSummary.overview, "从检查点继续生成")
+        let resumedFactCallCount = await resumedAPI.factCallCount
+        XCTAssertEqual(resumedFactCallCount, 0)
+    }
+
+    func testSummaryServiceDoesNotFailWhenNoFactsCanBeExtracted() async throws {
+        let transcriptSegment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 1,
+            speakerID: "S1",
+            text: "一些没有形成结论的闲聊。"
+        )
+        let record = MeetingRecord(
+            title: "无结论会议",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
+            transcript: [transcriptSegment]
+        )
+        let api = MeetingTestAPI(
+            sourceSegmentID: transcriptSegment.id,
+            summaryResponse: #"{"overview":"不应调用","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[]}"#,
+            factResponse: #"{"facts":[]}"#
+        )
+
+        let summary = try await MeetingSummaryService(api: api).summarize(
+            record: record,
+            configuration: AIAPIConfiguration(
+                endpoint: "https://example.com/v1/chat/completions",
+                model: "test",
+                apiKey: "test-key"
+            )
+        )
+
+        XCTAssertEqual(summary.overview, "未提取到可确认的会议结论")
+        let options = await api.receivedOptions
+        XCTAssertEqual(options.map(\.task), [AICompletionOptions.meetingFactExtraction.task])
     }
 
     func testMeetingSearchMatchesSingleChineseCharacterAndLatinLetter() {
@@ -396,27 +494,67 @@ final class MeetingTests: XCTestCase {
     }
 }
 
-private struct StubMeetingAPI: AITextCompletionAPI {
-    let response: String
-
-    func complete(
-        systemPrompt _: String,
-        userPrompt _: String,
-        configuration _: AIAPIConfiguration
-    ) async throws -> String {
-        response
-    }
-}
-
-private actor RecordingMeetingAPI: AITextCompletionAPI {
+private actor MeetingTestAPI: AITextCompletionAPI {
+    let sourceSegmentID: UUID
+    let summaryResponse: String
+    let factResponse: String?
     private(set) var receivedConfiguration: AIAPIConfiguration?
+    private(set) var receivedOptions: [AICompletionOptions] = []
+    private(set) var factCallCount = 0
+
+    init(sourceSegmentID: UUID, summaryResponse: String, factResponse: String? = nil) {
+        self.sourceSegmentID = sourceSegmentID
+        self.summaryResponse = summaryResponse
+        self.factResponse = factResponse
+    }
 
     func complete(
         systemPrompt _: String,
         userPrompt _: String,
         configuration: AIAPIConfiguration
     ) async throws -> String {
+        try await complete(
+            systemPrompt: "",
+            userPrompt: "",
+            configuration: configuration,
+            options: .standardJSON
+        )
+    }
+
+    func complete(
+        systemPrompt _: String,
+        userPrompt _: String,
+        configuration: AIAPIConfiguration,
+        options: AICompletionOptions
+    ) async throws -> String {
         receivedConfiguration = configuration
-        return #"{"overview":"配置生效","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[]}"#
+        receivedOptions.append(options)
+        if options.task == AICompletionOptions.meetingFactExtraction.task {
+            factCallCount += 1
+            if let factResponse {
+                return factResponse
+            }
+            return "{\"facts\":[{\"kind\":\"keyPoint\",\"text\":\"会议事实\",\"owner\":\"\",\"dueDate\":\"\",\"sourceSegmentIDs\":[\""
+                + sourceSegmentID.uuidString
+                + "\"]}]}"
+        }
+        return summaryResponse
+    }
+}
+
+private final class LockedCheckpointBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: MeetingSummaryCheckpoint?
+
+    var value: MeetingSummaryCheckpoint? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+
+    func set(_ checkpoint: MeetingSummaryCheckpoint) {
+        lock.lock()
+        stored = checkpoint
+        lock.unlock()
     }
 }

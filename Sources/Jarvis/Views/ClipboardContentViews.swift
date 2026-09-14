@@ -238,10 +238,9 @@ struct ClipboardView: View {
                     ClipboardCategoryFilterSelector(selection: $selectedCategory)
                 }
                 ToolbarSpacer(.fixed, placement: .automatic)
-                ToolbarItem(id: "clipboard.grid-zoom", placement: .automatic) {
+                JarvisToolbarSurface(id: "clipboard.grid-zoom", placement: .automatic) {
                     HistoryGridZoomControl(selection: $gridZoom)
                 }
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.fixed, placement: .automatic)
                 ToolbarItem(id: "clipboard.actions", placement: .automatic) {
                     ClipboardHistoryActionToolbar(

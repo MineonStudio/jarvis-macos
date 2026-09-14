@@ -438,6 +438,47 @@ extension AppModel {
         return validation == .available
     }
 
+    @discardableResult
+    func updateMeetingShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
+        let previous = meetingShortcut
+        guard let manager = meetingShortcutManager else {
+            statusMessage = "快捷键服务尚未就绪"
+            return false
+        }
+        let validation = manager.validate(shortcut)
+        guard validation == .available else {
+            meetingShortcutConflictMessage = validation.message
+            statusMessage = validation.message
+            return false
+        }
+        guard manager.update(shortcut) else {
+            _ = manager.update(previous)
+            meetingShortcut = previous
+            meetingShortcutConflictMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
+            statusMessage = meetingShortcutConflictMessage
+            return false
+        }
+
+        meetingShortcut = shortcut
+        meetingShortcutConflictMessage = ""
+        if let data = try? JSONEncoder().encode(shortcut) {
+            UserDefaults.standard.set(data, forKey: meetingShortcutKey)
+        }
+        statusMessage = "录音快捷键已更新为 \(shortcut.displayString)"
+        return true
+    }
+
+    @discardableResult
+    func validateMeetingShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
+        guard let manager = meetingShortcutManager else {
+            meetingShortcutConflictMessage = "快捷键服务尚未就绪"
+            return false
+        }
+        let validation = manager.validate(shortcut)
+        meetingShortcutConflictMessage = validation == .available ? "" : validation.message
+        return validation == .available
+    }
+
     // MARK: - UserDefaults loading
 
     func loadScreenshotShortcut() {
@@ -473,5 +514,14 @@ extension AppModel {
             return
         }
         clipboardShortcut = shortcut
+    }
+
+    func loadMeetingShortcut() {
+        guard let data = UserDefaults.standard.data(forKey: meetingShortcutKey),
+              let shortcut = try? JSONDecoder().decode(ScreenshotShortcut.self, from: data)
+        else {
+            return
+        }
+        meetingShortcut = shortcut
     }
 }

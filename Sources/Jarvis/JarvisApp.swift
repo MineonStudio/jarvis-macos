@@ -98,6 +98,10 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        false
+    }
+
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard let workspace = appModel?.resumeWorkspace, workspace.requiresSaveBeforeNewResume else {
             return .terminateNow

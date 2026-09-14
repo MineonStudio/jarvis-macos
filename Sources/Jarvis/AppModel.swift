@@ -41,6 +41,7 @@ enum AppSection: Hashable, Identifiable {
         case .skill(.windowLayout): "窗口布局"
         case .skill(.resume): "简历制作"
         case .skill(.wallpaper): "桌面壁纸"
+        case .skill(.meetingNotes): "会议记录"
         case .settings: "设置"
         }
     }
@@ -84,6 +85,8 @@ final class AppModel {
     var screenshotShortcutConflictMessage = ""
     var clipboardShortcut = ScreenshotShortcut.clipboardDefault
     var clipboardShortcutConflictMessage = ""
+    var meetingShortcut = ScreenshotShortcut.meetingDefault
+    var meetingShortcutConflictMessage = ""
     var themePreference: JarvisTheme = .system
     var systemColorScheme: ColorScheme = .light
     var updateState: JarvisUpdateState = .idle
@@ -99,6 +102,11 @@ final class AppModel {
     var aiAPIKeyMask = ""
     var aiSettingsLocked = false
     var aiConnectionTesting = false
+    var meetingRecords: [MeetingRecord] = []
+    var selectedMeetingID: UUID?
+    var meetingProcessingState: MeetingProcessingState = .idle
+    var meetingElapsed: TimeInterval = 0
+    var meetingModelState: MeetingModelPreparationState = .checking
     var screenCapturePermissionGranted = false
     var accessibilityPermissionGranted = false
     var microphonePermissionGranted = false
@@ -127,6 +135,10 @@ final class AppModel {
     @ObservationIgnored let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     @ObservationIgnored let updateService = JarvisUpdateService()
     @ObservationIgnored let aiConversationDownloadManager = AIConversationDownloadManager()
+    @ObservationIgnored let meetingRepository: MeetingRepository
+    @ObservationIgnored let meetingRecorder: MeetingRecorder
+    @ObservationIgnored let meetingTranscriptionService: any MeetingTranscribing
+    @ObservationIgnored let aiTextCompletionAPI: any AITextCompletionAPI
     @ObservationIgnored let entertainmentDownloadManager = AIConversationDownloadManager()
     @ObservationIgnored let entertainmentVideoDownloads = EntertainmentVideoDownloadManager()
     @ObservationIgnored let resumeWorkspace = ResumeWorkspace()
@@ -139,15 +151,21 @@ final class AppModel {
     @ObservationIgnored var aiModelsRefreshTask: Task<Void, Never>?
     @ObservationIgnored var screenshotShortcutManager: ScreenshotShortcutManager?
     @ObservationIgnored var clipboardShortcutManager: ScreenshotShortcutManager?
+    @ObservationIgnored var meetingShortcutManager: ScreenshotShortcutManager?
     @ObservationIgnored var windowLayoutShortcutManagers: [WindowLayout: ScreenshotShortcutManager] = [:]
     @ObservationIgnored var windowLayoutController: WindowLayoutController?
     @ObservationIgnored var systemAppearanceObservation: NSKeyValueObservation?
     @ObservationIgnored var editingHistoryID: UUID?
     @ObservationIgnored var clipboardCacheCleanupTimer: Timer?
+    @ObservationIgnored var meetingRecordingTimer: Task<Void, Never>?
+    @ObservationIgnored var meetingProcessingTask: Task<Void, Never>?
+    @ObservationIgnored var meetingModelPreparationTask: Task<Void, Never>?
+    @ObservationIgnored var meetingCurrentRecordingID: UUID?
 
     @ObservationIgnored let screenshotShortcutKey = "jarvis.screenshot.shortcut"
     @ObservationIgnored let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     @ObservationIgnored let clipboardShortcutKey = "jarvis.clipboard.shortcut"
+    @ObservationIgnored let meetingShortcutKey = "jarvis.meeting.shortcut"
     @ObservationIgnored let themePreferenceKey = "jarvis.theme.preference"
     @ObservationIgnored let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     @ObservationIgnored let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
@@ -181,16 +199,46 @@ final class AppModel {
         return controller
     }
 
-    init(aiAPIConnectionTester: any AIAPIConnectionTesting = OpenAICompatibleAPIClient()) {
+    init(
+        aiAPIConnectionTester: any AIAPIConnectionTesting = OpenAICompatibleAPIClient(),
+        aiTextCompletionAPI: any AITextCompletionAPI = OpenAICompatibleAPIClient(),
+        meetingTranscriptionService: any MeetingTranscribing = FluidAudioMeetingTranscriptionService()
+    ) {
         self.aiAPIConnectionTester = aiAPIConnectionTester
+        self.aiTextCompletionAPI = aiTextCompletionAPI
+        self.meetingTranscriptionService = meetingTranscriptionService
         let cacheStore = ClipboardCacheStore()
         clipboardCacheStore = cacheStore
         clipboardService = ClipboardService(cacheStore: cacheStore)
         clipboardCacheDirectoryURL = cacheStore.currentDirectoryURL
         clipboardCacheMaximumBytes = cacheStore.currentMaximumBytes
+        let repository = MeetingRepository()
+        meetingRepository = repository
+        var loadedMeetingRecords = repository.load()
+        for index in loadedMeetingRecords.indices
+            where MeetingRecord.isLegacyGeneratedTitle(
+                loadedMeetingRecords[index].title,
+                createdAt: loadedMeetingRecords[index].createdAt
+            )
+        {
+            loadedMeetingRecords[index].title = MeetingRecord.defaultTitle
+            try? repository.save(loadedMeetingRecords[index])
+        }
+        for index in loadedMeetingRecords.indices
+            where loadedMeetingRecords[index].status == .recording
+        {
+            loadedMeetingRecords[index].status = .failed
+            loadedMeetingRecords[index].errorMessage = "应用上次退出时录音未正常结束；已保留已写入的原始录音"
+            try? repository.save(loadedMeetingRecords[index])
+        }
+        meetingRecords = loadedMeetingRecords
+        meetingRecorder = MeetingRecorder()
+        let modelAvailability = MeetingModelStorage.availability()
+        meetingModelState = modelAvailability.isReady ? .ready : .notReady(modelAvailability)
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
         loadClipboardShortcut()
+        loadMeetingShortcut()
         loadAIAPISettings()
         loadThemePreference()
         loadLaunchAtLoginPreference()
@@ -213,6 +261,15 @@ final class AppModel {
         ) { [weak self] in
             Task { @MainActor [weak self] in
                 self?.showClipboardPanel()
+            }
+        }
+
+        meetingShortcutManager = ScreenshotShortcutManager(
+            binding: meetingShortcut,
+            hotKeyID: 9
+        ) { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.toggleMeetingRecording()
             }
         }
 

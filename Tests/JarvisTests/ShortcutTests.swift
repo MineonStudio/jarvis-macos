@@ -41,6 +41,13 @@ final class ShortcutTests: XCTestCase {
             ),
             120
         )
+        XCTAssertEqual(
+            ScreenshotShortcut.functionKeyCode(
+                forSystemDefinedData: (32 << 16) | (0x0A << 8),
+                subtype: 8
+            ),
+            99
+        )
     }
 
     func testMediaKeyReleaseAndUnrelatedEventsAreIgnored() {
@@ -74,5 +81,12 @@ final class ShortcutTests: XCTestCase {
         )
         XCTAssertEqual(shortcut.menuKeyEquivalent, "j")
         XCTAssertEqual(shortcut.modifierFlags, [.command, .shift])
+    }
+
+    func testMeetingShortcutDefaultsToF3() {
+        XCTAssertEqual(ScreenshotShortcut.meetingDefault.keyCode, 99)
+        XCTAssertEqual(ScreenshotShortcut.meetingDefault.displayString, "F3")
+        XCTAssertEqual(ScreenshotShortcut.meetingDefault.menuKeyEquivalent, "\u{F706}")
+        XCTAssertEqual(ScreenshotShortcut.meetingDefault.modifierFlags, [])
     }
 }

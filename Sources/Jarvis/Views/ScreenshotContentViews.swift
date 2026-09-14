@@ -14,10 +14,9 @@ struct ScreenshotView: View {
             },
             trailingToolbar: {
                 ToolbarSpacer(.fixed, placement: .automatic)
-                ToolbarItem(id: "screenshot.grid-zoom", placement: .automatic) {
+                JarvisToolbarSurface(id: "screenshot.grid-zoom", placement: .automatic) {
                     HistoryGridZoomControl(selection: $gridZoom)
                 }
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.fixed, placement: .automatic)
                 ToolbarItem(id: "screenshot.actions", placement: .automatic) {
                     ScreenshotHistoryActionToolbar(

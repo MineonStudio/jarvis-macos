@@ -105,6 +105,32 @@ enum JarvisToolbarMetrics {
     static let iconSize: CGFloat = 13
 }
 
+/// Marks a toolbar item whose view owns its own capsule, glass, or other
+/// background. Native macOS toolbars otherwise add their shared item surface
+/// around that view, producing the recurring double-layer control.
+struct JarvisToolbarSurface<Content: View>: ToolbarContent {
+    private let id: String
+    private let placement: ToolbarItemPlacement
+    private let content: Content
+
+    init(
+        id: String,
+        placement: ToolbarItemPlacement = .automatic,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.id = id
+        self.placement = placement
+        self.content = content()
+    }
+
+    var body: some ToolbarContent {
+        ToolbarItem(id: id, placement: placement) {
+            content
+        }
+        .sharedBackgroundVisibility(.hidden)
+    }
+}
+
 /// Shared capsule surface for compact text-entry controls.
 struct JarvisCapsuleInputFieldModifier: ViewModifier {
     func body(content: Content) -> some View {
@@ -365,6 +391,8 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
 /// Text-first action style for module operation bars. The operation bar owns
 /// placement and spacing; individual actions provide only their label and
 /// hover/press feedback, so no control can grow into a toolbar background.
+/// Controls that intentionally draw their own surface must be wrapped in
+/// `JarvisToolbarSurface` at the ToolbarItem boundary.
 struct JarvisToolbarButtonStyle: ButtonStyle {
     let tint: Color?
     let hoverScale: CGFloat

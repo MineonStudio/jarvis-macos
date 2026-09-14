@@ -91,6 +91,8 @@ struct JarvisSidebarNavigation<
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                .contentShape(Rectangle())
                 .foregroundStyle(footerIsSelected ? Color.white : Color.secondary)
                 .padding(JarvisMetrics.sidebarContentPadding)
                 .help(footerTitle)
@@ -143,6 +145,8 @@ struct JarvisSidebarNavigation<
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+        .contentShape(Rectangle())
         .animation(
             JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion),
             value: isSelected

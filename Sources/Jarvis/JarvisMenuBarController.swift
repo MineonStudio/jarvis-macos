@@ -16,6 +16,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var appearanceObservation: NSKeyValueObservation?
     private var menuConfigured = false
+    private var isMeetingRecording = false
+    private var meetingElapsed: TimeInterval = 0
     private let menu = NSMenu()
     private let screenshotMenuItem = NSMenuItem(
         title: "框选截图",
@@ -27,6 +29,11 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         action: #selector(openClipboardPanel),
         keyEquivalent: ""
     )
+    private let meetingMenuItem = NSMenuItem(
+        title: "开始录制",
+        action: #selector(toggleMeetingRecording),
+        keyEquivalent: ""
+    )
 
     deinit {
         appearanceObservation?.invalidate()
@@ -34,6 +41,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     func bind(app: AppModel) {
         self.app = app
+        updateMeetingRecordingState(
+            isRecording: app.meetingCurrentRecordingID != nil,
+            elapsed: app.meetingElapsed
+        )
     }
 
     func bind(openMainWindowAction: @escaping () -> Void) {
@@ -58,17 +69,23 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         statusItem.isVisible = true
 
         if let button = statusItem.button {
-            styleStatusItemButton(button)
+            refreshStatusItemPresentation(button)
             appearanceObservation = button.observe(
                 \.effectiveAppearance,
                 options: [.initial, .new]
             ) { [weak self] _, _ in
                 Task { @MainActor [weak self] in
-                    guard let self, let button = self.statusItem?.button else { return }
-                    self.styleStatusItemButton(button)
+                    self?.refreshStatusItemPresentation()
                 }
             }
         }
+    }
+
+    func updateMeetingRecordingState(isRecording: Bool, elapsed: TimeInterval) {
+        isMeetingRecording = isRecording
+        meetingElapsed = max(0, elapsed)
+        refreshStatusItemPresentation()
+        updateMeetingMenuItem()
     }
 
     func configuredMenuForTesting() -> NSMenu {
@@ -82,6 +99,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         configureMenuShortcut(screenshotMenuItem, with: app.screenshotShortcut)
         clipboardMenuItem.title = "打开剪贴板"
         configureMenuShortcut(clipboardMenuItem, with: app.clipboardShortcut)
+        updateMeetingMenuItem()
+        configureMenuShortcut(meetingMenuItem, with: app.meetingShortcut)
     }
 
     private func configureMenuIfNeeded() {
@@ -96,6 +115,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         )
         addMenuItem(screenshotMenuItem)
         addMenuItem(clipboardMenuItem)
+        addMenuItem(meetingMenuItem)
         menu.addItem(.separator())
 
         for layout in WindowLayout.allCases {
@@ -143,6 +163,12 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         // material, including wallpaper-driven contrast changes.
         button.contentTintColor = nil
         button.isBordered = false
+        button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+        button.cell?.font = button.font
+        button.wantsLayer = true
+        button.layer?.backgroundColor = nil
+        button.layer?.cornerRadius = 0
+        button.layer?.masksToBounds = false
 
         if let icon = Self.makeMenuBarIcon() {
             button.image = icon
@@ -150,6 +176,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             button.imageScaling = .scaleProportionallyDown
             button.title = ""
             button.attributedTitle = NSAttributedString(string: "")
+            (button.cell as? NSButtonCell)?.attributedTitle = button.attributedTitle
         } else {
             // Keep the menu discoverable if a damaged bundle is missing the icon.
             button.title = Self.menuBarTitle
@@ -157,6 +184,36 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
         button.setAccessibilityLabel(Self.menuBarTitle)
         button.toolTip = Self.menuBarTitle
+    }
+
+    private func refreshStatusItemPresentation(_ button: NSStatusBarButton? = nil) {
+        guard let button = button ?? statusItem?.button else { return }
+        if isMeetingRecording {
+            button.image = MeetingRecordingStyle.makeStatusBarImage(for: meetingElapsed)
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            button.contentTintColor = nil
+            button.isBordered = false
+            button.title = ""
+            button.attributedTitle = NSAttributedString(string: "")
+            button.wantsLayer = true
+            button.layer?.backgroundColor = nil
+            button.layer?.cornerRadius = 0
+            button.layer?.masksToBounds = false
+            button.setAccessibilityLabel(
+                "停止录制，已录制 \(MeetingRecordingStyle.formatDuration(meetingElapsed))"
+            )
+            button.toolTip = "停止录制"
+        } else {
+            styleStatusItemButton(button)
+        }
+    }
+
+    private func updateMeetingMenuItem() {
+        meetingMenuItem.title = isMeetingRecording
+            ? MeetingRecordingStyle.stopActionTitle(for: meetingElapsed)
+            : "开始录制"
+        meetingMenuItem.isEnabled = true
     }
 
     private static func makeMenuBarIcon() -> NSImage? {
@@ -289,6 +346,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openClipboardPanel() {
         app?.showClipboardPanel()
+    }
+
+    @objc private func toggleMeetingRecording() {
+        app?.toggleMeetingRecording()
     }
 
     @objc private func applyWindowLayout(_ sender: NSMenuItem) {

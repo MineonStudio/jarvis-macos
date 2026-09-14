@@ -25,8 +25,10 @@ struct ShortcutSettingsCard: View {
     @Environment(AppModel.self) private var app
     @State private var screenshotShortcut = ScreenshotShortcut.default
     @State private var clipboardShortcut = ScreenshotShortcut.clipboardDefault
+    @State private var meetingShortcut = ScreenshotShortcut.meetingDefault
     @State private var isRecordingScreenshotShortcut = false
     @State private var isRecordingClipboardShortcut = false
+    @State private var isRecordingMeetingShortcut = false
 
     var body: some View {
         JarvisCard {
@@ -62,13 +64,31 @@ struct ShortcutSettingsCard: View {
                         clipboardShortcut = .clipboardDefault
                     }
                 }
+
+                Divider().overlay(Color.primary.opacity(0.12))
+
+                shortcutRow(
+                    title: "录音",
+                    shortcut: $meetingShortcut,
+                    isRecording: $isRecordingMeetingShortcut,
+                    conflictMessage: app.meetingShortcutConflictMessage
+                ) {
+                    let previous = meetingShortcut
+                    if !app.updateMeetingShortcut(.meetingDefault) {
+                        meetingShortcut = previous
+                    } else {
+                        meetingShortcut = .meetingDefault
+                    }
+                }
             }
         }
         .onAppear {
             screenshotShortcut = app.screenshotShortcut
             clipboardShortcut = app.clipboardShortcut
+            meetingShortcut = app.meetingShortcut
             _ = app.validateScreenshotShortcut(screenshotShortcut)
             _ = app.validateClipboardShortcut(clipboardShortcut)
+            _ = app.validateMeetingShortcut(meetingShortcut)
         }
         .onChange(of: screenshotShortcut) { _, newValue in
             guard isRecordingScreenshotShortcut else { return }
@@ -82,6 +102,13 @@ struct ShortcutSettingsCard: View {
             if app.validateClipboardShortcut(newValue) {
                 guard newValue != app.clipboardShortcut else { return }
                 _ = app.updateClipboardShortcut(newValue)
+            }
+        }
+        .onChange(of: meetingShortcut) { _, newValue in
+            guard isRecordingMeetingShortcut else { return }
+            if app.validateMeetingShortcut(newValue) {
+                guard newValue != app.meetingShortcut else { return }
+                _ = app.updateMeetingShortcut(newValue)
             }
         }
     }
@@ -142,6 +169,8 @@ struct SettingsView: View {
                         DiagnosticsSettingsCard()
 
                         ScreenshotLanguagePackSettingsCard()
+
+                        MeetingModelSettingsCard()
 
                         ShortcutSettingsCard()
 
@@ -249,7 +278,7 @@ struct SettingsView: View {
     private var permissionStatusRow: some View {
         HStack(spacing: 10) {
             SettingsPermissionCapsule(
-                title: "屏幕录制",
+                title: "屏幕录制 / 系统音频",
                 isGranted: app.screenCapturePermissionGranted,
                 action: { _ = app.requestScreenCapturePermission() }
             )
@@ -326,6 +355,92 @@ struct DiagnosticsSettingsCard: View {
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())
             }
+        }
+    }
+}
+
+struct MeetingModelSettingsCard: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person")
+
+                Text("说话人：FluidAudio Offline Diarizer；中文转写：Paraformer-large-zh（int8）。两者都在本机运行，首次使用前需下载，约占用 650 MB。")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+
+                HStack(spacing: 12) {
+                    modelStatusLabel
+                    Spacer(minLength: 8)
+                    modelAction
+                }
+
+                if case let .downloading(stage, progress) = app.meetingModelState {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(stage.title)
+                            Spacer()
+                            Text("\(Int(progress * 100))%")
+                                .font(JarvisTypography.monospaced)
+                                .foregroundStyle(Color.jarvisTextSecondary)
+                        }
+                        .font(JarvisTypography.caption)
+                        ProgressView(value: progress)
+                            .tint(Color.accentColor)
+                    }
+                }
+
+                if case let .failed(message) = app.meetingModelState {
+                    Text("下载失败：\(message)")
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .onAppear {
+            app.refreshMeetingModelState()
+        }
+    }
+
+    private var modelStatusLabel: some View {
+        Group {
+            switch app.meetingModelState {
+            case .checking:
+                Label("正在检查模型", systemImage: "arrow.triangle.2.circlepath")
+            case let .notReady(availability):
+                Label("待下载：\(availability.missingTitle)", systemImage: "arrow.down.circle")
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            case .downloading:
+                Label("正在准备本地模型", systemImage: "arrow.down.circle")
+                    .foregroundStyle(Color.accentColor)
+            case .ready:
+                Label("模型已准备好", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .failed:
+                Label("模型未准备好", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+        }
+        .font(JarvisTypography.bodyEmphasis)
+    }
+
+    @ViewBuilder
+    private var modelAction: some View {
+        switch app.meetingModelState {
+        case .checking, .ready:
+            EmptyView()
+        case .downloading:
+            Button("取消") {
+                app.cancelMeetingModelPreparation()
+            }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+        case .notReady, .failed:
+            Button("下载模型") {
+                app.prepareMeetingModels()
+            }
+            .buttonStyle(JarvisPrimaryButtonStyle())
         }
     }
 }

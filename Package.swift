@@ -9,9 +9,15 @@ let package = Package(
     products: [
         .executable(name: "Jarvis", targets: ["Jarvis"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.4")
+    ],
     targets: [
         .executableTarget(
             name: "Jarvis",
+            dependencies: [
+                .product(name: "FluidAudio", package: "FluidAudio")
+            ],
             path: "Sources/Jarvis",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

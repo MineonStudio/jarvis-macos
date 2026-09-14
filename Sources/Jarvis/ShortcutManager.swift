@@ -29,6 +29,12 @@ struct ScreenshotShortcut: Codable, Equatable {
         modifiers: 0
     )
 
+    /// F3 toggles the local meeting recorder.
+    static let meetingDefault = ScreenshotShortcut(
+        keyCode: 99, // F3
+        modifiers: 0
+    )
+
     private static let functionKeyCodes: Set<UInt16> = [
         122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111
     ]
@@ -50,6 +56,7 @@ struct ScreenshotShortcut: Codable, Equatable {
         switch keyType {
         case 2: return 122 // Brightness down = physical F1
         case 3: return 120 // Brightness up = physical F2
+        case 32: return 99 // Mission Control = physical F3
         default: return nil
         }
     }

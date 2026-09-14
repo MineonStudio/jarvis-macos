@@ -163,7 +163,7 @@ private extension ResumeContentView {
 
     @ToolbarContentBuilder
     var resumeLeadingToolbar: some ToolbarContent {
-        ToolbarItem(id: "resume.filename", placement: .navigation) {
+        JarvisToolbarSurface(id: "resume.filename", placement: .navigation) {
             TextField("未命名简历", text: $workspace.document.title)
                 .textFieldStyle(.plain)
                 .font(JarvisTypography.cardTitle)
@@ -175,9 +175,8 @@ private extension ResumeContentView {
                 .onSubmit { finishFilenameEditing() }
                 .help("点击修改文件名")
         }
-        .sharedBackgroundVisibility(.hidden)
 
-        ToolbarItem(id: "resume.save-status", placement: .navigation) {
+        JarvisToolbarSurface(id: "resume.save-status", placement: .navigation) {
             HStack(spacing: 5) {
                 Image(systemName: workspace.isSaved ? "checkmark.circle.fill" : "circle.dashed")
                     .font(.system(size: 11, weight: .medium))
@@ -190,7 +189,6 @@ private extension ResumeContentView {
             }
             .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
         }
-        .sharedBackgroundVisibility(.hidden)
     }
 
     @ToolbarContentBuilder

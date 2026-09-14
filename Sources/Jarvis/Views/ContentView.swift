@@ -146,6 +146,7 @@ struct ContentView: View {
         case .skill(.windowLayout): WindowLayoutView()
         case .skill(.resume): ResumeContentView()
         case .skill(.wallpaper): WallpaperView()
+        case .skill(.meetingNotes): MeetingView()
         case .settings: SettingsView()
         }
     }

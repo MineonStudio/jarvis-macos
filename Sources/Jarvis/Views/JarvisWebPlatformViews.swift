@@ -332,7 +332,7 @@ struct JarvisWebPlatformBrowserPage: View {
                 }
                 .padding(28)
                 .frame(maxWidth: 420)
-                .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
+                .jarvisContentSurface(cornerRadius: JarvisMetrics.cardRadius)
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }

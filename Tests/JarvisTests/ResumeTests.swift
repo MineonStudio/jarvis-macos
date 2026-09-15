@@ -16,10 +16,22 @@ final class ResumeTests: XCTestCase {
         XCTAssertEqual(ResumeTemplate.defaultTemplate, .minimal)
         XCTAssertEqual(
             ResumeTemplate.allCases,
-            [.minimal, .editorial, .timeline]
+            [.minimal, .creative, .editorial, .timeline]
         )
         XCTAssertEqual(ResumeDocument.blank().template, .minimal)
-        XCTAssertEqual(ResumeTemplate.allCases.map(\.title), ["现代极简", "编辑风格", "时间轴"])
+        XCTAssertEqual(
+            ResumeTemplate.allCases.map(\.title),
+            ["现代极简", "创意拼贴", "编辑风格", "时间轴"]
+        )
+        XCTAssertEqual(
+            ResumeTemplateCategory.allCases.map(\.title),
+            ["全部", "现代", "创意", "经典", "专业"]
+        )
+        XCTAssertEqual(ResumeTemplateCategory.all.templates, ResumeTemplate.allCases)
+        XCTAssertEqual(ResumeTemplateCategory.modern.templates, [.minimal])
+        XCTAssertEqual(ResumeTemplateCategory.creative.templates, [.creative])
+        XCTAssertEqual(ResumeTemplateCategory.classic.templates, [.editorial])
+        XCTAssertEqual(ResumeTemplateCategory.professional.templates, [.timeline])
     }
 
     func testTemplateSelectionIsShownOnlyUntilAChoiceIsMade() {
@@ -180,12 +192,12 @@ final class ResumeTests: XCTestCase {
         let unknownData = try JSONSerialization.data(withJSONObject: root)
         XCTAssertEqual(try ResumeDocumentCodec.decode(unknownData).template, .minimal)
 
+        XCTAssertEqual(ResumeExportFormat.allCases, [.pdf, .markdown, .json])
         for template in ResumeTemplate.allCases {
             var document = makeDocument()
             document.template = template
             XCTAssertNoThrow(try ResumeExportService.data(for: document, format: .json))
             XCTAssertNoThrow(try ResumeExportService.data(for: document, format: .markdown))
-            XCTAssertNoThrow(try ResumeExportService.data(for: document, format: .rtf))
         }
     }
 

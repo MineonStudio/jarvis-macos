@@ -1,31 +1,27 @@
 import SwiftUI
 
 struct ResumeTemplateSelectionView: View {
+    let category: ResumeTemplateCategory
     let onSelect: (ResumeTemplate) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HistoryGridMetrics.historyFilterToGridSpacing) {
-            Text("选择简历模板")
-                .font(JarvisTypography.pageTitle)
-
-            GeometryReader { proxy in
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 232), spacing: HistoryGridMetrics.clipboardGridSpacing)],
-                        alignment: .leading,
-                        spacing: HistoryGridMetrics.clipboardGridSpacing
-                    ) {
-                        ForEach(ResumeTemplate.allCases) { template in
-                            ResumeTemplateCard(template: template, onSelect: onSelect)
-                        }
+        GeometryReader { proxy in
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 232), spacing: HistoryGridMetrics.clipboardGridSpacing)],
+                    alignment: .leading,
+                    spacing: HistoryGridMetrics.clipboardGridSpacing
+                ) {
+                    ForEach(category.templates) { template in
+                        ResumeTemplateCard(template: template, onSelect: onSelect)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(HistoryGridMetrics.historyPanelInset)
-                    .frame(minHeight: max(proxy.size.height, 430), alignment: .topLeading)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(HistoryGridMetrics.historyPanelInset)
+                .frame(minHeight: max(proxy.size.height, 430), alignment: .topLeading)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .jarvisFloatingPanel(cornerRadius: 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.jarvisBackground)
@@ -112,6 +108,36 @@ private struct ResumeTemplateThumbnail: View {
     @ViewBuilder
     private var page: some View {
         switch template {
+        case .creative:
+            ZStack(alignment: .topLeading) {
+                ResumePaperPalette.violet.opacity(0.09)
+                Circle()
+                    .fill(ResumePaperPalette.coral.opacity(0.84))
+                    .frame(width: 56, height: 56)
+                    .offset(x: 112, y: -18)
+
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 5) {
+                        Rectangle()
+                            .fill(ResumePaperPalette.coral)
+                            .frame(width: 26, height: 3)
+                        Text("CREATE")
+                            .font(.system(size: 5.5, weight: .bold, design: .rounded))
+                            .tracking(1)
+                            .foregroundStyle(ResumePaperPalette.coral)
+                    }
+                    Text("林知远")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(ResumePaperPalette.ink)
+                    Text("产品经理 · 设计思维")
+                        .font(.system(size: 6, weight: .medium, design: .rounded))
+                        .foregroundStyle(ResumePaperPalette.muted)
+                    miniSection(title: "关于我", accent: ResumePaperPalette.coral)
+                    miniSkills(["用户研究", "产品策略", "品牌设计"], fill: ResumePaperPalette.coral.opacity(0.12))
+                    miniSection(title: "精选项目", accent: ResumePaperPalette.violet)
+                }
+            }
+            .padding(17)
         case .editorial:
             VStack(alignment: .center, spacing: 8) {
                 Text("CURRICULUM VITAE")

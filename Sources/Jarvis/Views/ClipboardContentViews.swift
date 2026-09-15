@@ -166,21 +166,20 @@ struct ClipboardCategoryFilterSelector: View {
     }
 
     var body: some View {
-        Menu {
-            ForEach(ClipboardViewFilter.allCases) { filter in
-                Button {
-                    selection = filter
-                } label: {
-                    jarvisToolbarMenuItemLabel(
-                        categoryTitle(filter),
-                        isSelected: selection == filter
-                    )
-                }
+        JarvisDropdownMenu(
+            title: categoryTitle(selection),
+            options: ClipboardViewFilter.allCases.map {
+                JarvisDropdownOption(id: $0.id, title: categoryTitle($0))
+            },
+            selectionID: selection.id,
+            accessibilityLabel: "内容类型筛选",
+            help: "按内容类型筛选",
+            controlWidth: 96,
+            onSelect: { rawValue in
+                guard let category = ClipboardViewFilter(rawValue: rawValue) else { return }
+                selection = category
             }
-        } label: {
-            JarvisToolbarMenuLabel(title: categoryTitle(selection))
-        }
-        .help("按内容类型筛选")
+        )
     }
 }
 
@@ -613,10 +612,7 @@ struct ClipboardCard: View {
                 style: .continuous
             )
         )
-        .jarvisGlass(
-            cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-            interactive: false
-        )
+        .jarvisContentSurface(cornerRadius: HistoryGridMetrics.clipboardCornerRadius)
         .overlay {
             RoundedRectangle(
                 cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
@@ -678,6 +674,15 @@ struct ClipboardCard: View {
             isSensitiveRevealed = false
             isTextExpanded = false
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            item.isSensitive
+                ? "\(item.kind.title)，敏感内容"
+                : "\(item.kind.title)，剪贴板内容"
+        )
+        .accessibilityValue("\(item.shortTimestamp)，\(isSelected ? "已选中" : "未选中")")
+        .accessibilityHint("点击选择，双击打开预览")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

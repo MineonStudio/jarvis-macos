@@ -121,7 +121,7 @@ private struct WindowLayoutDisplayCard: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .jarvisGlass(cornerRadius: 13)
+        .jarvisContentSurface(cornerRadius: 13)
         .accessibilityElement(children: .combine)
         .accessibilityHint("仅用于查看快捷键，请从菜单栏执行窗口布局")
     }

@@ -475,7 +475,7 @@ final class ClipboardService: @unchecked Sendable {
                     "bytes": String(tiffData.count)
                 ]
             )
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
                 guard let imageData = Self.pngData(fromTIFF: tiffData) else {
                     JarvisLog.error(
                         category: .clipboard,

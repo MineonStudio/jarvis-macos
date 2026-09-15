@@ -8,11 +8,15 @@ enum ResumePaperPalette {
     static let softLine = Color(red: 0.89, green: 0.90, blue: 0.92)
     static let blue = Color(red: 0.16, green: 0.38, blue: 0.86)
     static let teal = Color(red: 0.04, green: 0.43, blue: 0.43)
+    static let coral = Color(red: 0.90, green: 0.30, blue: 0.22)
+    static let violet = Color(red: 0.42, green: 0.27, blue: 0.78)
 
     static func accent(for template: ResumeTemplate) -> Color {
         switch template {
         case .minimal:
             blue
+        case .creative:
+            coral
         case .editorial:
             ink
         case .timeline:
@@ -60,6 +64,28 @@ struct ResumePageHeader: View {
                     headline(accent: ResumePaperPalette.blue)
                     contactRow
                 }
+            }
+        case .creative:
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CREATIVE PROFILE")
+                        .font(.system(size: 7, weight: .bold, design: .rounded))
+                        .tracking(1.6)
+                        .foregroundStyle(ResumePaperPalette.coral)
+                    name
+                        .font(.system(size: 31, weight: .bold, design: .rounded))
+                    headline(accent: ResumePaperPalette.coral)
+                    contactRow
+                }
+                Spacer(minLength: 8)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(ResumePaperPalette.violet.opacity(0.13))
+                    .frame(width: 64, height: 64)
+                    .overlay {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(ResumePaperPalette.coral)
+                    }
             }
         case .editorial:
             VStack(alignment: .center, spacing: 8) {
@@ -169,6 +195,19 @@ struct ResumePageSection<Content: View>: View {
                     .frame(height: 1)
             }
             .padding(.top, 24)
+        case .creative:
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(ResumePaperPalette.coral)
+                    .frame(width: 7, height: 7)
+                Text(title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(ResumePaperPalette.ink)
+                Capsule()
+                    .fill(ResumePaperPalette.coral.opacity(0.30))
+                    .frame(height: 1.2)
+            }
+            .padding(.top, 18)
         case .editorial:
             HStack(spacing: 10) {
                 Rectangle()
@@ -303,6 +342,20 @@ struct ResumePageSkills: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(ResumePaperPalette.blue.opacity(0.08), in: Capsule())
+        case .creative:
+            Text(skill)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(ResumePaperPalette.coral)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    ResumePaperPalette.coral.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(ResumePaperPalette.coral.opacity(0.24), lineWidth: 0.6)
+                }
         case .editorial:
             Text(skill)
                 .font(.system(size: 9, weight: .medium, design: .serif))

@@ -1,66 +1,4 @@
-import AppKit
 import SwiftUI
-
-private struct APIPopupButton: NSViewRepresentable {
-    let accessibilityTitle: String
-    @Binding var selection: String
-    let options: [String]
-    let emptyTitle: String
-    let isDisabled: Bool
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
-    }
-
-    func makeNSView(context: Context) -> NSPopUpButton {
-        let button = NSPopUpButton(frame: .zero, pullsDown: false)
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.selectionDidChange(_:))
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
-        button.controlSize = .small
-        button.alignment = .left
-        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        button.setAccessibilityLabel(accessibilityTitle)
-        return button
-    }
-
-    func updateNSView(_ button: NSPopUpButton, context: Context) {
-        let visibleOptions = options.isEmpty ? [emptyTitle] : options
-        if button.itemTitles != visibleOptions {
-            button.removeAllItems()
-            button.addItems(withTitles: visibleOptions)
-        }
-
-        if options.isEmpty {
-            button.item(at: 0)?.isEnabled = false
-            button.selectItem(at: 0)
-        } else if let selectedIndex = options.firstIndex(of: selection) {
-            button.selectItem(at: selectedIndex)
-        }
-
-        button.isEnabled = !isDisabled
-        button.setAccessibilityLabel(accessibilityTitle)
-        context.coordinator.selection = $selection
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        var selection: Binding<String>
-
-        init(selection: Binding<String>) {
-            self.selection = selection
-        }
-
-        @objc func selectionDidChange(_ sender: NSPopUpButton) {
-            guard let title = sender.titleOfSelectedItem else {
-                return
-            }
-            selection.wrappedValue = title
-        }
-    }
-}
 
 struct AIAPISettingsCard: View {
     @Environment(AppModel.self) private var app
@@ -307,12 +245,18 @@ struct AIAPISettingsCard: View {
         emptyTitle: String = "",
         isDisabled: Bool
     ) -> some View {
-        APIPopupButton(
-            accessibilityTitle: title,
-            selection: selection,
-            options: options,
-            emptyTitle: emptyTitle,
-            isDisabled: isDisabled
+        JarvisDropdownMenu(
+            title: selection.wrappedValue.isEmpty ? emptyTitle : selection.wrappedValue,
+            options: options.map {
+                JarvisDropdownOption(id: $0, title: $0)
+            },
+            selectionID: options.contains(selection.wrappedValue) ? selection.wrappedValue : nil,
+            accessibilityLabel: title,
+            help: "选择(title)",
+            isEnabled: !isDisabled,
+            onSelect: { selectedValue in
+                selection.wrappedValue = selectedValue
+            }
         )
         .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
     }

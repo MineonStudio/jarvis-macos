@@ -454,7 +454,7 @@ struct QuickActionButton: View {
             .padding(.horizontal, 13)
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .jarvisGlass(cornerRadius: 13)
+            .jarvisContentSurface(cornerRadius: 13)
             .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.86))

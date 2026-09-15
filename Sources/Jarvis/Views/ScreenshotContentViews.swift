@@ -427,10 +427,7 @@ struct ScreenshotHistoryCard: View {
                 style: .continuous
             )
         )
-        .jarvisGlass(
-            cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-            interactive: false
-        )
+        .jarvisContentSurface(cornerRadius: HistoryGridMetrics.clipboardCornerRadius)
         .overlay {
             RoundedRectangle(
                 cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
@@ -470,6 +467,11 @@ struct ScreenshotHistoryCard: View {
         )
         .onTapGesture(count: 2, perform: onDoubleClick)
         .onTapGesture(perform: onSelect)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("截图，PNG，\(JarvisHistoryDateFormatting.string(from: item.updatedAt))")
+        .accessibilityValue(isSelected ? "已选中" : "未选中")
+        .accessibilityHint("点击选择，双击预览；可以拖到 Finder 或其他应用导出 PNG")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

@@ -188,13 +188,19 @@ struct ClipboardCacheSettingsCard: View {
                         .font(.system(size: 14, weight: .semibold))
 
                     HStack {
-                        Picker("清理类型", selection: $selectedCleanupMode) {
-                            ForEach(ClipboardCacheCleanupMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
+                        JarvisDropdownMenu(
+                            title: selectedCleanupMode.title,
+                            options: ClipboardCacheCleanupMode.allCases.map {
+                                JarvisDropdownOption(id: $0.id, title: $0.title)
+                            },
+                            selectionID: selectedCleanupMode.id,
+                            accessibilityLabel: "清理类型",
+                            help: "选择清理缓存的类型",
+                            onSelect: { id in
+                                guard let mode = ClipboardCacheCleanupMode(rawValue: id) else { return }
+                                selectedCleanupMode = mode
                             }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
+                        )
 
                         cleanupOptions
                     }
@@ -205,19 +211,19 @@ struct ClipboardCacheSettingsCard: View {
                         Text("开启自动清理")
                             .font(.system(size: 12, weight: .semibold))
                         Spacer()
-                        Picker(
-                            "自动清理周期",
-                            selection: Binding(
-                                get: { app.clipboardCacheAutoCleanupPeriod },
-                                set: { app.updateClipboardCacheAutoCleanupPeriod($0) }
-                            )
-                        ) {
-                            ForEach(ClipboardCacheCleanupPeriod.allCases) { period in
-                                Text(period.title).tag(period)
+                        JarvisDropdownMenu(
+                            title: app.clipboardCacheAutoCleanupPeriod.title,
+                            options: ClipboardCacheCleanupPeriod.allCases.map {
+                                JarvisDropdownOption(id: $0.id, title: $0.title)
+                            },
+                            selectionID: app.clipboardCacheAutoCleanupPeriod.id,
+                            accessibilityLabel: "自动清理周期",
+                            help: "选择自动清理周期",
+                            onSelect: { id in
+                                guard let period = ClipboardCacheCleanupPeriod(rawValue: id) else { return }
+                                app.updateClipboardCacheAutoCleanupPeriod(period)
                             }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
+                        )
                         Toggle(
                             "",
                             isOn: Binding(

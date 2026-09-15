@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import SwiftUI
 
 private enum MeetingDetailTypography {
@@ -8,6 +9,13 @@ private enum MeetingDetailTypography {
     static let body = Font.system(size: 15)
 }
 
+private enum MeetingSectionID: Hashable {
+    case audio
+    case summary
+    case speakers
+    case transcript
+}
+
 struct MeetingView: View {
     @Environment(AppModel.self) private var app
     @State private var searchText = ""
@@ -15,7 +23,7 @@ struct MeetingView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                JarvisToolbarSurface(id: "meeting.recording", placement: .navigation) {
+                ToolbarItem(id: "meeting.recording", placement: .navigation) {
                     recordingToolbarButton
                 }
             },
@@ -96,30 +104,19 @@ struct MeetingView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "mic.fill")
-                Text(
-                    isRecording
-                        ? MeetingRecordingStyle.displayTitle(for: app.meetingElapsed)
-                        : "开始录制"
+                Text(isRecording
+                    ? MeetingRecordingStyle.displayTitle(for: app.meetingElapsed)
+                    : "开始录制"
                 )
-                .font(isRecording ? MeetingRecordingStyle.font : JarvisTypography.controlEmphasis)
+                .font(isRecording ? MeetingRecordingStyle.font : JarvisTypography.control)
             }
             .fixedSize(horizontal: true, vertical: false)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(isRecording ? MeetingRecordingStyle.foregroundColor : Color.accentColor)
-        .padding(.horizontal, isRecording ? MeetingRecordingStyle.horizontalPadding : 12)
-        .frame(
-            minHeight: isRecording
-                ? MeetingRecordingStyle.controlHeight
-                : JarvisToolbarMetrics.controlSize
+        .buttonStyle(
+            JarvisToolbarButtonStyle.menu(
+                tint: isRecording ? MeetingRecordingStyle.activeTint : nil
+            )
         )
-        .background(
-            isRecording
-                ? MeetingRecordingStyle.backgroundColor
-                : Color.accentColor.opacity(MeetingRecordingStyle.idleBackgroundOpacity),
-            in: Capsule()
-        )
-        .contentShape(Capsule())
         .help(
             isRecording
                 ? "结束录音并开始整理会议"
@@ -422,6 +419,7 @@ private struct MeetingHistoryRow: View {
 
 private struct MeetingDetailPane: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isTitleFocused: Bool
     @State private var draftTitle = ""
     @State private var pendingSeekTime: TimeInterval?
@@ -430,51 +428,68 @@ private struct MeetingDetailPane: View {
     var body: some View {
         Group {
             if let record {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        meetingHeader(record)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            meetingHeader(record)
 
-                        MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
-
-                        if shouldShowProgress(for: record) {
-                            MeetingProcessingCard(state: app.meetingProcessingState)
-                        }
-
-                        if record.status == .failed || record.status == .summaryFailed,
-                           let errorMessage = record.errorMessage
-                        {
-                            MeetingFailureCard(record: record, message: errorMessage)
-                        }
-
-                        if let summary = record.summary {
-                            MeetingSummarySection(summary: summary)
-                        } else if !record.transcript.isEmpty,
-                                  record.status != .summarizing,
-                                  record.status != .failed,
-                                  record.status != .summaryFailed
-                        {
-                            MeetingNeedsSummaryCard(record: record)
-                        }
-
-                        if !record.speakers.isEmpty {
-                            MeetingSpeakerSection(record: record)
-                        }
-
-                        if !record.transcript.isEmpty {
-                            MeetingTranscriptSection(record: record) { time in
-                                pendingSeekTime = time
+                            MeetingSectionNavigation(record: record) { section in
+                                withAnimation(
+                                    JarvisMotion.animation(
+                                        .easeInOut(duration: 0.2),
+                                        reduceMotion: reduceMotion
+                                    )
+                                ) {
+                                    proxy.scrollTo(section, anchor: .top)
+                                }
                             }
-                        } else if !shouldShowProgress(for: record) {
-                            JarvisEmptyState(
-                                icon: "waveform",
-                                title: "还没有逐字稿",
-                                message: "结束录音后，Jarvis 会自动处理这段会议。"
-                            )
+
+                            MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
+                                .id(MeetingSectionID.audio)
+
+                            if shouldShowProgress(for: record) {
+                                MeetingProcessingCard(state: app.meetingProcessingState)
+                            }
+
+                            if record.status == .failed || record.status == .summaryFailed,
+                               let errorMessage = record.errorMessage
+                            {
+                                MeetingFailureCard(record: record, message: errorMessage)
+                            }
+
+                            if let summary = record.summary {
+                                MeetingSummarySection(summary: summary)
+                                    .id(MeetingSectionID.summary)
+                            } else if !record.transcript.isEmpty,
+                                      record.status != .summarizing,
+                                      record.status != .failed,
+                                      record.status != .summaryFailed
+                            {
+                                MeetingNeedsSummaryCard(record: record)
+                            }
+
+                            if !record.speakers.isEmpty {
+                                MeetingSpeakerSection(record: record)
+                                    .id(MeetingSectionID.speakers)
+                            }
+
+                            if !record.transcript.isEmpty {
+                                MeetingTranscriptSection(record: record) { time in
+                                    pendingSeekTime = time
+                                }
+                                .id(MeetingSectionID.transcript)
+                            } else if !shouldShowProgress(for: record) {
+                                JarvisEmptyState(
+                                    icon: "waveform",
+                                    title: "还没有逐字稿",
+                                    message: "结束录音后，Jarvis 会自动处理这段会议。"
+                                )
+                            }
                         }
+                        .frame(maxWidth: 860, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(JarvisMetrics.pageInset)
                     }
-                    .frame(maxWidth: 860, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(JarvisMetrics.pageInset)
                 }
             } else {
                 Text("选择一条会议记录")
@@ -557,6 +572,55 @@ private struct MeetingDetailPane: View {
         case .transcribed, .summaryFailed, .ready, .failed:
             false
         }
+    }
+}
+
+private struct MeetingSectionNavigation: View {
+    let record: MeetingRecord
+    let onSelect: (MeetingSectionID) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                jumpButton("录音", systemImage: "waveform", section: .audio)
+                if record.summary != nil {
+                    jumpButton("总结", systemImage: "sparkles", section: .summary)
+                }
+                if !record.speakers.isEmpty {
+                    jumpButton("说话人", systemImage: "person.2", section: .speakers)
+                }
+                if !record.transcript.isEmpty {
+                    jumpButton("逐字稿", systemImage: "text.quote", section: .transcript)
+                }
+            }
+            .padding(4)
+        }
+        .background(Color.jarvisPanel.opacity(0.82), in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("会议章节导航")
+    }
+
+    private func jumpButton(
+        _ title: String,
+        systemImage: String,
+        section: MeetingSectionID
+    ) -> some View {
+        Button {
+            onSelect(section)
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(JarvisTypography.control)
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 28)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.78))
+        .help("跳转到\(title)")
     }
 }
 
@@ -755,6 +819,11 @@ private struct MeetingAudioPlayer: View {
                                 set: { controller.seek(to: $0) }
                             ),
                             in: 0 ... max(controller.duration, 1)
+                        )
+                        .accessibilityLabel("原始录音进度")
+                        .accessibilityValue(
+                            "\(formatMeetingDuration(controller.currentTime)) / "
+                                + formatMeetingDuration(controller.duration)
                         )
 
                         Text(formatMeetingDuration(controller.currentTime))
@@ -1055,7 +1124,7 @@ private struct MeetingTranscriptSection: View {
                 }
             }
             .padding(.horizontal, 16)
-            .jarvisGlass(cornerRadius: JarvisMetrics.cardRadius, interactive: false)
+            .jarvisContentSurface(cornerRadius: JarvisMetrics.cardRadius)
         }
     }
 }
@@ -1096,6 +1165,7 @@ private struct MeetingSectionHeader: View {
     var body: some View {
         Label(title, systemImage: systemImage)
             .font(MeetingDetailTypography.h2)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 
 enum MeetingRecordingStyle {
-    static let foregroundColor = Color.white
     static let foregroundNSColor = NSColor.white
     static let backgroundNSColor = NSColor(
         calibratedRed: 0.88,
@@ -10,10 +9,7 @@ enum MeetingRecordingStyle {
         blue: 0.27,
         alpha: 1
     )
-    static let backgroundColor = Color(nsColor: backgroundNSColor)
-    static let idleBackgroundOpacity: CGFloat = 0.14
-    static let horizontalPadding: CGFloat = 12
-    static let controlHeight: CGFloat = 32
+    static let activeTint = Color(nsColor: backgroundNSColor)
     static let fontSize: CGFloat = 12
     static let statusBarImageHeight: CGFloat = 22
     static let statusBarHorizontalPadding: CGFloat = 10

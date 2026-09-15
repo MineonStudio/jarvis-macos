@@ -11,6 +11,7 @@ enum JarvisMotion {
     static let feedback = Animation.spring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.03)
     static let pageTransition = Animation.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.05)
     static let selectionPillTint = Color.accentColor.opacity(0.82)
+    static let hoverPillTint = Color.primary.opacity(0.10)
 
     static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : animation
@@ -81,7 +82,7 @@ struct JarvisHoverModifier<HoverShape: Shape>: ViewModifier {
         content
             .background {
                 shape
-                    .fill(Color.primary.opacity(isHovered ? 0.10 : 0))
+                    .fill(isHovered ? JarvisMotion.hoverPillTint : .clear)
                     .allowsHitTesting(false)
             }
             .scaleEffect(isHovered && !reduceMotion ? scale : 1)
@@ -105,7 +106,7 @@ struct JarvisHoverHighlightModifier<HoverShape: Shape>: ViewModifier {
         content
             .background {
                 shape
-                    .fill(Color.accentColor.opacity(isHovered ? 0.12 : 0))
+                    .fill(isHovered ? JarvisMotion.hoverPillTint : .clear)
                     .allowsHitTesting(false)
             }
             .scaleEffect(isHovered && !reduceMotion ? scale : 1)
@@ -211,7 +212,7 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
                let hoveredFrame = itemFrames[hoveredItemID]
             {
                 Capsule()
-                    .fill(Color.accentColor.opacity(0.12))
+                    .fill(JarvisMotion.hoverPillTint)
                     .frame(width: hoveredFrame.width, height: hoveredFrame.height)
                     .offset(x: hoveredFrame.minX, y: hoveredFrame.minY)
                     .allowsHitTesting(false)
@@ -221,7 +222,7 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
                     )
             }
 
-            HStack(spacing: 2) {
+            HStack(spacing: JarvisMetrics.segmentedItemSpacing) {
                 ForEach(items) { item in
                     Button {
                         selection = item

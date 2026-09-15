@@ -9,6 +9,7 @@ struct ResumeContentView: View {
     @State private var expandedSection: ResumeSection? = .basicInfo
     @State private var selectedProjectID: UUID?
     @State private var selectedBulletIndex = 0
+    @State private var selectedTemplateCategory: ResumeTemplateCategory = .all
     @State private var previewScale: CGFloat = 1.0
     @State private var previewScaleInput = "100"
     @State private var isNewResumeConfirmationPresented = false
@@ -19,9 +20,7 @@ struct ResumeContentView: View {
         JarvisContentArea(
             leadingToolbar: {
                 if workspace.needsTemplateSelection {
-                    ToolbarItem(placement: .navigation) {
-                        EmptyView()
-                    }
+                    ResumeTemplateCategorySelector(selection: $selectedTemplateCategory)
                 } else {
                     resumeLeadingToolbar
                 }
@@ -38,7 +37,7 @@ struct ResumeContentView: View {
             content: {
                 Group {
                     if workspace.needsTemplateSelection {
-                        ResumeTemplateSelectionView { template in
+                        ResumeTemplateSelectionView(category: selectedTemplateCategory) { template in
                             workspace.chooseTemplate(template)
                             expandedSection = .basicInfo
                         }
@@ -72,6 +71,37 @@ struct ResumeContentView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("直接新建会丢弃当前未保存内容。")
+        }
+    }
+}
+
+struct ResumeTemplateCategorySelector: ToolbarContent {
+    @Binding var selection: ResumeTemplateCategory
+
+    var body: some ToolbarContent {
+        ToolbarItem(id: "resume.category.all", placement: .navigation) {
+            selectionButton(for: .all)
+        }
+        ToolbarItem(id: "resume.category.modern", placement: .navigation) {
+            selectionButton(for: .modern)
+        }
+        ToolbarItem(id: "resume.category.creative", placement: .navigation) {
+            selectionButton(for: .creative)
+        }
+        ToolbarItem(id: "resume.category.classic", placement: .navigation) {
+            selectionButton(for: .classic)
+        }
+        ToolbarItem(id: "resume.category.professional", placement: .navigation) {
+            selectionButton(for: .professional)
+        }
+    }
+
+    private func selectionButton(for category: ResumeTemplateCategory) -> some View {
+        JarvisToolbarSelectionButton(
+            title: category.title,
+            isSelected: selection == category
+        ) {
+            selection = category
         }
     }
 }
@@ -163,20 +193,51 @@ private extension ResumeContentView {
 
     @ToolbarContentBuilder
     var resumeLeadingToolbar: some ToolbarContent {
-        JarvisToolbarSurface(id: "resume.filename", placement: .navigation) {
-            TextField("未命名简历", text: $workspace.document.title)
-                .textFieldStyle(.plain)
-                .font(JarvisTypography.cardTitle)
-                .lineLimit(1)
-                .frame(width: filenameWidth, height: JarvisToolbarMetrics.controlSize)
-                .padding(.horizontal, 12)
-                .background(Color.primary.opacity(0.08), in: Capsule())
-                .focused($isFilenameFocused)
-                .onSubmit { finishFilenameEditing() }
-                .help("点击修改文件名")
+        ToolbarItem(id: "resume.new", placement: .automatic) {
+            Button {
+                requestNewResume()
+            } label: {
+                Text("新建简历")
+            }
+            .buttonStyle(JarvisToolbarButtonStyle.menu())
+            .help("直接打开一份全新的空白简历")
         }
+        ToolbarSpacer(.fixed, placement: .automatic)
 
-        JarvisToolbarSurface(id: "resume.save-status", placement: .navigation) {
+        ToolbarItem(id: "resume.import", placement: .automatic) {
+            Button {
+                finishFilenameEditing()
+                importJSON()
+            } label: {
+                Text("导入简历")
+            }
+            .buttonStyle(JarvisToolbarButtonStyle.menu())
+            .help("打开一份 JSON 简历作为当前文档")
+        }
+        ToolbarSpacer(.fixed, placement: .automatic)
+
+        ToolbarItem(id: "resume.save", placement: .automatic) {
+            JarvisDropdownMenu(
+                title: "保存简历",
+                options: ResumeExportFormat.allCases.map {
+                    JarvisDropdownOption(id: $0.rawValue, title: "保存为 \($0.title)")
+                },
+                accessibilityLabel: "保存简历",
+                help: "选择 PDF、Markdown 或 JSON",
+                showsChevron: false,
+                usesLiquidGlass: false,
+                onSelect: { rawValue in
+                    guard let format = ResumeExportFormat(rawValue: rawValue) else { return }
+                    finishFilenameEditing()
+                    export(format)
+                }
+            )
+        }
+    }
+
+    @ToolbarContentBuilder
+    var resumeTrailingToolbar: some ToolbarContent {
+        JarvisToolbarSurface(id: "resume.save-status", placement: .automatic) {
             HStack(spacing: 5) {
                 Image(systemName: workspace.isSaved ? "checkmark.circle.fill" : "circle.dashed")
                     .font(.system(size: 11, weight: .medium))
@@ -189,46 +250,18 @@ private extension ResumeContentView {
             }
             .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
         }
-    }
 
-    @ToolbarContentBuilder
-    var resumeTrailingToolbar: some ToolbarContent {
-        ToolbarItem(id: "resume.new", placement: .automatic) {
-            Button {
-                requestNewResume()
-            } label: {
-                Text("新建简历")
-            }
-            .buttonStyle(JarvisToolbarButtonStyle())
-            .help("直接打开一份全新的空白简历")
-        }
-
-        ToolbarItem(id: "resume.import", placement: .automatic) {
-            Button {
-                finishFilenameEditing()
-                importJSON()
-            } label: {
-                Text("导入简历")
-            }
-            .buttonStyle(JarvisToolbarButtonStyle())
-            .help("打开一份 JSON 简历作为当前文档")
-        }
-
-        ToolbarItem(id: "resume.save", placement: .automatic) {
-            Menu {
-                ForEach(ResumeExportFormat.allCases) { format in
-                    Button("保存为 \(format.title)") {
-                        finishFilenameEditing()
-                        export(format)
-                    }
-                }
-            } label: {
-                Text("保存简历")
-            }
-            .menuIndicator(.hidden)
-            .buttonStyle(JarvisToolbarButtonStyle.menu(tint: .accentColor))
-            .accessibilityLabel("保存简历")
-            .accessibilityHint("选择 PDF、RTF、Markdown 或 JSON")
+        JarvisToolbarSurface(id: "resume.filename", placement: .automatic) {
+            TextField("未命名简历", text: $workspace.document.title)
+                .textFieldStyle(.plain)
+                .font(JarvisTypography.cardTitle)
+                .lineLimit(1)
+                .frame(width: filenameWidth, height: JarvisToolbarMetrics.controlSize)
+                .padding(.horizontal, 12)
+                .background(Color.primary.opacity(0.08), in: Capsule())
+                .focused($isFilenameFocused)
+                .onSubmit { finishFilenameEditing() }
+                .help("点击修改文件名")
         }
     }
 
@@ -368,6 +401,7 @@ private extension ResumeContentView {
     func beginNewResume() {
         finishFilenameEditing()
         workspace.beginNewResume()
+        selectedTemplateCategory = .all
         expandedSection = .basicInfo
         selectedProjectID = nil
         selectedBulletIndex = 0
@@ -444,7 +478,6 @@ extension ResumeExportFormat {
     var contentType: UTType {
         switch self {
         case .pdf: .pdf
-        case .rtf: .rtf
         case .markdown: .plainText
         case .json: .json
         }

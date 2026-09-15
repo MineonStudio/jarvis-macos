@@ -35,12 +35,63 @@ struct WallpaperView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                WallpaperFilterToolbar(
-                    selectedResolution: $model.selectedResolution,
-                    selectedRatio: $model.selectedRatio,
-                    selectedSorting: $model.selectedSorting,
-                    onFilterChange: applyOnlineFilters
-                )
+                ToolbarItem(id: "wallpaper.filter.resolution", placement: .automatic) {
+                    JarvisDropdownMenu(
+                        title: model.selectedResolution.title,
+                        options: WallpaperResolution.allCases.map {
+                            JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+                        },
+                        selectionID: model.selectedResolution.rawValue,
+                        accessibilityLabel: "分辨率筛选",
+                        help: "按最低分辨率筛选",
+                        onSelect: { rawValue in
+                            guard let resolution = WallpaperResolution(rawValue: rawValue) else { return }
+                            model.selectedResolution = resolution
+                            applyOnlineFilters()
+                        }
+                    )
+                    .id(model.selectedResolution.rawValue)
+                }
+
+                ToolbarSpacer(.fixed, placement: .automatic)
+
+                ToolbarItem(id: "wallpaper.filter.ratio", placement: .automatic) {
+                    JarvisDropdownMenu(
+                        title: model.selectedRatio.title,
+                        options: WallpaperRatio.allCases.map {
+                            JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+                        },
+                        selectionID: model.selectedRatio.rawValue,
+                        accessibilityLabel: "比例筛选",
+                        help: "按横竖屏或画面比例筛选",
+                        onSelect: { rawValue in
+                            guard let ratio = WallpaperRatio(rawValue: rawValue) else { return }
+                            model.selectedRatio = ratio
+                            applyOnlineFilters()
+                        }
+                    )
+                    .id(model.selectedRatio.rawValue)
+                }
+
+                ToolbarSpacer(.fixed, placement: .automatic)
+
+                ToolbarItem(id: "wallpaper.filter.sorting", placement: .automatic) {
+                    JarvisDropdownMenu(
+                        title: model.selectedSorting.title,
+                        options: WallpaperSorting.allCases.map {
+                            JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+                        },
+                        selectionID: model.selectedSorting.rawValue,
+                        accessibilityLabel: "排序方式",
+                        help: "选择 Wallhaven 排序方式",
+                        onSelect: { rawValue in
+                            guard let sorting = WallpaperSorting(rawValue: rawValue) else { return }
+                            model.selectedSorting = sorting
+                            applyOnlineFilters()
+                        }
+                    )
+                    .id(model.selectedSorting.rawValue)
+                }
             },
             trailingToolbar: {
                 WallpaperLibraryToolbar(libraryMode: $libraryMode)
@@ -342,70 +393,6 @@ private struct WallpaperLibraryToolbar: ToolbarContent {
     }
 }
 
-private struct WallpaperFilterToolbar: ToolbarContent {
-    @Binding var selectedResolution: WallpaperResolution
-    @Binding var selectedRatio: WallpaperRatio
-    @Binding var selectedSorting: WallpaperSorting
-    let onFilterChange: () -> Void
-
-    var body: some ToolbarContent {
-        ToolbarItem(id: "wallpaper.filter.resolution", placement: .navigation) {
-            Menu {
-                ForEach(WallpaperResolution.allCases) { resolution in
-                    Button {
-                        selectedResolution = resolution
-                        onFilterChange()
-                    } label: {
-                        jarvisToolbarMenuItemLabel(
-                            resolution.title,
-                            isSelected: selectedResolution == resolution
-                        )
-                    }
-                }
-            } label: {
-                JarvisToolbarMenuLabel(title: selectedResolution.title)
-            }
-            .help("按最低分辨率筛选")
-        }
-        ToolbarItem(id: "wallpaper.filter.ratio", placement: .navigation) {
-            Menu {
-                ForEach(WallpaperRatio.allCases) { ratio in
-                    Button {
-                        selectedRatio = ratio
-                        onFilterChange()
-                    } label: {
-                        jarvisToolbarMenuItemLabel(
-                            ratio.title,
-                            isSelected: selectedRatio == ratio
-                        )
-                    }
-                }
-            } label: {
-                JarvisToolbarMenuLabel(title: selectedRatio.title)
-            }
-            .help("按横竖屏或画面比例筛选")
-        }
-        ToolbarItem(id: "wallpaper.filter.sorting", placement: .navigation) {
-            Menu {
-                ForEach(WallpaperSorting.allCases) { sorting in
-                    Button {
-                        selectedSorting = sorting
-                        onFilterChange()
-                    } label: {
-                        jarvisToolbarMenuItemLabel(
-                            sorting.title,
-                            isSelected: selectedSorting == sorting
-                        )
-                    }
-                }
-            } label: {
-                JarvisToolbarMenuLabel(title: selectedSorting.title)
-            }
-            .help("选择 Wallhaven 排序方式")
-        }
-    }
-}
-
 private struct WallpaperLoadMoreButton: View {
     let isLoading: Bool
     let errorMessage: String?
@@ -488,6 +475,13 @@ private struct WallpaperCard: View {
     let onDelete: () -> Void
     @State private var isHovered = false
 
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(
+            cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+            style: .continuous
+        )
+    }
+
     private var previewContent: some View {
         ZStack {
             WallpaperThumbnail(url: imageURL)
@@ -497,21 +491,8 @@ private struct WallpaperCard: View {
             height: HistoryGridMetrics.clipboardCardHeight,
             alignment: .center
         )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-        )
-        .contentShape(Rectangle())
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-            .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
-            .allowsHitTesting(false)
-        }
+        .contentShape(cardShape)
+        .accessibilityLabel("\(item.title)，\(item.resolutionDescription)")
         .overlay {
             if isPreviewLoading {
                 ZStack {
@@ -571,7 +552,7 @@ private struct WallpaperCard: View {
                             : (isDownloading ? "正在设置…" : "设为壁纸"),
                         action: onSet
                     )
-                    .buttonStyle(WallpaperCardPrimaryButtonStyle())
+                    .buttonStyle(JarvisSecondaryButtonStyle())
                     .disabled(isDownloading || isApplied)
                     .accessibilityLabel(
                         isApplied
@@ -581,8 +562,21 @@ private struct WallpaperCard: View {
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(.identity)
+                .background {
+                    LinearGradient(
+                        colors: [.clear, Color.black.opacity(0.42)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .allowsHitTesting(false)
+                }
             }
+        }
+        .clipShape(cardShape)
+        .overlay {
+            cardShape
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
+                .allowsHitTesting(false)
         }
     }
 
@@ -597,27 +591,6 @@ private struct WallpaperCard: View {
                     isHovered = hovering
                 }
             }
-    }
-}
-
-private struct WallpaperCardPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(JarvisTypography.controlEmphasis)
-            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 8)
-            .background(
-                isEnabled ? Color.accentColor : Color.primary.opacity(0.16),
-                in: RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(isEnabled ? 0.18 : 0.08), lineWidth: 0.75)
-            }
-            .opacity(configuration.isPressed ? 0.78 : (isEnabled ? 1 : 0.78))
     }
 }
 

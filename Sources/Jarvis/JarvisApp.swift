@@ -52,6 +52,9 @@ struct JarvisApp: App {
             height: JarvisMainWindowController.launchWindowSize.height
         )
         .windowToolbarStyle(.unified)
+        // Keep native menu titles inline in the toolbar. macOS 27's
+        // titleAndIcon style moves them below their circular trigger.
+        .windowToolbarLabelStyle(fixed: .titleOnly)
     }
 }
 
@@ -60,6 +63,7 @@ private struct JarvisRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     @StateObject private var mainWindowController = JarvisMainWindowController()
+    @State private var isPermissionPromptPresented = true
 
     var body: some View {
         ContentView()
@@ -75,9 +79,11 @@ private struct JarvisRootView: View {
                 minHeight: JarvisMainWindowController.minimumWindowSize.height
             )
             .overlay {
-                if !appModel.hasAllRequiredPermissions {
-                    JarvisPermissionGateOverlay()
-                        .environment(appModel)
+                if !appModel.hasAllRequiredPermissions, isPermissionPromptPresented {
+                    JarvisPermissionGateOverlay {
+                        isPermissionPromptPresented = false
+                    }
+                    .environment(appModel)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: appModel.hasAllRequiredPermissions)
@@ -96,6 +102,11 @@ private struct JarvisRootView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 appModel.refreshPermissionStatus()
+            }
+            .onChange(of: appModel.hasAllRequiredPermissions) { _, hasAllPermissions in
+                if hasAllPermissions {
+                    isPermissionPromptPresented = false
+                }
             }
     }
 }

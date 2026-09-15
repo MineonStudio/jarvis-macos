@@ -4,6 +4,7 @@ import SwiftUI
 struct JarvisPermissionGateOverlay: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let onDismiss: () -> Void
 
     var body: some View {
         ZStack {
@@ -13,7 +14,7 @@ struct JarvisPermissionGateOverlay: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
 
-            JarvisPermissionGateView()
+            JarvisPermissionGateView(onDismiss: onDismiss)
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
         }
         .onAppear {
@@ -22,7 +23,6 @@ struct JarvisPermissionGateOverlay: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             app.refreshPermissionStatus()
         }
-        .accessibilityAddTraits(.isModal)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("先让我帮得上忙")
     }
@@ -30,6 +30,7 @@ struct JarvisPermissionGateOverlay: View {
 
 struct JarvisPermissionGateView: View {
     @Environment(AppModel.self) private var app
+    let onDismiss: () -> Void
 
     private var remainingCount: Int {
         JarvisRequiredPermission.allCases.count { !app.isRequiredPermissionGranted($0) }
@@ -45,7 +46,21 @@ struct JarvisPermissionGateView: View {
 
     var body: some View {
         VStack(spacing: 22) {
-            JarvisOrbMark(diameter: 58)
+            HStack(alignment: .top, spacing: 12) {
+                JarvisOrbMark(diameter: 58)
+
+                Spacer(minLength: 0)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 28, height: 28)
+                        .background(Color.primary.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("关闭权限提示")
+                .help("稍后在设置中处理权限")
+            }
 
             VStack(spacing: 7) {
                 Text("先让我帮得上忙")
@@ -53,6 +68,10 @@ struct JarvisPermissionGateView: View {
                     .multilineTextAlignment(.center)
                 Text(invitationLine)
                     .font(JarvisTypography.secondary)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .multilineTextAlignment(.center)
+                Text("可以先关闭，之后在设置中继续开启")
+                    .font(JarvisTypography.caption)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .multilineTextAlignment(.center)
             }

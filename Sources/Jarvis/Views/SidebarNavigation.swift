@@ -14,6 +14,8 @@ struct JarvisSidebarNavigation<
     let footerAction: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var highlightedItemID: Item.ID?
+    @State private var isFooterHighlighted = false
 
     init(
         topItems: [Item],
@@ -77,29 +79,57 @@ struct JarvisSidebarNavigation<
                         Image(systemName: footerIcon)
                             .font(.system(size: 12, weight: .medium))
                             .frame(width: 18, height: 18)
+                            .foregroundStyle(
+                                footerIsSelected
+                                    ? Color.white
+                                    : Color.accentColor.opacity(0.78)
+                            )
                         Text(footerTitle)
                             .font(footerIsSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                            .foregroundStyle(
+                                footerIsSelected
+                                    ? Color.white
+                                    : Color.primary.opacity(0.74)
+                            )
                     }
                     .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                     .padding(.horizontal, 8)
                     .background {
                         Capsule()
-                            .fill(JarvisMotion.selectionPillTint)
-                            .opacity(footerIsSelected ? 1 : 0)
-                            .scaleEffect(footerIsSelected ? 1 : 0.96)
+                            .fill(
+                                footerIsSelected
+                                    ? JarvisMotion.selectionPillTint
+                                    : (isFooterHighlighted ? JarvisMotion.hoverPillTint : .clear)
+                            )
+                            .scaleEffect(
+                                footerIsSelected || isFooterHighlighted ? 1 : 0.96
+                            )
                     }
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                 .contentShape(Rectangle())
-                .foregroundStyle(footerIsSelected ? Color.white : Color.secondary)
                 .padding(JarvisMetrics.sidebarContentPadding)
+                .onHover { isHovering in
+                    withAnimation(
+                        JarvisMotion.animation(
+                            JarvisMotion.hover,
+                            reduceMotion: reduceMotion
+                        )
+                    ) {
+                        isFooterHighlighted = isHovering
+                    }
+                }
                 .help(footerTitle)
                 .accessibilityAddTraits(footerIsSelected ? .isSelected : [])
                 .animation(
                     JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion),
                     value: footerIsSelected
+                )
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                    value: isFooterHighlighted
                 )
             }
         }
@@ -117,7 +147,7 @@ struct JarvisSidebarNavigation<
 
     private func primaryRow(_ item: Item) -> some View {
         let isSelected = selection == item
-        let foregroundColor: Color = isSelected ? .white : .secondary
+        let isHighlighted = highlightedItemID == item.id
 
         return Button {
             withAnimation(
@@ -130,26 +160,52 @@ struct JarvisSidebarNavigation<
                 Image(systemName: icon(item))
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 18, height: 18)
+                    .foregroundStyle(
+                        isSelected
+                            ? Color.white
+                            : Color.accentColor.opacity(0.78)
+                    )
                 Text(title(item))
                     .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                    .foregroundStyle(
+                        isSelected
+                            ? Color.white
+                            : Color.primary.opacity(0.74)
+                    )
             }
-            .foregroundStyle(foregroundColor)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .padding(.horizontal, 8)
             .background {
                 Capsule()
-                    .fill(JarvisMotion.selectionPillTint)
-                    .opacity(isSelected ? 1 : 0)
-                    .scaleEffect(isSelected ? 1 : 0.96)
+                    .fill(
+                        isSelected
+                            ? JarvisMotion.selectionPillTint
+                            : (isHighlighted ? JarvisMotion.hoverPillTint : .clear)
+                    )
+                    .scaleEffect(isSelected || isHighlighted ? 1 : 0.96)
             }
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
         .contentShape(Rectangle())
+        .onHover { isHovering in
+            withAnimation(
+                JarvisMotion.animation(
+                    JarvisMotion.hover,
+                    reduceMotion: reduceMotion
+                )
+            ) {
+                highlightedItemID = isHovering ? item.id : nil
+            }
+        }
         .animation(
             JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion),
             value: isSelected
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: isHighlighted
         )
         .help(title(item))
         .accessibilityAddTraits(isSelected ? .isSelected : [])

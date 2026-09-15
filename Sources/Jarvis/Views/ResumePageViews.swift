@@ -259,6 +259,8 @@ struct ResumePageView: View {
             editorialLayout(content)
         case .minimal:
             minimalLayout(content)
+        case .creative:
+            creativeLayout(content)
         case .timeline:
             timelineLayout(content)
         }
@@ -291,6 +293,18 @@ struct ResumePageView: View {
                     .padding(.top, 25)
                     .padding(.bottom, 1)
                 placeholderPageSections(template: .minimal)
+            case .creative:
+                ResumePageHeader(
+                    document: document,
+                    template: .creative,
+                    showsPlaceholders: true
+                )
+                Rectangle()
+                    .fill(ResumePaperPalette.coral)
+                    .frame(height: 2)
+                    .padding(.top, 18)
+                    .padding(.bottom, 1)
+                placeholderPageSections(template: .creative)
             case .timeline:
                 ResumePageHeader(
                     document: document,
@@ -305,8 +319,18 @@ struct ResumePageView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, document.template == .timeline ? 48 : 58)
-        .padding(.vertical, document.template == .timeline ? 43 : (document.template == .minimal ? 48 : 46))
+        .padding(
+            .horizontal,
+            document.template == .timeline
+                ? 48
+                : (document.template == .creative ? 52 : 58)
+        )
+        .padding(
+            .vertical,
+            document.template == .timeline
+                ? 43
+                : (document.template == .minimal ? 48 : (document.template == .creative ? 40 : 46))
+        )
     }
 
     @ViewBuilder
@@ -377,6 +401,28 @@ struct ResumePageView: View {
         }
         .padding(.horizontal, 58)
         .padding(.vertical, 48)
+    }
+
+    private func creativeLayout(_ content: ResumePageContent) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if content.includesHeader {
+                ResumePageHeader(document: document, template: .creative)
+                HStack(spacing: 6) {
+                    Rectangle()
+                        .fill(ResumePaperPalette.coral)
+                        .frame(width: 36, height: 3)
+                    Rectangle()
+                        .fill(ResumePaperPalette.violet.opacity(0.28))
+                        .frame(height: 1)
+                }
+                .padding(.top, 18)
+                .padding(.bottom, 1)
+            }
+            pageSections(content, template: .creative)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 52)
+        .padding(.vertical, 40)
     }
 
     private func timelineLayout(_ content: ResumePageContent) -> some View {
@@ -510,20 +556,11 @@ enum ResumeExportService {
     static func data(for document: ResumeDocument, format: ResumeExportFormat) throws -> Data {
         switch format {
         case .pdf:
-            return try pdfData(for: document)
-        case .rtf:
-            let attributed = NSAttributedString(
-                string: ResumeTextFormatter.plainText(for: document),
-                attributes: [.font: NSFont.systemFont(ofSize: 12)]
-            )
-            return try attributed.data(
-                from: NSRange(location: 0, length: attributed.length),
-                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
-            )
+            try pdfData(for: document)
         case .markdown:
-            return Data(ResumeTextFormatter.markdown(for: document).utf8)
+            Data(ResumeTextFormatter.markdown(for: document).utf8)
         case .json:
-            return try ResumeDocumentCodec.encodedData(for: document)
+            try ResumeDocumentCodec.encodedData(for: document)
         }
     }
 

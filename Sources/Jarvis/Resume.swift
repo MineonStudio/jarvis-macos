@@ -3,11 +3,12 @@ import Foundation
 
 enum ResumeTemplate: String, CaseIterable, Codable, Equatable, Identifiable, Sendable {
     case minimal
+    case creative
     case editorial
     case timeline
 
     static let defaultTemplate: ResumeTemplate = .minimal
-    static let allCases: [ResumeTemplate] = [.minimal, .editorial, .timeline]
+    static let allCases: [ResumeTemplate] = [.minimal, .creative, .editorial, .timeline]
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -15,6 +16,8 @@ enum ResumeTemplate: String, CaseIterable, Codable, Equatable, Identifiable, Sen
         switch rawValue {
         case "minimal", "classic", "modern", "waterfall", "sidebar", "contrast":
             self = .minimal
+        case "creative":
+            self = .creative
         case "editorial":
             self = .editorial
         case "timeline":
@@ -36,6 +39,7 @@ enum ResumeTemplate: String, CaseIterable, Codable, Equatable, Identifiable, Sen
     var title: String {
         switch self {
         case .minimal: "现代极简"
+        case .creative: "创意拼贴"
         case .editorial: "编辑风格"
         case .timeline: "时间轴"
         }
@@ -44,8 +48,41 @@ enum ResumeTemplate: String, CaseIterable, Codable, Equatable, Identifiable, Sen
     var icon: String {
         switch self {
         case .minimal: "text.alignleft"
+        case .creative: "scribble.variable"
         case .editorial: "newspaper"
         case .timeline: "point.3.connected.trianglepath.dotted"
+        }
+    }
+}
+
+enum ResumeTemplateCategory: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case modern
+    case creative
+    case classic
+    case professional
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .all: "全部"
+        case .modern: "现代"
+        case .creative: "创意"
+        case .classic: "经典"
+        case .professional: "专业"
+        }
+    }
+
+    var templates: [ResumeTemplate] {
+        switch self {
+        case .all: ResumeTemplate.allCases
+        case .modern: [.minimal]
+        case .creative: [.creative]
+        case .classic: [.editorial]
+        case .professional: [.timeline]
         }
     }
 }
@@ -334,7 +371,6 @@ enum ResumeSection: String, CaseIterable, Identifiable, Sendable {
 
 enum ResumeExportFormat: String, CaseIterable, Identifiable {
     case pdf
-    case rtf
     case markdown
     case json
 
@@ -345,7 +381,6 @@ enum ResumeExportFormat: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .pdf: "PDF"
-        case .rtf: "RTF（可编辑）"
         case .markdown: "Markdown"
         case .json: "JSON"
         }
@@ -354,7 +389,6 @@ enum ResumeExportFormat: String, CaseIterable, Identifiable {
     var fileExtension: String {
         switch self {
         case .pdf: "pdf"
-        case .rtf: "rtf"
         case .markdown: "md"
         case .json: "json"
         }

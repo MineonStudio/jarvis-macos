@@ -105,14 +105,19 @@ struct EntertainmentVideoDownloadView: View {
                 .font(JarvisTypography.bodyEmphasis)
                 .lineLimit(2)
             HStack(spacing: 8) {
-                Picker("画质", selection: qualityBinding(for: probe)) {
-                    ForEach(probe.qualities) { quality in
-                        Text(quality.title).tag(quality.id)
+                JarvisDropdownMenu(
+                    title: selectedQuality(from: probe)?.title ?? "选择画质",
+                    options: probe.qualities.map {
+                        JarvisDropdownOption(id: $0.id, title: $0.title)
+                    },
+                    selectionID: selectedQuality(from: probe)?.id,
+                    accessibilityLabel: "画质",
+                    help: "选择下载画质",
+                    onSelect: { id in
+                        selectedQualityID = id
                     }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                )
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
                 Button("下载") {
                     downloadSelected(from: probe)
                 }
@@ -196,13 +201,6 @@ struct EntertainmentVideoDownloadView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
-    }
-
-    private func qualityBinding(for probe: EntertainmentVideoProbe) -> Binding<String> {
-        Binding(
-            get: { selectedQualityID ?? preferredQualityID(in: probe.qualities) ?? "" },
-            set: { selectedQualityID = $0 }
-        )
     }
 
     private func prefillURL() {

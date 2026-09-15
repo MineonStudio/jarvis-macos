@@ -170,6 +170,8 @@ struct AIAPIConfiguration: Equatable, Sendable {
     }
 }
 
+/// Request behavior only. Output length is deliberately not part of this type:
+/// the configured provider/model owns its context and completion limits.
 struct AICompletionOptions: Equatable, Sendable {
     enum ResponseFormat: Equatable, Sendable {
         case jsonObject
@@ -177,18 +179,15 @@ struct AICompletionOptions: Equatable, Sendable {
     }
 
     let task: String
-    let maxOutputTokens: Int?
     let temperature: Double
     let responseFormat: ResponseFormat
 
     init(
         task: String,
-        maxOutputTokens: Int? = nil,
         temperature: Double = 0.7,
         responseFormat: ResponseFormat = .jsonObject
     ) {
         self.task = task
-        self.maxOutputTokens = maxOutputTokens
         self.temperature = temperature
         self.responseFormat = responseFormat
     }
@@ -197,21 +196,18 @@ struct AICompletionOptions: Equatable, Sendable {
 
     static let meetingFactExtraction = Self(
         task: "meeting-fact-extraction",
-        maxOutputTokens: 900,
         temperature: 0,
         responseFormat: .jsonObject
     )
 
     static let meetingSummary = Self(
         task: "meeting-summary",
-        maxOutputTokens: 1200,
         temperature: 0,
         responseFormat: .jsonObject
     )
 
     static let resumeStructured = Self(
         task: "resume-structured-json",
-        maxOutputTokens: 1200,
         temperature: 0.7,
         responseFormat: .jsonObject
     )
@@ -285,7 +281,7 @@ enum AIAPIError: LocalizedError, Equatable {
         case let .duplicateGeneratedContent(context):
             "\(context)没有生成新的内容，请稍后再试"
         case .outputTruncated:
-            "AI 服务输出未完成：模型达到了本次任务的输出预算"
+            "AI 服务输出未完成：模型或服务端提前结束了响应，请检查模型上下文容量或服务商限制"
         case let .server(message):
             message
         }
@@ -409,9 +405,6 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
                 ["role": "user", "content": userPrompt]
             ]
         ]
-        if let maxOutputTokens = options.maxOutputTokens {
-            body["max_tokens"] = maxOutputTokens
-        }
         if options.responseFormat == .jsonObject {
             body["response_format"] = ["type": "json_object"]
         }

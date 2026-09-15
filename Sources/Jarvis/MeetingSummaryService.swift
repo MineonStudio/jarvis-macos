@@ -121,11 +121,10 @@ struct MeetingSummaryService: Sendable {
         return String(normalized[start ... end])
     }
 
-    private static let maxChunkInputTokens = 4200
-    private static let maxFactCount = 40
-    private static let maxFactTextCharacters = 320
-    private static let maxSynthesisInputTokens = 3200
-    private static let maxSynthesisFactTextCharacters = 240
+    // This is a batching target, not a content limit. Every transcript segment and
+    // every extracted fact is included in one of the requests below.
+    private static let synthesisBatchTargetTokens = 3200
+    private static let transcriptChunkTargetTokens = 4200
 
     private func requestFacts(
         title: String,
@@ -136,7 +135,7 @@ struct MeetingSummaryService: Sendable {
         你是严谨的中文会议事实提取器。只提取输入中明确出现的事实，不要推测。
         把内容整理成 JSON 对象，格式必须是：
         {"facts":[{"kind":"keyPoint|decision|actionItem|openQuestion","text":"事实","owner":"负责人或空字符串","dueDate":"截止时间或空字符串","sourceSegmentIDs":["逐字稿片段ID"]}]}
-        只保留最重要的事实，最多返回 12 条。每条事实必须简洁，并且至少引用一个输入中的 sourceSegmentID。
+        保留输入中的全部明确事实，去除重复内容。每条事实必须简洁，并且至少引用一个输入中的 sourceSegmentID。
         actionItem 只有在原文确实提出行动或任务时才返回；没有负责人或截止时间时必须留空。
         只能返回 JSON，不要 Markdown，不要解释文字。
         """
@@ -160,25 +159,107 @@ struct MeetingSummaryService: Sendable {
         facts: [MeetingFact],
         configuration: AIAPIConfiguration
     ) async throws -> MeetingSummary {
-        let synthesisFacts = makeSynthesisFacts(from: facts)
-        guard !synthesisFacts.isEmpty else {
+        var partialSummaries = try await summarizeFactBatches(
+            title: title,
+            facts: facts,
+            configuration: configuration
+        )
+        while partialSummaries.count > 1 {
+            let batches = makeSummaryBatches(from: partialSummaries)
+            var mergedSummaries: [MeetingSummary] = []
+            for batch in batches {
+                let merged = try await requestSummaryMerge(
+                    title: title,
+                    summaries: batch,
+                    configuration: configuration
+                )
+                mergedSummaries.append(merged)
+            }
+            if mergedSummaries.count >= partialSummaries.count {
+                let firstBatch = Array(partialSummaries.prefix(2))
+                let merged = try await requestSummaryMerge(
+                    title: title,
+                    summaries: firstBatch,
+                    configuration: configuration
+                )
+                partialSummaries = [merged] + Array(partialSummaries.dropFirst(2))
+            } else {
+                partialSummaries = mergedSummaries
+            }
+        }
+        guard let summary = partialSummaries.first else {
             throw AIAPIError.emptyGeneratedContent(context: "会议事实提取")
         }
-        let factsData = try JSONEncoder().encode(synthesisFacts)
-        let factsText = String(decoding: factsData, as: UTF8.self)
+        return summary
+    }
+
+    private func summarizeFactBatches(
+        title: String,
+        facts: [MeetingFact],
+        configuration: AIAPIConfiguration
+    ) async throws -> [MeetingSummary] {
+        let batches = makeSynthesisFactBatches(from: facts)
+        guard !batches.isEmpty else {
+            throw AIAPIError.emptyGeneratedContent(context: "会议事实提取")
+        }
+        var summaries: [MeetingSummary] = []
+        for batch in batches {
+            let factsData = try JSONEncoder().encode(batch)
+            let factsText = String(decoding: factsData, as: UTF8.self)
+            let systemPrompt = """
+            你是严谨的中文会议纪要助手。只能根据给出的事实生成纪要，不要补充事实之外的内容。
+            必须只返回 JSON 对象，格式为：
+            {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"]}
+            保留所有相关事实，去除重复内容。没有明确负责人或截止时间时保留空字符串，不要编造。
+            只能返回 JSON，不要 Markdown，不要解释文字。
+            """
+            let userPrompt = """
+            会议标题：\(title)
+
+            已验证的会议事实：
+            \(factsText)
+            """
+            let raw = try await api.complete(
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                configuration: configuration,
+                options: .meetingSummary
+            )
+            let summary = try decodeSummary(raw)
+            summaries.append(summary)
+        }
+        return summaries
+    }
+
+    private func requestSummaryMerge(
+        title: String,
+        summaries: [MeetingSummary],
+        configuration: AIAPIConfiguration
+    ) async throws -> MeetingSummary {
+        let mergeInputs = summaries.map {
+            SynthesisSummary(
+                overview: $0.overview,
+                keyPoints: $0.keyPoints,
+                decisions: $0.decisions,
+                actionItems: $0.actionItems.map {
+                    SynthesisActionItem(task: $0.task, owner: $0.owner, dueDate: $0.dueDate)
+                },
+                openQuestions: $0.openQuestions
+            )
+        }
+        let data = try JSONEncoder().encode(mergeInputs)
         let systemPrompt = """
-        你是严谨的中文会议纪要助手。只能根据给出的事实生成纪要，不要补充事实之外的内容。
+        你是严谨的中文会议纪要合并助手。只能根据给出的局部纪要生成完整纪要，不要补充事实之外的内容。
         必须只返回 JSON 对象，格式为：
         {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"]}
-        overview 最多 240 字；keyPoints、decisions、openQuestions 各最多 10 条；actionItems 最多 15 条。
-        去除重复内容。没有明确负责人或截止时间时保留空字符串，不要编造。
+        合并所有局部纪要，保留所有不重复的有效信息，不要因为篇幅主动删除内容。没有明确负责人或截止时间时保留空字符串，不要编造。
         只能返回 JSON，不要 Markdown，不要解释文字。
         """
         let userPrompt = """
         会议标题：\(title)
 
-        已验证的会议事实：
-        \(factsText)
+        已生成的局部纪要：
+        \(String(decoding: data, as: UTF8.self))
         """
         let raw = try await api.complete(
             systemPrompt: systemPrompt,
@@ -199,7 +280,7 @@ struct MeetingSummaryService: Sendable {
 
         do {
             let payload = try JSONDecoder().decode(FactPayload.self, from: data)
-            let facts = payload.facts.compactMap { item -> MeetingFact? in
+            return payload.facts.compactMap { item -> MeetingFact? in
                 guard let kind = MeetingFactKind(rawValue: item.kind),
                       let text = normalizedText(item.text),
                       !text.isEmpty
@@ -210,13 +291,12 @@ struct MeetingSummaryService: Sendable {
                 guard !sourceIDs.isEmpty else { return nil }
                 return MeetingFact(
                     kind: kind,
-                    text: String(text.prefix(Self.maxFactTextCharacters)),
-                    owner: String((normalizedText(item.owner) ?? "").prefix(80)),
-                    dueDate: String((normalizedText(item.dueDate) ?? "").prefix(80)),
+                    text: text,
+                    owner: normalizedText(item.owner) ?? "",
+                    dueDate: normalizedText(item.dueDate) ?? "",
                     sourceSegmentIDs: sourceIDs
                 )
             }
-            return Array(facts.prefix(12))
         } catch let error as AIAPIError {
             throw error
         } catch {
@@ -231,18 +311,18 @@ struct MeetingSummaryService: Sendable {
 
         do {
             let payload = try JSONDecoder().decode(SummaryPayload.self, from: data)
-            let overview = String((normalizedText(payload.overview) ?? "").prefix(240))
-            let keyPoints = normalizedList(payload.keyPoints, limit: 10)
-            let decisions = normalizedList(payload.decisions, limit: 10)
-            let actionItems = payload.actionItems.prefix(15).compactMap { item -> MeetingActionItem? in
+            let overview = normalizedText(payload.overview) ?? ""
+            let keyPoints = normalizedList(payload.keyPoints)
+            let decisions = normalizedList(payload.decisions)
+            let actionItems = payload.actionItems.compactMap { item -> MeetingActionItem? in
                 guard let task = normalizedText(item.task), !task.isEmpty else { return nil }
                 return MeetingActionItem(
-                    task: String(task.prefix(320)),
-                    owner: String((normalizedText(item.owner) ?? "").prefix(80)),
-                    dueDate: String((normalizedText(item.dueDate) ?? "").prefix(80))
+                    task: task,
+                    owner: normalizedText(item.owner) ?? "",
+                    dueDate: normalizedText(item.dueDate) ?? ""
                 )
             }
-            let openQuestions = normalizedList(payload.openQuestions, limit: 10)
+            let openQuestions = normalizedList(payload.openQuestions)
             guard !overview.isEmpty || !keyPoints.isEmpty || !decisions.isEmpty || !actionItems.isEmpty else {
                 throw AIAPIError.emptyGeneratedContent(context: "会议总结")
             }
@@ -275,28 +355,53 @@ struct MeetingSummaryService: Sendable {
                 result.append(fact)
             }
         }
-        return Array(result.prefix(Self.maxFactCount))
+        return result
     }
 
-    private func makeSynthesisFacts(from facts: [MeetingFact]) -> [SynthesisFact] {
-        var result: [SynthesisFact] = []
+    private func makeSynthesisFactBatches(from facts: [MeetingFact]) -> [[SynthesisFact]] {
+        var batches: [[SynthesisFact]] = []
+        var current: [SynthesisFact] = []
         for fact in facts {
             let candidate = SynthesisFact(
                 kind: fact.kind.rawValue,
-                text: String(fact.text.prefix(Self.maxSynthesisFactTextCharacters)),
-                owner: String(fact.owner.prefix(80)),
-                dueDate: String(fact.dueDate.prefix(80))
+                text: fact.text,
+                owner: fact.owner,
+                dueDate: fact.dueDate
             )
-            guard let candidateData = try? JSONEncoder().encode(result + [candidate]) else {
+            guard let candidateData = try? JSONEncoder().encode(current + [candidate]) else {
                 break
             }
             let candidateText = String(decoding: candidateData, as: UTF8.self)
-            if !result.isEmpty, estimateTokens(candidateText) > Self.maxSynthesisInputTokens {
-                break
+            if !current.isEmpty, estimateTokens(candidateText) > Self.synthesisBatchTargetTokens {
+                batches.append(current)
+                current = []
             }
-            result.append(candidate)
+            current.append(candidate)
         }
-        return result
+        if !current.isEmpty {
+            batches.append(current)
+        }
+        return batches
+    }
+
+    private func makeSummaryBatches(from summaries: [MeetingSummary]) -> [[MeetingSummary]] {
+        var batches: [[MeetingSummary]] = []
+        var current: [MeetingSummary] = []
+        for summary in summaries {
+            let candidate = current + [summary]
+            let candidateText = (try? JSONEncoder().encode(candidate)).map {
+                String(decoding: $0, as: UTF8.self)
+            } ?? ""
+            if !current.isEmpty, estimateTokens(candidateText) > Self.synthesisBatchTargetTokens {
+                batches.append(current)
+                current = []
+            }
+            current.append(summary)
+        }
+        if !current.isEmpty {
+            batches.append(current)
+        }
+        return batches
     }
 
     private func makeChunks(
@@ -318,9 +423,9 @@ struct MeetingSummaryService: Sendable {
         for segment in segments {
             let speaker = speakerNames[segment.speakerID] ?? segment.speakerID
             let line = "[\(formatTime(segment.startTime))][\(segment.id.uuidString)] \(speaker)：\(segment.text)"
-            if estimateTokens(line) <= Self.maxChunkInputTokens {
+            if estimateTokens(line) <= Self.transcriptChunkTargetTokens {
                 let candidate = (currentLines + [line]).joined(separator: "\n")
-                if !currentLines.isEmpty, estimateTokens(candidate) > Self.maxChunkInputTokens {
+                if !currentLines.isEmpty, estimateTokens(candidate) > Self.transcriptChunkTargetTokens {
                     flush()
                 }
                 currentLines.append(line)
@@ -388,15 +493,12 @@ struct MeetingSummaryService: Sendable {
         return normalized.isEmpty ? nil : normalized
     }
 
-    private func normalizedList(_ values: [String], limit: Int) -> [String] {
+    private func normalizedList(_ values: [String]) -> [String] {
         var result: [String] = []
         var seen = Set<String>()
         for value in values {
             guard let normalized = normalizedText(value), seen.insert(normalized).inserted else { continue }
-            result.append(String(normalized.prefix(320)))
-            if result.count == limit {
-                break
-            }
+            result.append(normalized)
         }
         return result
     }
@@ -422,6 +524,20 @@ struct MeetingSummaryService: Sendable {
     private struct SynthesisFact: Encodable {
         let kind: String
         let text: String
+        let owner: String
+        let dueDate: String
+    }
+
+    private struct SynthesisSummary: Encodable {
+        let overview: String
+        let keyPoints: [String]
+        let decisions: [String]
+        let actionItems: [SynthesisActionItem]
+        let openQuestions: [String]
+    }
+
+    private struct SynthesisActionItem: Encodable {
+        let task: String
         let owner: String
         let dueDate: String
     }

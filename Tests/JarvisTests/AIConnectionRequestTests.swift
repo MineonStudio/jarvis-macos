@@ -35,6 +35,29 @@ final class AIConnectionRequestTests: XCTestCase {
         let responseFormat = try XCTUnwrap(object["response_format"] as? [String: Any])
         XCTAssertEqual(responseFormat["type"] as? String, "json_object")
     }
+
+    func testCompletionRequestDoesNotSetAnApplicationOutputBudget() async throws {
+        URLProtocol.registerClass(RecordingURLProtocol.self)
+        defer { URLProtocol.unregisterClass(RecordingURLProtocol.self) }
+
+        let client = OpenAICompatibleAPIClient()
+        let configuration = AIAPIConfiguration(
+            endpoint: "https://example.com/v1/chat/completions",
+            model: "test-model",
+            apiKey: "test-key"
+        )
+        _ = try await client.complete(
+            systemPrompt: "Return JSON.",
+            userPrompt: "Generate as much content as the task requires.",
+            configuration: configuration,
+            options: .meetingSummary
+        )
+
+        let body = try XCTUnwrap(RecordingURLProtocol.capturedBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertNil(object["max_tokens"])
+        XCTAssertNil(object["max_completion_tokens"])
+    }
 }
 
 private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {

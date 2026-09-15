@@ -357,7 +357,50 @@ final class MeetingTests: XCTestCase {
             options.map(\.task),
             [AICompletionOptions.meetingFactExtraction.task, AICompletionOptions.meetingSummary.task]
         )
-        XCTAssertEqual(options.map(\.maxOutputTokens), [900, 1200])
+    }
+
+    func testSummaryServiceDoesNotSilentlyTrimAIOutput() async throws {
+        let transcriptSegment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 1,
+            speakerID: "S1",
+            text: "请完整保留生成的会议纪要。"
+        )
+        let longOverview = String(repeating: "完整结论。", count: 80)
+        let longAction = String(repeating: "完整任务内容。", count: 80)
+        let responseData = try JSONSerialization.data(withJSONObject: [
+            "overview": longOverview,
+            "keyPoints": (0 ..< 16).map { "关键点 \($0)" },
+            "decisions": (0 ..< 16).map { "决策 \($0)" },
+            "actionItems": [
+                ["task": longAction, "owner": "负责人", "dueDate": ""],
+                ["task": "第二项", "owner": "", "dueDate": ""]
+            ],
+            "openQuestions": (0 ..< 16).map { "问题 \($0)" }
+        ])
+        let response = String(decoding: responseData, as: UTF8.self)
+        let record = MeetingRecord(
+            title: "完整输出",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
+            transcript: [transcriptSegment]
+        )
+        let api = MeetingTestAPI(sourceSegmentID: transcriptSegment.id, summaryResponse: response)
+        let summary = try await MeetingSummaryService(api: api).summarize(
+            record: record,
+            configuration: AIAPIConfiguration(
+                endpoint: "https://example.com/v1/chat/completions",
+                model: "test",
+                apiKey: "test-key"
+            )
+        )
+
+        XCTAssertEqual(summary.overview, longOverview)
+        XCTAssertEqual(summary.keyPoints.count, 16)
+        XCTAssertEqual(summary.decisions.count, 16)
+        XCTAssertEqual(summary.actionItems.count, 2)
+        XCTAssertEqual(summary.actionItems.first?.task, longAction)
+        XCTAssertEqual(summary.openQuestions.count, 16)
     }
 
     func testSummaryServiceChunksLongTranscriptBeforeMerging() async throws {

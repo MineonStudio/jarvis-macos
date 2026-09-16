@@ -310,13 +310,35 @@ private struct JarvisWebPlatformDownloadRow: View {
 }
 
 struct JarvisWebPlatformBrowserPage: View {
-    @ObservedObject var controller: JarvisWebPlatformController
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let controller: JarvisWebPlatformController
 
     var body: some View {
         ZStack {
             JarvisWebPlatformWebView(controller: controller)
 
+            // Only the status overlay subscribes to the controller. The page
+            // itself must not: a site that rewrites its URL or back-history as
+            // you type (every search box that updates the address bar) would
+            // otherwise re-render this host view on every keystroke.
+            JarvisWebPlatformPageStatusOverlay(controller: controller)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Do not clip or mask this view. Rounded corners already come from
+        // `JarvisWebPlatformCornerCoverView`, which draws them above the web
+        // view; a SwiftUI clip makes every frame — including each keystroke —
+        // composite the whole page through a mask, which is what made typing
+        // in these two modules stutter. `JarvisFloatingPanelModifier` supplies
+        // the panel fill, so no separate background is needed either.
+        .jarvisFloatingPanel(cornerRadius: 16)
+    }
+}
+
+private struct JarvisWebPlatformPageStatusOverlay: View {
+    @ObservedObject var controller: JarvisWebPlatformController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
             if case .loading = controller.loadState {
                 JarvisInlineLoadingState()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -347,9 +369,6 @@ struct JarvisWebPlatformBrowserPage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.jarvisPanel)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .jarvisFloatingPanel(cornerRadius: 16)
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: controller.loadState

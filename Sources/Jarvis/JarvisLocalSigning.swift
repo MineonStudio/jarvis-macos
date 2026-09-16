@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Re-signs an installed copy with a certificate that lives on this Mac.
 ///
@@ -75,6 +76,170 @@ enum JarvisLocalSigning {
             ]
         )
         return true
+    }
+
+    // MARK: - Adopting an identity on a Mac that installed from a zip
+
+    /// Whether this installation could take on a local identity right now.
+    ///
+    /// Every release ships ad-hoc signed, so a Mac that installed by dragging
+    /// the app out of the zip starts out with no certificate at all; that is
+    /// the case this exists for. Adopting means re-signing the bundle, which
+    /// costs the current grants once and keeps every later update from asking
+    /// again.
+    static var canAdoptLocalIdentity: Bool {
+        let appURL = Bundle.main.bundleURL
+        guard appURL.pathExtension.lowercased() == "app",
+              !appURL.path.localizedCaseInsensitiveContains("/AppTranslocation/")
+        else {
+            return false
+        }
+        guard FileManager.default.isWritableFile(atPath: appURL.deletingLastPathComponent().path) else {
+            return false
+        }
+        return certificateCount(of: appURL) == 0
+    }
+
+    /// Certificates attached to a bundle's signature; none means ad-hoc.
+    /// Team identifier is not usable here — a self-signed certificate has no
+    /// team either.
+    static func certificateCount(of appURL: URL) -> Int {
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(appURL as CFURL, [], &staticCode) == errSecSuccess,
+              let staticCode
+        else {
+            return 0
+        }
+
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+            let information = information as? [String: Any]
+        else {
+            return 0
+        }
+        return (information[kSecCodeInfoCertificates as String] as? [Any])?.count ?? 0
+    }
+
+    /// Hands the re-signing to a detached script that waits for this process
+    /// to exit, so the caller is expected to terminate afterwards.
+    ///
+    /// The bundle is signed as a copy and swapped in, so a failure part way
+    /// through leaves the installation that is running now untouched.
+    static func adoptLocalIdentity() throws {
+        let appURL = Bundle.main.bundleURL
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.jarvis.mac"
+
+        let workDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("JarvisAdopt-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: workDirectory.path
+        )
+
+        try Data(entitlements.utf8).write(
+            to: workDirectory.appendingPathComponent("entitlements.plist"),
+            options: .atomic
+        )
+
+        let scriptURL = workDirectory.appendingPathComponent("adopt-identity.zsh")
+        try Data(adoptionScript(
+            appURL: appURL,
+            bundleIdentifier: bundleIdentifier,
+            workDirectory: workDirectory,
+            parentProcessID: ProcessInfo.processInfo.processIdentifier
+        ).utf8).write(to: scriptURL, options: .atomic)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
+        process.arguments = ["/bin/zsh", scriptURL.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+    }
+
+    private static func adoptionScript(
+        appURL: URL,
+        bundleIdentifier: String,
+        workDirectory: URL,
+        parentProcessID: Int32
+    ) -> String {
+        """
+        #!/bin/zsh
+        set -u
+        log_file=\(shellQuote(workDirectory.appendingPathComponent("adopt.log").path))
+        exec >> "$log_file" 2>&1
+        log() {
+            echo "[$(/bin/date '+%Y-%m-%d %H:%M:%S')] $*"
+        }
+
+        app=\(shellQuote(appURL.path))
+        identity=\(shellQuote(identityName))
+        bundle_id=\(shellQuote(bundleIdentifier))
+        work=\(shellQuote(workDirectory.path))
+        parent_pid=\(parentProcessID)
+
+        log "等待应用退出"
+        while /bin/kill -0 "$parent_pid" 2>/dev/null; do
+            /bin/sleep 0.3
+        done
+
+        if ! /usr/bin/security find-identity -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
+            log "生成本机签名证书"
+            /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \\
+                -keyout "$work/key.pem" -out "$work/cert.pem" \\
+                -subj "/CN=$identity/O=Jarvis Local" \\
+                -addext "basicConstraints=critical,CA:false" \\
+                -addext "keyUsage=critical,digitalSignature" \\
+                -addext "extendedKeyUsage=critical,codeSigning" || { log "生成证书失败"; exit 1; }
+            /usr/bin/security import "$work/cert.pem" -k "$HOME/Library/Keychains/login.keychain-db" \\
+                -T /usr/bin/codesign || { log "导入证书失败"; exit 1; }
+            /usr/bin/security import "$work/key.pem" -k "$HOME/Library/Keychains/login.keychain-db" \\
+                -T /usr/bin/codesign -T /usr/bin/security || { log "导入私钥失败"; exit 1; }
+        fi
+
+        if ! /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
+            log "把证书加入信任设置"
+            /usr/bin/security find-certificate -c "$identity" -p \\
+                "$HOME/Library/Keychains/login.keychain-db" > "$work/identity.crt" || { log "导出证书失败"; exit 1; }
+            /usr/bin/security add-trusted-cert -r trustRoot -p codeSign \\
+                -k "$HOME/Library/Keychains/login.keychain-db" "$work/identity.crt" >/dev/null 2>&1 \\
+                || log "写入信任设置失败，继续签名"
+        fi
+
+        # The old entries belong to the ad-hoc signature and would otherwise
+        # stay listed in System Settings as grants for an app that no longer
+        # exists.
+        /usr/bin/tccutil reset ScreenCapture "$bundle_id" >/dev/null 2>&1
+        /usr/bin/tccutil reset Accessibility "$bundle_id" >/dev/null 2>&1
+
+        log "在副本上签名"
+        /usr/bin/ditto "$app" "$work/Signed.app" || { log "复制失败"; exit 1; }
+        /usr/bin/codesign --force --options runtime --entitlements "$work/entitlements.plist" \\
+            --sign "$identity" "$work/Signed.app" || { log "签名失败"; exit 1; }
+        /usr/bin/codesign --verify --deep --strict "$work/Signed.app" || { log "签名校验失败"; exit 1; }
+
+        log "替换应用"
+        /bin/mv "$app" "$work/Replaced.app" || { log "移开旧应用失败"; exit 1; }
+        if ! /usr/bin/ditto "$work/Signed.app" "$app"; then
+            log "写入新应用失败，回滚"
+            /bin/mv "$work/Replaced.app" "$app"
+            exit 1
+        fi
+
+        /bin/rm -rf "$work/Replaced.app" "$work/Signed.app" "$work/key.pem" "$work/cert.pem"
+
+        log "重新启动"
+        /usr/bin/open "$app"
+        """
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private static func run(executable: String, arguments: [String]) -> String? {

@@ -4,7 +4,6 @@ import SwiftUI
 struct JarvisPermissionGateOverlay: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let onDismiss: () -> Void
 
     var body: some View {
         ZStack {
@@ -14,7 +13,7 @@ struct JarvisPermissionGateOverlay: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
 
-            JarvisPermissionGateView(onDismiss: onDismiss)
+            JarvisPermissionGateView()
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
         }
         .onAppear {
@@ -30,7 +29,6 @@ struct JarvisPermissionGateOverlay: View {
 
 struct JarvisPermissionGateView: View {
     @Environment(AppModel.self) private var app
-    let onDismiss: () -> Void
 
     private var remainingCount: Int {
         JarvisRequiredPermission.allCases.count { !app.isRequiredPermissionGranted($0) }
@@ -46,21 +44,7 @@ struct JarvisPermissionGateView: View {
 
     var body: some View {
         VStack(spacing: 22) {
-            HStack(alignment: .top, spacing: 12) {
-                JarvisOrbMark(diameter: 58)
-
-                Spacer(minLength: 0)
-
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 28, height: 28)
-                        .background(Color.primary.opacity(0.08), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭权限提示")
-                .help("稍后在设置中处理权限")
-            }
+            JarvisOrbMark(diameter: 58)
 
             VStack(spacing: 7) {
                 Text("先让我帮得上忙")
@@ -70,7 +54,7 @@ struct JarvisPermissionGateView: View {
                     .font(JarvisTypography.secondary)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .multilineTextAlignment(.center)
-                Text("可以先关闭，之后在设置中继续开启")
+                Text("贾维斯需要这四项权限才能开始工作；屏幕录制和辅助功能授权后需要重启一次。")
                     .font(JarvisTypography.caption)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .multilineTextAlignment(.center)
@@ -87,9 +71,8 @@ struct JarvisPermissionGateView: View {
     }
 }
 
-/// The four required permissions with their current state. Shared by the
-/// first-launch gate and the settings card, so dismissing the gate does not
-/// leave the user without a way back to it.
+/// The four required permissions with their current state. The gate cannot be
+/// dismissed, so this is the only place grants are requested.
 struct JarvisPermissionList: View {
     var cornerRadius: CGFloat = 16
 

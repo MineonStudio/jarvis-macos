@@ -109,9 +109,6 @@ final class AppModel {
     var meetingModelState: MeetingModelPreparationState = .checking
     var meetingStorageError: String?
     var screenCapturePermissionGranted = false
-    /// Owned here rather than in the root view so the menu bar and any gated
-    /// action can bring the permission gate back after it was dismissed.
-    var isPermissionGatePresented = true
     var accessibilityPermissionGranted = false
     var microphonePermissionGranted = false
     var cameraPermissionGranted = false

@@ -17,7 +17,7 @@ final class MenuBarConfigurationTests: XCTestCase {
         let menu = controller.configuredMenuForTesting()
         let actionableItems = menu.items.filter { !$0.isSeparatorItem }
 
-        XCTAssertEqual(actionableItems.count, 6 + WindowLayout.allCases.count)
+        XCTAssertEqual(actionableItems.count, 5 + WindowLayout.allCases.count)
         for item in actionableItems {
             XCTAssertNotNil(item.action, item.title)
             XCTAssertIdentical(item.target, controller, item.title)

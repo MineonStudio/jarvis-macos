@@ -78,11 +78,9 @@ private struct JarvisRootView: View {
                 minHeight: JarvisMainWindowController.minimumWindowSize.height
             )
             .overlay {
-                if !appModel.hasAllRequiredPermissions, appModel.isPermissionGatePresented {
-                    JarvisPermissionGateOverlay {
-                        appModel.isPermissionGatePresented = false
-                    }
-                    .environment(appModel)
+                if !appModel.hasAllRequiredPermissions {
+                    JarvisPermissionGateOverlay()
+                        .environment(appModel)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: appModel.hasAllRequiredPermissions)
@@ -101,11 +99,6 @@ private struct JarvisRootView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 appModel.refreshPermissionStatus()
-            }
-            .onChange(of: appModel.hasAllRequiredPermissions) { _, hasAllPermissions in
-                if hasAllPermissions {
-                    appModel.isPermissionGatePresented = false
-                }
             }
     }
 }

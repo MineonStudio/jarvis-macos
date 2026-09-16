@@ -63,7 +63,6 @@ private struct JarvisRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     @StateObject private var mainWindowController = JarvisMainWindowController()
-    @State private var isPermissionPromptPresented = true
 
     var body: some View {
         ContentView()
@@ -79,9 +78,9 @@ private struct JarvisRootView: View {
                 minHeight: JarvisMainWindowController.minimumWindowSize.height
             )
             .overlay {
-                if !appModel.hasAllRequiredPermissions, isPermissionPromptPresented {
+                if !appModel.hasAllRequiredPermissions, appModel.isPermissionGatePresented {
                     JarvisPermissionGateOverlay {
-                        isPermissionPromptPresented = false
+                        appModel.isPermissionGatePresented = false
                     }
                     .environment(appModel)
                 }
@@ -105,7 +104,7 @@ private struct JarvisRootView: View {
             }
             .onChange(of: appModel.hasAllRequiredPermissions) { _, hasAllPermissions in
                 if hasAllPermissions {
-                    isPermissionPromptPresented = false
+                    appModel.isPermissionGatePresented = false
                 }
             }
     }

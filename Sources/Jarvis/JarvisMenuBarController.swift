@@ -37,6 +37,11 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         action: #selector(toggleMeetingRecording),
         keyEquivalent: ""
     )
+    private let permissionMenuItem = NSMenuItem(
+        title: "需要授权…",
+        action: #selector(openPermissionGate),
+        keyEquivalent: ""
+    )
 
     deinit {
         appearanceObservation?.invalidate()
@@ -118,8 +123,11 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         updateMeetingMenuItem()
         configureMenuShortcut(meetingMenuItem, with: app.meetingShortcut)
         let allowed = app.hasAllRequiredPermissions
+        permissionMenuItem.isHidden = allowed
         for item in menu.items where !item.isSeparatorItem {
-            if item.action == #selector(openMainWindow) || item.action == #selector(terminate) {
+            if item.action == #selector(openMainWindow)
+                || item.action == #selector(terminate)
+                || item.action == #selector(openPermissionGate) {
                 item.isEnabled = true
             } else if item.action == #selector(toggleMeetingRecording) {
                 item.isEnabled = allowed || isMeetingRecording
@@ -139,6 +147,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             title: "打开贾维斯",
             action: #selector(openMainWindow)
         )
+        addMenuItem(permissionMenuItem)
         addMenuItem(screenshotMenuItem)
         addMenuItem(clipboardMenuItem)
         addMenuItem(meetingMenuItem)
@@ -324,6 +333,10 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func captureScreenshot() {
         app?.captureScreenshot()
+    }
+
+    @objc private func openPermissionGate() {
+        app?.requireAllPermissions()
     }
 
     func reopenMainWindow() {

@@ -21,6 +21,9 @@ extension AppModel {
     func requireAllPermissions() -> Bool {
         refreshPermissionStatus()
         guard hasAllRequiredPermissions else {
+            // Reopening the window is not enough on its own: the gate stays
+            // dismissed until something asks for it again.
+            isPermissionGatePresented = true
             JarvisMenuBarController.shared.reopenMainWindow()
             return false
         }

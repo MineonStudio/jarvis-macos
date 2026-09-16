@@ -164,6 +164,7 @@ struct SettingsView: View {
                         themeSettingsCard
 
                         launchAtLoginSettingsCard
+                        PermissionSettingsCard()
                         AIAPISettingsCard()
                         ClipboardCacheSettingsCard()
                         DiagnosticsSettingsCard()
@@ -328,6 +329,30 @@ struct DiagnosticsSettingsCard: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
+            }
+        }
+    }
+}
+
+struct PermissionSettingsCard: View {
+    @Environment(AppModel.self) private var app
+
+    private var remainingCount: Int {
+        JarvisRequiredPermission.allCases.count { !app.isRequiredPermissionGranted($0) }
+    }
+
+    var body: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 14) {
+                    SettingsCardHeader(title: "权限", systemImage: "lock.shield")
+                    Spacer(minLength: 8)
+                    Text(remainingCount == 0 ? "全部就绪" : "还有 \(remainingCount) 项未开启")
+                        .font(JarvisTypography.captionEmphasis)
+                        .foregroundStyle(remainingCount == 0 ? Color.green : Color.jarvisTextSecondary)
+                }
+
+                JarvisPermissionList(cornerRadius: 12)
             }
         }
     }

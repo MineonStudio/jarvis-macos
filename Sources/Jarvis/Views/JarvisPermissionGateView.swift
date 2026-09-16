@@ -76,17 +76,7 @@ struct JarvisPermissionGateView: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(spacing: 0) {
-                ForEach(Array(JarvisRequiredPermission.allCases.enumerated()), id: \.element.id) { index, permission in
-                    permissionRow(permission)
-                    if index < JarvisRequiredPermission.allCases.count - 1 {
-                        Divider()
-                            .opacity(0.45)
-                            .padding(.leading, 50)
-                    }
-                }
-            }
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            JarvisPermissionList()
         }
         .padding(.horizontal, 28)
         .padding(.top, 30)
@@ -95,8 +85,37 @@ struct JarvisPermissionGateView: View {
         .jarvisGlass(cornerRadius: 24, interactive: false)
         .shadow(color: Color.black.opacity(0.16), radius: 32, y: 14)
     }
+}
 
-    private func permissionRow(_ permission: JarvisRequiredPermission) -> some View {
+/// The four required permissions with their current state. Shared by the
+/// first-launch gate and the settings card, so dismissing the gate does not
+/// leave the user without a way back to it.
+struct JarvisPermissionList: View {
+    var cornerRadius: CGFloat = 16
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(JarvisRequiredPermission.allCases.enumerated()), id: \.element.id) { index, permission in
+                JarvisPermissionRow(permission: permission)
+                if index < JarvisRequiredPermission.allCases.count - 1 {
+                    Divider()
+                        .opacity(0.45)
+                        .padding(.leading, 50)
+                }
+            }
+        }
+        .background(
+            Color.primary.opacity(0.045),
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+    }
+}
+
+private struct JarvisPermissionRow: View {
+    @Environment(AppModel.self) private var app
+    let permission: JarvisRequiredPermission
+
+    var body: some View {
         let isGranted = app.isRequiredPermissionGranted(permission)
         return HStack(spacing: 12) {
             Image(systemName: permission.systemImage)

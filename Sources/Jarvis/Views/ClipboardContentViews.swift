@@ -530,7 +530,7 @@ struct ClipboardCard: View {
 
     @ViewBuilder
     private var previewArea: some View {
-        if ClipboardSharing.itemProvider(for: item) != nil,
+        if ClipboardSharing.canProvide(for: item),
            !item.isSensitive || isSensitiveRevealed
         {
             previewContent

@@ -144,12 +144,18 @@ enum SensitiveContentDetector {
 }
 
 enum JarvisHistoryDateFormatting {
-    static func string(from date: Date) -> String {
+    /// 历史卡片每次重绘都要格式化时间戳，`DateFormatter` 的构造不必每张卡来一次。
+    /// 配置完成后只读，`DateFormatter` 在 macOS 10.9 之后对格式化是线程安全的。
+    private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyy/MM/dd HH:mm"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        formatter.string(from: date)
     }
 }
 

@@ -87,12 +87,17 @@ enum EntertainmentVideoDownloadHistory {
         history.filter { $0.id != id }
     }
 
-    static func timestamp(_ date: Date, calendar: Calendar = .current) -> String {
+    /// 下载列表每行都要格式化一次时间。
+    private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
-        formatter.calendar = calendar
+        formatter.calendar = .current
         formatter.dateFormat = "M/d HH:mm"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func timestamp(_ date: Date) -> String {
+        timestampFormatter.string(from: date)
     }
 }
 

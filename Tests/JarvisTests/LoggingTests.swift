@@ -53,6 +53,32 @@ final class LoggingTests: XCTestCase {
         XCTAssertEqual(values["clipboardText"], "<redacted>")
     }
 
+    /// 逐条钉住六种脱敏。规则编译失败时会被静默跳过（与 `replacingOccurrences` 遇到
+    /// 无效模式的行为一致），所以模式写错不会崩、只会悄悄放过敏感内容——这个测试就是
+    /// 防止那种沉默。
+    func testEveryRedactionRuleStillApplies() {
+        let cases: [(name: String, input: String, placeholder: String)] = [
+            ("url", "见 https://example.com/a?b=c 完成", "<url>"),
+            ("email", "联系 person@example.com 处理", "<email>"),
+            ("credential", "api_key: sk-live-0123456789abcdef", "<credential>"),
+            ("path", "读 /Users/someone/Documents/secret.txt 失败", "<path>"),
+            (
+                "jwt",
+                "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1g 过期",
+                "<jwt>"
+            ),
+            ("opaque", "值 abcdefghijklmnopqrstuvwxyz123456 无效", "<opaque>")
+        ]
+
+        for (name, input, placeholder) in cases {
+            let redacted = JarvisLogRedactor.text(input)
+            XCTAssertTrue(
+                redacted.contains(placeholder),
+                "\(name) 规则没有生效：\(redacted)"
+            )
+        }
+    }
+
     func testPathRedactorKeepsApplicationSupportShapeAndHidesExternalPath() {
         let appSupportPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Jarvis/Clipboard/item-123.png")

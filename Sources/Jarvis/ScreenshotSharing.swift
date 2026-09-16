@@ -41,6 +41,24 @@ enum ScreenshotSharing {
 }
 
 enum ClipboardSharing {
+    /// 这份内容能不能拖走，只做 stat，不构造 provider。
+    ///
+    /// `itemProvider` 对图片会把整张原图读进内存，而卡片的 body 每次重绘都要判断
+    /// 能不能拖——鼠标划过一张卡片就是一次全尺寸文件的读取。判断条件与
+    /// `itemProvider` 返回 nil 的条件一致。
+    static func canProvide(for item: ClipboardItem) -> Bool {
+        switch item.kind {
+        case .text:
+            return item.text != nil
+        case .image:
+            guard let path = item.imagePath else { return false }
+            return FileManager.default.fileExists(atPath: path)
+        case .file, .video:
+            guard let path = item.filePath else { return false }
+            return FileManager.default.fileExists(atPath: path)
+        }
+    }
+
     static func itemProvider(for item: ClipboardItem) -> NSItemProvider? {
         switch item.kind {
         case .text:

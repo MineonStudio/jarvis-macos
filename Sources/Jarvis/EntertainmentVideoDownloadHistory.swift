@@ -97,63 +97,35 @@ enum EntertainmentVideoDownloadHistory {
 }
 
 final class EntertainmentVideoDownloadHistoryStore: @unchecked Sendable {
-    private let fileManager: FileManager
     private let directoryURL: URL
-    private let metadataURL: URL
-    private let lock = NSLock()
+    private let file: JarvisJSONFile<[EntertainmentVideoDownloadRecord]>
 
     init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-        let supportDirectory = (try? fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? fileManager.temporaryDirectory
-        let directory = supportDirectory
-            .appendingPathComponent(JarvisAppIdentity.dataDirectoryName, isDirectory: true)
-            .appendingPathComponent("EntertainmentDownloads", isDirectory: true)
+        let directory = JarvisAppDirectory.url("EntertainmentDownloads", fileManager: fileManager)
         directoryURL = directory
-        metadataURL = directory.appendingPathComponent("history.json")
-        JarvisProtectedStorage.prepareDirectory(directory, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directory,
+            fileName: "history.json",
+            logDomain: "entertainment.download.history",
+            fileManager: fileManager
+        )
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
-        self.fileManager = fileManager
         self.directoryURL = directoryURL
-        metadataURL = directoryURL.appendingPathComponent("history.json")
-        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directoryURL,
+            fileName: "history.json",
+            logDomain: "entertainment.download.history",
+            fileManager: fileManager
+        )
     }
 
     func load() -> [EntertainmentVideoDownloadRecord] {
-        lock.withLock {
-            guard fileManager.fileExists(atPath: metadataURL.path) else { return [] }
-            do {
-                let data = try Data(contentsOf: metadataURL)
-                return try JSONDecoder().decode([EntertainmentVideoDownloadRecord].self, from: data)
-            } catch {
-                JarvisLog.error(
-                    category: .storage,
-                    event: "entertainment.download.history.load.failed",
-                    error: error
-                )
-                return []
-            }
-        }
+        file.readOrDefault([])
     }
 
     func save(_ history: [EntertainmentVideoDownloadRecord]) {
-        lock.withLock {
-            do {
-                let data = try JSONEncoder().encode(history)
-                try JarvisProtectedStorage.write(data, to: metadataURL)
-            } catch {
-                JarvisLog.error(
-                    category: .storage,
-                    event: "entertainment.download.history.save.failed",
-                    error: error
-                )
-            }
-        }
+        file.write(history)
     }
 }

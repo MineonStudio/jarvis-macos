@@ -256,7 +256,7 @@ enum WallpaperSettingTarget: String, CaseIterable, Codable, Hashable, Identifiab
     }
 }
 
-struct WallpaperItem: Codable, Equatable, Hashable, Identifiable {
+struct WallpaperItem: Codable, Equatable, Hashable, Identifiable, Sendable {
     let id: String
     let source: WallpaperSource
     let sourceID: String
@@ -466,37 +466,41 @@ enum WallpaperImageValidation {
 final class WallpaperStore {
     private let fileManager: FileManager
     let directoryURL: URL
-    private let metadataURL: URL
+    private let file: JarvisJSONFile<[WallpaperItem]>
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        let supportDirectory = (try? fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? fileManager.temporaryDirectory
-        let directory = supportDirectory
-            .appendingPathComponent(JarvisAppIdentity.dataDirectoryName, isDirectory: true)
-            .appendingPathComponent("Wallpapers", isDirectory: true)
+        let directory = JarvisAppDirectory.url("Wallpapers", fileManager: fileManager)
         directoryURL = directory
-        metadataURL = directory.appendingPathComponent("metadata.json")
-        JarvisProtectedStorage.prepareDirectory(directory, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directory,
+            fileName: "metadata.json",
+            logDomain: "wallpaper.metadata",
+            fileManager: fileManager
+        )
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL
-        metadataURL = directoryURL.appendingPathComponent("metadata.json")
-        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directoryURL,
+            fileName: "metadata.json",
+            logDomain: "wallpaper.metadata",
+            fileManager: fileManager
+        )
     }
 
     func load() -> [WallpaperItem] {
-        loadWithoutValidatingFiles().filter { localURL(for: $0) != nil }
+        storedItems().filter { localURL(for: $0) != nil }
     }
 
     func loadFavorites() -> [WallpaperItem] {
-        loadWithoutValidatingFiles().filter(\.isFavorite)
+        storedItems().filter(\.isFavorite)
+    }
+
+    private func storedItems() -> [WallpaperItem] {
+        file.readOrDefault([])
     }
 
     func localURL(for item: WallpaperItem) -> URL? {
@@ -555,8 +559,7 @@ final class WallpaperStore {
 
         var items = try itemsForWriting()
         items.removeAll { $0.id == item.id }
-        let data = try JSONEncoder().encode(items)
-        try JarvisProtectedStorage.write(data, to: metadataURL)
+        try file.writeOrThrow(items)
     }
 
     func upsert(_ item: WallpaperItem) throws {
@@ -573,64 +576,11 @@ final class WallpaperStore {
                 items.insert(item, at: 0)
             }
         }
-        let data = try JSONEncoder().encode(items)
-        try JarvisProtectedStorage.write(data, to: metadataURL)
+        try file.writeOrThrow(items)
     }
 
-    private enum MetadataContent {
-        case missing
-        case loaded([WallpaperItem])
-        /// 内容读不出来，而且没能挪开留证。此时任何写入都可能覆盖未知内容。
-        case unreadable
-    }
-
-    private func loadMetadata() -> MetadataContent {
-        guard fileManager.fileExists(atPath: metadataURL.path) else { return .missing }
-
-        do {
-            let data = try Data(contentsOf: metadataURL)
-            return try .loaded(JSONDecoder().decode([WallpaperItem].self, from: data))
-        } catch {
-            return quarantineUnreadableMetadata(reason: error) ? .missing : .unreadable
-        }
-    }
-
-    private func loadWithoutValidatingFiles() -> [WallpaperItem] {
-        guard case let .loaded(items) = loadMetadata() else { return [] }
-        return items
-    }
-
-    /// 写入所依据的数据。读不出来又留不下证据时必须报错：照常返回空数组的话，
-    /// 调用方会用只含新条目的数组把原文件整份覆盖掉。
     private func itemsForWriting() throws -> [WallpaperItem] {
-        switch loadMetadata() {
-        case .missing:
-            []
-        case let .loaded(items):
-            items
-        case .unreadable:
-            throw WallpaperStoreError.metadataUnreadable
-        }
-    }
-
-    /// 把读不出来的元数据挪到一边留证，让后续写入不再覆盖未知内容。
-    /// - Returns: 是否成功挪开。失败时调用方必须拒绝写入。
-    private func quarantineUnreadableMetadata(reason: Error) -> Bool {
-        // 文件名带随机后缀：同一秒内二次损坏不会因为重名而挪不动。
-        let quarantineURL = directoryURL.appendingPathComponent(
-            "metadata.corrupt-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).json"
-        )
-        let quarantined = (try? fileManager.moveItem(at: metadataURL, to: quarantineURL)) != nil
-        JarvisLog.error(
-            category: .storage,
-            event: "wallpaper.metadata.unreadable",
-            error: reason,
-            fields: [
-                "quarantined": String(quarantined),
-                "path": JarvisLogRedactor.path(metadataURL.path)
-            ]
-        )
-        return quarantined
+        try file.readForWriting(default: [])
     }
 
     private func isSafeFileName(_ fileName: String) -> Bool {
@@ -655,13 +605,11 @@ final class WallpaperStore {
 enum WallpaperStoreError: LocalizedError, Equatable {
     case invalidImage
     case invalidFilename
-    case metadataUnreadable
 
     var errorDescription: String? {
         switch self {
         case .invalidImage: "文件不是有效的图片"
         case .invalidFilename: "壁纸文件名无效"
-        case .metadataUnreadable: "壁纸数据无法读取，为避免覆盖已暂停保存"
         }
     }
 }

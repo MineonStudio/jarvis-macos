@@ -51,12 +51,19 @@ final class ResumeTests: XCTestCase {
         XCTAssertFalse(workspace.document.hasContent)
     }
 
-    func testResumeZoomScaleSupportsOnePercentStepsAndCustomBounds() {
+    func testResumeZoomScaleClampsToSupportedBounds() {
         XCTAssertEqual(ResumeZoomScale.clampedPercentage(100), 100)
         XCTAssertEqual(ResumeZoomScale.clampedPercentage(24), 25)
         XCTAssertEqual(ResumeZoomScale.clampedPercentage(201), 200)
-        XCTAssertEqual(ResumeZoomScale.percentage(from: "137", fallback: 100), 137)
-        XCTAssertEqual(ResumeZoomScale.percentage(from: "无效", fallback: 100), 100)
+    }
+
+    func testResumeZoomScaleStepsByTenPercentAndClampsAtTheEdges() {
+        let step = ResumeZoomScale.stepPercentage
+        XCTAssertEqual(step, 10)
+        XCTAssertEqual(ResumeZoomScale.clampedPercentage(100 + step), 110)
+        XCTAssertEqual(ResumeZoomScale.clampedPercentage(140 - step), 130)
+        XCTAssertEqual(ResumeZoomScale.clampedPercentage(200 + step), 200)
+        XCTAssertEqual(ResumeZoomScale.clampedPercentage(30 - step), 25)
     }
 
     func testResumeAIGenerationRequiresCompleteBasicInfo() async throws {

@@ -1080,6 +1080,72 @@ struct JarvisToolbarSelectionButton: View {
     }
 }
 
+/// Shared zoom pair used by the clipboard, screenshot, and resume toolbars.
+///
+/// The native toolbar item surface sets the height, so the row fills its host
+/// instead of forcing a custom frame; a custom 32-point capsule was shorter
+/// than adjacent toolbar controls.
+struct JarvisToolbarZoomControl: View {
+    let canZoomOut: Bool
+    let canZoomIn: Bool
+    let zoomOutLabel: String
+    let zoomInLabel: String
+    let onZoomOut: () -> Void
+    let onZoomIn: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 0) {
+            zoomButton(
+                systemName: "minus",
+                help: zoomOutLabel,
+                isEnabled: canZoomOut,
+                action: onZoomOut
+            )
+
+            Divider()
+                .frame(height: 16)
+                .opacity(0.35)
+
+            zoomButton(
+                systemName: "plus",
+                help: zoomInLabel,
+                isEnabled: canZoomIn,
+                action: onZoomIn
+            )
+        }
+        .padding(.horizontal, 2)
+        .frame(maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func zoomButton(
+        systemName: String,
+        help: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            withAnimation(
+                JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion)
+            ) {
+                action()
+            }
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.92, pressedOpacity: 0.75))
+        .opacity(isEnabled ? 1 : 0.35)
+        .disabled(!isEnabled)
+        .accessibilityLabel(help)
+        .help(help)
+    }
+}
+
 struct JarvisSecondaryButtonStyle: ButtonStyle {
     let tint: Color?
 

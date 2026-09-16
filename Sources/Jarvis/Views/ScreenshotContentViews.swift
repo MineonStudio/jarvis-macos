@@ -173,59 +173,17 @@ enum HistoryGridZoomLevel: Int, CaseIterable, Sendable {
 }
 
 struct HistoryGridZoomControl: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: HistoryGridZoomLevel
 
     var body: some View {
-        HStack(spacing: 0) {
-            zoomButton(
-                systemName: "minus",
-                help: "缩小宫格",
-                isEnabled: selection.canZoomOut
-            ) {
-                selection = selection.zoomedOut
-            }
-            Divider()
-                .frame(height: 16)
-                .opacity(0.35)
-            zoomButton(
-                systemName: "plus",
-                help: "放大宫格",
-                isEnabled: selection.canZoomIn
-            ) {
-                selection = selection.zoomedIn
-            }
-        }
-        .padding(.horizontal, 2)
-        .frame(maxHeight: .infinity)
-        // Native toolbar item surface sets the control height. A custom
-        // 32-point glass capsule was shorter than adjacent toolbar controls.
-        .accessibilityElement(children: .contain)
-    }
-
-    private func zoomButton(
-        systemName: String,
-        help: String,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            withAnimation(
-                JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion)
-            ) {
-                action()
-            }
-        } label: {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.92, pressedOpacity: 0.75))
-        .opacity(isEnabled ? 1 : 0.35)
-        .disabled(!isEnabled)
-        .accessibilityLabel(help)
-        .help(help)
+        JarvisToolbarZoomControl(
+            canZoomOut: selection.canZoomOut,
+            canZoomIn: selection.canZoomIn,
+            zoomOutLabel: "缩小宫格",
+            zoomInLabel: "放大宫格",
+            onZoomOut: { selection = selection.zoomedOut },
+            onZoomIn: { selection = selection.zoomedIn }
+        )
     }
 }
 

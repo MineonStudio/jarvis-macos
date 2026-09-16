@@ -11,10 +11,8 @@ struct ResumeContentView: View {
     @State private var selectedBulletIndex = 0
     @State private var selectedTemplateCategory: ResumeTemplateCategory = .all
     @State private var previewScale: CGFloat = 1.0
-    @State private var previewScaleInput = "100"
     @State private var isNewResumeConfirmationPresented = false
     @FocusState private var isFilenameFocused: Bool
-    @FocusState private var isPreviewScaleInputFocused: Bool
 
     var body: some View {
         JarvisContentArea(
@@ -59,11 +57,6 @@ struct ResumeContentView: View {
         .onChange(of: expandedSection) { _, _ in
             DispatchQueue.main.async {
                 finishFilenameEditing()
-            }
-        }
-        .onChange(of: isPreviewScaleInputFocused) { _, isFocused in
-            if !isFocused {
-                commitPreviewScaleInput()
             }
         }
         .confirmationDialog(
@@ -147,42 +140,10 @@ struct ResumeAddButtonStyle: ButtonStyle {
 enum ResumeZoomScale {
     static let minimumPercentage = 25
     static let maximumPercentage = 200
+    static let stepPercentage = 10
 
     static func clampedPercentage(_ percentage: Int) -> Int {
         min(max(percentage, minimumPercentage), maximumPercentage)
-    }
-
-    static func percentage(from input: String, fallback: Int) -> Int {
-        let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let percentage = Int(trimmedInput) else {
-            return clampedPercentage(fallback)
-        }
-        return clampedPercentage(percentage)
-    }
-}
-
-private struct ResumeZoomButton: View {
-    let systemName: String
-    let accessibilityLabel: String
-    let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button {
-            withAnimation(
-                JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion)
-            ) {
-                action()
-            }
-        } label: {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.92, pressedOpacity: 0.75))
-        .accessibilityLabel(accessibilityLabel)
-        .help(accessibilityLabel)
     }
 }
 
@@ -277,44 +238,14 @@ private extension ResumeContentView {
     }
 
     var resumeZoomToolbar: some View {
-        HStack(spacing: 0) {
-            ResumeZoomButton(systemName: "minus", accessibilityLabel: "缩小预览") {
-                adjustPreviewScale(by: -1)
-            }
-
-            Divider()
-                .frame(height: 16)
-                .opacity(0.35)
-
-            HStack(spacing: 1) {
-                TextField("100", text: $previewScaleInput)
-                    .textFieldStyle(.plain)
-                    .font(JarvisTypography.monospaced)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 42, height: JarvisToolbarMetrics.controlSize)
-                    .focused($isPreviewScaleInputFocused)
-                    .onSubmit { commitPreviewScaleInput() }
-                    .accessibilityLabel("预览缩放百分比")
-                    .help("输入 25 到 200 之间的百分比，按回车或点击其他位置应用")
-
-                Text("%")
-                    .font(JarvisTypography.monospaced)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-            .frame(width: 72, height: JarvisToolbarMetrics.controlSize)
-            .contentShape(Rectangle())
-
-            Divider()
-                .frame(height: 16)
-                .opacity(0.35)
-
-            ResumeZoomButton(systemName: "plus", accessibilityLabel: "放大预览") {
-                adjustPreviewScale(by: 1)
-            }
-        }
-        .padding(.horizontal, 2)
-        .frame(height: JarvisToolbarMetrics.controlSize)
-        .accessibilityElement(children: .contain)
+        JarvisToolbarZoomControl(
+            canZoomOut: previewScalePercentage > ResumeZoomScale.minimumPercentage,
+            canZoomIn: previewScalePercentage < ResumeZoomScale.maximumPercentage,
+            zoomOutLabel: "缩小预览",
+            zoomInLabel: "放大预览",
+            onZoomOut: { adjustPreviewScale(by: -ResumeZoomScale.stepPercentage) },
+            onZoomIn: { adjustPreviewScale(by: ResumeZoomScale.stepPercentage) }
+        )
     }
 
     var resumeEditorHeader: some View {
@@ -449,21 +380,10 @@ private extension ResumeContentView {
     func setPreviewScalePercentage(_ percentage: Int) {
         let clampedPercentage = ResumeZoomScale.clampedPercentage(percentage)
         previewScale = CGFloat(clampedPercentage) / 100
-        previewScaleInput = String(clampedPercentage)
     }
 
     func adjustPreviewScale(by delta: Int) {
-        commitPreviewScaleInput()
         setPreviewScalePercentage(previewScalePercentage + delta)
-    }
-
-    func commitPreviewScaleInput() {
-        let percentage = ResumeZoomScale.percentage(
-            from: previewScaleInput,
-            fallback: previewScalePercentage
-        )
-        setPreviewScalePercentage(percentage)
-        isPreviewScaleInputFocused = false
     }
 
     func beginNewResume() {

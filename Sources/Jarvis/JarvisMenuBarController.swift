@@ -15,6 +15,12 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     private var openMainWindowAction: (() -> Void)?
     private var statusItem: NSStatusItem?
     private var appearanceObservation: NSKeyValueObservation?
+    /// The appearance the status item was last styled for. Assigning a status
+    /// item button's image, title, and cell makes AppKit re-notify
+    /// `effectiveAppearance`, so an observer that always restyles feeds itself
+    /// — measured at roughly 2,600 notifications a second, which pinned the
+    /// main thread at a full core and starved everything else, typing included.
+    private var lastStyledAppearanceName: NSAppearance.Name?
     private var menuConfigured = false
     private var isMeetingRecording = false
     private var meetingElapsed: TimeInterval = 0
@@ -79,7 +85,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
                 options: [.initial, .new]
             ) { [weak self] _, _ in
                 Task { @MainActor [weak self] in
-                    self?.refreshStatusItemPresentation()
+                    self?.refreshStatusItemPresentationForAppearanceChange()
                 }
             }
         }
@@ -210,6 +216,17 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
         button.setAccessibilityLabel(Self.menuBarTitle)
         button.toolTip = Self.menuBarTitle
+    }
+
+    /// Restyles only when the menu bar appearance really changed. The
+    /// notifications themselves arrive in a loop, so comparing against the
+    /// appearance the button was last drawn for is what breaks it.
+    private func refreshStatusItemPresentationForAppearanceChange() {
+        guard let button = statusItem?.button else { return }
+        let appearanceName = button.effectiveAppearance.name
+        guard appearanceName != lastStyledAppearanceName else { return }
+        lastStyledAppearanceName = appearanceName
+        refreshStatusItemPresentation(button)
     }
 
     private func refreshStatusItemPresentation(_ button: NSStatusBarButton? = nil) {

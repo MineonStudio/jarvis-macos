@@ -645,8 +645,12 @@ final class ClipboardService: @unchecked Sendable {
     }
 }
 
-final class ClipboardStore {
+final class ClipboardStore: @unchecked Sendable {
     private let fileURL: URL
+    private let lock = NSLock()
+    /// 最近一次落盘的写入版本。去抖写入可能带着调度时观察到的旧状态晚到，
+    /// 版本号让它在落盘前被丢弃，不会覆盖用户随后做的收藏或删除。
+    private var appliedRevision: UInt64 = 0
 
     init() {
         let support = (try? FileManager.default.url(
@@ -663,87 +667,114 @@ final class ClipboardStore {
         fileURL = directory.appendingPathComponent("clipboard-history.json")
     }
 
-    func load() -> [ClipboardItem] {
-        let operationID = JarvisLog.operationID()
-        JarvisLog.debug(
-            category: .clipboard,
-            event: "history.load.begin",
-            operationID: operationID,
-            fields: ["path": JarvisLogRedactor.path(fileURL.path)]
-        )
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            JarvisLog.info(
-                category: .clipboard,
-                event: "history.load.complete",
-                operationID: operationID,
-                result: "empty",
-                fields: ["recordCount": "0"]
-            )
-            return []
-        }
+    init(directoryURL: URL) {
+        JarvisProtectedStorage.prepareDirectory(directoryURL)
+        fileURL = directoryURL.appendingPathComponent("clipboard-history.json")
+    }
 
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let items = try JSONDecoder().decode([ClipboardItem].self, from: data)
-            let orderedItems = ClipboardOrdering.newestFirst(items)
-            JarvisLog.info(
+    func load() -> [ClipboardItem] {
+        lock.withLock {
+            let operationID = JarvisLog.operationID()
+            JarvisLog.debug(
                 category: .clipboard,
-                event: "history.load.complete",
-                operationID: operationID,
-                result: "success",
-                fields: [
-                    "recordCount": String(orderedItems.count),
-                    "bytes": String(data.count)
-                ]
-            )
-            return orderedItems
-        } catch {
-            JarvisLog.error(
-                category: .clipboard,
-                event: "history.load.failed",
-                error: error,
+                event: "history.load.begin",
                 operationID: operationID,
                 fields: ["path": JarvisLogRedactor.path(fileURL.path)]
             )
-            return []
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                JarvisLog.info(
+                    category: .clipboard,
+                    event: "history.load.complete",
+                    operationID: operationID,
+                    result: "empty",
+                    fields: ["recordCount": "0"]
+                )
+                return []
+            }
+
+            do {
+                let data = try Data(contentsOf: fileURL)
+                let items = try JSONDecoder().decode([ClipboardItem].self, from: data)
+                let orderedItems = ClipboardOrdering.newestFirst(items)
+                JarvisLog.info(
+                    category: .clipboard,
+                    event: "history.load.complete",
+                    operationID: operationID,
+                    result: "success",
+                    fields: [
+                        "recordCount": String(orderedItems.count),
+                        "bytes": String(data.count)
+                    ]
+                )
+                return orderedItems
+            } catch {
+                JarvisLog.error(
+                    category: .clipboard,
+                    event: "history.load.failed",
+                    error: error,
+                    operationID: operationID,
+                    fields: ["path": JarvisLogRedactor.path(fileURL.path)]
+                )
+                return []
+            }
         }
     }
 
+    /// - Parameter revision: 调用方读取待写入状态时分配的版本号。早于已落盘版本的
+    ///   写入会被丢弃，`nil` 表示无条件写入。
     @discardableResult
-    func save(_ items: [ClipboardItem]) -> Bool {
-        let operationID = JarvisLog.operationID()
-        JarvisLog.debug(
-            category: .clipboard,
-            event: "history.save.begin",
-            operationID: operationID,
-            fields: [
-                "recordCount": String(items.count),
-                "path": JarvisLogRedactor.path(fileURL.path)
-            ]
-        )
-        do {
-            let data = try JSONEncoder().encode(items)
-            try JarvisProtectedStorage.write(data, to: fileURL)
-            JarvisLog.info(
+    func save(_ items: [ClipboardItem], revision: UInt64? = nil) -> Bool {
+        lock.withLock {
+            if let revision {
+                guard revision >= appliedRevision else {
+                    JarvisLog.notice(
+                        category: .clipboard,
+                        event: "history.save.superseded",
+                        result: "discarded",
+                        fields: [
+                            "revision": String(revision),
+                            "appliedRevision": String(appliedRevision)
+                        ]
+                    )
+                    return true
+                }
+                appliedRevision = revision
+            }
+
+            let operationID = JarvisLog.operationID()
+            JarvisLog.debug(
                 category: .clipboard,
-                event: "history.save.complete",
+                event: "history.save.begin",
                 operationID: operationID,
-                result: "success",
                 fields: [
                     "recordCount": String(items.count),
-                    "bytes": String(data.count)
+                    "path": JarvisLogRedactor.path(fileURL.path)
                 ]
             )
-            return true
-        } catch {
-            JarvisLog.error(
-                category: .clipboard,
-                event: "history.save.failed",
-                error: error,
-                operationID: operationID,
-                fields: ["recordCount": String(items.count)]
-            )
-            return false
+            do {
+                let data = try JSONEncoder().encode(items)
+                try JarvisProtectedStorage.write(data, to: fileURL)
+                JarvisLog.info(
+                    category: .clipboard,
+                    event: "history.save.complete",
+                    operationID: operationID,
+                    result: "success",
+                    fields: [
+                        "recordCount": String(items.count),
+                        "bytes": String(data.count)
+                    ]
+                )
+                return true
+            } catch {
+                JarvisLog.error(
+                    category: .clipboard,
+                    event: "history.save.failed",
+                    error: error,
+                    operationID: operationID,
+                    fields: ["recordCount": String(items.count)]
+                )
+                return false
+            }
         }
     }
 }

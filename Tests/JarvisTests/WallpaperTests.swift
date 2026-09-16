@@ -229,6 +229,127 @@ final class WallpaperTests: XCTestCase {
         XCTAssertTrue(store.loadFavorites().isEmpty)
     }
 
+    /// 元数据读不出来时必须留证据，不能让随后的 upsert 用一个新数组把它整份覆盖掉。
+    func testWallpaperStoreQuarantinesUnreadableMetadataInsteadOfOverwritingIt() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-corrupt-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = WallpaperStore(directoryURL: directory)
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let corruptPayload = Data("{ not json at all".utf8)
+        try corruptPayload.write(to: metadataURL)
+
+        XCTAssertTrue(store.loadFavorites().isEmpty)
+
+        // 损坏文件被挪到一边留证，原路径腾空，后续写入不再覆盖未知内容。
+        XCTAssertFalse(FileManager.default.fileExists(atPath: metadataURL.path))
+        let entries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let quarantined = try XCTUnwrap(
+            entries.first { $0.lastPathComponent.hasPrefix("metadata.corrupt-") }
+        )
+        XCTAssertEqual(try Data(contentsOf: quarantined), corruptPayload)
+
+        let remoteURL = try XCTUnwrap(URL(string: "https://w.wallhaven.cc/corrupt-test.jpg"))
+        try store.upsert(WallpaperItem(
+            id: "wallhaven:corrupt-test",
+            source: .wallhaven,
+            sourceID: "corrupt-test",
+            title: "Corrupt test",
+            previewURL: remoteURL,
+            originalURL: remoteURL,
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: 2560,
+            height: 1440,
+            fileExtension: "jpg",
+            licenseName: nil,
+            licenseURL: nil,
+            isFavorite: true,
+            localFileName: nil
+        ))
+
+        // 收藏照常可用，留证的那份文件也不受影响。
+        XCTAssertEqual(store.loadFavorites().map(\.id), ["wallhaven:corrupt-test"])
+        XCTAssertEqual(try Data(contentsOf: quarantined), corruptPayload)
+    }
+
+    /// 损坏文件挪不动时必须拒绝写入：照常写下去就会把它整份覆盖，正是要修的 bug。
+    func testWallpaperStoreRefusesToWriteWhenUnreadableMetadataCannotBeQuarantined() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-quarantine-failure-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let corruptPayload = Data("{ not json at all".utf8)
+        try corruptPayload.write(to: metadataURL)
+
+        let store = WallpaperStore(directoryURL: directory, fileManager: MoveFailingFileManager())
+        XCTAssertTrue(store.loadFavorites().isEmpty)
+
+        let item = try WallpaperItem(
+            id: "wallhaven:unreadable",
+            source: .wallhaven,
+            sourceID: "unreadable",
+            title: "Unreadable",
+            previewURL: XCTUnwrap(URL(string: "https://w.wallhaven.cc/unreadable.jpg")),
+            originalURL: XCTUnwrap(URL(string: "https://w.wallhaven.cc/unreadable.jpg")),
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: 2560,
+            height: 1440,
+            fileExtension: "jpg",
+            licenseName: nil,
+            licenseURL: nil,
+            isFavorite: true,
+            localFileName: nil
+        )
+
+        XCTAssertThrowsError(try store.upsert(item)) { error in
+            XCTAssertEqual(error as? WallpaperStoreError, .metadataUnreadable)
+        }
+        XCTAssertThrowsError(try store.delete(item)) { error in
+            XCTAssertEqual(error as? WallpaperStoreError, .metadataUnreadable)
+        }
+
+        // 原文件原样留着，现场没丢。
+        XCTAssertEqual(try Data(contentsOf: metadataURL), corruptPayload)
+    }
+
+    func testWallpaperStoreWritesMetadataWithOwnerOnlyPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-permission-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = WallpaperStore(directoryURL: directory)
+        let remoteURL = try XCTUnwrap(URL(string: "https://w.wallhaven.cc/permission-test.jpg"))
+        try store.upsert(WallpaperItem(
+            id: "wallhaven:permission-test",
+            source: .wallhaven,
+            sourceID: "permission-test",
+            title: "Permission test",
+            previewURL: remoteURL,
+            originalURL: remoteURL,
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: 2560,
+            height: 1440,
+            fileExtension: "jpg",
+            licenseName: nil,
+            licenseURL: nil,
+            isFavorite: true,
+            localFileName: nil
+        ))
+
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let attributes = try FileManager.default.attributesOfItem(atPath: metadataURL.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
     func testWallpaperStoreDeletesDownloadedFileAndMetadata() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-wallpaper-delete-test-\(UUID().uuidString)", isDirectory: true)
@@ -454,5 +575,12 @@ final class WallpaperTests: XCTestCase {
 
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(image.tiffRepresentation)))
         return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    }
+}
+
+/// 让损坏文件的留证动作必定失败，用来验证拒绝写入的那条分支。
+private final class MoveFailingFileManager: FileManager {
+    override func moveItem(at _: URL, to _: URL) throws {
+        throw CocoaError(.fileWriteNoPermission)
     }
 }

@@ -34,7 +34,7 @@ extension AppModel {
                 fields: ["itemCount": String(migratedCount)]
             )
         }
-        if didChange, !clipboardStore.save(clipboardItems) {
+        if didChange, !persistClipboardHistory() {
             JarvisLog.error(
                 category: .clipboard,
                 event: "history.textMigrationSave.failed",
@@ -100,8 +100,17 @@ extension AppModel {
         refreshClipboardCacheUsage()
     }
 
+    /// 剪贴板历史的唯一落盘入口：写入调用当下的状态，并作废在途的去抖写入。
+    /// 版本号就在读取状态之后取，两者同在 MainActor 上同步完成，顺序一致。
+    @discardableResult
+    private func persistClipboardHistory() -> Bool {
+        clipboardSaveTask?.cancel()
+        clipboardSaveTask = nil
+        clipboardHistoryRevision += 1
+        return clipboardStore.save(clipboardItems, revision: clipboardHistoryRevision)
+    }
+
     private func scheduleClipboardHistorySave() {
-        let snapshot = clipboardItems
         clipboardSaveTask?.cancel()
         clipboardSaveTask = Task { @MainActor [weak self, clipboardHistoryWriter] in
             do {
@@ -110,12 +119,16 @@ extension AppModel {
                 return
             }
 
-            guard !Task.isCancelled else { return }
-            guard await clipboardHistoryWriter.save(snapshot) else {
-                self?.showToast("剪贴板历史保存失败")
+            guard !Task.isCancelled, let self else { return }
+            self.clipboardSaveTask = nil
+
+            // 取当前状态而不是调度时的快照：用户可能已经收藏或删除过条目。
+            self.clipboardHistoryRevision += 1
+            let revision = self.clipboardHistoryRevision
+            guard await clipboardHistoryWriter.save(self.clipboardItems, revision: revision) else {
+                self.showToast("剪贴板历史保存失败")
                 return
             }
-            self?.clipboardSaveTask = nil
         }
     }
 
@@ -178,7 +191,7 @@ extension AppModel {
                 "pinned": String(clipboardItems[index].isPinned)
             ]
         )
-        guard clipboardStore.save(clipboardItems) else {
+        guard persistClipboardHistory() else {
             showToast("剪贴板收藏状态保存失败")
             return
         }
@@ -239,7 +252,7 @@ extension AppModel {
         )
         _ = clipboardCacheStore.removeManagedFiles(for: [item], reason: "userDelete")
         clipboardItems.removeAll { $0.id == item.id }
-        if !clipboardStore.save(clipboardItems) {
+        if !persistClipboardHistory() {
             showToast("剪贴板历史保存失败")
             return
         }
@@ -264,7 +277,7 @@ extension AppModel {
             reason: "userClearHistory"
         )
         clipboardItems.removeAll()
-        if clipboardStore.save(clipboardItems) {
+        if persistClipboardHistory() {
             refreshClipboardCacheUsage()
             JarvisLog.info(
                 category: .clipboard,
@@ -408,7 +421,7 @@ extension AppModel {
             return 0
         }
 
-        if !clipboardStore.save(clipboardItems) {
+        if !persistClipboardHistory() {
             showToast("缓存清理后历史记录保存失败")
         }
         refreshClipboardCacheUsage()
@@ -450,7 +463,7 @@ extension AppModel {
             )
             clipboardItems = migration.items
             clipboardCacheDirectoryURL = clipboardCacheStore.currentDirectoryURL
-            if !clipboardStore.save(clipboardItems) {
+            if !persistClipboardHistory() {
                 if let rollback = try? clipboardCacheStore.migrateManagedFiles(
                     for: clipboardItems,
                     to: oldDirectoryURL
@@ -526,7 +539,7 @@ extension AppModel {
                 changed = true
             }
         }
-        if changed, !clipboardStore.save(clipboardItems) {
+        if changed, !persistClipboardHistory() {
             JarvisLog.error(
                 category: .clipboard,
                 event: "history.saveAfterTrim.failed",

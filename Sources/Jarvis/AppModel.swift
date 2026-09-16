@@ -126,7 +126,7 @@ final class AppModel {
     @ObservationIgnored let clipboardCacheStore: ClipboardCacheStore
     @ObservationIgnored let clipboardService: ClipboardService
     @ObservationIgnored lazy var clipboardStore = ClipboardStore()
-    @ObservationIgnored lazy var clipboardHistoryWriter = ClipboardHistoryWriter()
+    @ObservationIgnored lazy var clipboardHistoryWriter = ClipboardHistoryWriter(store: clipboardStore)
     @ObservationIgnored lazy var startupRepository = JarvisStartupRepository()
     @ObservationIgnored let clipboardPanelController = ClipboardPanelController()
     @ObservationIgnored lazy var screenshotCacheStore = ScreenshotCacheStore()
@@ -149,6 +149,9 @@ final class AppModel {
     @ObservationIgnored private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
     @ObservationIgnored var startupTask: Task<Void, Never>?
     @ObservationIgnored var clipboardSaveTask: Task<Void, Never>?
+    /// 剪贴板历史写入的版本号。每次落盘都取一个新值，连同当时的状态一起交给
+    /// `ClipboardStore`，让迟到的去抖写入无法覆盖更新的直接写入。
+    @ObservationIgnored var clipboardHistoryRevision: UInt64 = 0
     @ObservationIgnored var aiModelsRefreshTask: Task<Void, Never>?
     @ObservationIgnored var screenshotShortcutManager: ScreenshotShortcutManager?
     @ObservationIgnored var clipboardShortcutManager: ScreenshotShortcutManager?

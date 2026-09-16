@@ -394,6 +394,7 @@ struct ClipboardHistoryActionToolbar: View {
         .buttonStyle(JarvisToolbarIconButtonStyle())
         .opacity(isEnabled ? 1 : 0.38)
         .disabled(!isEnabled)
+        .accessibilityLabel(help)
         .jarvisHoverFeedback(in: Circle(), scale: 1.06)
         .help(help)
     }

@@ -465,10 +465,13 @@ extension AppModel {
             .sorted { $0.createdAt < $1.createdAt }
         var changed = false
         for item in candidates where needsRoom(usage) {
-            guard clipboardCacheStore.removeManagedFiles(
+            // 删除时顺手拿到的字节数，用来做减法。原本每删一条都调一次 `usage()`，
+            // 那会递归枚举整个缓存目录——淘汰 30 条就是 31 次全目录扫描，全在主线程。
+            let removal = clipboardCacheStore.removeManagedFilesReportingBytes(
                 for: [item],
                 reason: "automatic.capacity"
-            ) else { continue }
+            )
+            guard removal.succeeded else { continue }
             if item.kind == .text, item.text != nil,
                let index = clipboardItems.firstIndex(where: { $0.id == item.id })
             {
@@ -477,7 +480,11 @@ extension AppModel {
             } else {
                 clipboardItems.removeAll { $0.id == item.id }
             }
-            usage = clipboardCacheStore.usage()
+            usage = ClipboardCacheUsage(
+                usedBytes: max(0, usage.usedBytes - removal.freedBytes),
+                capacityBytes: usage.capacityBytes,
+                fileCount: max(0, usage.fileCount - removal.removedFileCount)
+            )
             changed = true
         }
 

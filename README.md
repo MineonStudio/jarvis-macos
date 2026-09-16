@@ -46,7 +46,7 @@ open dist/Jarvis.app
 需要 macOS 26 或更高版本。升级时保持同一个 `com.jarvis.mac` Bundle ID 和 `dist/Jarvis.app` 路径，只递增版本号：
 
 ```bash
-JARVIS_VERSION="1.2.28" JARVIS_BUILD="280" ./build_app.sh
+JARVIS_VERSION="1.3.0" JARVIS_BUILD="300" ./build_app.sh
 ```
 
 ## 质量检查
@@ -65,7 +65,7 @@ git diff --check
 
 版本号会显示在设置页的“版本与更新”区域。发布新版本时使用 `v主版本.次版本.修订版本` 标签，并在 GitHub Releases 创建正式版本；设置页可检查 GitHub Releases 是否有新版本。发布包使用 ad-hoc 签名（没有付费 Apple Developer ID，因此无法公证）；每次替换二进制都会产生新的代码身份，屏幕录制和辅助功能授权无法沿用。点击“下载更新”后，Jarvis 会先在当前进程中用 tccutil 清除这两项旧授权，安装完成后再向用户重新申请。
 
-用 `install.sh` 安装的副本不受这条限制：本机存在 `Jarvis Local Signing` 证书时，更新流程会在替换前用同一张证书重签新版，代码身份不变，因此跳过 tccutil 重置，屏幕录制、辅助功能和钥匙串授权都沿用。
+用 `install.sh` 安装的副本不受这条限制：本机存在 `Jarvis Local Signing` 证书时，更新流程会在替换前用同一张证书重签新版，代码身份不变，因此跳过 tccutil 重置，屏幕录制和辅助功能授权沿用（钥匙串访问权限仍会重新询问一次，见上文「安装」一节）。
 
 截图快捷键触发后，Jarvis 会先用 ScreenCaptureKit 冻结所有显示器画面，再显示自己的暗幕。悬停窗口会高亮，单击即可截取整个应用窗口；拖动则可以自定义框选区域，不会打开 macOS 的“共享整个屏幕”选择器。如果 macOS 要求授权，请在“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”中允许贾维斯访问屏幕。
 

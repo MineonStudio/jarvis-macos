@@ -311,8 +311,16 @@ struct DiagnosticsSettingsCard: View {
 
     var body: some View {
         JarvisCard {
-            HStack(spacing: 14) {
-                SettingsCardHeader(title: "诊断日志", systemImage: "waveform.path.ecg")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 14) {
+                    SettingsCardHeader(title: "诊断日志", systemImage: "waveform.path.ecg")
+                    Spacer(minLength: 8)
+                    Button("导出日志") {
+                        app.exportDiagnostics()
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                }
+
                 VStack(alignment: .leading, spacing: 3) {
                     Text("导出最近的脱敏运行日志和剪贴板缓存统计")
                         .font(.system(size: 12, weight: .medium))
@@ -320,11 +328,6 @@ struct DiagnosticsSettingsCard: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
-                Spacer(minLength: 8)
-                Button("导出日志") {
-                    app.exportDiagnostics()
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
             }
         }
     }

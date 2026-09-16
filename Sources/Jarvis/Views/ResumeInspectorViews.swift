@@ -2,28 +2,27 @@ import SwiftUI
 
 struct ResumeInspector: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var draft: ResumeDocument
     @Binding var expandedSection: ResumeSection?
+    var onBackgroundTap: () -> Void = {}
     @State private var projectGenerationDomain = ""
     @State private var isProjectGenerationPromptPresented = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("编辑内容")
-                    .font(JarvisTypography.pageTitle)
-                Text("填写右侧信息，左侧预览会实时更新")
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .padding(.bottom, 4)
-
                 ForEach(ResumeSection.allCases) { section in
                     accordionSection(section)
                 }
             }
             .padding(16)
         }
-        .background(Color.jarvisPanel.opacity(0.34))
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                onBackgroundTap()
+            }
+        )
         .sheet(isPresented: $isProjectGenerationPromptPresented) {
             ResumeProjectGenerationSheet(
                 domain: $projectGenerationDomain,
@@ -52,8 +51,9 @@ struct ResumeInspector: View {
         let requirementTitle = section.requirementTitle
         return VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(JarvisMotion.content) {
-                    expandedSection = expandedSection == section ? nil : section
+                let nextSection = expandedSection == section ? nil : section
+                withAnimation(JarvisMotion.animation(JarvisMotion.accordion, reduceMotion: reduceMotion)) {
+                    expandedSection = nextSection
                 }
             } label: {
                 HStack(spacing: 10) {
@@ -84,6 +84,8 @@ struct ResumeInspector: View {
             if expandedSection == section {
                 sectionEditor(for: section)
                     .padding(12)
+                    .id(section)
+                    .transition(.opacity)
             }
         }
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -94,6 +96,8 @@ struct ResumeInspector: View {
                     lineWidth: 0.75
                 )
         }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .zIndex(expandedSection == section ? 1 : 0)
     }
 
     @ViewBuilder

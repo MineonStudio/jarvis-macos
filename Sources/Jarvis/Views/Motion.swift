@@ -8,6 +8,7 @@ enum JarvisMotion {
     static let selection = Animation.spring(response: 0.30, dampingFraction: 0.82, blendDuration: 0.04)
     static let sidebarSelection = Animation.easeOut(duration: 0.18)
     static let content = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.03)
+    static let accordion = Animation.easeInOut(duration: 0.22)
     static let feedback = Animation.spring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.03)
     static let pageTransition = Animation.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.05)
     static let selectionPillTint = Color.accentColor.opacity(0.82)

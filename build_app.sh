@@ -9,18 +9,24 @@ if [[ "$JARVIS_DEV_BUILD" == "1" ]]; then
   DEFAULT_BUNDLE_IDENTIFIER="com.jarvis.mac.dev"
   DEFAULT_DISPLAY_NAME="贾维斯开发版"
   DEFAULT_BUNDLE_NAME="Jarvis-Dev"
+  # Development builds sign with a stable local identity so TCC and Keychain
+  # grants survive rebuilds. Ad-hoc signing derives a new identity from every
+  # binary, which makes macOS treat each build as a different app.
+  DEFAULT_CODESIGN_IDENTITY="Jarvis Dev Signing"
 else
   DEFAULT_APP_DIR="$ROOT_DIR/dist/Jarvis.app"
   DEFAULT_BUNDLE_IDENTIFIER="com.jarvis.mac"
   DEFAULT_DISPLAY_NAME="贾维斯"
   DEFAULT_BUNDLE_NAME="Jarvis"
+  DEFAULT_CODESIGN_IDENTITY=""
 fi
+JARVIS_CODESIGN_IDENTITY="${JARVIS_CODESIGN_IDENTITY:-$DEFAULT_CODESIGN_IDENTITY}"
 APP_DIR="${JARVIS_APP_DIR:-$DEFAULT_APP_DIR}"
 JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER}"
 JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
 JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
-JARVIS_VERSION="${JARVIS_VERSION:-1.2.28}"
-JARVIS_BUILD="${JARVIS_BUILD:-280}"
+JARVIS_VERSION="${JARVIS_VERSION:-1.3.0}"
+JARVIS_BUILD="${JARVIS_BUILD:-300}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -147,7 +153,16 @@ if [[ -d "$ICON_COMPOSER_DIR" ]]; then
 fi
 
 ENTITLEMENTS="$ROOT_DIR/Resources/Jarvis.entitlements"
-if [[ -n "${JARVIS_CODESIGN_IDENTITY:-}" ]]; then
+# The self-signed development certificate is not a trusted root, so Keychain
+# reports it only under the plain code-signing policy, not the "valid
+# identities" list that `security find-identity -v` prints.
+if [[ -n "$JARVIS_CODESIGN_IDENTITY" ]] \
+   && ! security find-identity -p codesigning 2>/dev/null | grep -qF "$JARVIS_CODESIGN_IDENTITY"; then
+  echo "warning: signing identity '$JARVIS_CODESIGN_IDENTITY' not found; using ad-hoc instead" >&2
+  JARVIS_CODESIGN_IDENTITY=""
+fi
+
+if [[ -n "$JARVIS_CODESIGN_IDENTITY" ]]; then
   codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$JARVIS_CODESIGN_IDENTITY" "$APP_DIR" >/dev/null
 else
   # Shipping default is ad-hoc: there is no paid Apple Developer ID to sign

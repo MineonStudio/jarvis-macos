@@ -8,8 +8,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "1.2.28"
-    private static let fallbackBuild = "280"
+    private static let fallbackShortVersion = "1.3.0"
+    private static let fallbackBuild = "300"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -225,7 +225,14 @@ struct JarvisUpdateService {
         // with every unsigned/ad-hoc replacement. Clear the stale grants now,
         // while this process still matches the current TCC entries. The
         // detached installer must not touch TCC.
-        try resetPrivacyPermissions()
+        //
+        // A Mac carrying the local identity from `install.sh` re-signs the
+        // replacement below instead, so the identity survives the update and
+        // the grants must be left alone.
+        let keepsCodeIdentity = JarvisLocalSigning.isAvailable
+        if !keepsCodeIdentity {
+            try resetPrivacyPermissions()
+        }
 
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
@@ -265,6 +272,14 @@ struct JarvisUpdateService {
               isValidApplicationBundle(newAppURL)
         else {
             throw JarvisUpdateError.invalidApplication
+        }
+
+        if keepsCodeIdentity {
+            // The download is verified by digest and signature before this
+            // point; signing it here keeps the grants that were deliberately
+            // not reset above. A failure aborts the update rather than
+            // silently installing an app that would lose them.
+            try JarvisLocalSigning.resign(appAt: newAppURL)
         }
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")

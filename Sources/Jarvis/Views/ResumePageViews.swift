@@ -246,6 +246,7 @@ struct ResumePageView: View {
         .frame(width: 620, height: 876, alignment: .topLeading)
         .background(ResumePaperPalette.paper)
         .foregroundStyle(ResumePaperPalette.ink)
+        .clipShape(Rectangle())
         .overlay {
             Rectangle()
                 .strokeBorder(ResumePaperPalette.softLine, lineWidth: 0.8)

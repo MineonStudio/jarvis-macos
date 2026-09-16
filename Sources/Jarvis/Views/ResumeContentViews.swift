@@ -11,10 +11,8 @@ struct ResumeContentView: View {
     @State private var selectedBulletIndex = 0
     @State private var selectedTemplateCategory: ResumeTemplateCategory = .all
     @State private var previewScale: CGFloat = 1.0
-    @State private var previewScaleInput = "100"
     @State private var isNewResumeConfirmationPresented = false
     @FocusState private var isFilenameFocused: Bool
-    @FocusState private var isPreviewScaleInputFocused: Bool
 
     var body: some View {
         JarvisContentArea(
@@ -52,9 +50,13 @@ struct ResumeContentView: View {
         .onChange(of: workspace.document) { _, _ in
             normalizeSelection()
         }
-        .onChange(of: isPreviewScaleInputFocused) { _, isFocused in
-            if !isFocused {
-                commitPreviewScaleInput()
+        .onChange(of: isFilenameFocused) { _, isFocused in
+            guard !isFocused else { return }
+            normalizeFilename()
+        }
+        .onChange(of: expandedSection) { _, _ in
+            DispatchQueue.main.async {
+                finishFilenameEditing()
             }
         }
         .confirmationDialog(
@@ -138,57 +140,36 @@ struct ResumeAddButtonStyle: ButtonStyle {
 enum ResumeZoomScale {
     static let minimumPercentage = 25
     static let maximumPercentage = 200
+    static let stepPercentage = 10
 
     static func clampedPercentage(_ percentage: Int) -> Int {
         min(max(percentage, minimumPercentage), maximumPercentage)
-    }
-
-    static func percentage(from input: String, fallback: Int) -> Int {
-        let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let percentage = Int(trimmedInput) else {
-            return clampedPercentage(fallback)
-        }
-        return clampedPercentage(percentage)
-    }
-}
-
-private struct ResumeZoomButton: View {
-    let systemName: String
-    let accessibilityLabel: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Rectangle()
-                    .fill(.clear)
-
-                Image(systemName: systemName)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .frame(width: 48, height: 42)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .help(accessibilityLabel)
     }
 }
 
 private extension ResumeContentView {
     var resumeEditorLayout: some View {
         HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                resumeEditorHeader
+
+                ResumeInspector(
+                    draft: $workspace.document,
+                    expandedSection: $expandedSection,
+                    onBackgroundTap: {
+                        guard isFilenameFocused else { return }
+                        finishFilenameEditing()
+                    }
+                )
+            }
+            .frame(width: 348)
+            .frame(maxHeight: .infinity)
+
             documentCanvas
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Divider()
-
-            ResumeInspector(
-                draft: $workspace.document,
-                expandedSection: $expandedSection
-            )
-            .frame(width: 348)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .jarvisFloatingPanel(cornerRadius: 16)
     }
 
     @ToolbarContentBuilder
@@ -204,6 +185,18 @@ private extension ResumeContentView {
         }
         ToolbarSpacer(.fixed, placement: .automatic)
 
+        JarvisToolbarSurface(id: "resume.document-size", placement: .automatic) {
+            resumeDocumentSizeToolbar
+        }
+    }
+
+    @ToolbarContentBuilder
+    var resumeTrailingToolbar: some ToolbarContent {
+        ToolbarItem(id: "resume.zoom", placement: .automatic) {
+            resumeZoomToolbar
+        }
+        ToolbarSpacer(.fixed, placement: .automatic)
+
         ToolbarItem(id: "resume.import", placement: .automatic) {
             Button {
                 finishFilenameEditing()
@@ -216,13 +209,13 @@ private extension ResumeContentView {
         }
         ToolbarSpacer(.fixed, placement: .automatic)
 
-        ToolbarItem(id: "resume.save", placement: .automatic) {
+        ToolbarItem(id: "resume.export", placement: .automatic) {
             JarvisDropdownMenu(
-                title: "保存简历",
+                title: "导出简历",
                 options: ResumeExportFormat.allCases.map {
-                    JarvisDropdownOption(id: $0.rawValue, title: "保存为 \($0.title)")
+                    JarvisDropdownOption(id: $0.rawValue, title: "导出为 \($0.title)")
                 },
-                accessibilityLabel: "保存简历",
+                accessibilityLabel: "导出简历",
                 help: "选择 PDF、Markdown 或 JSON",
                 showsChevron: false,
                 usesLiquidGlass: false,
@@ -235,9 +228,30 @@ private extension ResumeContentView {
         }
     }
 
-    @ToolbarContentBuilder
-    var resumeTrailingToolbar: some ToolbarContent {
-        JarvisToolbarSurface(id: "resume.save-status", placement: .automatic) {
+    var resumeDocumentSizeToolbar: some View {
+        Text("A4  210 × 297 mm")
+            .font(JarvisTypography.caption)
+            .foregroundStyle(Color.jarvisTextSecondary)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("文稿大小 A4，210 × 297 毫米")
+            .help("文稿大小：A4（210 × 297 毫米）")
+    }
+
+    var resumeZoomToolbar: some View {
+        JarvisToolbarZoomControl(
+            canZoomOut: previewScalePercentage > ResumeZoomScale.minimumPercentage,
+            canZoomIn: previewScalePercentage < ResumeZoomScale.maximumPercentage,
+            zoomOutLabel: "缩小预览，每次 10%",
+            zoomInLabel: "放大预览，每次 10%",
+            onZoomOut: { adjustPreviewScale(by: -ResumeZoomScale.stepPercentage) },
+            onZoomIn: { adjustPreviewScale(by: ResumeZoomScale.stepPercentage) }
+        )
+    }
+
+    var resumeEditorHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            resumeFilenameEditor
+
             HStack(spacing: 5) {
                 Image(systemName: workspace.isSaved ? "checkmark.circle.fill" : "circle.dashed")
                     .font(.system(size: 11, weight: .medium))
@@ -249,20 +263,48 @@ private extension ResumeContentView {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+    }
 
-        JarvisToolbarSurface(id: "resume.filename", placement: .automatic) {
-            TextField("未命名简历", text: $workspace.document.title)
+    var resumeFilenameEditor: some View {
+        let displayTitle = workspace.document.title.isEmpty ? "未命名简历" : workspace.document.title
+
+        return ZStack(alignment: .leading) {
+            Text(displayTitle)
+                .font(JarvisTypography.cardTitle)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, ResumeFilenameMetrics.horizontalPadding)
+                .frame(height: JarvisToolbarMetrics.controlSize)
+                .opacity(0)
+
+            TextField("", text: $workspace.document.title)
                 .textFieldStyle(.plain)
                 .font(JarvisTypography.cardTitle)
                 .lineLimit(1)
-                .frame(width: filenameWidth, height: JarvisToolbarMetrics.controlSize)
-                .padding(.horizontal, 12)
-                .background(Color.primary.opacity(0.08), in: Capsule())
                 .focused($isFilenameFocused)
-                .onSubmit { finishFilenameEditing() }
-                .help("点击修改文件名")
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, ResumeFilenameMetrics.horizontalPadding)
+                .frame(height: JarvisToolbarMetrics.controlSize)
+                .accessibilityLabel("简历名称")
         }
+        .contentShape(Capsule())
+        .onTapGesture {
+            isFilenameFocused = true
+        }
+        .background(Color.primary.opacity(0.07), in: Capsule())
+        .background(
+            ResumeFilenameOutsideClickMonitor(
+                isFocused: isFilenameFocused,
+                onDismiss: { finishFilenameEditing() }
+            )
+        )
+        .help("点击修改简历名称，按回车或点击其他区域提交")
     }
 
     var documentCanvas: some View {
@@ -270,94 +312,44 @@ private extension ResumeContentView {
         let pageHeight = ResumePageLayout.pageSize.height * CGFloat(pageCount)
             + ResumePageLayout.pageSpacing * CGFloat(max(pageCount - 1, 0))
 
-        return VStack(spacing: 0) {
-            ScrollView([.vertical, .horizontal]) {
-                VStack(spacing: 16) {
-                    ResumePagedView(
-                        document: workspace.document,
-                        selectedProjectID: selectedProjectID,
-                        selectedBulletIndex: selectedBulletIndex,
-                        showsEmptyState: true,
-                        onSelectProject: { projectID in
-                            expandedSection = .projects
-                            selectedProjectID = projectID
-                            selectedBulletIndex = 0
-                        },
-                        onSelectBullet: { projectID, bulletIndex in
-                            expandedSection = .projects
-                            selectedProjectID = projectID
-                            selectedBulletIndex = bulletIndex
-                        }
-                    )
-                    .frame(width: ResumePageLayout.pageSize.width, height: pageHeight, alignment: .top)
-                    .scaleEffect(previewScale, anchor: .top)
-                    .frame(
-                        width: ResumePageLayout.pageSize.width * previewScale,
-                        height: pageHeight * previewScale,
-                        alignment: .top
-                    )
-                    .shadow(color: .black.opacity(0.10), radius: 20, y: 8)
-                }
-                .padding(.top, 72)
-                .padding(.horizontal, 28)
-                .padding(.bottom, 28)
-                .frame(maxWidth: .infinity)
+        return ScrollView([.vertical, .horizontal]) {
+            VStack(spacing: 16) {
+                ResumePagedView(
+                    document: workspace.document,
+                    selectedProjectID: selectedProjectID,
+                    selectedBulletIndex: selectedBulletIndex,
+                    showsEmptyState: true,
+                    onSelectProject: { projectID in
+                        expandedSection = .projects
+                        selectedProjectID = projectID
+                        selectedBulletIndex = 0
+                    },
+                    onSelectBullet: { projectID, bulletIndex in
+                        expandedSection = .projects
+                        selectedProjectID = projectID
+                        selectedBulletIndex = bulletIndex
+                    }
+                )
+                .frame(width: ResumePageLayout.pageSize.width, height: pageHeight, alignment: .top)
+                .scaleEffect(previewScale, anchor: .top)
+                .frame(
+                    width: ResumePageLayout.pageSize.width * previewScale,
+                    height: pageHeight * previewScale,
+                    alignment: .top
+                )
+                .clipShape(Rectangle())
+                .shadow(color: .black.opacity(0.10), radius: 20, y: 8)
             }
-            .background(Color.jarvisPanel.opacity(0.46))
-
-            previewControls
+            .padding(.top, 72)
+            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity)
         }
-    }
-
-    var previewControls: some View {
-        HStack(spacing: 14) {
-            Label("A4  210 × 297 mm", systemImage: "doc")
-                .font(JarvisTypography.caption)
-                .foregroundStyle(Color.jarvisTextSecondary)
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 2) {
-                ResumeZoomButton(systemName: "minus", accessibilityLabel: "缩小预览") {
-                    adjustPreviewScale(by: -1)
-                }
-
-                HStack(spacing: 2) {
-                    TextField("100", text: $previewScaleInput)
-                        .textFieldStyle(.plain)
-                        .font(JarvisTypography.monospaced)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 42, height: 42)
-                        .focused($isPreviewScaleInputFocused)
-                        .onSubmit { commitPreviewScaleInput() }
-                        .accessibilityLabel("预览缩放百分比")
-                        .help("输入 25 到 200 之间的百分比，按回车或点击其他位置应用")
-
-                    Text("%")
-                        .font(JarvisTypography.monospaced)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-                .frame(width: 72, height: 42)
-                .contentShape(Rectangle())
-
-                ResumeZoomButton(systemName: "plus", accessibilityLabel: "放大预览") {
-                    adjustPreviewScale(by: 1)
-                }
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                guard isFilenameFocused else { return }
+                finishFilenameEditing()
             }
-            .padding(4)
-            .frame(height: 52)
-            .jarvisGlass(in: Capsule())
-        }
-        .padding(.horizontal, 18)
-        .frame(minHeight: 58)
-        .background(Color.jarvisBackground)
-    }
-
-    var filenameWidth: CGFloat {
-        let value = workspace.document.title.isEmpty ? "未命名简历" : workspace.document.title
-        let font = NSFont.systemFont(ofSize: 15, weight: .semibold)
-        let measuredWidth = (value as NSString).size(withAttributes: [.font: font]).width + 24
-        return min(max(measuredWidth, 92), 220)
+        )
     }
 
     var saveStatusText: String {
@@ -367,11 +359,18 @@ private extension ResumeContentView {
         return "已保存 · \(lastSavedAt.formatted(date: .omitted, time: .shortened))"
     }
 
-    func finishFilenameEditing() {
+    func normalizeFilename() {
         if workspace.document.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             workspace.document.title = "未命名简历"
         }
+    }
+
+    func finishFilenameEditing() {
+        normalizeFilename()
         isFilenameFocused = false
+        DispatchQueue.main.async {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
     }
 
     var previewScalePercentage: Int {
@@ -381,21 +380,10 @@ private extension ResumeContentView {
     func setPreviewScalePercentage(_ percentage: Int) {
         let clampedPercentage = ResumeZoomScale.clampedPercentage(percentage)
         previewScale = CGFloat(clampedPercentage) / 100
-        previewScaleInput = String(clampedPercentage)
     }
 
     func adjustPreviewScale(by delta: Int) {
-        commitPreviewScaleInput()
         setPreviewScalePercentage(previewScalePercentage + delta)
-    }
-
-    func commitPreviewScaleInput() {
-        let percentage = ResumeZoomScale.percentage(
-            from: previewScaleInput,
-            fallback: previewScalePercentage
-        )
-        setPreviewScalePercentage(percentage)
-        isPreviewScaleInputFocused = false
     }
 
     func beginNewResume() {
@@ -470,6 +458,76 @@ private extension ResumeContentView {
             app.showToast("已打开 JSON 简历：\(importedDocument.title)")
         } catch {
             app.showToast("打开失败：JSON 文件格式无效")
+        }
+    }
+}
+
+private enum ResumeFilenameMetrics {
+    static let horizontalPadding: CGFloat = 10
+}
+
+private struct ResumeFilenameOutsideClickMonitor: NSViewRepresentable {
+    let isFocused: Bool
+    let onDismiss: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = PassthroughView(frame: .zero)
+        context.coordinator.update(view: view, isFocused: isFocused, dismiss: onDismiss)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(view: nsView, isFocused: isFocused, dismiss: onDismiss)
+    }
+
+    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    private final class PassthroughView: NSView {
+        override func hitTest(_: NSPoint) -> NSView? {
+            nil
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
+        weak var view: NSView?
+        private var monitor: Any?
+        private var dismiss: (() -> Void)?
+
+        func update(view: NSView, isFocused: Bool, dismiss: @escaping () -> Void) {
+            self.view = view
+            self.dismiss = dismiss
+            if isFocused {
+                startIfNeeded()
+            } else {
+                stop()
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        private func startIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+                guard let self, let view = self.view, let contentWindow = view.window else { return event }
+                guard event.window === contentWindow else { return event }
+                let pointInView = view.convert(event.locationInWindow, from: nil)
+                if !view.bounds.contains(pointInView) {
+                    self.dismiss?()
+                }
+                return event
+            }
         }
     }
 }

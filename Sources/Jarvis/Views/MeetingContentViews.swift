@@ -38,17 +38,23 @@ struct MeetingView: View {
                     if let storageError = app.meetingStorageError {
                         MeetingStorageErrorBanner(message: storageError)
                     }
-                    if app.meetingRecords.isEmpty {
-                        MeetingEmptyState()
-                    } else {
-                        HStack(spacing: 0) {
-                            MeetingHistoryList(searchText: searchText)
-                                .frame(width: 246)
-                            Divider()
-                            MeetingDetailPane(record: selectedRecord)
+
+                    Group {
+                        if app.meetingRecords.isEmpty {
+                            MeetingEmptyState()
+                        } else {
+                            HStack(spacing: 0) {
+                                MeetingHistoryList(searchText: searchText)
+                                    .frame(width: 246)
+                                Divider()
+                                MeetingDetailPane(record: selectedRecord)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .jarvisFloatingPanel(cornerRadius: 16)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -224,8 +230,8 @@ private struct MeetingStorageErrorBanner: View {
         }
         .padding(12)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
         .padding(.top, 12)
+        .padding(.bottom, 12)
     }
 }
 
@@ -344,7 +350,6 @@ private struct MeetingHistoryList: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.automatic)
-        .background(Color.jarvisPanel.opacity(0.34))
         .confirmationDialog(
             "删除会议",
             isPresented: Binding(

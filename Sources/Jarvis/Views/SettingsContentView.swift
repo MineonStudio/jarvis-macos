@@ -353,6 +353,10 @@ struct PermissionSettingsCard: View {
                 }
 
                 JarvisPermissionList(cornerRadius: 12)
+
+                Text("屏幕录制和辅助功能授权后需要重启贾维斯才会生效。")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
     }

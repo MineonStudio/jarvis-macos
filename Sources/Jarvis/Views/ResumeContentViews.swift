@@ -241,8 +241,8 @@ private extension ResumeContentView {
         JarvisToolbarZoomControl(
             canZoomOut: previewScalePercentage > ResumeZoomScale.minimumPercentage,
             canZoomIn: previewScalePercentage < ResumeZoomScale.maximumPercentage,
-            zoomOutLabel: "缩小预览",
-            zoomInLabel: "放大预览",
+            zoomOutLabel: "缩小预览，每次 10%",
+            zoomInLabel: "放大预览，每次 10%",
             onZoomOut: { adjustPreviewScale(by: -ResumeZoomScale.stepPercentage) },
             onZoomIn: { adjustPreviewScale(by: ResumeZoomScale.stepPercentage) }
         )

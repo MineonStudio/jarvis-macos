@@ -39,6 +39,9 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                     .contentShape(Capsule())
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
+                // Pre-select on hover, matching the toolbar chips the other
+                // modules use.
+                .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
                 .help(title(item))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }

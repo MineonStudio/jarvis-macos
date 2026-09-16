@@ -83,6 +83,8 @@ enum JarvisMetrics {
     static let shellVerticalPadding: CGFloat = 10
     static let shellContentSpacing: CGFloat = 10
     static let cardRadius: CGFloat = 14
+    /// 模块外壳的圆角，比内部卡片略大一圈。
+    static let panelRadius: CGFloat = 16
     static let controlRadius: CGFloat = 10
     static let iconTintOpacity: CGFloat = 0.22
     static let segmentedItemHeight: CGFloat = 28
@@ -359,6 +361,18 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
     }
 }
 
+extension View {
+    /// 模块外壳：先裁圆角再铺面板底色。
+    ///
+    /// 这段组合原本在六处逐字重复，圆角值 16 也散在各处。网页模块是**例外**，
+    /// 它不能裁剪（见 `JarvisWebPlatformViews` 的说明），所以只取
+    /// `JarvisMetrics.panelRadius` 而不用这个 modifier。
+    func jarvisModulePanel() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: JarvisMetrics.panelRadius, style: .continuous))
+            .jarvisFloatingPanel(cornerRadius: JarvisMetrics.panelRadius)
+    }
+}
+
 struct JarvisFloatingPanelModifier: ViewModifier {
     let cornerRadius: CGFloat
 
@@ -419,6 +433,68 @@ extension View {
             in: shape,
             interactive: interactive
         )
+    }
+}
+
+/// 历史网格卡片的骨架：悬停缩放、圆角裁剪、选中描边和「已选中」徽标。
+///
+/// 剪贴板和截图两张卡片原本各写一份完全一样的外壳，唯一的差别是内容的对齐方式。
+struct HistoryCardChrome<Preview: View>: View {
+    let preview: Preview
+    let width: CGFloat
+    let height: CGFloat
+    let isSelected: Bool
+    var alignment: Alignment = .center
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    var body: some View {
+        ZStack {
+            preview
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .scaleEffect(
+                    isHovered && !reduceMotion
+                        ? HistoryGridMetrics.clipboardPreviewHoverScale
+                        : 1
+                )
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                    value: isHovered
+                )
+        }
+        .frame(width: width, height: height, alignment: alignment)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
+        .jarvisContentSurface(cornerRadius: HistoryGridMetrics.clipboardCornerRadius)
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+            .stroke(
+                isSelected ? Color.accentColor : .clear,
+                lineWidth: isSelected ? 2 : 0
+            )
+            .allowsHitTesting(false)
+        }
+        .overlay(alignment: .topLeading) {
+            if isSelected {
+                Label("已选中", systemImage: "checkmark.circle.fill")
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.accentColor.opacity(0.92), in: Capsule())
+                    .padding(8)
+                    .accessibilityHidden(true)
+            }
+        }
+        .onHover { isHovered = $0 }
     }
 }
 

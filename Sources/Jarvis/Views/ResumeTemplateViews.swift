@@ -20,8 +20,7 @@ struct ResumeTemplateSelectionView: View {
                 .padding(HistoryGridMetrics.historyPanelInset)
                 .frame(minHeight: max(proxy.size.height, 430), alignment: .topLeading)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .jarvisFloatingPanel(cornerRadius: 16)
+            .jarvisModulePanel()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.jarvisBackground)

@@ -310,8 +310,9 @@ struct JarvisWebPlatformBrowserPage: View {
         // view; a SwiftUI clip makes every frame — including each keystroke —
         // composite the whole page through a mask, which is what made typing
         // in these two modules stutter. `JarvisFloatingPanelModifier` supplies
-        // the panel fill, so no separate background is needed either.
-        .jarvisFloatingPanel(cornerRadius: 16)
+        // the panel fill, so no separate background is needed either. Do not
+        // switch this to `jarvisModulePanel()`: that would clip again.
+        .jarvisFloatingPanel(cornerRadius: JarvisMetrics.panelRadius)
     }
 }
 

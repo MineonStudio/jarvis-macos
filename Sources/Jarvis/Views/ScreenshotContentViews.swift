@@ -35,8 +35,7 @@ struct ScreenshotView: View {
                     .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
                     .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
+                .jarvisModulePanel()
             }
         )
     }
@@ -267,7 +266,6 @@ struct ScreenshotHistoryCard: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
-    @State private var isHovered = false
 
     private var thumbnailCacheKey: String {
         "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
@@ -338,55 +336,12 @@ struct ScreenshotHistoryCard: View {
     }
 
     private var cardBody: some View {
-        ZStack {
-            previewArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .scaleEffect(
-                    isHovered && !reduceMotion
-                        ? HistoryGridMetrics.clipboardPreviewHoverScale
-                        : 1
-                )
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                    value: isHovered
-                )
-        }
-        .frame(
+        HistoryCardChrome(
+            preview: previewArea,
             width: gridZoom.cardWidth,
             height: gridZoom.cardHeight,
-            alignment: .center
+            isSelected: isSelected
         )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-        )
-        .jarvisContentSurface(cornerRadius: HistoryGridMetrics.clipboardCornerRadius)
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-            .stroke(
-                isSelected ? Color.accentColor : .clear,
-                lineWidth: isSelected ? 2 : 0
-            )
-            .allowsHitTesting(false)
-        }
-        .overlay(alignment: .topLeading) {
-            if isSelected {
-                Label("已选中", systemImage: "checkmark.circle.fill")
-                    .font(JarvisTypography.captionEmphasis)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.92), in: Capsule())
-                    .padding(8)
-                    .accessibilityHidden(true)
-            }
-        }
-        .onHover { isHovered = $0 }
     }
 
     var body: some View {

@@ -53,8 +53,7 @@ struct MeetingView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .jarvisFloatingPanel(cornerRadius: 16)
+                    .jarvisModulePanel()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

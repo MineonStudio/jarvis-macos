@@ -180,8 +180,7 @@ struct WallpaperView: View {
                         }
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
+                .jarvisModulePanel()
             }
         )
         .confirmationDialog(

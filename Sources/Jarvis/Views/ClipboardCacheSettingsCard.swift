@@ -21,9 +21,9 @@ struct ClipboardCacheSettingsCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("缓存文件夹")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(JarvisTypography.sectionLabel)
                         Text(app.clipboardCacheDirectoryURL.path)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(JarvisTypography.microMonospaced)
                             .foregroundStyle(Color.jarvisTextSecondary)
                             .lineLimit(2)
                             .truncationMode(.middle)
@@ -40,10 +40,10 @@ struct ClipboardCacheSettingsCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("缓存空间上限")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(JarvisTypography.sectionLabel)
                         Spacer()
                         Text(capacityDescription(app.clipboardCacheMaximumBytes))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(JarvisTypography.monospacedSmall)
                             .foregroundStyle(Color.jarvisTextSecondary)
                             .contentTransition(.numericText())
                             .animation(
@@ -78,10 +78,10 @@ struct ClipboardCacheSettingsCard: View {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
                         Text("当前占用")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(JarvisTypography.sectionLabel)
                         Spacer()
                         Text("\(byteDescription(app.clipboardCacheUsage.usedBytes)) / \(capacityDescription(app.clipboardCacheUsage.capacityBytes))")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(JarvisTypography.monospacedSmall)
                     }
                     GeometryReader { proxy in
                         let usage = app.clipboardCacheUsage
@@ -103,7 +103,7 @@ struct ClipboardCacheSettingsCard: View {
                     }
                     .frame(height: 8)
                     Text("已保存 \(app.clipboardCacheUsage.fileCount) 个缓存文件")
-                        .font(.system(size: 10))
+                        .font(JarvisTypography.micro)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .contentTransition(.numericText())
                         .animation(
@@ -117,7 +117,7 @@ struct ClipboardCacheSettingsCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 14) {
                         Text("开启自动清理")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(JarvisTypography.sectionLabel)
                         Spacer()
                         JarvisDropdownMenu(
                             title: app.clipboardCacheAutoCleanupPeriod.title,

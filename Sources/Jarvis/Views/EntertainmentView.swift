@@ -73,7 +73,7 @@ struct EntertainmentPlatformIcon: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             } else {
                 Image(systemName: platform.systemImage)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(JarvisTypography.sectionLabel)
                     .foregroundStyle(Color.secondary)
             }
         }

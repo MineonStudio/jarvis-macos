@@ -53,6 +53,13 @@ enum JarvisTypography {
     static let captionEmphasis = Font.system(size: 12, weight: .medium)
     static let monospaced = Font.system(size: 12, weight: .medium, design: .monospaced)
     static let badge = Font.system(size: 11, weight: .bold, design: .rounded)
+    /// 小节的标题字。比 caption 重一档，用来说明下面那一组控件是什么。
+    static let sectionLabel = Font.system(size: 12, weight: .semibold)
+    /// 更小一档的辅助文字，用于路径、计数这类次要信息。
+    static let micro = Font.system(size: 10)
+    static let microMonospaced = Font.system(size: 10, design: .monospaced)
+    /// 数值读数：等宽，好让数字变化时不跳动。
+    static let monospacedSmall = Font.system(size: 11, weight: .medium, design: .monospaced)
 }
 
 /// Uses SwiftUI's presentation-level appearance API with the current system

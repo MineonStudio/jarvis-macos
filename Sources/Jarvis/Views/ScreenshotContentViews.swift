@@ -55,7 +55,7 @@ struct ScreenshotHistoryActionToolbar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "eye",
                 help: "查看",
                 isEnabled: selectedItem != nil
@@ -63,7 +63,7 @@ struct ScreenshotHistoryActionToolbar: View {
                 guard let selectedItem else { return }
                 app.showScreenshotHistoryPreview(selectedItem)
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "pencil",
                 help: "编辑",
                 isEnabled: selectedItem != nil
@@ -71,7 +71,7 @@ struct ScreenshotHistoryActionToolbar: View {
                 guard let selectedItem else { return }
                 app.editScreenshotHistory(selectedItem)
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "doc.on.doc",
                 help: "复制",
                 isEnabled: selectedItem != nil
@@ -79,7 +79,7 @@ struct ScreenshotHistoryActionToolbar: View {
                 guard let selectedItem else { return }
                 app.copyScreenshotHistory(selectedItem)
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "trash",
                 help: "删除",
                 tint: .red.opacity(0.82),
@@ -104,29 +104,6 @@ struct ScreenshotHistoryActionToolbar: View {
         } message: {
             Text("删除后无法恢复。")
         }
-    }
-
-    private func actionButton(
-        systemName: String,
-        help: String,
-        tint: Color = .secondary,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
-                .foregroundStyle(tint)
-        }
-        .buttonStyle(JarvisToolbarIconButtonStyle())
-        .opacity(isEnabled ? 1 : 0.38)
-        .disabled(!isEnabled)
-        .accessibilityLabel(help)
-        .jarvisHoverFeedback(
-            in: Circle(),
-            scale: 1.06
-        )
-        .help(help)
     }
 }
 

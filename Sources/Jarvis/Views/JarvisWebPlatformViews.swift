@@ -63,27 +63,27 @@ struct JarvisWebPlatformActionCluster<DownloadPopover: View>: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            browserControlButton(
+            JarvisToolbarIconButton(
                 systemName: "house",
-                action: controller.goHome,
-                help: "主页"
+                help: "主页",
+                action: controller.goHome
             )
-            browserControlButton(
+            JarvisToolbarIconButton(
                 systemName: "chevron.left",
-                action: controller.goBack,
-                isDisabled: !controller.canGoBack,
-                help: "后退"
+                help: "后退",
+                isEnabled: controller.canGoBack,
+                action: controller.goBack
             )
-            browserControlButton(
+            JarvisToolbarIconButton(
                 systemName: "chevron.right",
-                action: controller.goForward,
-                isDisabled: !controller.canGoForward,
-                help: "前进"
+                help: "前进",
+                isEnabled: controller.canGoForward,
+                action: controller.goForward
             )
-            browserControlButton(
+            JarvisToolbarIconButton(
                 systemName: controller.isLoading ? "xmark" : "arrow.clockwise",
-                action: controller.reloadOrStop,
-                help: controller.isLoading ? "停止加载" : "刷新"
+                help: controller.isLoading ? "停止加载" : "刷新",
+                action: controller.reloadOrStop
             )
             JarvisWebPlatformDownloadButton(
                 activeDownloadCount: activeDownloadCount,
@@ -100,24 +100,6 @@ struct JarvisWebPlatformActionCluster<DownloadPopover: View>: View {
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: controller.isLoading
         )
-    }
-
-    private func browserControlButton(
-        systemName: String,
-        action: @escaping () -> Void,
-        isDisabled: Bool = false,
-        help: String
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
-        }
-        .buttonStyle(JarvisToolbarIconButtonStyle())
-        .foregroundStyle(Color.secondary)
-        .opacity(isDisabled ? 0.38 : 1)
-        .disabled(isDisabled)
-        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
     }
 }
 

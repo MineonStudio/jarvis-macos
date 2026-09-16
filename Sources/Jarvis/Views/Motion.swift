@@ -71,6 +71,32 @@ struct JarvisToolbarIconButtonStyle: ButtonStyle {
     }
 }
 
+/// 工具栏上的图标按钮。
+///
+/// 截图、剪贴板、会议和网页四个模块原本各写一份同样的私有 helper，四处已经开始
+/// 分叉——网页那份漏了无障碍标签，读屏软件只会念出图标名。
+struct JarvisToolbarIconButton: View {
+    let systemName: String
+    let help: String
+    var tint: Color = .secondary
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
+                .foregroundStyle(tint)
+        }
+        .buttonStyle(JarvisToolbarIconButtonStyle())
+        .opacity(isEnabled ? 1 : 0.38)
+        .disabled(!isEnabled)
+        .accessibilityLabel(help)
+        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
+        .help(help)
+    }
+}
+
 struct JarvisHoverModifier<HoverShape: Shape>: ViewModifier {
     let shape: HoverShape
     let scale: CGFloat

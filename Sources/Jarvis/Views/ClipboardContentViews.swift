@@ -291,7 +291,7 @@ struct ClipboardHistoryActionToolbar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "eye",
                 help: "查看",
                 isEnabled: canPreview
@@ -303,7 +303,7 @@ struct ClipboardHistoryActionToolbar: View {
                     app.showClipboardMediaPreview(selectedItem)
                 }
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "doc.on.doc",
                 help: "复制",
                 isEnabled: selectedItem != nil
@@ -315,7 +315,7 @@ struct ClipboardHistoryActionToolbar: View {
                     app.copyClipboard(selectedItem)
                 }
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: selectedItem?.isPinned == true ? "star.slash" : "star",
                 help: selectedItem?.isPinned == true ? "取消收藏" : "收藏",
                 tint: selectedItem?.isPinned == true ? .yellow : .secondary,
@@ -324,7 +324,7 @@ struct ClipboardHistoryActionToolbar: View {
                 guard let selectedItem else { return }
                 app.toggleClipboardPin(selectedItem)
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "trash",
                 help: "删除",
                 tint: .red.opacity(0.82),
@@ -377,26 +377,6 @@ struct ClipboardHistoryActionToolbar: View {
         } message: {
             Text("只有在你主动确认后，才会打开原始内容预览。")
         }
-    }
-
-    private func actionButton(
-        systemName: String,
-        help: String,
-        tint: Color = .secondary,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
-                .foregroundStyle(tint)
-        }
-        .buttonStyle(JarvisToolbarIconButtonStyle())
-        .opacity(isEnabled ? 1 : 0.38)
-        .disabled(!isEnabled)
-        .accessibilityLabel(help)
-        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
     }
 }
 

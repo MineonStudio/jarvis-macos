@@ -329,11 +329,6 @@ extension ScreenshotEditorModel {
             || selectedTool == .text
     }
 
-    var selectedAnnotation: ScreenshotAnnotation? {
-        guard let selectedAnnotationID else { return nil }
-        return annotations.first { $0.id == selectedAnnotationID }
-    }
-
     func selectTool(_ tool: ScreenshotTool?) {
         selectedTool = tool
         translationMode = false
@@ -565,36 +560,6 @@ extension ScreenshotEditorModel {
     func finalPNGData() -> Data {
         guard hasVisualEdits else { return originalOutputData }
         return renderedPNGData() ?? originalOutputData
-    }
-
-    @discardableResult
-    func replaceBaseImage(with data: Data) -> Bool {
-        guard let image = NSImage(data: data),
-              image.size.width > 0,
-              image.size.height > 0 else { return false }
-        originalImage = image
-        originalData = data
-        if let outputRect {
-            let capture = ScreenshotCapture(
-                data: data,
-                screenFrame: CGRect(origin: .zero, size: canvasSize)
-            )
-            originalOutputData = (try? ScreenshotService().crop(
-                capture,
-                to: outputRect,
-                on: CGRect(origin: .zero, size: canvasSize)
-            ).data) ?? data
-        } else {
-            originalOutputData = data
-        }
-        annotations.removeAll()
-        undoStack.removeAll()
-        redoStack.removeAll()
-        selectedAnnotationID = nil
-        clearTranslation()
-        blurredImageCache = nil
-        pixelatedImageCache = nil
-        return true
     }
 
     func renderedPNGData() -> Data? {

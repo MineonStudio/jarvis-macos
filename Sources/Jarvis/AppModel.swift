@@ -396,16 +396,6 @@ final class AppModel {
         )
     }
 
-    func loadLatestScreenshotIfNeeded() -> Data? {
-        if let latestScreenshotData {
-            return latestScreenshotData
-        }
-        guard let data = screenshotCacheStore.load() else { return nil }
-        latestScreenshotData = data
-        statusMessage = "已恢复上次缓存的截图"
-        return data
-    }
-
     deinit {
         toastDismissTask?.cancel()
         startupTask?.cancel()
@@ -530,24 +520,6 @@ extension AppModel {
         )
     }
 
-    func saveScreenshotHistory(
-        _ item: ScreenshotHistoryItem,
-        presentingWindow: NSWindow? = nil
-    ) {
-        guard let data = screenshotHistoryStore.data(for: item) else {
-            showToast("历史截图文件不存在")
-            reloadScreenshotHistory()
-            return
-        }
-        presentSavePanel(
-            for: data,
-            historyID: nil,
-            finalizesHistory: false,
-            successMessage: "截图已保存",
-            presentingWindow: presentingWindow
-        )
-    }
-
     func copyScreenshotHistory(_ item: ScreenshotHistoryItem) {
         guard let data = screenshotHistoryStore.data(for: item) else {
             showToast("历史截图文件不存在")
@@ -625,15 +597,6 @@ extension AppModel {
         }
     }
 
-    func clearScreenshotCache() {
-        guard screenshotCacheStore.clear() else {
-            showToast("截图缓存清除失败")
-            return
-        }
-        latestScreenshotData = nil
-        showToast("截图缓存已清除")
-    }
-
     func checkForUpdates() {
         guard updateState != .checking else { return }
         updateState = .checking
@@ -681,14 +644,6 @@ extension AppModel {
         }
     }
 
-    func openLatestRelease() {
-        if case let .available(release) = updateState {
-            NSWorkspace.shared.open(release.releaseURL)
-        } else {
-            NSWorkspace.shared.open(JarvisAppVersion.releasesURL)
-        }
-    }
-
     @discardableResult
     private func setLatestScreenshot(_ data: Data) -> Bool {
         latestScreenshotData = data
@@ -731,10 +686,6 @@ extension AppModel {
 
     func screenshotHistoryFileURL(for item: ScreenshotHistoryItem) -> URL {
         screenshotHistoryStore.fileURL(for: item)
-    }
-
-    func screenshotHistoryFileSize(for item: ScreenshotHistoryItem) -> Int64? {
-        screenshotHistoryStore.fileSize(for: item)
     }
 
     func showScreenshotHistoryPreview(_ item: ScreenshotHistoryItem) {

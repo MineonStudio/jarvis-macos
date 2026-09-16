@@ -96,15 +96,6 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             ?? directoryURL.appendingPathComponent(".invalid-history-file", isDirectory: false)
     }
 
-    func fileSize(for item: ScreenshotHistoryItem) -> Int64? {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL(for: item).path),
-              let fileSize = attributes[.size] as? NSNumber
-        else {
-            return nil
-        }
-        return fileSize.int64Value
-    }
-
     @discardableResult
     func add(data: Data, date: Date = Date()) -> ScreenshotHistoryItem? {
         guard !data.isEmpty else { return nil }

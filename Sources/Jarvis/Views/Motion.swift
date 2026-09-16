@@ -10,7 +10,6 @@ enum JarvisMotion {
     static let content = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.03)
     static let accordion = Animation.easeInOut(duration: 0.22)
     static let feedback = Animation.spring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.03)
-    static let pageTransition = Animation.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.05)
     static let selectionPillTint = Color.accentColor.opacity(0.82)
     static let hoverPillTint = Color.primary.opacity(0.10)
 
@@ -96,71 +95,12 @@ struct JarvisHoverModifier<HoverShape: Shape>: ViewModifier {
     }
 }
 
-struct JarvisHoverHighlightModifier<HoverShape: Shape>: ViewModifier {
-    let shape: HoverShape
-    let scale: CGFloat
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                shape
-                    .fill(isHovered ? JarvisMotion.hoverPillTint : .clear)
-                    .allowsHitTesting(false)
-            }
-            .scaleEffect(isHovered && !reduceMotion ? scale : 1)
-            .zIndex(isHovered ? 1 : 0)
-            .animation(
-                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                value: isHovered
-            )
-            .onHover { isHovered = $0 }
-    }
-}
-
-struct JarvisHoverPanelModifier: ViewModifier {
-    let scale: CGFloat
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-
-    private var isScaled: Bool {
-        isHovered && !reduceMotion
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(isScaled ? scale : 1)
-            .zIndex(isHovered ? 1 : 0)
-            .animation(
-                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                value: isHovered
-            )
-            .onHover { isHovered = $0 }
-    }
-}
-
 extension View {
     func jarvisHoverFeedback(
         in shape: some Shape,
         scale: CGFloat = 1.01
     ) -> some View {
         modifier(JarvisHoverModifier(shape: shape, scale: scale))
-    }
-
-    func jarvisHoverHighlight(
-        in shape: some Shape,
-        scale: CGFloat = 1.01
-    ) -> some View {
-        modifier(JarvisHoverHighlightModifier(shape: shape, scale: scale))
-    }
-
-    func jarvisHoverPanelFeedback(
-        scale: CGFloat = 1.03
-    ) -> some View {
-        modifier(JarvisHoverPanelModifier(scale: scale))
     }
 }
 

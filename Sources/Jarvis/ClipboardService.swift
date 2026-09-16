@@ -307,22 +307,6 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    var sizeDescription: String? {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.includesCount = true
-        if let fileSize {
-            return formatter.string(fromByteCount: fileSize)
-        }
-        if let text,
-           let byteCount = text.data(using: .utf8)?.count
-        {
-            return formatter.string(fromByteCount: Int64(byteCount))
-        }
-        return nil
-    }
-
     var shortTimestamp: String {
         JarvisHistoryDateFormatting.string(from: createdAt)
     }
@@ -633,15 +617,6 @@ final class ClipboardService: @unchecked Sendable {
         guard fileSize <= ClipboardLimits.maximumStoredFileSize else { return nil }
         prepareCacheSpace?(fileSize)
         return cacheStore.storeFile(sourceURL, fileSize: fileSize)
-    }
-
-    private func saveData(_ data: Data, fileExtension: String) -> String? {
-        prepareCacheSpace?(Int64(data.count))
-        return cacheStore.storeData(data, fileExtension: fileExtension)
-    }
-
-    private func digest(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 

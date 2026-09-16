@@ -176,10 +176,6 @@ extension AppModel {
         clipboardPanelController.show(app: self)
     }
 
-    func closeClipboardPanel() {
-        clipboardPanelController.close()
-    }
-
     func toggleClipboardPin(_ item: ClipboardItem) {
         guard let index = clipboardItems.firstIndex(where: { $0.id == item.id }) else { return }
         clipboardItems[index].isPinned.toggle()
@@ -198,22 +194,6 @@ extension AppModel {
         showToast(clipboardItems.first(where: { $0.id == item.id })?.isPinned == true
             ? "已收藏剪贴板内容"
             : "已取消收藏")
-    }
-
-    func revealClipboardItem(_ item: ClipboardItem) {
-        let path = item.kind == .image ? item.imagePath : item.filePath
-        guard let path, FileManager.default.fileExists(atPath: path) else {
-            JarvisLog.notice(
-                category: .clipboard,
-                event: "history.reveal.failed",
-                result: "contentUnavailable",
-                fields: ["kind": item.kind.rawValue]
-            )
-            showToast("本地文件已不可用")
-            return
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-        showToast("已在 Finder 中显示")
     }
 
     @discardableResult
@@ -264,30 +244,6 @@ extension AppModel {
             fields: ["recordCount": String(clipboardItems.count)]
         )
         showToast("已删除剪贴板记录")
-    }
-
-    func clearClipboardHistory() {
-        JarvisLog.notice(
-            category: .clipboard,
-            event: "history.clear.begin",
-            fields: ["recordCount": String(clipboardItems.count)]
-        )
-        _ = clipboardCacheStore.removeManagedFiles(
-            for: clipboardItems,
-            reason: "userClearHistory"
-        )
-        clipboardItems.removeAll()
-        if persistClipboardHistory() {
-            refreshClipboardCacheUsage()
-            JarvisLog.info(
-                category: .clipboard,
-                event: "history.clear.complete",
-                result: "success"
-            )
-            showToast("剪贴板历史已清空")
-        } else {
-            showToast("剪贴板历史清空后保存失败")
-        }
     }
 
     func refreshClipboardCacheUsage() {

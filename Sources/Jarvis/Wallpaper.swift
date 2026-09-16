@@ -274,11 +274,6 @@ struct WallpaperItem: Codable, Equatable, Hashable, Identifiable {
     var isFavorite: Bool
     var localFileName: String?
 
-    var aspectRatio: Double {
-        guard width > 0, height > 0 else { return 16.0 / 10.0 }
-        return Double(width) / Double(height)
-    }
-
     var resolutionDescription: String {
         guard width > 0, height > 0 else { return "未知尺寸" }
         return "\(width) × \(height)"
@@ -1447,18 +1442,6 @@ final class WallpaperViewModel: ObservableObject {
             merged.isFavorite = saved.isFavorite
             merged.localFileName = saved.localFileName
             return merged
-        }
-    }
-}
-
-enum WallpaperSystemSettings {
-    static func open() {
-        let urls = [
-            "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension",
-            "x-apple.systempreferences:com.apple.preference.desktopscreeneffect"
-        ].compactMap(URL.init(string:))
-        for url in urls where NSWorkspace.shared.open(url) {
-            return
         }
     }
 }

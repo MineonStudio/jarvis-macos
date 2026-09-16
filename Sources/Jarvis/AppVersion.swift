@@ -5,9 +5,6 @@ import Foundation
 import Security
 
 enum JarvisAppVersion {
-    static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
-        ?? URL(fileURLWithPath: "/")
-
     private static let fallbackShortVersion = "1.3.3"
     private static let fallbackBuild = "330"
 

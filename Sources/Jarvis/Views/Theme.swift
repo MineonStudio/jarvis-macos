@@ -53,7 +53,6 @@ enum JarvisTypography {
     static let captionEmphasis = Font.system(size: 12, weight: .medium)
     static let monospaced = Font.system(size: 12, weight: .medium, design: .monospaced)
     static let badge = Font.system(size: 11, weight: .bold, design: .rounded)
-    static let metricValue = Font.system(size: 22, weight: .semibold, design: .rounded)
 }
 
 /// Uses SwiftUI's presentation-level appearance API with the current system
@@ -102,7 +101,6 @@ enum JarvisMetrics {
 /// 32-point row, use an 8-point rhythm, and do not draw a parent surface.
 enum JarvisToolbarMetrics {
     static let controlSize: CGFloat = 32
-    static let controlSpacing: CGFloat = 8
     static let iconSize: CGFloat = 13
     static let searchFieldWidth: CGFloat = 240
 }
@@ -731,16 +729,6 @@ struct JarvisToolbarSearchField: View {
 }
 
 /// Shared capsule surface for compact text-entry controls.
-struct JarvisCapsuleInputFieldModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(.leading, 12)
-            .padding(.trailing, 4)
-            .frame(minHeight: JarvisToolbarMetrics.controlSize)
-            .jarvisGlass(in: Capsule(), interactive: false)
-    }
-}
-
 /// Shared content-area shell for every module in the main window.
 ///
 /// The shell owns the window toolbar and the body inset. Modules provide only
@@ -775,21 +763,6 @@ struct JarvisContentArea<LeadingToolbar: ToolbarContent, TrailingToolbar: Toolba
                 ToolbarSpacer(.flexible, placement: .automatic)
                 trailingToolbar
             }
-    }
-}
-
-struct JarvisPageTopBar: View {
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(JarvisTypography.cardTitle)
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -871,16 +844,6 @@ struct JarvisInlineLoadingState: View {
     }
 }
 
-struct SectionHeader: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(JarvisTypography.pageTitle)
-            .foregroundStyle(.primary)
-    }
-}
-
 /// Native macOS 26 Liquid Glass wrapper shared by cards and controls.
 struct JarvisGlassModifier: ViewModifier {
     let tint: Color?
@@ -943,10 +906,6 @@ struct JarvisFloatingPanelModifier: ViewModifier {
 extension View {
     func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {
         modifier(JarvisThemeModifier(theme: theme, systemColorScheme: systemColorScheme))
-    }
-
-    func jarvisCapsuleInputField() -> some View {
-        modifier(JarvisCapsuleInputFieldModifier())
     }
 
     func jarvisGlass(

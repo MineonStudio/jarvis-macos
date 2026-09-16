@@ -134,8 +134,14 @@ struct AIAPISettingsCard: View {
                             if isLocked {
                                 apiReadOnlyValue(app.aiAPIKeyMask, placeholder: "输入 API Key")
                             } else {
-                                SecureField("输入 API Key", text: $apiKey)
-                                    .textFieldStyle(.plain)
+                                // Show the stored key as a mask so an existing
+                                // key is visible while editing; saving with an
+                                // empty field keeps it.
+                                SecureField(
+                                    app.aiAPIKeyMask.isEmpty ? "输入 API Key" : app.aiAPIKeyMask,
+                                    text: $apiKey
+                                )
+                                .textFieldStyle(.plain)
                             }
                         }
                     }
@@ -269,7 +275,9 @@ struct AIAPISettingsCard: View {
                     selection.wrappedValue = selectedValue
                 }
             )
-            .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
+            // The menu sizes itself to its content, so a plain
+            // `maxWidth: .infinity` frame centers it inside the control box.
+            .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
         }
     }
 

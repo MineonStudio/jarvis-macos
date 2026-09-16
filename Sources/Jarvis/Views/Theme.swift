@@ -120,9 +120,32 @@ private enum JarvisDropdownMetrics {
     static let menuEdgePadding: CGFloat = JarvisMetrics.segmentedControlPadding
     static let hoverScale: CGFloat = 1.01
     static let horizontalPadding: CGFloat = 10
-    static let arrowWidth: CGFloat = 15
+    static let arrowSpacing: CGFloat = 5
+    static let arrowPointSize: CGFloat = 10
 
-    static func width(for titles: [String], includesArrow: Bool = true) -> CGFloat {
+    /// Width of the trigger's chevron at `arrowPointSize`. The trigger
+    /// reserves the symbol's real width plus its spacing; a hand-picked
+    /// fifteen points came up a point short, which clipped the longest title
+    /// in a control — "超过 1 个月" lost its last character.
+    static let arrowWidth: CGFloat = {
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: arrowPointSize,
+            weight: .semibold
+        )
+        let symbolWidth = NSImage(
+            systemSymbolName: "chevron.down",
+            accessibilityDescription: nil
+        )?
+            .withSymbolConfiguration(configuration)?
+            .size.width
+        return symbolWidth ?? 11
+    }()
+
+    static func width(
+        for titles: [String],
+        includesArrow: Bool = true,
+        maximumWidth: CGFloat = maximumControlWidth
+    ) -> CGFloat {
         let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)
         let widestTitle = titles
             .map { title in
@@ -132,9 +155,9 @@ private enum JarvisDropdownMetrics {
         let idealWidth = ceil(
             widestTitle
                 + (horizontalPadding * 2)
-                + (includesArrow ? arrowWidth : 0)
+                + (includesArrow ? arrowSpacing + arrowWidth : 0)
         )
-        return min(max(idealWidth, minimumControlWidth), maximumControlWidth)
+        return min(max(idealWidth, minimumControlWidth), maximumWidth)
     }
 }
 
@@ -151,6 +174,7 @@ struct JarvisDropdownMenu: View {
     let accessibilityLabel: String
     let help: String
     let controlWidth: CGFloat?
+    let maximumControlWidth: CGFloat
     let showsChevron: Bool
     let usesLiquidGlass: Bool
     let isEnabled: Bool
@@ -164,6 +188,7 @@ struct JarvisDropdownMenu: View {
         accessibilityLabel: String,
         help: String,
         controlWidth: CGFloat? = nil,
+        maximumControlWidth: CGFloat = JarvisDropdownMetrics.maximumControlWidth,
         showsChevron: Bool = true,
         usesLiquidGlass: Bool = false,
         isEnabled: Bool = true,
@@ -175,6 +200,7 @@ struct JarvisDropdownMenu: View {
         self.accessibilityLabel = accessibilityLabel
         self.help = help
         self.controlWidth = controlWidth
+        self.maximumControlWidth = maximumControlWidth
         self.showsChevron = showsChevron
         self.usesLiquidGlass = usesLiquidGlass
         self.isEnabled = isEnabled
@@ -184,7 +210,8 @@ struct JarvisDropdownMenu: View {
     private var resolvedControlWidth: CGFloat {
         controlWidth ?? JarvisDropdownMetrics.width(
             for: [title] + options.map(\.title),
-            includesArrow: showsChevron
+            includesArrow: showsChevron,
+            maximumWidth: maximumControlWidth
         )
     }
 
@@ -194,13 +221,13 @@ struct JarvisDropdownMenu: View {
         Button {
             isPresented.toggle()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: JarvisDropdownMetrics.arrowSpacing) {
                 Text(title)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if showsChevron {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: JarvisDropdownMetrics.arrowPointSize, weight: .semibold))
                         .accessibilityHidden(true)
                 }
             }

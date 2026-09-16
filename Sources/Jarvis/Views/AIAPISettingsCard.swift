@@ -39,14 +39,6 @@ struct AIAPISettingsCard: View {
             ) != nil
     }
 
-    private var baseURLOptions: [String] {
-        var options = provider.baseURLs.map(\.url)
-        if !baseURL.isEmpty, !options.contains(baseURL) {
-            options.insert(baseURL, at: 0)
-        }
-        return options
-    }
-
     private var modelOptions: [String] {
         if model.isEmpty {
             return app.availableAIModels
@@ -83,20 +75,11 @@ struct AIAPISettingsCard: View {
 
                     apiField(title: "base_url") {
                         apiControl {
-                            if provider == .custom {
-                                if isLocked {
-                                    apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容 base_url")
-                                } else {
-                                    TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
-                                        .textFieldStyle(.plain)
-                                }
+                            if isLocked {
+                                apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容 base_url")
                             } else {
-                                apiMenu(
-                                    title: "base_url",
-                                    selection: $baseURL,
-                                    options: baseURLOptions,
-                                    isDisabled: isLocked
-                                )
+                                TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
+                                    .textFieldStyle(.plain)
                             }
                         }
                     }
@@ -270,6 +253,9 @@ struct AIAPISettingsCard: View {
                 selectionID: options.contains(selection.wrappedValue) ? selection.wrappedValue : nil,
                 accessibilityLabel: title,
                 help: "选择\(title)",
+                // Fetched model identifiers run long; let the control grow
+                // past the toolbar cap so the selection stays readable.
+                maximumControlWidth: 480,
                 isEnabled: !isDisabled,
                 onSelect: { selectedValue in
                     selection.wrappedValue = selectedValue

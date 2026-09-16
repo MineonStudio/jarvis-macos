@@ -28,7 +28,9 @@
 curl -fsSL https://raw.githubusercontent.com/MineonStudio/jarvis-macos/dev/install.sh | zsh
 ```
 
-脚本会下载最新的 release、校验校验和、在本机生成一张自签名证书（"Jarvis Local Signing"，存在你的登录钥匙串里，不会离开这台 Mac），用它对 Jarvis.app 重新签名后安装到「应用程序」。这样做的好处是：**屏幕录制、辅助功能和钥匙串授权只需要给一次，之后自动更新不再失效**。
+脚本会下载最新的 release、校验校验和、在本机生成一张自签名证书（"Jarvis Local Signing"，存在你的登录钥匙串里，不会离开这台 Mac），把它加入本机信任设置，再用它对 Jarvis.app 重新签名后安装到「应用程序」。这样做的好处是：**屏幕录制、辅助功能和钥匙串授权只需要给一次，之后自动更新不再失效**。
+
+信任设置是这套方案的必要一步：钥匙串把「允许哪些 App 访问」存成代码要求，匹配时要评估证书链，未受信任的证书评估不通过，于是每次替换二进制都会重新询问——即使 TCC 那四项授权已经沿用。信任仅对本机生效，且只影响这张密钥签出的代码，而密钥从不离开这台 Mac。
 
 因为走 curl 而不是浏览器下载，安装包不会被加上 quarantine 标记，所以不会触发 Gatekeeper 拦截。`--uninstall` 可以连同证书一起卸载。
 

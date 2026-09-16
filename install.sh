@@ -69,8 +69,16 @@ quit_running_app_if_replacing() {
 if [[ "${UNINSTALL:-0}" == "1" ]]; then
   quit_running_app_if_replacing
   rm -rf "${INSTALL_DIR}/${APP_NAME}"
-  security delete-identity -c "$IDENTITY_NAME" >/dev/null 2>&1 \
-    || log "没有找到名为 ${IDENTITY_NAME} 的身份，跳过。"
+
+  UNINSTALL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-uninstall.XXXXXX")"
+  if security find-certificate -c "$IDENTITY_NAME" -p "$HOME/Library/Keychains/login.keychain-db" \
+      > "$UNINSTALL_DIR/identity.crt" 2>/dev/null; then
+    security remove-trusted-cert "$UNINSTALL_DIR/identity.crt" >/dev/null 2>&1 || true
+    security delete-identity -c "$IDENTITY_NAME" >/dev/null 2>&1 || true
+    log "已移除证书 ${IDENTITY_NAME} 及其信任设置。"
+  fi
+  rm -rf "$UNINSTALL_DIR"
+
   log "已移除 ${INSTALL_DIR}/${APP_NAME}"
   exit 0
 fi
@@ -146,6 +154,21 @@ else
     -T /usr/bin/codesign -T /usr/bin/security >/dev/null
   security find-identity -p codesigning | grep -qF "$IDENTITY_NAME" \
     || die "证书导入失败。"
+fi
+
+# Trusting the certificate is what makes grants survive. Keychain stores an
+# item's allowed apps as code requirements and has to evaluate the chain to
+# match one; with an untrusted certificate that evaluation fails, so macOS
+# falls back to asking again on every replacement even though TCC (which does
+# not check trust) keeps its grants. Trust is per-user and only affects code
+# signed by this key, which never leaves this Mac.
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
+  log "把证书加入信任设置（仅本机生效）…"
+  security find-certificate -c "$IDENTITY_NAME" -p "$HOME/Library/Keychains/login.keychain-db" \
+    > "$WORK_DIR/identity.crt"
+  security add-trusted-cert -r trustRoot -p codeSign \
+    -k "$HOME/Library/Keychains/login.keychain-db" "$WORK_DIR/identity.crt" >/dev/null 2>&1 \
+    || die "无法把证书加入信任设置。"
 fi
 
 cat > "$WORK_DIR/entitlements.plist" <<'PLIST'

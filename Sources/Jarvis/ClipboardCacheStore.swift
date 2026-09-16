@@ -846,3 +846,29 @@ private extension NSLock {
         return try body()
     }
 }
+
+/// 缓存容量的文字表述与比例。
+///
+/// 原本长在设置卡片里，视图层不该承担这个，而 `ClipboardCacheStore` 才是定义这些
+/// 容量含义的地方。
+enum ClipboardCacheFormatting {
+    static func byteDescription(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        return formatter.string(fromByteCount: bytes)
+    }
+
+    /// 容量上限用整 GB 表述更易读，最小档则固定写成 256 MB。
+    static func capacityDescription(_ bytes: Int64) -> String {
+        if bytes == ClipboardCacheStore.minimumMaximumBytes {
+            return "256 MB"
+        }
+        let gigabyte: Int64 = 1024 * 1024 * 1024
+        if bytes % gigabyte == 0 {
+            return "\(bytes / gigabyte) GB"
+        }
+        return byteDescription(bytes)
+    }
+}

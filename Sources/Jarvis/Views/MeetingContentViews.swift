@@ -53,8 +53,7 @@ struct MeetingView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .jarvisFloatingPanel(cornerRadius: 16)
+                    .jarvisModulePanel()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -245,7 +244,7 @@ private struct MeetingExportToolbar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            exportButton(
+            JarvisToolbarIconButton(
                 systemName: "doc.on.doc",
                 help: "复制纪要",
                 isEnabled: canExport
@@ -253,7 +252,7 @@ private struct MeetingExportToolbar: View {
                 guard let record else { return }
                 app.copyMeetingMarkdown(record)
             }
-            exportButton(
+            JarvisToolbarIconButton(
                 systemName: "square.and.arrow.up",
                 help: "导出 Markdown",
                 isEnabled: canExport
@@ -264,25 +263,6 @@ private struct MeetingExportToolbar: View {
         }
         .padding(4)
         .frame(height: JarvisToolbarMetrics.controlSize)
-    }
-
-    private func exportButton(
-        systemName: String,
-        help: String,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(JarvisToolbarIconButtonStyle())
-        .opacity(isEnabled ? 1 : 0.38)
-        .disabled(!isEnabled)
-        .accessibilityLabel(help)
-        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
     }
 }
 

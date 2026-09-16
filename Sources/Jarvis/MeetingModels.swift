@@ -142,15 +142,6 @@ struct MeetingModelAvailability: Equatable, Sendable {
     var isReady: Bool {
         speakerDiarizationReady && chineseTranscriptionReady
     }
-
-    var missingTitle: String {
-        switch (speakerDiarizationReady, chineseTranscriptionReady) {
-        case (false, false): "说话人识别和中文转写模型"
-        case (false, true): "说话人识别模型"
-        case (true, false): "中文转写模型"
-        case (true, true): ""
-        }
-    }
 }
 
 enum MeetingModelPreparationState: Equatable, Sendable {

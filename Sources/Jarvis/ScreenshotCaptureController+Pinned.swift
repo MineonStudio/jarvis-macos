@@ -193,6 +193,26 @@ extension ScreenshotCaptureController {
         item.editor.selectTool(nil)
     }
 
+    /// 把工具栏挪到新位置。
+    ///
+    /// 这个函数挂在 `editor.objectWillChange` 上，编辑器的每次变更都会走到它——拖动
+    /// 标注时就是每个鼠标事件一次。原本无条件 `setFrame(display: true)`：帧没变也会
+    /// 强制一次同步重绘，并且每次都写一遍 `@Published` 的 width，让整个 SwiftUI 工具栏
+    /// 重新排布一次。
+    private func applyToolbarFrame(
+        _ frame: NSRect,
+        to window: NSWindow,
+        updating layout: ScreenshotToolbarLayoutModel?
+    ) {
+        if window.frame != frame {
+            window.setFrame(frame, display: false, animate: false)
+            window.contentView?.frame = NSRect(origin: .zero, size: frame.size)
+        }
+        if let layout, layout.width != frame.width {
+            layout.width = frame.width
+        }
+    }
+
     private func resizePinnedToolbar(for item: PinnedScreenshotItem) {
         guard let toolbarWindow = item.toolbarWindow else { return }
         let frame = toolbarFrame(
@@ -206,9 +226,7 @@ extension ScreenshotCaptureController {
                 translationMode: item.editor.translationMode
             )
         )
-        toolbarWindow.setFrame(frame, display: true, animate: false)
-        toolbarWindow.contentView?.frame = NSRect(origin: .zero, size: frame.size)
-        item.toolbarLayout?.width = frame.width
+        applyToolbarFrame(frame, to: toolbarWindow, updating: item.toolbarLayout)
     }
 
     private func handlePinnedToolbarAction(
@@ -321,9 +339,7 @@ extension ScreenshotCaptureController {
                 translationMode: editor.translationMode
             )
         )
-        toolbarWindow.setFrame(frame, display: true, animate: false)
-        toolbarWindow.contentView?.frame = NSRect(origin: .zero, size: frame.size)
-        toolbarLayout?.width = frame.width
+        applyToolbarFrame(frame, to: toolbarWindow, updating: toolbarLayout)
     }
 
     func finishSelection(

@@ -20,8 +20,7 @@ struct ResumeTemplateSelectionView: View {
                 .padding(HistoryGridMetrics.historyPanelInset)
                 .frame(minHeight: max(proxy.size.height, 430), alignment: .topLeading)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .jarvisFloatingPanel(cornerRadius: 16)
+            .jarvisModulePanel()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.jarvisBackground)
@@ -276,46 +275,5 @@ private struct ResumeTemplateThumbnail: View {
                 .foregroundStyle(ResumePaperPalette.ink)
             miniLine(width: 86, color: ResumePaperPalette.muted.opacity(0.25))
         }
-    }
-}
-
-extension ResumeTemplate {
-    var previewDocument: ResumeDocument {
-        ResumeDocument(
-            title: "模板示例",
-            template: self,
-            basicInfo: ResumeBasicInfo(
-                name: "林知远",
-                headline: "产品经理",
-                email: "lin.zhiyuan@example.com",
-                location: "上海",
-                jobStatus: "在职",
-                workYears: "6年经验"
-            ),
-            education: [
-                ResumeEducation(
-                    school: "上海交通大学",
-                    degree: "硕士",
-                    major: "计算机科学",
-                    period: "2015 — 2018"
-                )
-            ],
-            experience: [
-                ResumeExperience(
-                    company: "星云科技",
-                    role: "高级产品经理",
-                    period: "2021 — 至今"
-                )
-            ],
-            skills: ["产品规划", "用户研究", "数据分析"],
-            projects: [
-                ResumeProject(
-                    name: "智能工单平台",
-                    period: "2022 — 2023",
-                    summary: "面向企业客户的协作平台，支持问题受理、自动分派与服务分析。",
-                    bullets: ["推动项目上线并持续迭代"]
-                )
-            ]
-        )
     }
 }

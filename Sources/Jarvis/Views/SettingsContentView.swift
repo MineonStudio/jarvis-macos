@@ -434,41 +434,6 @@ struct JarvisThemePicker: View {
     }
 }
 
-struct QuickActionButton: View {
-    let title: String
-    let icon: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 30, height: 30)
-                    .jarvisIconGlass(tint: tint, in: Circle())
-                Text(title).font(JarvisTypography.bodyEmphasis)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .jarvisContentSurface(cornerRadius: 13)
-            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.86))
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .jarvisHoverFeedback(
-            in: RoundedRectangle(cornerRadius: 13, style: .continuous),
-            scale: 1.008
-        )
-    }
-}
-
 struct JarvisToast: View {
     let message: String
 

@@ -144,12 +144,18 @@ enum SensitiveContentDetector {
 }
 
 enum JarvisHistoryDateFormatting {
-    static func string(from date: Date) -> String {
+    /// 历史卡片每次重绘都要格式化时间戳，`DateFormatter` 的构造不必每张卡来一次。
+    /// 配置完成后只读，`DateFormatter` 在 macOS 10.9 之后对格式化是线程安全的。
+    private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyy/MM/dd HH:mm"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        formatter.string(from: date)
     }
 }
 
@@ -305,22 +311,6 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
             guard let filePath else { return false }
             return FileManager.default.fileExists(atPath: filePath)
         }
-    }
-
-    var sizeDescription: String? {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.includesCount = true
-        if let fileSize {
-            return formatter.string(fromByteCount: fileSize)
-        }
-        if let text,
-           let byteCount = text.data(using: .utf8)?.count
-        {
-            return formatter.string(fromByteCount: Int64(byteCount))
-        }
-        return nil
     }
 
     var shortTimestamp: String {
@@ -634,116 +624,37 @@ final class ClipboardService: @unchecked Sendable {
         prepareCacheSpace?(fileSize)
         return cacheStore.storeFile(sourceURL, fileSize: fileSize)
     }
-
-    private func saveData(_ data: Data, fileExtension: String) -> String? {
-        prepareCacheSpace?(Int64(data.count))
-        return cacheStore.storeData(data, fileExtension: fileExtension)
-    }
-
-    private func digest(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
 }
 
-final class ClipboardStore {
-    private let fileURL: URL
+final class ClipboardStore: @unchecked Sendable {
+    private let file: JarvisJSONFile<[ClipboardItem]>
 
     init() {
-        let support = (try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? FileManager.default.temporaryDirectory
-        let directory = support.appendingPathComponent(
-            JarvisAppIdentity.dataDirectoryName,
-            isDirectory: true
+        file = JarvisJSONFile(
+            directoryURL: JarvisAppDirectory.url(),
+            fileName: "clipboard-history.json",
+            logDomain: "history",
+            logCategory: .clipboard
         )
-        JarvisProtectedStorage.prepareDirectory(directory)
-        fileURL = directory.appendingPathComponent("clipboard-history.json")
+    }
+
+    init(directoryURL: URL) {
+        file = JarvisJSONFile(
+            directoryURL: directoryURL,
+            fileName: "clipboard-history.json",
+            logDomain: "history",
+            logCategory: .clipboard
+        )
     }
 
     func load() -> [ClipboardItem] {
-        let operationID = JarvisLog.operationID()
-        JarvisLog.debug(
-            category: .clipboard,
-            event: "history.load.begin",
-            operationID: operationID,
-            fields: ["path": JarvisLogRedactor.path(fileURL.path)]
-        )
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            JarvisLog.info(
-                category: .clipboard,
-                event: "history.load.complete",
-                operationID: operationID,
-                result: "empty",
-                fields: ["recordCount": "0"]
-            )
-            return []
-        }
-
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let items = try JSONDecoder().decode([ClipboardItem].self, from: data)
-            let orderedItems = ClipboardOrdering.newestFirst(items)
-            JarvisLog.info(
-                category: .clipboard,
-                event: "history.load.complete",
-                operationID: operationID,
-                result: "success",
-                fields: [
-                    "recordCount": String(orderedItems.count),
-                    "bytes": String(data.count)
-                ]
-            )
-            return orderedItems
-        } catch {
-            JarvisLog.error(
-                category: .clipboard,
-                event: "history.load.failed",
-                error: error,
-                operationID: operationID,
-                fields: ["path": JarvisLogRedactor.path(fileURL.path)]
-            )
-            return []
-        }
+        ClipboardOrdering.newestFirst(file.readOrDefault([]))
     }
 
+    /// - Parameter revision: 调用方读取待写入状态时分配的版本号。早于已落盘版本的
+    ///   写入会被丢弃，`nil` 表示无条件写入。
     @discardableResult
-    func save(_ items: [ClipboardItem]) -> Bool {
-        let operationID = JarvisLog.operationID()
-        JarvisLog.debug(
-            category: .clipboard,
-            event: "history.save.begin",
-            operationID: operationID,
-            fields: [
-                "recordCount": String(items.count),
-                "path": JarvisLogRedactor.path(fileURL.path)
-            ]
-        )
-        do {
-            let data = try JSONEncoder().encode(items)
-            try JarvisProtectedStorage.write(data, to: fileURL)
-            JarvisLog.info(
-                category: .clipboard,
-                event: "history.save.complete",
-                operationID: operationID,
-                result: "success",
-                fields: [
-                    "recordCount": String(items.count),
-                    "bytes": String(data.count)
-                ]
-            )
-            return true
-        } catch {
-            JarvisLog.error(
-                category: .clipboard,
-                event: "history.save.failed",
-                error: error,
-                operationID: operationID,
-                fields: ["recordCount": String(items.count)]
-            )
-            return false
-        }
+    func save(_ items: [ClipboardItem], revision: UInt64? = nil) -> Bool {
+        file.write(items, revision: revision)
     }
 }

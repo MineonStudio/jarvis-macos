@@ -53,7 +53,13 @@ enum JarvisTypography {
     static let captionEmphasis = Font.system(size: 12, weight: .medium)
     static let monospaced = Font.system(size: 12, weight: .medium, design: .monospaced)
     static let badge = Font.system(size: 11, weight: .bold, design: .rounded)
-    static let metricValue = Font.system(size: 22, weight: .semibold, design: .rounded)
+    /// 小节的标题字。比 caption 重一档，用来说明下面那一组控件是什么。
+    static let sectionLabel = Font.system(size: 12, weight: .semibold)
+    /// 更小一档的辅助文字，用于路径、计数这类次要信息。
+    static let micro = Font.system(size: 10)
+    static let microMonospaced = Font.system(size: 10, design: .monospaced)
+    /// 数值读数：等宽，好让数字变化时不跳动。
+    static let monospacedSmall = Font.system(size: 11, weight: .medium, design: .monospaced)
 }
 
 /// Uses SwiftUI's presentation-level appearance API with the current system
@@ -76,6 +82,9 @@ extension Color {
     static let jarvisPanel = Color(nsColor: .controlBackgroundColor)
     static let jarvisCyan = Color.accentColor
     static let jarvisTextSecondary = Color.secondary
+    /// 嵌在卡片里的区域（设置行、手风琴、权限行）的底色：比卡片表面更淡，
+    /// 靠明度差而不是描边来分层。
+    static let jarvisInsetSurface = Color.primary.opacity(0.045)
 }
 
 enum JarvisMetrics {
@@ -84,6 +93,8 @@ enum JarvisMetrics {
     static let shellVerticalPadding: CGFloat = 10
     static let shellContentSpacing: CGFloat = 10
     static let cardRadius: CGFloat = 14
+    /// 模块外壳的圆角，比内部卡片略大一圈。
+    static let panelRadius: CGFloat = 16
     static let controlRadius: CGFloat = 10
     static let iconTintOpacity: CGFloat = 0.22
     static let segmentedItemHeight: CGFloat = 28
@@ -102,535 +113,8 @@ enum JarvisMetrics {
 /// 32-point row, use an 8-point rhythm, and do not draw a parent surface.
 enum JarvisToolbarMetrics {
     static let controlSize: CGFloat = 32
-    static let controlSpacing: CGFloat = 8
     static let iconSize: CGFloat = 13
     static let searchFieldWidth: CGFloat = 240
-}
-
-struct JarvisDropdownOption: Identifiable, Equatable {
-    let id: String
-    let title: String
-}
-
-private enum JarvisDropdownMetrics {
-    static let minimumControlWidth: CGFloat = 96
-    static let maximumControlWidth: CGFloat = 320
-    static let optionSpacing: CGFloat = JarvisMetrics.segmentedItemSpacing
-    static let triggerGap: CGFloat = JarvisMetrics.segmentedControlPadding
-    static let menuEdgePadding: CGFloat = JarvisMetrics.segmentedControlPadding
-    static let hoverScale: CGFloat = 1.01
-    static let horizontalPadding: CGFloat = 10
-    static let arrowSpacing: CGFloat = 5
-    static let arrowPointSize: CGFloat = 10
-
-    /// Width of the trigger's chevron at `arrowPointSize`. The trigger
-    /// reserves the symbol's real width plus its spacing; a hand-picked
-    /// fifteen points came up a point short, which clipped the longest title
-    /// in a control — "超过 1 个月" lost its last character.
-    static let arrowWidth: CGFloat = {
-        let configuration = NSImage.SymbolConfiguration(
-            pointSize: arrowPointSize,
-            weight: .semibold
-        )
-        let symbolWidth = NSImage(
-            systemSymbolName: "chevron.down",
-            accessibilityDescription: nil
-        )?
-            .withSymbolConfiguration(configuration)?
-            .size.width
-        return symbolWidth ?? 11
-    }()
-
-    static func width(
-        for titles: [String],
-        includesArrow: Bool = true,
-        maximumWidth: CGFloat = maximumControlWidth
-    ) -> CGFloat {
-        let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)
-        let widestTitle = titles
-            .map { title in
-                (title as NSString).size(withAttributes: [.font: controlFont]).width
-            }
-            .max() ?? 0
-        let idealWidth = ceil(
-            widestTitle
-                + (horizontalPadding * 2)
-                + (includesArrow ? arrowSpacing + arrowWidth : 0)
-        )
-        return min(max(idealWidth, minimumControlWidth), maximumWidth)
-    }
-}
-
-/// Shared custom SwiftUI dropdown used by every value selector and action selector.
-///
-/// The toolbar trigger is an ordinary button so macOS 27 cannot collapse its
-/// label into an icon-only menu trigger. Its transparent anchored panel owns
-/// the independent pill options, hover state, selection highlight, animation,
-/// and selection action from end to end.
-struct JarvisDropdownMenu: View {
-    let title: String
-    let options: [JarvisDropdownOption]
-    let selectionID: String?
-    let accessibilityLabel: String
-    let help: String
-    let controlWidth: CGFloat?
-    let maximumControlWidth: CGFloat
-    let showsChevron: Bool
-    let usesLiquidGlass: Bool
-    let isEnabled: Bool
-    let onSelect: (String) -> Void
-    @State private var isPresented = false
-
-    init(
-        title: String,
-        options: [JarvisDropdownOption],
-        selectionID: String? = nil,
-        accessibilityLabel: String,
-        help: String,
-        controlWidth: CGFloat? = nil,
-        maximumControlWidth: CGFloat = JarvisDropdownMetrics.maximumControlWidth,
-        showsChevron: Bool = true,
-        usesLiquidGlass: Bool = false,
-        isEnabled: Bool = true,
-        onSelect: @escaping (String) -> Void
-    ) {
-        self.title = title
-        self.options = options
-        self.selectionID = selectionID
-        self.accessibilityLabel = accessibilityLabel
-        self.help = help
-        self.controlWidth = controlWidth
-        self.maximumControlWidth = maximumControlWidth
-        self.showsChevron = showsChevron
-        self.usesLiquidGlass = usesLiquidGlass
-        self.isEnabled = isEnabled
-        self.onSelect = onSelect
-    }
-
-    private var resolvedControlWidth: CGFloat {
-        controlWidth ?? JarvisDropdownMetrics.width(
-            for: [title] + options.map(\.title),
-            includesArrow: showsChevron,
-            maximumWidth: maximumControlWidth
-        )
-    }
-
-    var body: some View {
-        let width = resolvedControlWidth
-
-        Button {
-            isPresented.toggle()
-        } label: {
-            HStack(spacing: JarvisDropdownMetrics.arrowSpacing) {
-                Text(title)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if showsChevron {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: JarvisDropdownMetrics.arrowPointSize, weight: .semibold))
-                        .accessibilityHidden(true)
-                }
-            }
-            .frame(width: width - (JarvisDropdownMetrics.horizontalPadding * 2))
-        }
-        .buttonStyle(JarvisToolbarButtonStyle.menu())
-        .disabled(!isEnabled || options.isEmpty)
-        .help(help)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(title)
-        .frame(width: width)
-        .fixedSize(horizontal: true, vertical: false)
-        .modifier(JarvisDropdownTriggerGlassModifier(isEnabled: usesLiquidGlass))
-        .background(
-            JarvisDropdownMenuPanelPresenter(
-                isPresented: $isPresented,
-                options: options,
-                selectionID: selectionID,
-                controlWidth: width,
-                onSelect: { optionID in
-                    onSelect(optionID)
-                }
-            )
-            .allowsHitTesting(false)
-        )
-    }
-}
-
-private struct JarvisDropdownTriggerGlassModifier: ViewModifier {
-    let isEnabled: Bool
-
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content.jarvisGlass(
-                in: Capsule(),
-                interactive: true
-            )
-        } else {
-            content
-        }
-    }
-}
-
-private struct JarvisDropdownPillMenuList: View {
-    let options: [JarvisDropdownOption]
-    let selectionID: String?
-    let controlWidth: CGFloat
-    let onSelect: (String) -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var revealsOptions = false
-    @State private var highlightedOptionID: String?
-
-    private var visibleOptions: [JarvisDropdownOption] {
-        guard let selectionID else { return options }
-        return options.filter { $0.id != selectionID }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JarvisDropdownMetrics.optionSpacing) {
-            ForEach(visibleOptions) { option in
-                let isSelected = selectionID == option.id
-                let isHighlighted = highlightedOptionID == option.id
-
-                Button {
-                    onSelect(option.id)
-                } label: {
-                    Text(option.title)
-                }
-                .buttonStyle(
-                    JarvisDropdownPillButtonStyle(
-                        controlWidth: controlWidth,
-                        isSelected: isSelected,
-                        isHighlighted: isHighlighted
-                    )
-                )
-                .accessibilityLabel(option.title)
-                .opacity(revealsOptions ? 1 : 0)
-                .offset(y: revealsOptions ? 0 : -8)
-                .animation(
-                    JarvisMotion.animation(
-                        JarvisMotion.content.delay(
-                            Double(visibleOptions.firstIndex(of: option) ?? 0) * 0.045
-                        ),
-                        reduceMotion: reduceMotion
-                    ),
-                    value: revealsOptions
-                )
-                .onHover { isHovering in
-                    withAnimation(
-                        JarvisMotion.animation(
-                            JarvisMotion.hover,
-                            reduceMotion: reduceMotion
-                        )
-                    ) {
-                        highlightedOptionID = isHovering ? option.id : nil
-                    }
-                }
-            }
-        }
-        .frame(width: controlWidth, alignment: .leading)
-        .fixedSize(horizontal: true, vertical: false)
-        .padding(JarvisDropdownMetrics.menuEdgePadding)
-        .task {
-            await Task.yield()
-            withAnimation(
-                JarvisMotion.animation(
-                    JarvisMotion.content,
-                    reduceMotion: reduceMotion
-                )
-            ) {
-                revealsOptions = true
-            }
-        }
-        .onDisappear {
-            highlightedOptionID = nil
-        }
-    }
-}
-
-private struct JarvisDropdownPillButtonStyle: ButtonStyle {
-    let controlWidth: CGFloat
-    let isSelected: Bool
-    let isHighlighted: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
-            .foregroundStyle(
-                isSelected
-                    ? Color.white
-                    : Color.primary
-            )
-            .lineLimit(1)
-            .padding(.horizontal, JarvisDropdownMetrics.horizontalPadding)
-            .frame(
-                width: controlWidth,
-                height: JarvisToolbarMetrics.controlSize,
-                alignment: .leading
-            )
-            .contentShape(Capsule())
-            .jarvisGlass(
-                // Keep the material identity stable while the pointer
-                // moves between options. Changing a glass tint on every
-                // hover asks macOS to rebuild the material and briefly
-                // exposes the transparent intermediate state.
-                tint: isSelected ? .accentColor : nil,
-                in: Capsule(),
-                interactive: false
-            )
-            .overlay {
-                if isHighlighted, !isSelected {
-                    Capsule()
-                        .fill(JarvisMotion.hoverPillTint)
-                        .allowsHitTesting(false)
-                }
-            }
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .scaleEffect(
-                reduceMotion
-                    ? 1
-                    : (isHighlighted ? JarvisDropdownMetrics.hoverScale : (configuration.isPressed ? 0.98 : 1)),
-                anchor: .center
-            )
-            .animation(
-                JarvisMotion.animation(
-                    JarvisMotion.buttonPress,
-                    reduceMotion: reduceMotion
-                ),
-                value: configuration.isPressed
-            )
-            .animation(
-                JarvisMotion.animation(
-                    JarvisMotion.hover,
-                    reduceMotion: reduceMotion
-                ),
-                value: isHighlighted
-            )
-    }
-}
-
-private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
-    @Binding var isPresented: Bool
-    let options: [JarvisDropdownOption]
-    let selectionID: String?
-    let controlWidth: CGFloat
-    let onSelect: (String) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let anchorView = NSView(frame: .zero)
-        context.coordinator.anchorView = anchorView
-        return anchorView
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.update(
-            anchorView: nsView,
-            isPresented: isPresented,
-            options: options,
-            selectionID: selectionID,
-            controlWidth: controlWidth,
-            onSelect: onSelect,
-            dismiss: { isPresented = false }
-        )
-    }
-
-    static func dismantleNSView(
-        _: NSView,
-        coordinator: Coordinator
-    ) {
-        coordinator.dismiss()
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    @MainActor
-    final class Coordinator {
-        weak var anchorView: NSView?
-        private var panel: NSPanel?
-        private var outsideClickMonitor: Any?
-        private var dismissAction: (() -> Void)?
-
-        func update(
-            anchorView: NSView,
-            isPresented: Bool,
-            options: [JarvisDropdownOption],
-            selectionID: String?,
-            controlWidth: CGFloat,
-            onSelect: @escaping (String) -> Void,
-            dismiss: @escaping () -> Void
-        ) {
-            self.anchorView = anchorView
-            dismissAction = dismiss
-
-            guard isPresented else {
-                dismiss()
-                return
-            }
-
-            if panel == nil {
-                present(
-                    options: options,
-                    selectionID: selectionID,
-                    controlWidth: controlWidth,
-                    onSelect: onSelect,
-                    dismiss: dismiss
-                )
-            } else {
-                positionPanel()
-            }
-        }
-
-        func dismiss() {
-            if let outsideClickMonitor {
-                NSEvent.removeMonitor(outsideClickMonitor)
-                self.outsideClickMonitor = nil
-            }
-
-            guard let panel else { return }
-            if let parentWindow = panel.parent {
-                parentWindow.removeChildWindow(panel)
-            }
-            panel.orderOut(nil)
-            panel.close()
-            self.panel = nil
-        }
-
-        private func present(
-            options: [JarvisDropdownOption],
-            selectionID: String?,
-            controlWidth: CGFloat,
-            onSelect: @escaping (String) -> Void,
-            dismiss: @escaping () -> Void
-        ) {
-            guard let anchorView, let parentWindow = anchorView.window else { return }
-
-            let panel = JarvisDropdownMenuPanel(
-                contentRect: .zero,
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
-            let menu = JarvisDropdownPillMenuList(
-                options: options,
-                selectionID: selectionID,
-                controlWidth: controlWidth,
-                onSelect: { [self] optionID in
-                    dismiss()
-                    onSelect(optionID)
-                    self.dismiss()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.dismiss()
-                    }
-                }
-            )
-            let hostingView = NSHostingView(rootView: menu)
-            let fittingSize = hostingView.fittingSize
-            hostingView.frame = NSRect(origin: .zero, size: fittingSize)
-
-            panel.setContentSize(fittingSize)
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = false
-            panel.isFloatingPanel = true
-            panel.level = .popUpMenu
-            panel.hidesOnDeactivate = true
-            panel.isReleasedWhenClosed = false
-            panel.becomesKeyOnlyIfNeeded = false
-            panel.ignoresMouseEvents = false
-            panel.collectionBehavior = [.transient, .fullScreenAuxiliary]
-            panel.contentView = hostingView
-
-            self.panel = panel
-            parentWindow.addChildWindow(panel, ordered: .above)
-            positionPanel()
-            panel.makeKeyAndOrderFront(nil)
-            installOutsideClickMonitor()
-        }
-
-        private func positionPanel() {
-            guard
-                let panel,
-                let anchorView,
-                let parentWindow = anchorView.window
-            else {
-                return
-            }
-
-            let anchorRect = parentWindow.convertToScreen(
-                anchorView.convert(anchorView.bounds, to: nil)
-            )
-            let visibleFrame = parentWindow.screen?.visibleFrame
-                ?? NSScreen.main?.visibleFrame
-                ?? .zero
-            let panelSize = panel.frame.size
-            let horizontalOrigin = anchorRect.midX - (panelSize.width / 2)
-            let maximumX = visibleFrame.maxX - panelSize.width
-            let originX = min(max(horizontalOrigin, visibleFrame.minX), maximumX)
-            let originY = anchorRect.minY
-                - panelSize.height
-                - JarvisDropdownMetrics.triggerGap
-
-            panel.setFrameOrigin(NSPoint(x: originX, y: originY))
-        }
-
-        private func installOutsideClickMonitor() {
-            outsideClickMonitor = NSEvent.addLocalMonitorForEvents(
-                matching: [.leftMouseDown]
-            ) { [weak self] event in
-                guard let self, let panel = self.panel else { return event }
-
-                if event.window === panel {
-                    return event
-                }
-
-                // The trigger is also the close affordance. Consume the
-                // second click after dismissing the panel so the button does
-                // not toggle the binding back to `true` in the same event.
-                if self.isAnchorClick(event) {
-                    self.dismiss()
-                    self.dismissAction?()
-                    return nil
-                }
-
-                self.dismiss()
-                self.dismissAction?()
-                return event
-            }
-        }
-
-        private func isAnchorClick(_ event: NSEvent) -> Bool {
-            guard
-                let eventWindow = event.window,
-                let anchorView,
-                let anchorWindow = anchorView.window
-            else {
-                return false
-            }
-
-            let pointOnScreen = eventWindow.convertToScreen(
-                NSRect(origin: event.locationInWindow, size: .zero)
-            ).origin
-            let anchorRect = anchorWindow.convertToScreen(
-                anchorView.convert(anchorView.bounds, to: nil)
-            )
-            return anchorRect.contains(pointOnScreen)
-        }
-    }
-}
-
-@MainActor
-private final class JarvisDropdownMenuPanel: NSPanel {
-    override var canBecomeKey: Bool {
-        true
-    }
-
-    override var canBecomeMain: Bool {
-        false
-    }
 }
 
 /// Marks a toolbar item whose view owns its own capsule, glass, or other
@@ -731,16 +215,6 @@ struct JarvisToolbarSearchField: View {
 }
 
 /// Shared capsule surface for compact text-entry controls.
-struct JarvisCapsuleInputFieldModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(.leading, 12)
-            .padding(.trailing, 4)
-            .frame(minHeight: JarvisToolbarMetrics.controlSize)
-            .jarvisGlass(in: Capsule(), interactive: false)
-    }
-}
-
 /// Shared content-area shell for every module in the main window.
 ///
 /// The shell owns the window toolbar and the body inset. Modules provide only
@@ -775,21 +249,6 @@ struct JarvisContentArea<LeadingToolbar: ToolbarContent, TrailingToolbar: Toolba
                 ToolbarSpacer(.flexible, placement: .automatic)
                 trailingToolbar
             }
-    }
-}
-
-struct JarvisPageTopBar: View {
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(JarvisTypography.cardTitle)
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -871,16 +330,6 @@ struct JarvisInlineLoadingState: View {
     }
 }
 
-struct SectionHeader: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(JarvisTypography.pageTitle)
-            .foregroundStyle(.primary)
-    }
-}
-
 /// Native macOS 26 Liquid Glass wrapper shared by cards and controls.
 struct JarvisGlassModifier: ViewModifier {
     let tint: Color?
@@ -922,6 +371,18 @@ struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
     }
 }
 
+extension View {
+    /// 模块外壳：先裁圆角再铺面板底色。
+    ///
+    /// 这段组合原本在六处逐字重复，圆角值 16 也散在各处。网页模块是**例外**，
+    /// 它不能裁剪（见 `JarvisWebPlatformViews` 的说明），所以只取
+    /// `JarvisMetrics.panelRadius` 而不用这个 modifier。
+    func jarvisModulePanel() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: JarvisMetrics.panelRadius, style: .continuous))
+            .jarvisFloatingPanel(cornerRadius: JarvisMetrics.panelRadius)
+    }
+}
+
 struct JarvisFloatingPanelModifier: ViewModifier {
     let cornerRadius: CGFloat
 
@@ -943,10 +404,6 @@ struct JarvisFloatingPanelModifier: ViewModifier {
 extension View {
     func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {
         modifier(JarvisThemeModifier(theme: theme, systemColorScheme: systemColorScheme))
-    }
-
-    func jarvisCapsuleInputField() -> some View {
-        modifier(JarvisCapsuleInputFieldModifier())
     }
 
     func jarvisGlass(
@@ -986,6 +443,68 @@ extension View {
             in: shape,
             interactive: interactive
         )
+    }
+}
+
+/// 历史网格卡片的骨架：悬停缩放、圆角裁剪、选中描边和「已选中」徽标。
+///
+/// 剪贴板和截图两张卡片原本各写一份完全一样的外壳，唯一的差别是内容的对齐方式。
+struct HistoryCardChrome<Preview: View>: View {
+    let preview: Preview
+    let width: CGFloat
+    let height: CGFloat
+    let isSelected: Bool
+    var alignment: Alignment = .center
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    var body: some View {
+        ZStack {
+            preview
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .scaleEffect(
+                    isHovered && !reduceMotion
+                        ? HistoryGridMetrics.clipboardPreviewHoverScale
+                        : 1
+                )
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                    value: isHovered
+                )
+        }
+        .frame(width: width, height: height, alignment: alignment)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
+        .jarvisContentSurface(cornerRadius: HistoryGridMetrics.clipboardCornerRadius)
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+            .stroke(
+                isSelected ? Color.accentColor : .clear,
+                lineWidth: isSelected ? 2 : 0
+            )
+            .allowsHitTesting(false)
+        }
+        .overlay(alignment: .topLeading) {
+            if isSelected {
+                Label("已选中", systemImage: "checkmark.circle.fill")
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.accentColor.opacity(0.92), in: Capsule())
+                    .padding(8)
+                    .accessibilityHidden(true)
+            }
+        }
+        .onHover { isHovered = $0 }
     }
 }
 

@@ -50,133 +50,11 @@ struct AIAPISettingsCard: View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 12) {
                 SettingsCardHeader(title: "API 配置", systemImage: "key")
-
-                VStack(alignment: .leading, spacing: 12) {
-                    apiField(title: "提供商") {
-                        apiControl {
-                            apiMenu(
-                                title: "提供商",
-                                selection: Binding(
-                                    get: { provider.title },
-                                    set: { selectedTitle in
-                                        guard let selectedProvider = AIAPIProvider.allCases.first(where: {
-                                            $0.title == selectedTitle
-                                        }) else {
-                                            return
-                                        }
-                                        provider = selectedProvider
-                                    }
-                                ),
-                                options: AIAPIProvider.allCases.map(\.title),
-                                isDisabled: isLocked
-                            )
-                        }
-                    }
-
-                    apiField(title: "base_url") {
-                        apiControl {
-                            if isLocked {
-                                apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容 base_url")
-                            } else {
-                                TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
-                                    .textFieldStyle(.plain)
-                            }
-                        }
-                    }
-
-                    apiField(title: "模型") {
-                        HStack(spacing: 8) {
-                            apiControl {
-                                apiMenu(
-                                    title: "模型",
-                                    selection: $model,
-                                    options: modelOptions,
-                                    emptyTitle: "未选择模型",
-                                    isDisabled: isLocked || app.aiModelsLoading
-                                )
-                            }
-
-                            Button(action: refreshModels) {
-                                HStack(spacing: 6) {
-                                    if app.aiModelsLoading {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                    }
-                                    Text("获取模型")
-                                }
-                            }
-                            .buttonStyle(JarvisSecondaryButtonStyle())
-                            .disabled(isLocked || app.aiModelsLoading || !canRefreshModels)
-                            .help("获取最新模型列表")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    apiField(title: "Key") {
-                        apiControl {
-                            if isLocked {
-                                apiReadOnlyValue(app.aiAPIKeyMask, placeholder: "输入 API Key")
-                            } else {
-                                // Show the stored key as a mask so an existing
-                                // key is visible while editing; saving with an
-                                // empty field keeps it.
-                                SecureField(
-                                    app.aiAPIKeyMask.isEmpty ? "输入 API Key" : app.aiAPIKeyMask,
-                                    text: $apiKey
-                                )
-                                .textFieldStyle(.plain)
-                            }
-                        }
-                    }
-                }
-
+                fieldsSection
                 if let error = app.aiModelsRefreshError {
-                    Text(error)
-                        .font(JarvisTypography.caption)
-                        .foregroundStyle(.red)
-                        .padding(.leading, 82)
+                    errorRow(error)
                 }
-
-                HStack(spacing: 8) {
-                    Spacer(minLength: 82)
-
-                    if isLocked {
-                        Button("编辑配置", action: beginEditing)
-                            .buttonStyle(JarvisSecondaryButtonStyle())
-                    } else {
-                        Button("保存配置", action: saveSettings)
-                            .buttonStyle(JarvisSecondaryButtonStyle())
-                            .disabled(!canUseConfiguration)
-                    }
-
-                    Button {
-                        Task {
-                            await app.testAIAPIConnection(
-                                provider: provider,
-                                endpoint: effectiveBaseURL,
-                                model: effectiveModel,
-                                apiKey: apiKey
-                            )
-                        }
-                    } label: {
-                        if app.aiConnectionTesting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(minWidth: 56)
-                        } else {
-                            Text("测试连接")
-                        }
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(!canUseConfiguration || app.aiConnectionTesting)
-
-                    if hasStoredConfiguration {
-                        Button("删除配置", role: .destructive) {
-                            showingDeleteConfirmation = true
-                        }
-                        .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
-                    }
-                }
+                actionsRow
             }
         }
         .onAppear(perform: loadDraft)
@@ -208,6 +86,140 @@ struct AIAPISettingsCard: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("将删除 API Key、提供商、接口地址和模型配置。")
+        }
+    }
+
+    private var fieldsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            apiField(title: "提供商") {
+                apiControl {
+                    apiMenu(
+                        title: "提供商",
+                        selection: Binding(
+                            get: { provider.title },
+                            set: { selectedTitle in
+                                guard let selectedProvider = AIAPIProvider.allCases.first(where: {
+                                    $0.title == selectedTitle
+                                }) else {
+                                    return
+                                }
+                                provider = selectedProvider
+                            }
+                        ),
+                        options: AIAPIProvider.allCases.map(\.title),
+                        isDisabled: isLocked
+                    )
+                }
+            }
+
+            apiField(title: "base_url") {
+                apiControl {
+                    if isLocked {
+                        apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容 base_url")
+                    } else {
+                        TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
+                            .textFieldStyle(.plain)
+                    }
+                }
+            }
+
+            apiField(title: "模型") {
+                HStack(spacing: 8) {
+                    apiControl {
+                        apiMenu(
+                            title: "模型",
+                            selection: $model,
+                            options: modelOptions,
+                            emptyTitle: "未选择模型",
+                            isDisabled: isLocked || app.aiModelsLoading
+                        )
+                    }
+                    refreshModelsButton
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            apiField(title: "Key") {
+                apiControl {
+                    if isLocked {
+                        apiReadOnlyValue(app.aiAPIKeyMask, placeholder: "输入 API Key")
+                    } else {
+                        // Show the stored key as a mask so an existing key is
+                        // visible while editing; saving with an empty field
+                        // keeps it.
+                        SecureField(
+                            app.aiAPIKeyMask.isEmpty ? "输入 API Key" : app.aiAPIKeyMask,
+                            text: $apiKey
+                        )
+                        .textFieldStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var refreshModelsButton: some View {
+        Button(action: refreshModels) {
+            HStack(spacing: 6) {
+                if app.aiModelsLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text("获取模型")
+            }
+        }
+        .buttonStyle(JarvisSecondaryButtonStyle())
+        .disabled(isLocked || app.aiModelsLoading || !canRefreshModels)
+        .help("获取最新模型列表")
+    }
+
+    private func errorRow(_ error: String) -> some View {
+        Text(error)
+            .font(JarvisTypography.caption)
+            .foregroundStyle(.red)
+            .padding(.leading, 82)
+    }
+
+    private var actionsRow: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 82)
+
+            if isLocked {
+                Button("编辑配置", action: beginEditing)
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+            } else {
+                Button("保存配置", action: saveSettings)
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(!canUseConfiguration)
+            }
+
+            Button {
+                Task {
+                    await app.testAIAPIConnection(
+                        provider: provider,
+                        endpoint: effectiveBaseURL,
+                        model: effectiveModel,
+                        apiKey: apiKey
+                    )
+                }
+            } label: {
+                if app.aiConnectionTesting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(minWidth: 56)
+                } else {
+                    Text("测试连接")
+                }
+            }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .disabled(!canUseConfiguration || app.aiConnectionTesting)
+
+            if hasStoredConfiguration {
+                Button("删除配置", role: .destructive) {
+                    showingDeleteConfirmation = true
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
+            }
         }
     }
 

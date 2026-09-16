@@ -263,8 +263,7 @@ struct ClipboardView: View {
                     .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
                     .padding(.vertical, HistoryGridMetrics.historyPanelInset)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
+                .jarvisModulePanel()
             }
         )
         .onChange(of: app.clipboardItems.count) { _, _ in
@@ -291,7 +290,7 @@ struct ClipboardHistoryActionToolbar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "eye",
                 help: "查看",
                 isEnabled: canPreview
@@ -303,7 +302,7 @@ struct ClipboardHistoryActionToolbar: View {
                     app.showClipboardMediaPreview(selectedItem)
                 }
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "doc.on.doc",
                 help: "复制",
                 isEnabled: selectedItem != nil
@@ -315,7 +314,7 @@ struct ClipboardHistoryActionToolbar: View {
                     app.copyClipboard(selectedItem)
                 }
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: selectedItem?.isPinned == true ? "star.slash" : "star",
                 help: selectedItem?.isPinned == true ? "取消收藏" : "收藏",
                 tint: selectedItem?.isPinned == true ? .yellow : .secondary,
@@ -324,7 +323,7 @@ struct ClipboardHistoryActionToolbar: View {
                 guard let selectedItem else { return }
                 app.toggleClipboardPin(selectedItem)
             }
-            actionButton(
+            JarvisToolbarIconButton(
                 systemName: "trash",
                 help: "删除",
                 tint: .red.opacity(0.82),
@@ -378,25 +377,6 @@ struct ClipboardHistoryActionToolbar: View {
             Text("只有在你主动确认后，才会打开原始内容预览。")
         }
     }
-
-    private func actionButton(
-        systemName: String,
-        help: String,
-        tint: Color = .secondary,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
-                .foregroundStyle(tint)
-        }
-        .buttonStyle(JarvisToolbarIconButtonStyle())
-        .opacity(isEnabled ? 1 : 0.38)
-        .disabled(!isEnabled)
-        .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
-    }
 }
 
 struct ClipboardEmptyState: View {
@@ -413,7 +393,6 @@ struct ClipboardEmptyState: View {
 
 struct ClipboardCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
     @State private var isSensitiveRevealed = false
     @State private var isTextExpanded = false
     let item: ClipboardItem
@@ -551,7 +530,7 @@ struct ClipboardCard: View {
 
     @ViewBuilder
     private var previewArea: some View {
-        if ClipboardSharing.itemProvider(for: item) != nil,
+        if ClipboardSharing.canProvide(for: item),
            !item.isSensitive || isSensitiveRevealed
         {
             previewContent
@@ -588,55 +567,13 @@ struct ClipboardCard: View {
     }
 
     private var cardBody: some View {
-        ZStack {
-            previewArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .scaleEffect(
-                    isHovered && !reduceMotion
-                        ? HistoryGridMetrics.clipboardPreviewHoverScale
-                        : 1
-                )
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                    value: isHovered
-                )
-        }
-        .frame(
+        HistoryCardChrome(
+            preview: previewArea,
             width: gridZoom.cardWidth,
             height: gridZoom.cardHeight,
+            isSelected: isSelected,
             alignment: .topLeading
         )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-        )
-        .jarvisContentSurface(cornerRadius: HistoryGridMetrics.clipboardCornerRadius)
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-            .stroke(
-                isSelected ? Color.accentColor : .clear,
-                lineWidth: isSelected ? 2 : 0
-            )
-            .allowsHitTesting(false)
-        }
-        .overlay(alignment: .topLeading) {
-            if isSelected {
-                Label("已选中", systemImage: "checkmark.circle.fill")
-                    .font(JarvisTypography.captionEmphasis)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.92), in: Capsule())
-                    .padding(8)
-                    .accessibilityHidden(true)
-            }
-        }
-        .onHover { isHovered = $0 }
     }
 
     var body: some View {

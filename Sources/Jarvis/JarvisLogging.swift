@@ -81,38 +81,46 @@ enum JarvisLogRedactor {
         return "<external-file>\(extensionPart)#\(shortHash(path))"
     }
 
+    /// 一条脱敏规则。正则预先编译一次。
+    ///
+    /// 这里原本用 `replacingOccurrences(options: .regularExpression)`，那个 API 每次
+    /// 调用都要现场编译正则，而脱敏在每条日志的每个字段上都会跑一遍——一条日志就是
+    /// 六次编译。
+    private struct TextRule {
+        let regex: NSRegularExpression
+        let replacement: String
+
+        /// 模式写错时跳过这条规则，与 `replacingOccurrences` 的行为一致（它遇到无效
+        /// 模式也是原样返回）。`LoggingTests` 逐条验证每个模式都还在生效。
+        init?(_ pattern: String, _ replacement: String) {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+            self.regex = regex
+            self.replacement = replacement
+        }
+    }
+
+    private static let textRules: [TextRule] = [
+        TextRule(#"(?i)https?://[^\s]+"#, "<url>"),
+        TextRule(#"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#, "<email>"),
+        TextRule(
+            #"(?i)(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|secret|password|passwd|cookie|private[_-]?key)\s*[:=]\s*[^\s,;]+"#,
+            "<credential>"
+        ),
+        TextRule(#"(?:/Users/[^\s]+|/private/var/[^\s]+|/var/folders/[^\s]+)"#, "<path>"),
+        TextRule(#"\b(?:eyJ[A-Za-z0-9_-]{10,}\.){2}[A-Za-z0-9_-]{10,}\b"#, "<jwt>"),
+        TextRule(#"\b[A-Za-z0-9_-]{32,}\b"#, "<opaque>")
+    ].compactMap { $0 }
+
     static func text(_ value: String) -> String {
         var result = value
-        result = result.replacingOccurrences(
-            of: #"(?i)https?://[^\s]+"#,
-            with: "<url>",
-            options: .regularExpression
-        )
-        result = result.replacingOccurrences(
-            of: #"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#,
-            with: "<email>",
-            options: .regularExpression
-        )
-        result = result.replacingOccurrences(
-            of: #"(?i)(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|secret|password|passwd|cookie|private[_-]?key)\s*[:=]\s*[^\s,;]+"#,
-            with: "<credential>",
-            options: .regularExpression
-        )
-        result = result.replacingOccurrences(
-            of: #"(?:/Users/[^\s]+|/private/var/[^\s]+|/var/folders/[^\s]+)"#,
-            with: "<path>",
-            options: .regularExpression
-        )
-        result = result.replacingOccurrences(
-            of: #"\b(?:eyJ[A-Za-z0-9_-]{10,}\.){2}[A-Za-z0-9_-]{10,}\b"#,
-            with: "<jwt>",
-            options: .regularExpression
-        )
-        return result.replacingOccurrences(
-            of: #"\b[A-Za-z0-9_-]{32,}\b"#,
-            with: "<opaque>",
-            options: .regularExpression
-        )
+        for rule in textRules {
+            result = rule.regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: rule.replacement
+            )
+        }
+        return result
     }
 
     static func fields(_ fields: [String: String]) -> [String: String] {
@@ -331,10 +339,22 @@ private final class JarvisLogRuntime: @unchecked Sendable {
         store.append(logEvent)
     }
 
-    private static func timestamp() -> String {
+    /// `ISO8601DateFormatter` 的构造要加载 locale 数据，而每条日志都要取一次时间，
+    /// 所以共用一份。日志来自多个线程，`DateFormatter` 有明确的线程安全保证、
+    /// `ISO8601DateFormatter` 没有，这里不赌，加锁。
+    private nonisolated(unsafe) static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: Date())
+        return formatter
+    }()
+
+    /// 上一行的 `nonisolated(unsafe)` 由这把锁兜底：格式化只在锁内发生。
+    private static let timestampLock = NSLock()
+
+    private static func timestamp() -> String {
+        timestampLock.withLock {
+            timestampFormatter.string(from: Date())
+        }
     }
 }
 

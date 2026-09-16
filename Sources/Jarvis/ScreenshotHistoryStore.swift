@@ -13,31 +13,32 @@ struct ScreenshotHistoryItem: Codable, Identifiable, Equatable, Sendable {
 final class ScreenshotHistoryStore: @unchecked Sendable {
     private let fileManager: FileManager
     private let directoryURL: URL
-    private let metadataURL: URL
+    private let file: JarvisJSONFile<[ScreenshotHistoryItem]>
+    /// 只保护「写 PNG + 改索引」这类组合操作；单次文件读写的锁在 `file` 里。
     private let lock = NSLock()
     private let maximumCount = 100
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        let supportDirectory = (try? fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? fileManager.temporaryDirectory
-        let directory = supportDirectory
-            .appendingPathComponent(JarvisAppIdentity.dataDirectoryName, isDirectory: true)
-            .appendingPathComponent("ScreenshotHistory", isDirectory: true)
+        let directory = JarvisAppDirectory.url("ScreenshotHistory", fileManager: fileManager)
         directoryURL = directory
-        metadataURL = directory.appendingPathComponent("metadata.json")
-        JarvisProtectedStorage.prepareDirectory(directory, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directory,
+            fileName: "metadata.json",
+            logDomain: "screenshot.history",
+            fileManager: fileManager
+        )
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL
-        metadataURL = directoryURL.appendingPathComponent("metadata.json")
-        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directoryURL,
+            fileName: "metadata.json",
+            logDomain: "screenshot.history",
+            fileManager: fileManager
+        )
     }
 
     func load() -> [ScreenshotHistoryItem] {
@@ -45,27 +46,22 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     }
 
     private func loadLocked() -> [ScreenshotHistoryItem] {
-        guard fileManager.fileExists(atPath: metadataURL.path) else {
-            return []
-        }
+        usable(file.readOrDefault([]))
+    }
 
-        do {
-            let data = try Data(contentsOf: metadataURL)
-            let items = try JSONDecoder().decode([ScreenshotHistoryItem].self, from: data)
-            return items
-                .filter { item in
-                    guard let url = safeFileURL(for: item.fileName) else { return false }
-                    return fileManager.fileExists(atPath: url.path)
-                }
-                .sorted { $0.updatedAt > $1.updatedAt }
-        } catch {
-            JarvisLog.error(
-                category: .storage,
-                event: "screenshot.history.load.failed",
-                error: error
-            )
-            return []
-        }
+    /// 写入所依据的索引。索引读不出来又留不下证据时拒绝继续，否则整份历史会被一个
+    /// 空数组覆盖掉。
+    private func itemsForWriting() throws -> [ScreenshotHistoryItem] {
+        try usable(file.readForWriting(default: []))
+    }
+
+    private func usable(_ items: [ScreenshotHistoryItem]) -> [ScreenshotHistoryItem] {
+        items
+            .filter { item in
+                guard let url = safeFileURL(for: item.fileName) else { return false }
+                return fileManager.fileExists(atPath: url.path)
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     func data(for item: ScreenshotHistoryItem) -> Data? {
@@ -96,15 +92,6 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             ?? directoryURL.appendingPathComponent(".invalid-history-file", isDirectory: false)
     }
 
-    func fileSize(for item: ScreenshotHistoryItem) -> Int64? {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL(for: item).path),
-              let fileSize = attributes[.size] as? NSNumber
-        else {
-            return nil
-        }
-        return fileSize.int64Value
-    }
-
     @discardableResult
     func add(data: Data, date: Date = Date()) -> ScreenshotHistoryItem? {
         guard !data.isEmpty else { return nil }
@@ -118,7 +105,13 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             )
             guard write(data, for: item) else { return nil }
 
-            var items = loadLocked()
+            guard var items = try? itemsForWriting() else {
+                // 索引写不进去，那张 PNG 就永远进不了索引，收回来而不是留在磁盘上。
+                if let url = safeFileURL(for: item.fileName) {
+                    try? fileManager.removeItem(at: url)
+                }
+                return nil
+            }
             items.removeAll { $0.id == item.id }
             items.insert(item, at: 0)
             guard save(trimmed(items)) else { return nil }
@@ -130,7 +123,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     func update(_ item: ScreenshotHistoryItem, data: Data, date: Date = Date()) -> ScreenshotHistoryItem? {
         guard !data.isEmpty else { return nil }
         return lock.withLock {
-            var items = loadLocked()
+            guard var items = try? itemsForWriting() else { return nil }
             guard let index = items.firstIndex(where: { $0.id == item.id }) else { return nil }
             guard write(data, for: item) else { return nil }
 
@@ -166,7 +159,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
                 )
                 return false
             }
-            var items = loadLocked()
+            guard var items = try? itemsForWriting() else { return false }
             items.removeAll { $0.id == item.id }
             return save(items)
         }
@@ -196,19 +189,7 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
 
     @discardableResult
     private func save(_ items: [ScreenshotHistoryItem]) -> Bool {
-        do {
-            let data = try JSONEncoder().encode(items)
-            try JarvisProtectedStorage.write(data, to: metadataURL)
-            return true
-        } catch {
-            JarvisLog.error(
-                category: .storage,
-                event: "screenshot.history.indexSave.failed",
-                error: error,
-                fields: ["recordCount": String(items.count)]
-            )
-            return false
-        }
+        file.write(items)
     }
 
     private func trimmed(_ items: [ScreenshotHistoryItem]) -> [ScreenshotHistoryItem] {

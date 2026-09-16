@@ -487,8 +487,4 @@ extension ScreenshotCaptureController {
     func saveWindow() -> NSWindow? {
         resultWindow
     }
-
-    func currentEditingPNGData() -> Data? {
-        activeEditor?.finalPNGData()
-    }
 }

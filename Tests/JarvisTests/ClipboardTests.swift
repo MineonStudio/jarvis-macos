@@ -149,6 +149,54 @@ final class ClipboardTests: XCTestCase {
         XCTAssertTrue(decoded.isStoredCopy)
     }
 
+    /// 去抖写入可能带着调度时观察到的旧状态晚到，不能让它覆盖用户随后做的收藏或删除。
+    func testClipboardStoreDiscardsWriteWithStaleRevision() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-store-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = ClipboardStore(directoryURL: directory)
+        XCTAssertTrue(store.save([ClipboardItem(kind: .text, text: "收藏后的状态")], revision: 2))
+        XCTAssertTrue(store.save([ClipboardItem(kind: .text, text: "调度时的旧状态")], revision: 1))
+
+        XCTAssertEqual(store.load().map(\.text), ["收藏后的状态"])
+    }
+
+    func testClipboardStoreAppliesWriteWithNewerRevisionAndWithoutOne() {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-store-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = ClipboardStore(directoryURL: directory)
+        XCTAssertTrue(store.save([ClipboardItem(kind: .text, text: "第一次")], revision: 1))
+        XCTAssertTrue(store.save([ClipboardItem(kind: .text, text: "第二次")], revision: 2))
+        XCTAssertEqual(store.load().map(\.text), ["第二次"])
+
+        // 不带版本号的写入（迁移、启动路径）照旧无条件落盘。
+        XCTAssertTrue(store.save([ClipboardItem(kind: .text, text: "无条件写入")]))
+        XCTAssertEqual(store.load().map(\.text), ["无条件写入"])
+    }
+
+    /// 后台写入者必须与 AppModel 共用同一个 store，否则文件锁和版本号会各持一份，
+    /// 双写入者的覆盖问题就会回来。
+    func testClipboardHistoryWriterSharesItsStore() async {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-clipboard-writer-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = ClipboardStore(directoryURL: directory)
+        let writer = ClipboardHistoryWriter(store: store)
+        let saved = await writer.save([ClipboardItem(kind: .text, text: "经写入者落盘")], revision: 1)
+        XCTAssertTrue(saved)
+
+        // 写入者写进了这个 store 的文件。
+        XCTAssertEqual(store.load().map(\.text), ["经写入者落盘"])
+
+        // 版本号也是共享的：写入者用掉的版本，store 侧认得出来并丢弃更旧的写入。
+        XCTAssertTrue(store.save([ClipboardItem(kind: .text, text: "过期快照")], revision: 0))
+        XCTAssertEqual(store.load().map(\.text), ["经写入者落盘"])
+    }
+
     func testClipboardOrderingKeepsNewestFirstRegardlessOfPinState() {
         let older = ClipboardItem(
             createdAt: Date(timeIntervalSince1970: 100),

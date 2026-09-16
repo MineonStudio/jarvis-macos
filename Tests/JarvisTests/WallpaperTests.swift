@@ -229,6 +229,169 @@ final class WallpaperTests: XCTestCase {
         XCTAssertTrue(store.loadFavorites().isEmpty)
     }
 
+    /// 元数据读不出来时必须留证据，不能让随后的 upsert 用一个新数组把它整份覆盖掉。
+    func testWallpaperStoreQuarantinesUnreadableMetadataInsteadOfOverwritingIt() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-corrupt-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = WallpaperStore(directoryURL: directory)
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let corruptPayload = Data("{ not json at all".utf8)
+        try corruptPayload.write(to: metadataURL)
+
+        XCTAssertTrue(store.loadFavorites().isEmpty)
+
+        // 损坏文件被挪到一边留证，原路径腾空，后续写入不再覆盖未知内容。
+        XCTAssertFalse(FileManager.default.fileExists(atPath: metadataURL.path))
+        let entries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let quarantined = try XCTUnwrap(
+            entries.first { $0.lastPathComponent.hasPrefix("metadata.corrupt-") }
+        )
+        XCTAssertEqual(try Data(contentsOf: quarantined), corruptPayload)
+
+        let remoteURL = try XCTUnwrap(URL(string: "https://w.wallhaven.cc/corrupt-test.jpg"))
+        try store.upsert(WallpaperItem(
+            id: "wallhaven:corrupt-test",
+            source: .wallhaven,
+            sourceID: "corrupt-test",
+            title: "Corrupt test",
+            previewURL: remoteURL,
+            originalURL: remoteURL,
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: 2560,
+            height: 1440,
+            fileExtension: "jpg",
+            licenseName: nil,
+            licenseURL: nil,
+            isFavorite: true,
+            localFileName: nil
+        ))
+
+        // 收藏照常可用，留证的那份文件也不受影响。
+        XCTAssertEqual(store.loadFavorites().map(\.id), ["wallhaven:corrupt-test"])
+        XCTAssertEqual(try Data(contentsOf: quarantined), corruptPayload)
+    }
+
+    /// 损坏文件挪不动时必须拒绝写入：照常写下去就会把它整份覆盖，正是要修的 bug。
+    func testWallpaperStoreRefusesToWriteWhenUnreadableMetadataCannotBeQuarantined() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-quarantine-failure-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let corruptPayload = Data("{ not json at all".utf8)
+        try corruptPayload.write(to: metadataURL)
+
+        let store = WallpaperStore(directoryURL: directory, fileManager: MoveFailingFileManager())
+        XCTAssertTrue(store.loadFavorites().isEmpty)
+
+        let item = try WallpaperItem(
+            id: "wallhaven:unreadable",
+            source: .wallhaven,
+            sourceID: "unreadable",
+            title: "Unreadable",
+            previewURL: XCTUnwrap(URL(string: "https://w.wallhaven.cc/unreadable.jpg")),
+            originalURL: XCTUnwrap(URL(string: "https://w.wallhaven.cc/unreadable.jpg")),
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: 2560,
+            height: 1440,
+            fileExtension: "jpg",
+            licenseName: nil,
+            licenseURL: nil,
+            isFavorite: true,
+            localFileName: nil
+        )
+
+        XCTAssertThrowsError(try store.upsert(item)) { error in
+            XCTAssertEqual(error as? JarvisJSONFileError, .unreadable)
+        }
+        XCTAssertThrowsError(try store.delete(item)) { error in
+            XCTAssertEqual(error as? JarvisJSONFileError, .unreadable)
+        }
+
+        // 原文件原样留着，现场没丢。
+        XCTAssertEqual(try Data(contentsOf: metadataURL), corruptPayload)
+    }
+
+    /// 写盘失败必须让视图模型知道：`toggleFavorite` 只靠 catch 决定要不要提示
+    /// 「收藏状态保存失败」，静默报告成功会让星星闪一下又弹回去。
+    func testWallpaperStoreReportsFailedSaves() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-readonly-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let store = WallpaperStore(directoryURL: directory)
+        let remoteURL = try XCTUnwrap(URL(string: "https://w.wallhaven.cc/readonly.jpg"))
+        func makeItem(id: String) -> WallpaperItem {
+            WallpaperItem(
+                id: id,
+                source: .wallhaven,
+                sourceID: id,
+                title: id,
+                previewURL: remoteURL,
+                originalURL: remoteURL,
+                sourcePageURL: nil,
+                authorName: nil,
+                authorURL: nil,
+                width: 2560,
+                height: 1440,
+                fileExtension: "jpg",
+                licenseName: nil,
+                licenseURL: nil,
+                isFavorite: true,
+                localFileName: nil
+            )
+        }
+
+        // 先留下一条能读出来的元数据，再让目录只读。
+        try store.upsert(makeItem(id: "wallhaven:first"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+
+        XCTAssertThrowsError(try store.upsert(makeItem(id: "wallhaven:second")), "写入失败没有报告")
+        XCTAssertThrowsError(try store.delete(makeItem(id: "wallhaven:first")), "删除失败没有报告")
+    }
+
+    func testWallpaperStoreWritesMetadataWithOwnerOnlyPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-wallpaper-permission-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = WallpaperStore(directoryURL: directory)
+        let remoteURL = try XCTUnwrap(URL(string: "https://w.wallhaven.cc/permission-test.jpg"))
+        try store.upsert(WallpaperItem(
+            id: "wallhaven:permission-test",
+            source: .wallhaven,
+            sourceID: "permission-test",
+            title: "Permission test",
+            previewURL: remoteURL,
+            originalURL: remoteURL,
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: 2560,
+            height: 1440,
+            fileExtension: "jpg",
+            licenseName: nil,
+            licenseURL: nil,
+            isFavorite: true,
+            localFileName: nil
+        ))
+
+        let metadataURL = directory.appendingPathComponent("metadata.json")
+        let attributes = try FileManager.default.attributesOfItem(atPath: metadataURL.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
     func testWallpaperStoreDeletesDownloadedFileAndMetadata() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-wallpaper-delete-test-\(UUID().uuidString)", isDirectory: true)

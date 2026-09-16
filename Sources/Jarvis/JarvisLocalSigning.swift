@@ -18,21 +18,11 @@ enum JarvisLocalSigning {
 
     /// Re-signing replaces the whole signature, so the entitlements have to be
     /// passed back in; dropping them would silently cost the microphone and
-    /// camera access. Kept in sync with `Resources/Jarvis.entitlements`.
-    static let entitlements = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-    \t<key>com.apple.security.cs.allow-jit</key>
-    \t<true/>
-    \t<key>com.apple.security.device.audio-input</key>
-    \t<true/>
-    \t<key>com.apple.security.device.camera</key>
-    \t<true/>
-    </dict>
-    </plist>
-    """
+    /// camera access. Defined once in `JarvisSigningScript` so the shell paths
+    /// cannot drift away from this one.
+    static var entitlements: String {
+        JarvisSigningScript.entitlements
+    }
 
     /// Whether this Mac carries the identity `install.sh` creates.
     static var isAvailable: Bool {
@@ -162,7 +152,27 @@ enum JarvisLocalSigning {
         try process.run()
     }
 
-    private static func adoptionScript(
+    /// 上一次本机签名失败的原因落在哪。
+    ///
+    /// 签名是应用退出之后才由脚本做的，失败时脚本会把应用重新打开，可那一刻已经
+    /// 没有进程能报告错误了。原因因此写到磁盘上，由下一次启动认领一次。
+    static var failureReportURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Jarvis/adopt-failure.txt")
+    }
+
+    /// 读取并清掉上一次的失败原因；没有就返回 nil。
+    static func consumeAdoptionFailure() -> String? {
+        guard let message = try? String(contentsOf: failureReportURL, encoding: .utf8) else {
+            return nil
+        }
+        try? FileManager.default.removeItem(at: failureReportURL)
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// 内嵌脚本对外可见，只为了让测试能拿它跟 `install.sh` 比对并做语法检查。
+    static func adoptionScript(
         appURL: URL,
         bundleIdentifier: String,
         workDirectory: URL,
@@ -177,58 +187,45 @@ enum JarvisLocalSigning {
             echo "[$(/bin/date '+%Y-%m-%d %H:%M:%S')] $*"
         }
 
+        # 应用是用户点了按钮之后才退出的：任何一步失败都得把它放回来，否则贾维斯
+        # 就是凭空消失，而且没有任何东西告诉用户发生了什么。
+        fail() {
+            log "$1"
+            /bin/mkdir -p "$(/usr/bin/dirname "$failure_report")" 2>/dev/null || true
+            print -r -- "$1" > "$failure_report" 2>/dev/null || true
+            /usr/bin/open "$app" >/dev/null 2>&1 || true
+            exit 1
+        }
+
         app=\(shellQuote(appURL.path))
+        failure_report=\(shellQuote(failureReportURL.path))
         identity=\(shellQuote(identityName))
         bundle_id=\(shellQuote(bundleIdentifier))
         work=\(shellQuote(workDirectory.path))
+        login_keychain=\(JarvisSigningScript.loginKeychain)
         parent_pid=\(parentProcessID)
 
         log "等待应用退出"
-        while /bin/kill -0 "$parent_pid" 2>/dev/null; do
-            /bin/sleep 0.3
-        done
+        \(JarvisSigningScript.waitForParentExit)
 
-        if ! /usr/bin/security find-identity -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
-            log "生成本机签名证书"
-            /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \\
-                -keyout "$work/key.pem" -out "$work/cert.pem" \\
-                -subj "/CN=$identity/O=Jarvis Local" \\
-                -addext "basicConstraints=critical,CA:false" \\
-                -addext "keyUsage=critical,digitalSignature" \\
-                -addext "extendedKeyUsage=critical,codeSigning" || { log "生成证书失败"; exit 1; }
-            /usr/bin/security import "$work/cert.pem" -k "$HOME/Library/Keychains/login.keychain-db" \\
-                -T /usr/bin/codesign || { log "导入证书失败"; exit 1; }
-            /usr/bin/security import "$work/key.pem" -k "$HOME/Library/Keychains/login.keychain-db" \\
-                -T /usr/bin/codesign -T /usr/bin/security || { log "导入私钥失败"; exit 1; }
-        fi
+        \(JarvisSigningScript.ensureIdentity)
 
-        if ! /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
-            log "把证书加入信任设置"
-            /usr/bin/security find-certificate -c "$identity" -p \\
-                "$HOME/Library/Keychains/login.keychain-db" > "$work/identity.crt" || { log "导出证书失败"; exit 1; }
-            /usr/bin/security add-trusted-cert -r trustRoot -p codeSign \\
-                -k "$HOME/Library/Keychains/login.keychain-db" "$work/identity.crt" >/dev/null 2>&1 \\
-                || log "写入信任设置失败，继续签名"
-        fi
+        \(JarvisSigningScript.trustIdentity)
 
-        # The old entries belong to the ad-hoc signature and would otherwise
-        # stay listed in System Settings as grants for an app that no longer
-        # exists.
-        /usr/bin/tccutil reset ScreenCapture "$bundle_id" >/dev/null 2>&1
-        /usr/bin/tccutil reset Accessibility "$bundle_id" >/dev/null 2>&1
+        \(JarvisSigningScript.resetPrivacyPermissions)
 
         log "在副本上签名"
-        /usr/bin/ditto "$app" "$work/Signed.app" || { log "复制失败"; exit 1; }
-        /usr/bin/codesign --force --options runtime --entitlements "$work/entitlements.plist" \\
-            --sign "$identity" "$work/Signed.app" || { log "签名失败"; exit 1; }
-        /usr/bin/codesign --verify --deep --strict "$work/Signed.app" || { log "签名校验失败"; exit 1; }
+        /usr/bin/ditto "$app" "$work/Signed.app" || fail "复制失败"
+        target="$work/Signed.app"
+        entitlements="$work/entitlements.plist"
+        \(JarvisSigningScript.signAndVerify)
 
         log "替换应用"
-        /bin/mv "$app" "$work/Replaced.app" || { log "移开旧应用失败"; exit 1; }
+        /bin/mv "$app" "$work/Replaced.app" || fail "移开旧应用失败"
         if ! /usr/bin/ditto "$work/Signed.app" "$app"; then
             log "写入新应用失败，回滚"
             /bin/mv "$work/Replaced.app" "$app"
-            exit 1
+            fail "写入新应用失败，已回滚到原版本"
         fi
 
         /bin/rm -rf "$work/Replaced.app" "$work/Signed.app" "$work/key.pem" "$work/cert.pem"

@@ -256,7 +256,7 @@ enum WallpaperSettingTarget: String, CaseIterable, Codable, Hashable, Identifiab
     }
 }
 
-struct WallpaperItem: Codable, Equatable, Hashable, Identifiable {
+struct WallpaperItem: Codable, Equatable, Hashable, Identifiable, Sendable {
     let id: String
     let source: WallpaperSource
     let sourceID: String
@@ -273,11 +273,6 @@ struct WallpaperItem: Codable, Equatable, Hashable, Identifiable {
     let licenseURL: URL?
     var isFavorite: Bool
     var localFileName: String?
-
-    var aspectRatio: Double {
-        guard width > 0, height > 0 else { return 16.0 / 10.0 }
-        return Double(width) / Double(height)
-    }
 
     var resolutionDescription: String {
         guard width > 0, height > 0 else { return "未知尺寸" }
@@ -471,37 +466,41 @@ enum WallpaperImageValidation {
 final class WallpaperStore {
     private let fileManager: FileManager
     let directoryURL: URL
-    private let metadataURL: URL
+    private let file: JarvisJSONFile<[WallpaperItem]>
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        let supportDirectory = (try? fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? fileManager.temporaryDirectory
-        let directory = supportDirectory
-            .appendingPathComponent(JarvisAppIdentity.dataDirectoryName, isDirectory: true)
-            .appendingPathComponent("Wallpapers", isDirectory: true)
+        let directory = JarvisAppDirectory.url("Wallpapers", fileManager: fileManager)
         directoryURL = directory
-        metadataURL = directory.appendingPathComponent("metadata.json")
-        JarvisProtectedStorage.prepareDirectory(directory, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directory,
+            fileName: "metadata.json",
+            logDomain: "wallpaper.metadata",
+            fileManager: fileManager
+        )
     }
 
     init(directoryURL: URL, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL
-        metadataURL = directoryURL.appendingPathComponent("metadata.json")
-        JarvisProtectedStorage.prepareDirectory(directoryURL, fileManager: fileManager)
+        file = JarvisJSONFile(
+            directoryURL: directoryURL,
+            fileName: "metadata.json",
+            logDomain: "wallpaper.metadata",
+            fileManager: fileManager
+        )
     }
 
     func load() -> [WallpaperItem] {
-        loadWithoutValidatingFiles().filter { localURL(for: $0) != nil }
+        storedItems().filter { localURL(for: $0) != nil }
     }
 
     func loadFavorites() -> [WallpaperItem] {
-        loadWithoutValidatingFiles().filter(\.isFavorite)
+        storedItems().filter(\.isFavorite)
+    }
+
+    private func storedItems() -> [WallpaperItem] {
+        file.readOrDefault([])
     }
 
     func localURL(for item: WallpaperItem) -> URL? {
@@ -558,14 +557,13 @@ final class WallpaperStore {
             }
         }
 
-        var items = loadWithoutValidatingFiles()
+        var items = try itemsForWriting()
         items.removeAll { $0.id == item.id }
-        let data = try JSONEncoder().encode(items)
-        try data.write(to: metadataURL, options: .atomic)
+        try file.writeOrThrow(items)
     }
 
     func upsert(_ item: WallpaperItem) throws {
-        var items = loadWithoutValidatingFiles()
+        var items = try itemsForWriting()
         if let existing = items.first(where: { $0.id == item.id }) {
             var merged = item
             merged.localFileName = item.localFileName ?? existing.localFileName
@@ -578,17 +576,11 @@ final class WallpaperStore {
                 items.insert(item, at: 0)
             }
         }
-        let data = try JSONEncoder().encode(items)
-        try data.write(to: metadataURL, options: .atomic)
+        try file.writeOrThrow(items)
     }
 
-    private func loadWithoutValidatingFiles() -> [WallpaperItem] {
-        guard let data = try? Data(contentsOf: metadataURL),
-              let items = try? JSONDecoder().decode([WallpaperItem].self, from: data)
-        else {
-            return []
-        }
-        return items
+    private func itemsForWriting() throws -> [WallpaperItem] {
+        try file.readForWriting(default: [])
     }
 
     private func isSafeFileName(_ fileName: String) -> Bool {
@@ -753,6 +745,11 @@ enum WallpaperSystemServiceError: LocalizedError, Equatable {
 /// macOS exposes the desktop image through NSWorkspace, but does not expose a
 /// public API for the other two records. The latter are still user-scoped
 /// system records, so we update them together and validate the writes.
+///
+/// `wallpaperIndexURL` points at a system preferences file, not at our own
+/// storage, so it is deliberately written with a plain atomic write instead of
+/// `JarvisProtectedStorage.write`: the 0600 permission that helper applies
+/// belongs to Jarvis-owned files and must not be imposed on system records.
 @MainActor
 struct WallpaperSystemService {
     private let fileManager: FileManager
@@ -1393,18 +1390,6 @@ final class WallpaperViewModel: ObservableObject {
             merged.isFavorite = saved.isFavorite
             merged.localFileName = saved.localFileName
             return merged
-        }
-    }
-}
-
-enum WallpaperSystemSettings {
-    static func open() {
-        let urls = [
-            "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension",
-            "x-apple.systempreferences:com.apple.preference.desktopscreeneffect"
-        ].compactMap(URL.init(string:))
-        for url in urls where NSWorkspace.shared.open(url) {
-            return
         }
     }
 }

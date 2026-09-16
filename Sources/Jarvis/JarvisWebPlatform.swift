@@ -72,7 +72,6 @@ enum JarvisWebPlatformNavigationPolicy {
 enum JarvisWebPlatformLayoutMetrics {
     static let topBarSpacing: CGFloat = 12
     static let browserControlSize = JarvisToolbarMetrics.controlSize
-    static let browserControlSpacing = JarvisToolbarMetrics.controlSpacing
     static let browserControlCount = 5
     static let groupedPickerMinimumWidth: CGFloat = 268
 

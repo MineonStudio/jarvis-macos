@@ -296,10 +296,6 @@ extension AppModel {
         try? meetingRepository.microphoneAudioURL(for: record)
     }
 
-    func meetingSystemAudioURL(for record: MeetingRecord) -> URL? {
-        try? meetingRepository.systemAudioURL(for: record)
-    }
-
     func updateMeetingTitle(recordID: UUID, title: String) {
         guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else { return }
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -34,10 +34,6 @@ final class ClipboardPanelController: NSObject, NSWindowDelegate {
         panel.makeKey()
     }
 
-    func close() {
-        panel?.orderOut(nil)
-    }
-
     private func makePanel(app: AppModel) {
         let panel = NSPanel(
             contentRect: NSRect(

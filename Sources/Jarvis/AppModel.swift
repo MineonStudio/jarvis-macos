@@ -126,7 +126,7 @@ final class AppModel {
     @ObservationIgnored let clipboardCacheStore: ClipboardCacheStore
     @ObservationIgnored let clipboardService: ClipboardService
     @ObservationIgnored lazy var clipboardStore = ClipboardStore()
-    @ObservationIgnored lazy var clipboardHistoryWriter = ClipboardHistoryWriter()
+    @ObservationIgnored lazy var clipboardHistoryWriter = ClipboardHistoryWriter(store: clipboardStore)
     @ObservationIgnored lazy var startupRepository = JarvisStartupRepository()
     @ObservationIgnored let clipboardPanelController = ClipboardPanelController()
     @ObservationIgnored lazy var screenshotCacheStore = ScreenshotCacheStore()
@@ -149,6 +149,9 @@ final class AppModel {
     @ObservationIgnored private(set) var entertainmentControllers: [EntertainmentPlatform: JarvisWebPlatformController] = [:]
     @ObservationIgnored var startupTask: Task<Void, Never>?
     @ObservationIgnored var clipboardSaveTask: Task<Void, Never>?
+    /// 剪贴板历史写入的版本号。每次落盘都取一个新值，连同当时的状态一起交给
+    /// `ClipboardStore`，让迟到的去抖写入无法覆盖更新的直接写入。
+    @ObservationIgnored var clipboardHistoryRevision: UInt64 = 0
     @ObservationIgnored var aiModelsRefreshTask: Task<Void, Never>?
     @ObservationIgnored var screenshotShortcutManager: ScreenshotShortcutManager?
     @ObservationIgnored var clipboardShortcutManager: ScreenshotShortcutManager?
@@ -393,16 +396,6 @@ final class AppModel {
         )
     }
 
-    func loadLatestScreenshotIfNeeded() -> Data? {
-        if let latestScreenshotData {
-            return latestScreenshotData
-        }
-        guard let data = screenshotCacheStore.load() else { return nil }
-        latestScreenshotData = data
-        statusMessage = "已恢复上次缓存的截图"
-        return data
-    }
-
     deinit {
         toastDismissTask?.cancel()
         startupTask?.cancel()
@@ -527,24 +520,6 @@ extension AppModel {
         )
     }
 
-    func saveScreenshotHistory(
-        _ item: ScreenshotHistoryItem,
-        presentingWindow: NSWindow? = nil
-    ) {
-        guard let data = screenshotHistoryStore.data(for: item) else {
-            showToast("历史截图文件不存在")
-            reloadScreenshotHistory()
-            return
-        }
-        presentSavePanel(
-            for: data,
-            historyID: nil,
-            finalizesHistory: false,
-            successMessage: "截图已保存",
-            presentingWindow: presentingWindow
-        )
-    }
-
     func copyScreenshotHistory(_ item: ScreenshotHistoryItem) {
         guard let data = screenshotHistoryStore.data(for: item) else {
             showToast("历史截图文件不存在")
@@ -622,15 +597,6 @@ extension AppModel {
         }
     }
 
-    func clearScreenshotCache() {
-        guard screenshotCacheStore.clear() else {
-            showToast("截图缓存清除失败")
-            return
-        }
-        latestScreenshotData = nil
-        showToast("截图缓存已清除")
-    }
-
     func checkForUpdates() {
         guard updateState != .checking else { return }
         updateState = .checking
@@ -678,14 +644,6 @@ extension AppModel {
         }
     }
 
-    func openLatestRelease() {
-        if case let .available(release) = updateState {
-            NSWorkspace.shared.open(release.releaseURL)
-        } else {
-            NSWorkspace.shared.open(JarvisAppVersion.releasesURL)
-        }
-    }
-
     @discardableResult
     private func setLatestScreenshot(_ data: Data) -> Bool {
         latestScreenshotData = data
@@ -728,10 +686,6 @@ extension AppModel {
 
     func screenshotHistoryFileURL(for item: ScreenshotHistoryItem) -> URL {
         screenshotHistoryStore.fileURL(for: item)
-    }
-
-    func screenshotHistoryFileSize(for item: ScreenshotHistoryItem) -> Int64? {
-        screenshotHistoryStore.fileSize(for: item)
     }
 
     func showScreenshotHistoryPreview(_ item: ScreenshotHistoryItem) {

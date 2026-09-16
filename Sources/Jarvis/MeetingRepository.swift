@@ -114,10 +114,6 @@ final class MeetingRepository: @unchecked Sendable {
         )
     }
 
-    func recordingURL(for id: UUID) -> URL {
-        recordingsURL.appendingPathComponent("meeting-\(id.uuidString).m4a", isDirectory: false)
-    }
-
     func loadDetail(for id: UUID) -> MeetingRecordDetail? {
         lock.withLock {
             let url = detailFileURL(for: id)

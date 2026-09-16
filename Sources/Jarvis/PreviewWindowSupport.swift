@@ -56,19 +56,6 @@ enum PreviewWindowSupport {
         )
     }
 
-    static func configurePreviewPanel(_ panel: NSPanel, title: String) {
-        configurePreviewPanelBase(panel)
-        panel.title = title
-        panel.titleVisibility = .visible
-        panel.titlebarAppearsTransparent = false
-        panel.titlebarSeparatorStyle = .none
-        panel.hasShadow = true
-        panel.standardWindowButton(.closeButton)?.isHidden = false
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = false
-        panel.standardWindowButton(.zoomButton)?.isHidden = false
-        panel.standardWindowButton(.zoomButton)?.isEnabled = true
-    }
-
     static func configureBorderlessPreviewPanel(_ panel: NSPanel) {
         configurePreviewPanelBase(panel)
         panel.styleMask = panel.styleMask

@@ -168,8 +168,7 @@ private extension ResumeContentView {
             documentCanvas
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .jarvisFloatingPanel(cornerRadius: 16)
+        .jarvisModulePanel()
     }
 
     @ToolbarContentBuilder

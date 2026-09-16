@@ -468,16 +468,32 @@ final class ClipboardCacheStore: @unchecked Sendable {
     /// External source files referenced by clipboard history are never touched.
     @discardableResult
     func removeManagedFiles(for items: [ClipboardItem], reason: String = "manual") -> Bool {
+        removeManagedFilesReportingBytes(for: items, reason: reason).succeeded
+    }
+
+    /// 同 `removeManagedFiles`，另外回报释放了多少字节。
+    ///
+    /// 淘汰缓存时删一条就要更新一次用量，而 `usage()` 会递归枚举整个缓存目录——
+    /// 淘汰 30 条就是 31 次全目录扫描，全在主线程上。删除时本来就要 stat 每个文件，
+    /// 顺手量一下大小，调用方做减法就够了。
+    func removeManagedFilesReportingBytes(
+        for items: [ClipboardItem],
+        reason: String = "manual"
+    ) -> (succeeded: Bool, freedBytes: Int64, removedFileCount: Int) {
         let operationID = JarvisLog.operationID()
         let result = lock.withLock {
             var succeeded = true
             var removedFileCount = 0
+            var freedBytes: Int64 = 0
             for item in items {
                 for url in managedFileURLsLocked(for: item) {
                     guard fileManager.fileExists(atPath: url.path) else { continue }
+                    let size = (try? fileManager.attributesOfItem(atPath: url.path)[.size])
+                        .flatMap { $0 as? NSNumber }?.int64Value ?? 0
                     do {
                         try fileManager.removeItem(at: url)
                         removedFileCount += 1
+                        freedBytes += size
                     } catch {
                         succeeded = false
                         JarvisLog.error(
@@ -496,6 +512,7 @@ final class ClipboardCacheStore: @unchecked Sendable {
             return (
                 succeeded
                     && items.allSatisfy { managedFileURLsLocked(for: $0).allSatisfy { !fileManager.fileExists(atPath: $0.path) } },
+                freedBytes,
                 removedFileCount
             )
         }
@@ -507,10 +524,11 @@ final class ClipboardCacheStore: @unchecked Sendable {
             fields: [
                 "reason": reason,
                 "itemCount": String(items.count),
-                "fileCount": String(result.1)
+                "fileCount": String(result.2),
+                "bytes": String(result.1)
             ]
         )
-        return result.0
+        return (result.0, result.1, result.2)
     }
 
     func hasManagedFiles(for item: ClipboardItem) -> Bool {
@@ -844,5 +862,31 @@ private extension NSLock {
         lock()
         defer { unlock() }
         return try body()
+    }
+}
+
+/// 缓存容量的文字表述与比例。
+///
+/// 原本长在设置卡片里，视图层不该承担这个，而 `ClipboardCacheStore` 才是定义这些
+/// 容量含义的地方。
+enum ClipboardCacheFormatting {
+    static func byteDescription(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        return formatter.string(fromByteCount: bytes)
+    }
+
+    /// 容量上限用整 GB 表述更易读，最小档则固定写成 256 MB。
+    static func capacityDescription(_ bytes: Int64) -> String {
+        if bytes == ClipboardCacheStore.minimumMaximumBytes {
+            return "256 MB"
+        }
+        let gigabyte: Int64 = 1024 * 1024 * 1024
+        if bytes % gigabyte == 0 {
+            return "\(bytes / gigabyte) GB"
+        }
+        return byteDescription(bytes)
     }
 }

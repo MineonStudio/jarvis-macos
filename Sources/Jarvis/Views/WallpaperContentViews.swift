@@ -35,63 +35,11 @@ struct WallpaperView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                ToolbarItem(id: "wallpaper.filter.resolution", placement: .automatic) {
-                    JarvisDropdownMenu(
-                        title: model.selectedResolution.title,
-                        options: WallpaperResolution.allCases.map {
-                            JarvisDropdownOption(id: $0.rawValue, title: $0.title)
-                        },
-                        selectionID: model.selectedResolution.rawValue,
-                        accessibilityLabel: "分辨率筛选",
-                        help: "按最低分辨率筛选",
-                        onSelect: { rawValue in
-                            guard let resolution = WallpaperResolution(rawValue: rawValue) else { return }
-                            model.selectedResolution = resolution
-                            applyOnlineFilters()
-                        }
-                    )
-                    .id(model.selectedResolution.rawValue)
-                }
-
+                resolutionFilterItem
                 ToolbarSpacer(.fixed, placement: .automatic)
-
-                ToolbarItem(id: "wallpaper.filter.ratio", placement: .automatic) {
-                    JarvisDropdownMenu(
-                        title: model.selectedRatio.title,
-                        options: WallpaperRatio.allCases.map {
-                            JarvisDropdownOption(id: $0.rawValue, title: $0.title)
-                        },
-                        selectionID: model.selectedRatio.rawValue,
-                        accessibilityLabel: "比例筛选",
-                        help: "按横竖屏或画面比例筛选",
-                        onSelect: { rawValue in
-                            guard let ratio = WallpaperRatio(rawValue: rawValue) else { return }
-                            model.selectedRatio = ratio
-                            applyOnlineFilters()
-                        }
-                    )
-                    .id(model.selectedRatio.rawValue)
-                }
-
+                ratioFilterItem
                 ToolbarSpacer(.fixed, placement: .automatic)
-
-                ToolbarItem(id: "wallpaper.filter.sorting", placement: .automatic) {
-                    JarvisDropdownMenu(
-                        title: model.selectedSorting.title,
-                        options: WallpaperSorting.allCases.map {
-                            JarvisDropdownOption(id: $0.rawValue, title: $0.title)
-                        },
-                        selectionID: model.selectedSorting.rawValue,
-                        accessibilityLabel: "排序方式",
-                        help: "选择 Wallhaven 排序方式",
-                        onSelect: { rawValue in
-                            guard let sorting = WallpaperSorting(rawValue: rawValue) else { return }
-                            model.selectedSorting = sorting
-                            applyOnlineFilters()
-                        }
-                    )
-                    .id(model.selectedSorting.rawValue)
-                }
+                sortingFilterItem
             },
             trailingToolbar: {
                 WallpaperLibraryToolbar(libraryMode: $libraryMode)
@@ -110,78 +58,10 @@ struct WallpaperView: View {
             content: {
                 GeometryReader { viewport in
                     ScrollViewReader { scrollProxy in
-                        ScrollView {
-                            VStack(spacing: 0) {
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id(WallpaperScrollTarget.top)
-                                    .accessibilityHidden(true)
-
-                                switch libraryMode {
-                                case .online:
-                                    onlineGallery
-                                case .downloaded:
-                                    gallery(
-                                        items: model.library,
-                                        emptyTitle: "还没有已下载壁纸",
-                                        emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
-                                        showsDelete: true,
-                                        onDelete: { deleteItem = $0 }
-                                    )
-                                case .favorites:
-                                    gallery(
-                                        items: model.favorites,
-                                        emptyTitle: "还没有收藏壁纸",
-                                        emptyMessage: "在壁纸卡片上点击心形按钮，即可收藏壁纸。"
-                                    )
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
-                            .padding(.vertical, HistoryGridMetrics.historyPanelInset)
-                        }
-                        .coordinateSpace(name: WallpaperScrollSpace.name)
-                        .onScrollGeometryChange(for: Bool.self) { geometry in
-                            geometry.visibleRect.minY >= WallpaperScrollBehavior.backToTopThreshold
-                        } action: { _, shouldShow in
-                            shouldShowScrollToTop = shouldShow
-                        }
-                        .onPreferenceChange(WallpaperLoadMoreTriggerPreferenceKey.self) { triggerY in
-                            guard model.hasNextPage,
-                                  !model.isLoadingMore,
-                                  !isLoadMoreScheduled,
-                                  triggerY.isFinite,
-                                  triggerY <= viewport.size.height + 160
-                            else {
-                                return
-                            }
-                            loadMore()
-                        }
-                        .overlay(alignment: .bottomTrailing) {
-                            if shouldShowScrollToTop {
-                                Button {
-                                    withAnimation(
-                                        JarvisMotion.animation(
-                                            JarvisMotion.content,
-                                            reduceMotion: reduceMotion
-                                        )
-                                    ) {
-                                        scrollProxy.scrollTo(WallpaperScrollTarget.top, anchor: .top)
-                                    }
-                                } label: {
-                                    Label("返回顶部", systemImage: "arrow.up")
-                                }
-                                .buttonStyle(JarvisSecondaryButtonStyle())
-                                .accessibilityLabel("返回壁纸列表顶部")
-                                .help("返回壁纸列表顶部")
-                                .padding(.trailing, 18)
-                                .padding(.bottom, 18)
-                            }
-                        }
+                        galleryScrollView(viewport: viewport, scrollProxy: scrollProxy)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .jarvisFloatingPanel(cornerRadius: 16)
+                .jarvisModulePanel()
             }
         )
         .confirmationDialog(
@@ -213,6 +93,167 @@ struct WallpaperView: View {
         .onDisappear {
             previewController.dismiss()
         }
+    }
+
+    // MARK: - 工具栏
+
+    /// 三个筛选下拉的形状完全相同，只有取值和选项不同。
+    private func filterItem(
+        id: String,
+        title: String,
+        options: [JarvisDropdownOption],
+        selectionID: String,
+        accessibilityLabel: String,
+        help: String,
+        onSelect: @escaping (String) -> Void
+    ) -> some ToolbarContent {
+        ToolbarItem(id: id, placement: .automatic) {
+            JarvisDropdownMenu(
+                title: title,
+                options: options,
+                selectionID: selectionID,
+                accessibilityLabel: accessibilityLabel,
+                help: help,
+                onSelect: onSelect
+            )
+            .id(selectionID)
+        }
+    }
+
+    private var resolutionFilterItem: some ToolbarContent {
+        filterItem(
+            id: "wallpaper.filter.resolution",
+            title: model.selectedResolution.title,
+            options: WallpaperResolution.allCases.map {
+                JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+            },
+            selectionID: model.selectedResolution.rawValue,
+            accessibilityLabel: "分辨率筛选",
+            help: "按最低分辨率筛选"
+        ) { rawValue in
+            guard let resolution = WallpaperResolution(rawValue: rawValue) else { return }
+            model.selectedResolution = resolution
+            applyOnlineFilters()
+        }
+    }
+
+    private var ratioFilterItem: some ToolbarContent {
+        filterItem(
+            id: "wallpaper.filter.ratio",
+            title: model.selectedRatio.title,
+            options: WallpaperRatio.allCases.map {
+                JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+            },
+            selectionID: model.selectedRatio.rawValue,
+            accessibilityLabel: "比例筛选",
+            help: "按横竖屏或画面比例筛选"
+        ) { rawValue in
+            guard let ratio = WallpaperRatio(rawValue: rawValue) else { return }
+            model.selectedRatio = ratio
+            applyOnlineFilters()
+        }
+    }
+
+    private var sortingFilterItem: some ToolbarContent {
+        filterItem(
+            id: "wallpaper.filter.sorting",
+            title: model.selectedSorting.title,
+            options: WallpaperSorting.allCases.map {
+                JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+            },
+            selectionID: model.selectedSorting.rawValue,
+            accessibilityLabel: "排序方式",
+            help: "选择 Wallhaven 排序方式"
+        ) { rawValue in
+            guard let sorting = WallpaperSorting(rawValue: rawValue) else { return }
+            model.selectedSorting = sorting
+            applyOnlineFilters()
+        }
+    }
+
+    // MARK: - 画廊
+
+    private func galleryScrollView(
+        viewport: GeometryProxy,
+        scrollProxy: ScrollViewProxy
+    ) -> some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 1)
+                    .id(WallpaperScrollTarget.top)
+                    .accessibilityHidden(true)
+
+                galleryList
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, HistoryGridMetrics.historyPanelInset)
+            .padding(.vertical, HistoryGridMetrics.historyPanelInset)
+        }
+        .coordinateSpace(name: WallpaperScrollSpace.name)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.visibleRect.minY >= WallpaperScrollBehavior.backToTopThreshold
+        } action: { _, shouldShow in
+            shouldShowScrollToTop = shouldShow
+        }
+        .onPreferenceChange(WallpaperLoadMoreTriggerPreferenceKey.self) { triggerY in
+            guard model.hasNextPage,
+                  !model.isLoadingMore,
+                  !isLoadMoreScheduled,
+                  triggerY.isFinite,
+                  triggerY <= viewport.size.height + 160
+            else {
+                return
+            }
+            loadMore()
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if shouldShowScrollToTop {
+                scrollToTopButton(scrollProxy: scrollProxy)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var galleryList: some View {
+        switch libraryMode {
+        case .online:
+            onlineGallery
+        case .downloaded:
+            gallery(
+                items: model.library,
+                emptyTitle: "还没有已下载壁纸",
+                emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
+                showsDelete: true,
+                onDelete: { deleteItem = $0 }
+            )
+        case .favorites:
+            gallery(
+                items: model.favorites,
+                emptyTitle: "还没有收藏壁纸",
+                emptyMessage: "在壁纸卡片上点击心形按钮，即可收藏壁纸。"
+            )
+        }
+    }
+
+    private func scrollToTopButton(scrollProxy: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(
+                JarvisMotion.animation(
+                    JarvisMotion.content,
+                    reduceMotion: reduceMotion
+                )
+            ) {
+                scrollProxy.scrollTo(WallpaperScrollTarget.top, anchor: .top)
+            }
+        } label: {
+            Label("返回顶部", systemImage: "arrow.up")
+        }
+        .buttonStyle(JarvisSecondaryButtonStyle())
+        .accessibilityLabel("返回壁纸列表顶部")
+        .help("返回壁纸列表顶部")
+        .padding(.trailing, 18)
+        .padding(.bottom, 18)
     }
 
     @ViewBuilder
@@ -600,7 +641,7 @@ private struct WallpaperThumbnail: View {
 
     var body: some View {
         ZStack {
-            Color.primary.opacity(0.045)
+            Color.jarvisInsetSurface
             if let image {
                 Image(nsImage: image)
                     .resizable()

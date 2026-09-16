@@ -82,6 +82,9 @@ extension Color {
     static let jarvisPanel = Color(nsColor: .controlBackgroundColor)
     static let jarvisCyan = Color.accentColor
     static let jarvisTextSecondary = Color.secondary
+    /// 嵌在卡片里的区域（设置行、手风琴、权限行）的底色：比卡片表面更淡，
+    /// 靠明度差而不是描边来分层。
+    static let jarvisInsetSurface = Color.primary.opacity(0.045)
 }
 
 enum JarvisMetrics {

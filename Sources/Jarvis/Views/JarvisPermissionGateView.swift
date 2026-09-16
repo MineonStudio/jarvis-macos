@@ -166,7 +166,7 @@ struct JarvisPermissionList: View {
             }
         }
         .background(
-            Color.primary.opacity(0.045),
+            Color.jarvisInsetSurface,
             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
     }

@@ -641,7 +641,7 @@ private struct WallpaperThumbnail: View {
 
     var body: some View {
         ZStack {
-            Color.primary.opacity(0.045)
+            Color.jarvisInsetSurface
             if let image {
                 Image(nsImage: image)
                     .resizable()

@@ -12,7 +12,9 @@ import Foundation
 /// 让漂移在 CI 上就失败，而不是等用户升级后才发现权限没了。
 ///
 /// 各片段只依赖这几个变量，调用方负责先设好：`identity`（证书 CN）、`work`
-/// （可写临时目录）、`bundle_id`、`login_keychain`、`entitlements`、`target`。
+/// （可写临时目录）、`bundle_id`、`login_keychain`、`entitlements`、`target`，
+/// 以及一个 `fail` 函数。片段只管做什么，失败之后怎么办由调用方决定：本机签名
+/// 那条路必须把应用放回来，安装脚本则应该直接中止。
 enum JarvisSigningScript {
     /// 登录钥匙串路径。三种入口都在同一个用户的会话里，路径一致。
     static let loginKeychain = "$HOME/Library/Keychains/login.keychain-db"
@@ -29,13 +31,13 @@ enum JarvisSigningScript {
             -subj "/CN=$identity/O=Jarvis Local" \\
             -addext "basicConstraints=critical,CA:false" \\
             -addext "keyUsage=critical,digitalSignature" \\
-            -addext "extendedKeyUsage=critical,codeSigning" || { log "生成证书失败"; exit 1; }
+            -addext "extendedKeyUsage=critical,codeSigning" || fail "生成证书失败"
         /usr/bin/security import "$work/cert.pem" -k "$login_keychain" \\
-            -T /usr/bin/codesign || { log "导入证书失败"; exit 1; }
+            -T /usr/bin/codesign || fail "导入证书失败"
         /usr/bin/security import "$work/key.pem" -k "$login_keychain" \\
-            -T /usr/bin/codesign -T /usr/bin/security || { log "导入私钥失败"; exit 1; }
+            -T /usr/bin/codesign -T /usr/bin/security || fail "导入私钥失败"
         /usr/bin/security find-identity -p codesigning | /usr/bin/grep -qF "$identity" \\
-            || { log "证书导入后仍查不到"; exit 1; }
+            || fail "证书导入后仍查不到"
     fi
     """
 
@@ -48,7 +50,7 @@ enum JarvisSigningScript {
     if ! /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
         log "把证书加入信任设置"
         /usr/bin/security find-certificate -c "$identity" -p \\
-            "$login_keychain" > "$work/identity.crt" || { log "导出证书失败"; exit 1; }
+            "$login_keychain" > "$work/identity.crt" || fail "导出证书失败"
         /usr/bin/security add-trusted-cert -r trustRoot -p codeSign \\
             -k "$login_keychain" "$work/identity.crt" >/dev/null 2>&1 \\
             || log "写入信任设置失败，继续签名"
@@ -67,8 +69,8 @@ enum JarvisSigningScript {
     /// 用本机身份签名并校验。
     static let signAndVerify = """
     /usr/bin/codesign --force --options runtime --entitlements "$entitlements" \\
-        --sign "$identity" "$target" || { log "签名失败"; exit 1; }
-    /usr/bin/codesign --verify --deep --strict "$target" || { log "签名校验失败"; exit 1; }
+        --sign "$identity" "$target" || fail "签名失败"
+    /usr/bin/codesign --verify --deep --strict "$target" || fail "签名校验失败"
     """
 
     /// 等父进程退出，超时后逐级升级信号。

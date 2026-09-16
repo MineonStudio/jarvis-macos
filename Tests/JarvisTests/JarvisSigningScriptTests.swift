@@ -125,6 +125,46 @@ final class JarvisSigningScriptTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0, "adoption 脚本语法错误：\(message)")
     }
 
+    /// 共享片段把失败交给调用方的 `fail`，两边都必须提供，否则脚本一遇到错误
+    /// 就会以「command not found」告终。
+    func testBothCallersDefineTheFailHookTheFragmentsUse() throws {
+        let installScript = try repositoryFile("install.sh")
+        XCTAssertTrue(installScript.contains("fail() {"), "install.sh 没有定义 fail")
+
+        let adoption = JarvisLocalSigning.adoptionScript(
+            appURL: URL(fileURLWithPath: "/Applications/Jarvis.app"),
+            bundleIdentifier: "com.jarvis.mac",
+            workDirectory: URL(fileURLWithPath: "/tmp/JarvisAdopt-Test"),
+            parentProcessID: 4242
+        )
+        XCTAssertTrue(adoption.contains("fail() {"), "adoption 脚本没有定义 fail")
+    }
+
+    /// 应用是用户点了按钮之后才退出的。任何一条失败路径都必须把它放回来，
+    /// 否则贾维斯会凭空消失，而且没有任何东西告诉用户发生了什么。
+    func testAdoptionScriptRelauchesTheAppOnEveryFailurePath() {
+        let script = JarvisLocalSigning.adoptionScript(
+            appURL: URL(fileURLWithPath: "/Applications/Jarvis.app"),
+            bundleIdentifier: "com.jarvis.mac",
+            workDirectory: URL(fileURLWithPath: "/tmp/JarvisAdopt-Test"),
+            parentProcessID: 4242
+        )
+
+        let failBody = script
+            .components(separatedBy: "fail() {")
+            .last?
+            .components(separatedBy: "}") // fail 函数体到第一个右花括号
+            .first ?? ""
+        XCTAssertTrue(failBody.contains("/usr/bin/open"), "fail 没有把应用重新打开")
+        XCTAssertTrue(failBody.contains("failure_report"), "fail 没有留下失败原因")
+
+        // 失败路径全部走 fail，不再有裸的 exit 1。
+        XCTAssertFalse(
+            script.contains("|| { log"),
+            "还有绕过 fail 的失败路径，应用会被留在关闭状态"
+        )
+    }
+
     /// 只等不催的等待循环会在应用卡住退出时把用户留在中间态，adoption 必须用
     /// 与更新流程相同的那一份。
     func testAdoptionScriptWaitsWithTheEscalatingLoop() {

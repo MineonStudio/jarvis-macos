@@ -48,6 +48,12 @@ die() {
   exit 1
 }
 
+# 共享片段用 fail 汇报失败。这里没有需要放回来的应用：走到签名这一步时
+# 要么是全新安装，要么还没退出正在运行的旧副本。
+fail() {
+  die "$1"
+}
+
 for argument in "$@"; do
   case "$argument" in
     --uninstall) UNINSTALL=1 ;;
@@ -150,13 +156,13 @@ if ! /usr/bin/security find-identity -p codesigning 2>/dev/null | /usr/bin/grep 
         -subj "/CN=$identity/O=Jarvis Local" \
         -addext "basicConstraints=critical,CA:false" \
         -addext "keyUsage=critical,digitalSignature" \
-        -addext "extendedKeyUsage=critical,codeSigning" || { log "生成证书失败"; exit 1; }
+        -addext "extendedKeyUsage=critical,codeSigning" || fail "生成证书失败"
     /usr/bin/security import "$work/cert.pem" -k "$login_keychain" \
-        -T /usr/bin/codesign || { log "导入证书失败"; exit 1; }
+        -T /usr/bin/codesign || fail "导入证书失败"
     /usr/bin/security import "$work/key.pem" -k "$login_keychain" \
-        -T /usr/bin/codesign -T /usr/bin/security || { log "导入私钥失败"; exit 1; }
+        -T /usr/bin/codesign -T /usr/bin/security || fail "导入私钥失败"
     /usr/bin/security find-identity -p codesigning | /usr/bin/grep -qF "$identity" \
-        || { log "证书导入后仍查不到"; exit 1; }
+        || fail "证书导入后仍查不到"
 fi
 
 # Make the certificate a complete code-signing identity rather than one
@@ -167,7 +173,7 @@ fi
 if ! /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
     log "把证书加入信任设置"
     /usr/bin/security find-certificate -c "$identity" -p \
-        "$login_keychain" > "$work/identity.crt" || { log "导出证书失败"; exit 1; }
+        "$login_keychain" > "$work/identity.crt" || fail "导出证书失败"
     /usr/bin/security add-trusted-cert -r trustRoot -p codeSign \
         -k "$login_keychain" "$work/identity.crt" >/dev/null 2>&1 \
         || log "写入信任设置失败，继续签名"
@@ -192,8 +198,8 @@ log "使用本地证书签名"
 target="$SOURCE_APP"
 entitlements="$work/entitlements.plist"
 /usr/bin/codesign --force --options runtime --entitlements "$entitlements" \
-    --sign "$identity" "$target" || { log "签名失败"; exit 1; }
-/usr/bin/codesign --verify --deep --strict "$target" || { log "签名校验失败"; exit 1; }
+    --sign "$identity" "$target" || fail "签名失败"
+/usr/bin/codesign --verify --deep --strict "$target" || fail "签名校验失败"
 
 quit_running_app_if_replacing
 

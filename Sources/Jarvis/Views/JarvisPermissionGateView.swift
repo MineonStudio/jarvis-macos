@@ -74,6 +74,12 @@ struct JarvisPermissionGateView: View {
         .frame(width: 400)
         .jarvisGlass(cornerRadius: 24, interactive: false)
         .shadow(color: Color.black.opacity(0.16), radius: 32, y: 14)
+        .onAppear {
+            // 签名是在应用退出之后由脚本完成的，失败原因只能由下一次启动认领。
+            if let reason = JarvisLocalSigning.consumeAdoptionFailure() {
+                adoptionFailure = "上次签名失败：\(reason)"
+            }
+        }
     }
 
     /// Releases are ad-hoc signed, so an app dragged out of the download zip
@@ -95,6 +101,11 @@ struct JarvisPermissionGateView: View {
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Text("点下去贾维斯会自己关掉再重新打开，中途不用管它；万一失败也会自动开回来并在这里说明原因。")
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             if let adoptionFailure {
                 Text(adoptionFailure)
                     .font(JarvisTypography.caption)
@@ -109,12 +120,12 @@ struct JarvisPermissionGateView: View {
                     if isAdoptingIdentity {
                         ProgressView().controlSize(.small)
                     }
-                    Text(isAdoptingIdentity ? "正在签名…" : "为本机签名并重启")
+                    Text(isAdoptingIdentity ? "正在签名…" : "签名并立即重启")
                 }
             }
             .buttonStyle(JarvisSecondaryButtonStyle())
             .disabled(isAdoptingIdentity)
-            .help("会用本机证书重新签名贾维斯并重新启动")
+            .help("会用本机证书重新签名贾维斯，然后立刻重新打开")
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

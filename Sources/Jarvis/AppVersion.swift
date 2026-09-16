@@ -502,13 +502,10 @@ extension JarvisUpdateService {
             exit 1
         fi
 
-        # Ad-hoc signed GitHub zips keep a quarantine flag from URLSession.
-        # Without a Developer ID / notarization ticket, Gatekeeper would
-        # block relaunch, so strip it only after codesign --verify succeeds.
-        if /usr/bin/xattr -p com.apple.quarantine "$new_app" >/dev/null 2>&1; then
-            log "签名校验通过后移除 quarantine 标记"
-            /usr/bin/xattr -dr com.apple.quarantine "$new_app" 2>&1 || log "移除 quarantine 失败"
-        fi
+        # 发布包没有开发者 ID 签名，留着 quarantine 会被 Gatekeeper 挡住启动，
+        # 所以只在签名校验通过之后才摘。
+        target="$new_app"
+        \(JarvisSigningScript.stripQuarantine)
 
         is_app_running() {
             local target="$1"
@@ -643,25 +640,7 @@ extension JarvisUpdateService {
             exit 1
         }
 
-        # Wait for a clean termination, but do not block forever if AppKit
-        # leaves the process as a zombie or a termination request is ignored.
-        wait_ticks=0
-        while /bin/kill -0 "$parent_pid" 2>/dev/null && (( wait_ticks < 150 )); do
-            process_state=$(/bin/ps -p "$parent_pid" -o stat= 2>/dev/null || true)
-            [[ "$process_state" == Z* ]] && break
-            /bin/sleep 0.1
-            (( wait_ticks += 1 ))
-        done
-        if /bin/kill -0 "$parent_pid" 2>/dev/null; then
-            log "应用未在等待期内退出，发送 TERM"
-            /bin/kill -TERM "$parent_pid" 2>/dev/null || true
-            /bin/sleep 0.5
-        fi
-        if /bin/kill -0 "$parent_pid" 2>/dev/null; then
-            log "应用仍未退出，发送 KILL"
-            /bin/kill -KILL "$parent_pid" 2>/dev/null || true
-        fi
-        /bin/sleep 0.4
+        \(JarvisSigningScript.waitForParentExit)
 
         if replace_without_authorization; then
             exit 0

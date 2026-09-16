@@ -18,21 +18,11 @@ enum JarvisLocalSigning {
 
     /// Re-signing replaces the whole signature, so the entitlements have to be
     /// passed back in; dropping them would silently cost the microphone and
-    /// camera access. Kept in sync with `Resources/Jarvis.entitlements`.
-    static let entitlements = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-    \t<key>com.apple.security.cs.allow-jit</key>
-    \t<true/>
-    \t<key>com.apple.security.device.audio-input</key>
-    \t<true/>
-    \t<key>com.apple.security.device.camera</key>
-    \t<true/>
-    </dict>
-    </plist>
-    """
+    /// camera access. Defined once in `JarvisSigningScript` so the shell paths
+    /// cannot drift away from this one.
+    static var entitlements: String {
+        JarvisSigningScript.entitlements
+    }
 
     /// Whether this Mac carries the identity `install.sh` creates.
     static var isAvailable: Bool {
@@ -162,7 +152,8 @@ enum JarvisLocalSigning {
         try process.run()
     }
 
-    private static func adoptionScript(
+    /// 内嵌脚本对外可见，只为了让测试能拿它跟 `install.sh` 比对并做语法检查。
+    static func adoptionScript(
         appURL: URL,
         bundleIdentifier: String,
         workDirectory: URL,
@@ -181,47 +172,23 @@ enum JarvisLocalSigning {
         identity=\(shellQuote(identityName))
         bundle_id=\(shellQuote(bundleIdentifier))
         work=\(shellQuote(workDirectory.path))
+        login_keychain=\(JarvisSigningScript.loginKeychain)
         parent_pid=\(parentProcessID)
 
         log "等待应用退出"
-        while /bin/kill -0 "$parent_pid" 2>/dev/null; do
-            /bin/sleep 0.3
-        done
+        \(JarvisSigningScript.waitForParentExit)
 
-        if ! /usr/bin/security find-identity -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
-            log "生成本机签名证书"
-            /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \\
-                -keyout "$work/key.pem" -out "$work/cert.pem" \\
-                -subj "/CN=$identity/O=Jarvis Local" \\
-                -addext "basicConstraints=critical,CA:false" \\
-                -addext "keyUsage=critical,digitalSignature" \\
-                -addext "extendedKeyUsage=critical,codeSigning" || { log "生成证书失败"; exit 1; }
-            /usr/bin/security import "$work/cert.pem" -k "$HOME/Library/Keychains/login.keychain-db" \\
-                -T /usr/bin/codesign || { log "导入证书失败"; exit 1; }
-            /usr/bin/security import "$work/key.pem" -k "$HOME/Library/Keychains/login.keychain-db" \\
-                -T /usr/bin/codesign -T /usr/bin/security || { log "导入私钥失败"; exit 1; }
-        fi
+        \(JarvisSigningScript.ensureIdentity)
 
-        if ! /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
-            log "把证书加入信任设置"
-            /usr/bin/security find-certificate -c "$identity" -p \\
-                "$HOME/Library/Keychains/login.keychain-db" > "$work/identity.crt" || { log "导出证书失败"; exit 1; }
-            /usr/bin/security add-trusted-cert -r trustRoot -p codeSign \\
-                -k "$HOME/Library/Keychains/login.keychain-db" "$work/identity.crt" >/dev/null 2>&1 \\
-                || log "写入信任设置失败，继续签名"
-        fi
+        \(JarvisSigningScript.trustIdentity)
 
-        # The old entries belong to the ad-hoc signature and would otherwise
-        # stay listed in System Settings as grants for an app that no longer
-        # exists.
-        /usr/bin/tccutil reset ScreenCapture "$bundle_id" >/dev/null 2>&1
-        /usr/bin/tccutil reset Accessibility "$bundle_id" >/dev/null 2>&1
+        \(JarvisSigningScript.resetPrivacyPermissions)
 
         log "在副本上签名"
         /usr/bin/ditto "$app" "$work/Signed.app" || { log "复制失败"; exit 1; }
-        /usr/bin/codesign --force --options runtime --entitlements "$work/entitlements.plist" \\
-            --sign "$identity" "$work/Signed.app" || { log "签名失败"; exit 1; }
-        /usr/bin/codesign --verify --deep --strict "$work/Signed.app" || { log "签名校验失败"; exit 1; }
+        target="$work/Signed.app"
+        entitlements="$work/entitlements.plist"
+        \(JarvisSigningScript.signAndVerify)
 
         log "替换应用"
         /bin/mv "$app" "$work/Replaced.app" || { log "移开旧应用失败"; exit 1; }

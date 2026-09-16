@@ -135,25 +135,28 @@ EXTRACTED_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
 codesign --verify --deep --strict "$SOURCE_APP" >/dev/null 2>&1 \
   || die "安装包的签名校验失败。"
 
-if security find-identity -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
-  log "复用已有的本地证书 ${IDENTITY_NAME}。"
-else
-  log "为这台 Mac 生成签名证书 ${IDENTITY_NAME}…"
-  openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
-    -keyout "$WORK_DIR/key.pem" -out "$WORK_DIR/cert.pem" \
-    -subj "/CN=${IDENTITY_NAME}/O=Jarvis Local" \
-    -addext "basicConstraints=critical,CA:false" \
-    -addext "keyUsage=critical,digitalSignature" \
-    -addext "extendedKeyUsage=critical,codeSigning" >/dev/null 2>&1
+# 下面这几个别名照着 JarvisSigningScript 的约定取名，好让本脚本直接嵌入
+# 与两份内嵌脚本完全相同的那几段：证书、信任设置和签名是三处都要做对的事，
+# JarvisSigningScriptTests 会断言这里与那边逐字一致。
+identity="$IDENTITY_NAME"
+bundle_id="$BUNDLE_IDENTIFIER"
+work="$WORK_DIR"
+login_keychain="$HOME/Library/Keychains/login.keychain-db"
 
-  # -T authorizes codesign to use the key, which avoids a keychain prompt on
-  # every future rebuild.
-  security import "$WORK_DIR/cert.pem" -k "$HOME/Library/Keychains/login.keychain-db" \
-    -T /usr/bin/codesign >/dev/null
-  security import "$WORK_DIR/key.pem" -k "$HOME/Library/Keychains/login.keychain-db" \
-    -T /usr/bin/codesign -T /usr/bin/security >/dev/null
-  security find-identity -p codesigning | grep -qF "$IDENTITY_NAME" \
-    || die "证书导入失败。"
+if ! /usr/bin/security find-identity -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
+    log "生成本机签名证书"
+    /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+        -keyout "$work/key.pem" -out "$work/cert.pem" \
+        -subj "/CN=$identity/O=Jarvis Local" \
+        -addext "basicConstraints=critical,CA:false" \
+        -addext "keyUsage=critical,digitalSignature" \
+        -addext "extendedKeyUsage=critical,codeSigning" || { log "生成证书失败"; exit 1; }
+    /usr/bin/security import "$work/cert.pem" -k "$login_keychain" \
+        -T /usr/bin/codesign || { log "导入证书失败"; exit 1; }
+    /usr/bin/security import "$work/key.pem" -k "$login_keychain" \
+        -T /usr/bin/codesign -T /usr/bin/security || { log "导入私钥失败"; exit 1; }
+    /usr/bin/security find-identity -p codesigning | /usr/bin/grep -qF "$identity" \
+        || { log "证书导入后仍查不到"; exit 1; }
 fi
 
 # Make the certificate a complete code-signing identity rather than one
@@ -161,16 +164,16 @@ fi
 # and only affects code signed by this key, which never leaves this Mac.
 # TCC carries grants across rebuilds either way; whether Keychain access also
 # stops re-asking is still being verified, so do not document it as a fix.
-if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
-  log "把证书加入信任设置（仅本机生效）…"
-  security find-certificate -c "$IDENTITY_NAME" -p "$HOME/Library/Keychains/login.keychain-db" \
-    > "$WORK_DIR/identity.crt"
-  security add-trusted-cert -r trustRoot -p codeSign \
-    -k "$HOME/Library/Keychains/login.keychain-db" "$WORK_DIR/identity.crt" >/dev/null 2>&1 \
-    || die "无法把证书加入信任设置。"
+if ! /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/grep -qF "$identity"; then
+    log "把证书加入信任设置"
+    /usr/bin/security find-certificate -c "$identity" -p \
+        "$login_keychain" > "$work/identity.crt" || { log "导出证书失败"; exit 1; }
+    /usr/bin/security add-trusted-cert -r trustRoot -p codeSign \
+        -k "$login_keychain" "$work/identity.crt" >/dev/null 2>&1 \
+        || log "写入信任设置失败，继续签名"
 fi
 
-cat > "$WORK_DIR/entitlements.plist" <<'PLIST'
+cat > "$work/entitlements.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -185,13 +188,12 @@ cat > "$WORK_DIR/entitlements.plist" <<'PLIST'
 </plist>
 PLIST
 
-log "使用本地证书签名…"
-codesign --force --options runtime \
-  --entitlements "$WORK_DIR/entitlements.plist" \
-  --sign "$IDENTITY_NAME" "$SOURCE_APP" >/dev/null 2>&1 \
-  || die "签名失败。"
-codesign --verify --deep --strict "$SOURCE_APP" >/dev/null 2>&1 \
-  || die "重签后的校验失败。"
+log "使用本地证书签名"
+target="$SOURCE_APP"
+entitlements="$work/entitlements.plist"
+/usr/bin/codesign --force --options runtime --entitlements "$entitlements" \
+    --sign "$identity" "$target" || { log "签名失败"; exit 1; }
+/usr/bin/codesign --verify --deep --strict "$target" || { log "签名校验失败"; exit 1; }
 
 quit_running_app_if_replacing
 

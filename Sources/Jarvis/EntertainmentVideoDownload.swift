@@ -512,6 +512,7 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     private let service: EntertainmentVideoDownloadService
     private let historyStore: EntertainmentVideoDownloadHistoryStore
     private let cancellation = EntertainmentDownloadCancellation()
+    private let previewController = EntertainmentVideoPreviewController()
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
     init(
@@ -651,6 +652,12 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     func revealInFinder(_ record: EntertainmentVideoDownloadRecord) {
         guard record.fileExists else { return }
         NSWorkspace.shared.activateFileViewerSelecting([record.destinationURL])
+    }
+
+    /// Plays the downloaded file in the app rather than opening it elsewhere.
+    func preview(_ record: EntertainmentVideoDownloadRecord) {
+        guard record.canOpenFile else { return }
+        previewController.show(url: record.destinationURL)
     }
 
     func openDownloadsFolder() {

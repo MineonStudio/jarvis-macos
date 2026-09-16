@@ -355,9 +355,10 @@ private struct EntertainmentVideoHistoryRow: View {
                 }
                 .font(JarvisTypography.caption)
                 .buttonStyle(.plain)
-                Button("显示") { manager.revealInFinder(record) }
+                Button("预览") { manager.preview(record) }
                     .font(JarvisTypography.caption)
                     .buttonStyle(.plain)
+                    .help("在应用内预览这个视频")
             }
             Button("删除") { manager.removeFromHistory(record) }
                 .font(JarvisTypography.caption)

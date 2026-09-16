@@ -156,12 +156,11 @@ else
     || die "证书导入失败。"
 fi
 
-# Trusting the certificate is what makes grants survive. Keychain stores an
-# item's allowed apps as code requirements and has to evaluate the chain to
-# match one; with an untrusted certificate that evaluation fails, so macOS
-# falls back to asking again on every replacement even though TCC (which does
-# not check trust) keeps its grants. Trust is per-user and only affects code
-# signed by this key, which never leaves this Mac.
+# Make the certificate a complete code-signing identity rather than one
+# Keychain only lists under the plain code-signing policy. Trust is per-user
+# and only affects code signed by this key, which never leaves this Mac.
+# TCC carries grants across rebuilds either way; whether Keychain access also
+# stops re-asking is still being verified, so do not document it as a fix.
 if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
   log "把证书加入信任设置（仅本机生效）…"
   security find-certificate -c "$IDENTITY_NAME" -p "$HOME/Library/Keychains/login.keychain-db" \

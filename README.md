@@ -36,6 +36,8 @@ curl -fsSL https://raw.githubusercontent.com/MineonStudio/jarvis-macos/dev/insta
 
 因为走 curl 而不是浏览器下载，安装包不会被加上 quarantine 标记，所以不会触发 Gatekeeper 拦截。`--uninstall` 可以连同证书一起卸载。
 
+**已经手动装过的不用重装**：如果贾维斯是拖进「应用程序」的（发布包是 ad-hoc 签名，没有任何证书），首次启动的权限页会给出一张「为本机签名并重启」的卡片，做的正是上面同一件事——本机生成证书、签名、重启，之后权限同样只授一次。卡片只在检测到当前副本确实没有签名证书时出现，签过之后就不再显示。
+
 ## 构建
 
 ```bash

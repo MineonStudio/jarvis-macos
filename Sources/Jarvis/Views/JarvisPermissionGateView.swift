@@ -29,6 +29,8 @@ struct JarvisPermissionGateOverlay: View {
 
 struct JarvisPermissionGateView: View {
     @Environment(AppModel.self) private var app
+    @State private var isAdoptingIdentity = false
+    @State private var adoptionFailure: String?
 
     private var remainingCount: Int {
         JarvisRequiredPermission.allCases.count { !app.isRequiredPermissionGranted($0) }
@@ -61,6 +63,10 @@ struct JarvisPermissionGateView: View {
             }
 
             JarvisPermissionList()
+
+            if JarvisLocalSigning.canAdoptLocalIdentity {
+                signingAdoptionCard
+            }
         }
         .padding(.horizontal, 28)
         .padding(.top, 30)
@@ -68,6 +74,67 @@ struct JarvisPermissionGateView: View {
         .frame(width: 400)
         .jarvisGlass(cornerRadius: 24, interactive: false)
         .shadow(color: Color.black.opacity(0.16), radius: 32, y: 14)
+    }
+
+    /// Releases are ad-hoc signed, so an app dragged out of the download zip
+    /// loses every grant on each update. Signing this copy with a certificate
+    /// made on this Mac fixes that for good; the offer sits here because it
+    /// costs one round of grants either way.
+    private var signingAdoptionCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "signature")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text("让以后的更新不再重新授权")
+                    .font(JarvisTypography.bodyEmphasis)
+            }
+
+            Text("贾维斯会在这台 Mac 上生成一张证书给自己签名，之后每次更新都沿用同一个身份，权限只授一次。证书不会离开这台 Mac。")
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let adoptionFailure {
+                Text(adoptionFailure)
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                startAdoption()
+            } label: {
+                HStack(spacing: 6) {
+                    if isAdoptingIdentity {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(isAdoptingIdentity ? "正在签名…" : "为本机签名并重启")
+                }
+            }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .disabled(isAdoptingIdentity)
+            .help("会用本机证书重新签名贾维斯并重新启动")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func startAdoption() {
+        isAdoptingIdentity = true
+        adoptionFailure = nil
+        do {
+            try JarvisLocalSigning.adoptLocalIdentity()
+            // The detached script waits for this process to exit before it
+            // swaps in the newly signed copy and opens it again.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            isAdoptingIdentity = false
+            adoptionFailure = "签名失败：\(error.localizedDescription)"
+        }
     }
 }
 

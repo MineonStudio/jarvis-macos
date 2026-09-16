@@ -9,13 +9,6 @@ private enum MeetingDetailTypography {
     static let body = Font.system(size: 15)
 }
 
-private enum MeetingSectionID: Hashable {
-    case audio
-    case summary
-    case speakers
-    case transcript
-}
-
 struct MeetingView: View {
     @Environment(AppModel.self) private var app
     @State private var searchText = ""
@@ -419,8 +412,8 @@ private struct MeetingHistoryRow: View {
 
 private struct MeetingDetailPane: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isTitleFocused: Bool
+    @State private var isTitleHovered = false
     @State private var draftTitle = ""
     @State private var pendingSeekTime: TimeInterval?
     let record: MeetingRecord?
@@ -428,68 +421,51 @@ private struct MeetingDetailPane: View {
     var body: some View {
         Group {
             if let record {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            meetingHeader(record)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        meetingHeader(record)
 
-                            MeetingSectionNavigation(record: record) { section in
-                                withAnimation(
-                                    JarvisMotion.animation(
-                                        .easeInOut(duration: 0.2),
-                                        reduceMotion: reduceMotion
-                                    )
-                                ) {
-                                    proxy.scrollTo(section, anchor: .top)
-                                }
-                            }
+                        MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
 
-                            MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
-                                .id(MeetingSectionID.audio)
-
-                            if shouldShowProgress(for: record) {
-                                MeetingProcessingCard(state: app.meetingProcessingState)
-                            }
-
-                            if record.status == .failed || record.status == .summaryFailed,
-                               let errorMessage = record.errorMessage
-                            {
-                                MeetingFailureCard(record: record, message: errorMessage)
-                            }
-
-                            if let summary = record.summary {
-                                MeetingSummarySection(summary: summary)
-                                    .id(MeetingSectionID.summary)
-                            } else if !record.transcript.isEmpty,
-                                      record.status != .summarizing,
-                                      record.status != .failed,
-                                      record.status != .summaryFailed
-                            {
-                                MeetingNeedsSummaryCard(record: record)
-                            }
-
-                            if !record.speakers.isEmpty {
-                                MeetingSpeakerSection(record: record)
-                                    .id(MeetingSectionID.speakers)
-                            }
-
-                            if !record.transcript.isEmpty {
-                                MeetingTranscriptSection(record: record) { time in
-                                    pendingSeekTime = time
-                                }
-                                .id(MeetingSectionID.transcript)
-                            } else if !shouldShowProgress(for: record) {
-                                JarvisEmptyState(
-                                    icon: "waveform",
-                                    title: "还没有逐字稿",
-                                    message: "结束录音后，Jarvis 会自动处理这段会议。"
-                                )
-                            }
+                        if shouldShowProgress(for: record) {
+                            MeetingProcessingCard(state: app.meetingProcessingState)
                         }
-                        .frame(maxWidth: 860, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(JarvisMetrics.pageInset)
+
+                        if record.status == .failed || record.status == .summaryFailed,
+                           let errorMessage = record.errorMessage
+                        {
+                            MeetingFailureCard(record: record, message: errorMessage)
+                        }
+
+                        if let summary = record.summary {
+                            MeetingSummarySection(summary: summary)
+                        } else if !record.transcript.isEmpty,
+                                  record.status != .summarizing,
+                                  record.status != .failed,
+                                  record.status != .summaryFailed
+                        {
+                            MeetingNeedsSummaryCard(record: record)
+                        }
+
+                        if !record.speakers.isEmpty {
+                            MeetingSpeakerSection(record: record)
+                        }
+
+                        if !record.transcript.isEmpty {
+                            MeetingTranscriptSection(record: record) { time in
+                                pendingSeekTime = time
+                            }
+                        } else if !shouldShowProgress(for: record) {
+                            JarvisEmptyState(
+                                icon: "waveform",
+                                title: "还没有逐字稿",
+                                message: "结束录音后，Jarvis 会自动处理这段会议。"
+                            )
+                        }
                     }
+                    .frame(maxWidth: 860, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(JarvisMetrics.pageInset)
                 }
             } else {
                 Text("选择一条会议记录")
@@ -503,6 +479,7 @@ private struct MeetingDetailPane: View {
         }
         .onChange(of: record?.id) { _, _ in
             draftTitle = record?.title ?? ""
+            isTitleFocused = false
         }
         .onChange(of: isTitleFocused) { _, isFocused in
             if !isFocused {
@@ -512,30 +489,47 @@ private struct MeetingDetailPane: View {
     }
 
     private func meetingHeader(_ record: MeetingRecord) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                TextField("未命名会议", text: $draftTitle)
+        let displayTitle = draftTitle.isEmpty ? MeetingRecord.defaultTitle : draftTitle
+
+        return VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .leading) {
+                Text(displayTitle)
+                    .font(MeetingDetailTypography.h1)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, MeetingTitleMetrics.horizontalPadding)
+                    .padding(.vertical, MeetingTitleMetrics.verticalPadding)
+                    .opacity(0)
+
+                TextField("", text: $draftTitle)
                     .textFieldStyle(.plain)
                     .font(MeetingDetailTypography.h1)
                     .lineLimit(1)
                     .focused($isTitleFocused)
                     .fixedSize(horizontal: true, vertical: false)
-                    .frame(minWidth: 120, maxWidth: 420, alignment: .leading)
-                    .onSubmit {
-                        commitTitle()
-                        isTitleFocused = false
-                    }
-                if !isTitleFocused {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.jarvisTextSecondary)
+                    .padding(.horizontal, MeetingTitleMetrics.horizontalPadding)
+                    .padding(.vertical, MeetingTitleMetrics.verticalPadding)
+                    .accessibilityLabel("会议名称")
+            }
+            .contentShape(Capsule())
+            .onTapGesture {
+                isTitleFocused = true
+            }
+            .background(
+                Capsule()
+                    .fill(Color.primary.opacity(0.07))
+            )
+            .overlay {
+                if isTitleFocused || isTitleHovered {
+                    Capsule()
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .onHover { isTitleHovered = $0 }
             .background(
-                Color.primary.opacity(isTitleFocused ? 0.08 : 0.05),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                MeetingTitleOutsideClickMonitor(isFocused: isTitleFocused) {
+                    isTitleFocused = false
+                }
             )
             .help("点击修改会议名称")
 
@@ -575,52 +569,81 @@ private struct MeetingDetailPane: View {
     }
 }
 
-private struct MeetingSectionNavigation: View {
-    let record: MeetingRecord
-    let onSelect: (MeetingSectionID) -> Void
+private enum MeetingTitleMetrics {
+    static let horizontalPadding: CGFloat = 10
+    static let verticalPadding: CGFloat = 7
+}
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                jumpButton("录音", systemImage: "waveform", section: .audio)
-                if record.summary != nil {
-                    jumpButton("总结", systemImage: "sparkles", section: .summary)
-                }
-                if !record.speakers.isEmpty {
-                    jumpButton("说话人", systemImage: "person.2", section: .speakers)
-                }
-                if !record.transcript.isEmpty {
-                    jumpButton("逐字稿", systemImage: "text.quote", section: .transcript)
-                }
-            }
-            .padding(4)
+private struct MeetingTitleOutsideClickMonitor: NSViewRepresentable {
+    let isFocused: Bool
+    let onDismiss: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = PassthroughView(frame: .zero)
+        context.coordinator.update(view: view, isFocused: isFocused) {
+            onDismiss()
         }
-        .background(Color.jarvisPanel.opacity(0.82), in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("会议章节导航")
+        return view
     }
 
-    private func jumpButton(
-        _ title: String,
-        systemImage: String,
-        section: MeetingSectionID
-    ) -> some View {
-        Button {
-            onSelect(section)
-        } label: {
-            Label(title, systemImage: systemImage)
-                .font(JarvisTypography.control)
-                .foregroundStyle(Color.primary)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 28)
-                .contentShape(Capsule())
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(view: nsView, isFocused: isFocused) {
+            onDismiss()
         }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.78))
-        .help("跳转到\(title)")
+    }
+
+    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    private final class PassthroughView: NSView {
+        override func hitTest(_: NSPoint) -> NSView? {
+            nil
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
+        weak var view: NSView?
+        private var monitor: Any?
+        private var dismiss: (() -> Void)?
+
+        func update(view: NSView, isFocused: Bool, dismiss: @escaping () -> Void) {
+            self.view = view
+            self.dismiss = dismiss
+            if isFocused {
+                startIfNeeded()
+            } else {
+                stop()
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        private func startIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+                guard let self, let view = self.view, let titleWindow = view.window else { return event }
+                guard event.window === titleWindow else {
+                    self.dismiss?()
+                    return event
+                }
+                let pointInView = view.convert(event.locationInWindow, from: nil)
+                if !view.bounds.contains(pointInView) {
+                    self.dismiss?()
+                }
+                return event
+            }
+        }
     }
 }
 

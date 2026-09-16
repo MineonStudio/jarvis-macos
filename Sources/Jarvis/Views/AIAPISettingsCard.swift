@@ -84,9 +84,12 @@ struct AIAPISettingsCard: View {
                     apiField(title: "base_url") {
                         apiControl {
                             if provider == .custom {
-                                TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
-                                    .textFieldStyle(.plain)
-                                    .disabled(isLocked)
+                                if isLocked {
+                                    apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容 base_url")
+                                } else {
+                                    TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
+                                        .textFieldStyle(.plain)
+                                }
                             } else {
                                 apiMenu(
                                     title: "base_url",
@@ -111,30 +114,29 @@ struct AIAPISettingsCard: View {
                             }
 
                             Button(action: refreshModels) {
-                                if app.aiModelsLoading {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .frame(width: 16, height: 16)
-                                } else {
-                                    Image(systemName: "arrow.clockwise")
-                                        .frame(width: 16, height: 16)
+                                HStack(spacing: 6) {
+                                    if app.aiModelsLoading {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    }
+                                    Text("获取模型")
                                 }
                             }
-                            .buttonStyle(JarvisToolbarIconButtonStyle())
+                            .buttonStyle(JarvisSecondaryButtonStyle())
                             .disabled(isLocked || app.aiModelsLoading || !canRefreshModels)
-                            .help("手动刷新最新模型列表")
+                            .help("获取最新模型列表")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     apiField(title: "Key") {
                         apiControl {
-                            SecureField(
-                                app.aiAPIKeyMask.isEmpty ? "输入 API Key" : app.aiAPIKeyMask,
-                                text: $apiKey
-                            )
-                            .textFieldStyle(.plain)
-                            .disabled(isLocked)
+                            if isLocked {
+                                apiReadOnlyValue(app.aiAPIKeyMask, placeholder: "输入 API Key")
+                            } else {
+                                SecureField("输入 API Key", text: $apiKey)
+                                    .textFieldStyle(.plain)
+                            }
                         }
                     }
                 }
@@ -183,7 +185,7 @@ struct AIAPISettingsCard: View {
                         Button("删除配置", role: .destructive) {
                             showingDeleteConfirmation = true
                         }
-                        .buttonStyle(JarvisToolbarButtonStyle(tint: .red))
+                        .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
                     }
                 }
             }
@@ -238,6 +240,7 @@ struct AIAPISettingsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private func apiMenu(
         title: String,
         selection: Binding<String>,
@@ -245,20 +248,38 @@ struct AIAPISettingsCard: View {
         emptyTitle: String = "",
         isDisabled: Bool
     ) -> some View {
-        JarvisDropdownMenu(
-            title: selection.wrappedValue.isEmpty ? emptyTitle : selection.wrappedValue,
-            options: options.map {
-                JarvisDropdownOption(id: $0, title: $0)
-            },
-            selectionID: options.contains(selection.wrappedValue) ? selection.wrappedValue : nil,
-            accessibilityLabel: title,
-            help: "选择(title)",
-            isEnabled: !isDisabled,
-            onSelect: { selectedValue in
-                selection.wrappedValue = selectedValue
-            }
-        )
-        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
+        if isLocked {
+            Text(selection.wrappedValue.isEmpty ? emptyTitle : selection.wrappedValue)
+                .font(JarvisTypography.control)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            JarvisDropdownMenu(
+                title: selection.wrappedValue.isEmpty ? emptyTitle : selection.wrappedValue,
+                options: options.map {
+                    JarvisDropdownOption(id: $0, title: $0)
+                },
+                selectionID: options.contains(selection.wrappedValue) ? selection.wrappedValue : nil,
+                accessibilityLabel: title,
+                help: "选择\(title)",
+                isEnabled: !isDisabled,
+                onSelect: { selectedValue in
+                    selection.wrappedValue = selectedValue
+                }
+            )
+            .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
+        }
+    }
+
+    private func apiReadOnlyValue(_ value: String, placeholder: String) -> some View {
+        Text(value.isEmpty ? placeholder : value)
+            .font(JarvisTypography.control)
+            .foregroundStyle(Color.jarvisTextSecondary)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func apiControl(

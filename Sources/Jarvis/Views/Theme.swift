@@ -556,8 +556,17 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
             ) { [weak self] event in
                 guard let self, let panel = self.panel else { return event }
 
-                if event.window === panel || self.isAnchorClick(event) {
+                if event.window === panel {
                     return event
+                }
+
+                // The trigger is also the close affordance. Consume the
+                // second click after dismissing the panel so the button does
+                // not toggle the binding back to `true` in the same event.
+                if self.isAnchorClick(event) {
+                    self.dismiss()
+                    self.dismissAction?()
+                    return nil
                 }
 
                 self.dismiss()
@@ -1072,12 +1081,18 @@ struct JarvisToolbarSelectionButton: View {
 }
 
 struct JarvisSecondaryButtonStyle: ButtonStyle {
+    let tint: Color?
+
+    init(tint: Color? = nil) {
+        self.tint = tint
+    }
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(JarvisTypography.control)
-            .foregroundStyle(.primary)
+            .foregroundStyle(tint ?? .primary)
             .padding(.horizontal, 15)
             .padding(.vertical, 8)
             .opacity(configuration.isPressed ? 0.68 : 1)

@@ -29,6 +29,13 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                             .fill(JarvisMotion.selectionPillTint)
                             .opacity(isSelected ? 1 : 0)
                     }
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(
+                                Color.accentColor.opacity(isSelected ? 0.42 : 0),
+                                lineWidth: 0.75
+                            )
+                    }
                     .contentShape(Capsule())
                 }
                 .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))

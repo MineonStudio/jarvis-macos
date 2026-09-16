@@ -8,8 +8,8 @@ enum JarvisAppVersion {
     static let releasesURL = URL(string: "https://github.com/MineonStudio/jarvis-macos/releases")
         ?? URL(fileURLWithPath: "/")
 
-    private static let fallbackShortVersion = "1.3.1"
-    private static let fallbackBuild = "310"
+    private static let fallbackShortVersion = "1.3.2"
+    private static let fallbackBuild = "320"
 
     static var shortVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String

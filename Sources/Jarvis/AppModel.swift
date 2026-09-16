@@ -656,8 +656,11 @@ extension AppModel {
         guard case let .available(release) = updateState else { return }
         // Ad-hoc updates replace the code identity, so TCC must be reset
         // before install. Warn first; the actual tccutil reset runs inside
-        // `JarvisUpdateService.downloadAndInstall`.
-        showToast("更新会清除屏幕录制和辅助功能授权，安装后需要重新允许")
+        // `JarvisUpdateService.downloadAndInstall`. Installations that carry
+        // the local signing identity keep theirs.
+        if !JarvisLocalSigning.isAvailable {
+            showToast("更新会清除屏幕录制和辅助功能授权，安装后需要重新允许")
+        }
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
             guard let self else { return }

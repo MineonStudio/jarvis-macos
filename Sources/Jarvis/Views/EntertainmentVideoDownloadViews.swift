@@ -160,7 +160,6 @@ struct EntertainmentVideoDownloadView: View {
                     .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
                     .font(JarvisTypography.caption)
                     .foregroundStyle(Color.accentColor)
-                    .help("清除所有下载历史")
                 }
             }
             .padding(.horizontal, 16)
@@ -358,13 +357,11 @@ private struct EntertainmentVideoHistoryRow: View {
                 Button("预览") { manager.preview(record) }
                     .font(JarvisTypography.caption)
                     .buttonStyle(.plain)
-                    .help("在应用内预览这个视频")
             }
             Button("删除") { manager.removeFromHistory(record) }
                 .font(JarvisTypography.caption)
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondary)
-                .help("从历史中删除")
         }
         .padding(.vertical, 4)
         .contextMenu {

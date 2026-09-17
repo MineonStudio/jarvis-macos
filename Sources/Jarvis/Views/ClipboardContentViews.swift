@@ -392,8 +392,13 @@ struct ClipboardEmptyState: View {
 
 struct ClipboardCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppModel.self) private var app
     @State private var isSensitiveRevealed = false
     @State private var isTextExpanded = false
+    @State private var showingDeleteConfirmation = false
+    @State private var showingSensitiveCopyConfirmation = false
+    @State private var showingSensitivePreviewConfirmation = false
+    @State private var isHovered = false
     let item: ClipboardItem
     let gridZoom: HistoryGridZoomLevel
     let isSelected: Bool
@@ -502,7 +507,6 @@ struct ClipboardCard: View {
             )
         )
         .contentShape(Rectangle())
-        .help("拖到 Finder 或其他应用导出内容")
     }
 
     private var shouldOfferTextExpansion: Bool {
@@ -541,6 +545,41 @@ struct ClipboardCard: View {
         }
     }
 
+    private func copyContent() {
+        if item.isSensitive {
+            showingSensitiveCopyConfirmation = true
+        } else {
+            app.copyClipboard(item)
+        }
+    }
+
+    private var copyButton: some View {
+        Button(action: copyContent) {
+            Text("复制")
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(JarvisCardActionPillButtonStyle())
+        .accessibilityLabel("复制剪贴板内容")
+    }
+
+    @ViewBuilder
+    private var copyActionOverlay: some View {
+        if isHovered {
+            HStack {
+                Spacer(minLength: 0)
+                copyButton
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .transition(
+                reduceMotion
+                    ? .identity
+                    : .opacity.combined(with: .offset(y: 8))
+            )
+        }
+    }
+
     private var metadataRow: some View {
         HStack(spacing: 6) {
             Label(item.kind.title, systemImage: item.kind.icon)
@@ -573,6 +612,15 @@ struct ClipboardCard: View {
             isSelected: isSelected,
             alignment: .topLeading
         )
+        .overlay(alignment: .bottom) {
+            copyActionOverlay
+        }
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
+        )
     }
 
     var body: some View {
@@ -594,6 +642,17 @@ struct ClipboardCard: View {
             }
         }
         .onTapGesture(perform: onSelect)
+        .onHover { hovering in
+            guard hovering != isHovered else { return }
+            withAnimation(
+                JarvisMotion.animation(
+                    JarvisMotion.content,
+                    reduceMotion: reduceMotion
+                )
+            ) {
+                isHovered = hovering
+            }
+        }
         .onChange(of: item.id) { _, _ in
             isSensitiveRevealed = false
             isTextExpanded = false
@@ -617,8 +676,82 @@ struct ClipboardCard: View {
                 : "\(item.kind.title)，剪贴板内容"
         )
         .accessibilityValue("\(item.shortTimestamp)，\(isSelected ? "已选中" : "未选中")")
-        .accessibilityHint("点击选择，双击打开预览")
+        .accessibilityHint("点击选择，双击打开预览；悬停后可复制")
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "复制") {
+            copyContent()
+        }
+        .contextMenu {
+            Button {
+                if item.isSensitive {
+                    showingSensitivePreviewConfirmation = true
+                } else {
+                    app.showClipboardMediaPreview(item)
+                }
+            } label: {
+                Label("查看", systemImage: "eye")
+            }
+            .disabled(!item.canFullscreenPreview)
+
+            Button {
+                copyContent()
+            } label: {
+                Label("复制", systemImage: "doc.on.doc")
+            }
+
+            Button {
+                app.toggleClipboardPin(item)
+            } label: {
+                Label(
+                    item.isPinned ? "取消收藏" : "收藏",
+                    systemImage: item.isPinned ? "star.slash" : "star"
+                )
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                showingDeleteConfirmation = true
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+        .confirmationDialog(
+            "删除这条剪贴板记录？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                app.deleteClipboardItem(item)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后无法恢复。")
+        }
+        .confirmationDialog(
+            "这段内容疑似包含敏感信息",
+            isPresented: $showingSensitiveCopyConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("显示并复制") {
+                app.copyClipboard(item)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("只有在你主动确认后，才会显示并复制原始内容。")
+        }
+        .confirmationDialog(
+            "这段内容疑似包含敏感信息",
+            isPresented: $showingSensitivePreviewConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("显示并查看") {
+                app.showClipboardMediaPreview(item)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("只有在你主动确认后，才会打开原始内容预览。")
+        }
     }
 }
 

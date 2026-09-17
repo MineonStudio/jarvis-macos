@@ -382,7 +382,11 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Senda
                 source: .wallhaven,
                 sourceID: remote.id,
                 title: "Wallhaven \(remote.id)",
-                previewURL: remote.thumbs.large,
+                // Wallhaven's `large` thumbnail is a fixed landscape crop and
+                // cuts portrait wallpapers before they reach the UI. The
+                // `original` thumbnail keeps the source aspect ratio; fall
+                // back to `large` for older/incomplete API payloads.
+                previewURL: remote.thumbs.original ?? remote.thumbs.large,
                 originalURL: remote.path,
                 sourcePageURL: remote.url,
                 authorName: remote.uploader?.username,
@@ -437,6 +441,7 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Senda
 
     private struct Thumbnails: Decodable {
         let large: URL
+        let original: URL?
     }
 
     private struct Uploader: Decodable {

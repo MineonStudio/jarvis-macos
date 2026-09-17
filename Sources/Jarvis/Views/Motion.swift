@@ -93,7 +93,6 @@ struct JarvisToolbarIconButton: View {
         .disabled(!isEnabled)
         .accessibilityLabel(help)
         .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
     }
 }
 

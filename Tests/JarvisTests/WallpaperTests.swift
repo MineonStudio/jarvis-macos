@@ -130,7 +130,8 @@ final class WallpaperTests: XCTestCase {
                   "dimension_x": 2560,
                   "dimension_y": 1440,
                   "thumbs": {
-                    "large": "https://th.wallhaven.cc/lg/ab/abc123.jpg"
+                    "large": "https://th.wallhaven.cc/lg/ab/abc123.jpg",
+                    "original": "https://th.wallhaven.cc/orig/ab/abc123.jpg"
                   },
                   "uploader": {
                     "username": "tester"
@@ -152,6 +153,10 @@ final class WallpaperTests: XCTestCase {
         XCTAssertEqual(item.authorName, "tester")
         XCTAssertEqual(item.resolutionDescription, "2560 × 1440")
         XCTAssertEqual(item.sourcePageURL?.absoluteString, "https://wallhaven.cc/w/abc123")
+        XCTAssertEqual(
+            item.previewURL.absoluteString,
+            "https://th.wallhaven.cc/orig/ab/abc123.jpg"
+        )
         XCTAssertTrue(page.hasNextPage)
     }
 

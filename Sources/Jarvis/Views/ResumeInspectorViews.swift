@@ -245,7 +245,6 @@ private struct ResumeAIGenerateButton: View {
         }
         .buttonStyle(ResumeAddButtonStyle(tint: .accentColor))
         .disabled(!isEnabled)
-        .help(helpText)
         .accessibilityHint(helpText)
     }
 
@@ -416,7 +415,6 @@ private struct ResumeSkillsEditor: View {
                             .foregroundStyle(.red.opacity(0.78))
                     }
                     .buttonStyle(.plain)
-                    .help("删除技能")
                     .padding(.top, 18)
                 }
             }
@@ -524,7 +522,6 @@ private struct ResumeBulletEditor: View {
                             .foregroundStyle(.red.opacity(0.70))
                     }
                     .buttonStyle(.plain)
-                    .help("删除要点")
                     .padding(.top, 18)
                 }
             }
@@ -566,7 +563,6 @@ private struct ResumeItemHeader: View {
                     .foregroundStyle(.red.opacity(0.78))
             }
             .buttonStyle(.plain)
-            .help("删除\(title)")
         }
     }
 }

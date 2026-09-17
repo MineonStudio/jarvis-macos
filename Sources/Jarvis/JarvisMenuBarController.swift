@@ -39,7 +39,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         keyEquivalent: ""
     )
     private let meetingMenuItem = NSMenuItem(
-        title: "开始录制",
+        title: "开始录制会议",
         action: #selector(toggleMeetingRecording),
         keyEquivalent: ""
     )
@@ -215,7 +215,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         }
 
         button.setAccessibilityLabel(Self.menuBarTitle)
-        button.toolTip = Self.menuBarTitle
     }
 
     /// Restyles only when the menu bar appearance really changed. The
@@ -246,7 +245,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             button.setAccessibilityLabel(
                 "停止录制，已录制 \(MeetingRecordingStyle.formatDuration(meetingElapsed))"
             )
-            button.toolTip = "停止录制"
         } else {
             styleStatusItemButton(button)
         }
@@ -255,7 +253,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     private func updateMeetingMenuItem() {
         meetingMenuItem.title = isMeetingRecording
             ? MeetingRecordingStyle.stopActionTitle(for: meetingElapsed)
-            : "开始录制"
+            : "开始录制会议"
         meetingMenuItem.isEnabled = isMeetingRecording || meetingModelsReady
     }
 

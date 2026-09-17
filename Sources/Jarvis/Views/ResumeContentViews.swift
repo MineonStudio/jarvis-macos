@@ -180,7 +180,6 @@ private extension ResumeContentView {
                 Text("新建简历")
             }
             .buttonStyle(JarvisToolbarButtonStyle.menu())
-            .help("直接打开一份全新的空白简历")
         }
         ToolbarSpacer(.fixed, placement: .automatic)
 
@@ -204,7 +203,6 @@ private extension ResumeContentView {
                 Text("导入简历")
             }
             .buttonStyle(JarvisToolbarButtonStyle.menu())
-            .help("打开一份 JSON 简历作为当前文档")
         }
         ToolbarSpacer(.fixed, placement: .automatic)
 
@@ -233,7 +231,6 @@ private extension ResumeContentView {
             .foregroundStyle(Color.jarvisTextSecondary)
             .fixedSize(horizontal: true, vertical: false)
             .accessibilityLabel("文稿大小 A4，210 × 297 毫米")
-            .help("文稿大小：A4（210 × 297 毫米）")
     }
 
     var resumeZoomToolbar: some View {
@@ -261,7 +258,6 @@ private extension ResumeContentView {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .help("保存只会在你主动保存时发生；新建会先处理未保存内容")
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -303,7 +299,6 @@ private extension ResumeContentView {
                 onDismiss: { finishFilenameEditing() }
             )
         )
-        .help("点击修改简历名称，按回车或点击其他区域提交")
     }
 
     var documentCanvas: some View {

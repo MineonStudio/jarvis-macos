@@ -42,7 +42,6 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                 // Pre-select on hover, matching the toolbar chips the other
                 // modules use.
                 .jarvisHoverFeedback(in: Capsule(), scale: 1.02)
-                .help(title(item))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
@@ -132,7 +131,6 @@ struct JarvisWebPlatformDownloadButton<Popover: View>: View {
         .buttonStyle(JarvisToolbarIconButtonStyle())
         .foregroundStyle(Color.secondary)
         .jarvisHoverFeedback(in: Circle(), scale: 1.06)
-        .help(help)
         .animation(
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
             value: activeDownloadCount

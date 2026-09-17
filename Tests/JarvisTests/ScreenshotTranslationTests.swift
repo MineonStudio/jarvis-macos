@@ -210,7 +210,8 @@ final class ScreenshotTranslationTests: XCTestCase {
 
     func testDetectedLanguageRecognizesSpanishWhenItIsAPackTarget() {
         let language = ScreenshotTranslationService.detectedLanguage(
-            for: "El rápido zorro marrón salta sobre el perro perezoso todas las mañanas."
+            for: "El rápido zorro marrón salta sobre el perro perezoso todas las mañanas.",
+            using: ScreenshotTranslationService.makeLanguageRecognizer()
         )
         XCTAssertEqual(language?.languageCode?.identifier.lowercased(), "es")
     }

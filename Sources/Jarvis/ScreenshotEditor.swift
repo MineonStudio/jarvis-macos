@@ -433,6 +433,22 @@ extension ScreenshotEditorModel {
 
     func addMosaic(points: [CGPoint]) {
         guard points.count > 1 else { return }
+        // 点一下就松手会留下宽高为 0 的马赛克：画面上看不见、也永远选不中删不掉，
+        // 却让 hasVisualEdits 为真，之后每次导出都走昂贵的渲染路径。
+        if mosaicMode == .rectangle {
+            let rect = CGRect(
+                x: min(points[0].x, points[1].x),
+                y: min(points[0].y, points[1].y),
+                width: abs(points[1].x - points[0].x),
+                height: abs(points[1].y - points[0].y)
+            )
+            guard rect.width >= 4, rect.height >= 4 else { return }
+        } else {
+            let length = zip(points, points.dropFirst()).reduce(0.0) { total, pair in
+                total + hypot(pair.1.x - pair.0.x, pair.1.y - pair.0.y)
+            }
+            guard length >= 8 else { return }
+        }
         append(.init(
             kind: .mosaic,
             points: points,
@@ -440,21 +456,6 @@ extension ScreenshotEditorModel {
             brushSize: mosaicBrushSize,
             mosaicMode: mosaicMode,
             mosaicStyle: mosaicStyle
-        ))
-    }
-
-    func addText(at point: CGPoint, text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        append(.init(
-            kind: .text,
-            points: [point],
-            text: text,
-            brushSize: 0,
-            fontSize: textFontSize,
-            textColor: textColor,
-            isBold: textBold,
-            isItalic: textItalic,
-            isStrikethrough: textStrikethrough
         ))
     }
 
@@ -517,10 +518,6 @@ extension ScreenshotEditorModel {
             annotation.kind == .text
                 && annotation.bounds.insetBy(dx: -8, dy: -8).contains(point)
         }?.id
-    }
-
-    func updateText(id: UUID, text: String) {
-        updateText(id: id, text: text, alignedAtLeft: nil)
     }
 
     func updateText(id: UUID, text: String, alignedAtLeft point: CGPoint?) {
@@ -605,6 +602,8 @@ extension ScreenshotEditorModel {
     }
 
     func undo() {
+        // 拖动还没结束时按 ⌘Z：过期快照会入栈并把重做历史清空。
+        activeMoveSnapshot = nil
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(annotations)
         annotations = previous
@@ -612,6 +611,7 @@ extension ScreenshotEditorModel {
     }
 
     func redo() {
+        activeMoveSnapshot = nil
         guard let next = redoStack.popLast() else { return }
         undoStack.append(annotations)
         annotations = next

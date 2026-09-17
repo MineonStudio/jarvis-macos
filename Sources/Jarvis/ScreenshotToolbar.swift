@@ -270,7 +270,9 @@ extension ScreenshotToolbar {
             actionButton(
                 icon: "xmark",
                 help: "取消",
-                enabled: !editor.translationState.isRunning && !editor.isExporting
+                // 取消不受翻译/导出状态限制：它们是唯一能退出会话的方式，
+                // 灰掉就只剩 Esc 一条路（而 Esc 恰恰是最不容易被想到的）。
+                enabled: true
             ) {
                 onAction(.cancel)
             }
@@ -632,25 +634,8 @@ extension ScreenshotToolbar {
 
             secondaryDivider
 
-            HStack(spacing: 6) {
-                ForEach(ScreenshotTextColor.allCases) { color in
-                    Button {
-                        editor.textColor = color
-                    } label: {
-                        Circle()
-                            .fill(color.color)
-                            .frame(width: 16, height: 16)
-                            .overlay {
-                                Circle()
-                                    .stroke(
-                                        editor.textColor == color ? Color.accentColor : Color.black.opacity(0.2),
-                                        lineWidth: editor.textColor == color ? 2 : 1
-                                    )
-                            }
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-                }
+            colorButtons(selected: editor.textColor) { color in
+                editor.textColor = color
             }
         }
     }

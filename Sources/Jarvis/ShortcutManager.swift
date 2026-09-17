@@ -243,8 +243,9 @@ final class ScreenshotShortcutManager {
     }
 
     func validate(_ candidate: ScreenshotShortcut) -> ScreenshotShortcutValidation {
-        guard candidate != binding else { return .available }
-
+        // 当前绑定也要真的探一次：启动时注册失败（进程内有残留注册、同机第二个
+        // 实例占着）时，设置页原来会一直显示「可用」，而前台按下去毫无反应，
+        // 而且用同一个键重录会被拒（candidate == binding），用户没有自救路径。
         var probe: EventHotKeyRef?
         let status = registerHotKey(for: candidate, id: hotKeyID &+ 1000, slot: &probe)
         if let probe {

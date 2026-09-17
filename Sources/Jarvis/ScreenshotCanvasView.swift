@@ -51,6 +51,17 @@ struct ScreenshotCanvasView: View {
                         ? editor.mosaicImage(style: annotation.mosaicStyle)
                         : nil
                 )
+                // 删除/复制原来只有键盘路径（⌫ / ⌘D），界面上没有任何提示，
+                // 等于没做。右键菜单让它们可发现。
+                .contextMenu {
+                    Button("复制标注") {
+                        editor.selectedAnnotationID = annotation.id
+                        editor.duplicateSelectedAnnotation()
+                    }
+                    Button("删除标注", role: .destructive) {
+                        editor.deleteAnnotation(id: annotation.id)
+                    }
+                }
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 

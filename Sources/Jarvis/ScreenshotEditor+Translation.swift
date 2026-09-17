@@ -19,13 +19,17 @@ extension ScreenshotEditorModel {
     }
 
     func refreshRenderedTranslationBlocks() {
-        renderedTranslationBlocks = Self.makeRenderedTranslationBlocks(
+        let updated = Self.makeRenderedTranslationBlocks(
             translationVisible: translationVisible,
             translationSourceRect: translationSourceRect,
             selectionRect: selectionRect,
             canvasSize: canvasSize,
             translationBlocks: translationBlocks
         )
+        // 拖动选区时每个鼠标事件都会走到这里，而结果往往一模一样；`@Published`
+        // 每次赋值都会再发一次通知，把工具栏的重排也算进来。内容没变就别发。
+        guard updated != renderedTranslationBlocks else { return }
+        renderedTranslationBlocks = updated
     }
 
     private static func makeRenderedTranslationBlocks(

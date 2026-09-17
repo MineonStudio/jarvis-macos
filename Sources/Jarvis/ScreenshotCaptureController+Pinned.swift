@@ -115,7 +115,9 @@ extension ScreenshotCaptureController {
         selected: Bool
     ) {
         item.containerView?.isSelected = selected
-        item.containerView?.showsShadow = item.showsShadow
+        // 阴影恒开：贴图没有可以关掉它的入口，原来那层 item.showsShadow 间接
+        // 永远传 true。
+        item.containerView?.showsShadow = true
         // The visible halo is rendered by the transparent inset container;
         // keep AppKit from adding a second window-level shadow.
         item.window.hasShadow = false
@@ -126,26 +128,46 @@ extension ScreenshotCaptureController {
     /// 不做这一步，拔掉外接屏后留下的贴图会变成幽灵窗口——不在任何屏幕上、点不到、
     /// 拿不到焦点，Esc 也关不掉，只能重启应用。
     func reconcilePinnedScreenshotsWithVisibleDisplays() {
-        let visibleFrames = NSScreen.screens.map(\.visibleFrame)
-        guard !visibleFrames.isEmpty else { return }
+        // 只在**屏幕集合本身**变了的时候动手。Dock 收起/菜单栏变化等也会发这个
+        // 通知，那种时候用户没动过的贴图不该被挪走。
+        let screens = NSScreen.screens.map(\.frame)
+        guard screens != lastKnownScreenFrames else { return }
+        lastKnownScreenFrames = screens
+        guard !screens.isEmpty else { return }
 
+        let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+        var destroyed = 0
+        var moved = 0
         for item in pinnedItems.values {
             let frame = item.window.frame
-            guard let host = visibleFrames.first(where: { $0.intersects(frame) }) else {
+            // 还看得见的一律不动：用户的摆放位置归用户。
+            guard !visibleFrames.contains(where: { $0.intersects(frame) }) else { continue }
+            // 看不见了才处理：先试着收进它主要覆盖的那块屏。
+            let host = visibleFrames.max { a, b in
+                a.intersection(frame).area < b.intersection(frame).area
+            }
+            guard let host, host.intersection(frame).area > 0 || visibleFrames.count == 1 else {
                 destroyPinnedScreenshot(item)
+                destroyed += 1
                 continue
             }
             var clamped = frame
-            clamped.origin.x = min(max(clamped.minX, host.minX), max(host.minX, host.maxX - clamped.width))
-            clamped.origin.y = min(max(clamped.minY, host.minY), max(host.minY, host.maxY - clamped.height))
-            guard clamped != frame else { continue }
+            clamped.size.width = min(clamped.width, host.width)
+            clamped.size.height = min(clamped.height, host.height)
+            clamped.origin.x = min(max(clamped.minX, host.minX), host.maxX - clamped.width)
+            clamped.origin.y = min(max(clamped.minY, host.minY), host.maxY - clamped.height)
             item.window.setFrame(clamped, display: false)
+            moved += 1
         }
         JarvisLog.notice(
             category: .window,
             event: "screenshot.pinned.reconciled",
             result: "success",
-            fields: ["count": String(pinnedItems.count)]
+            fields: [
+                "screens": String(screens.count),
+                "moved": String(moved),
+                "destroyed": String(destroyed)
+            ]
         )
     }
 
@@ -182,8 +204,13 @@ extension ScreenshotCaptureController {
         )
         return ToolbarFramePlacement(
             rect: rect,
-            // 窗口下沿已经在选区顶边之上 = 整条工具栏在选区上方。
-            placesSecondaryRowAboveMain: rect.minY >= imageFrame.maxY - 1
+            // 由落位本身给出，不再从矩形反推：压在图上（overlay）那一支同样以窗口
+            // 下沿为基准，反推会漏掉它，于是接近全屏的选区上主行照样会弹。
+            placesSecondaryRowAboveMain: ScreenshotToolbarPlacement.anchor(
+                for: imageFrame,
+                in: visibleFrame,
+                requestedWidth: requestedWidth
+            ).anchorsWindowBottom
         )
     }
 
@@ -288,5 +315,13 @@ extension ScreenshotCaptureController {
         guard didPushCrosshairCursor else { return }
         NSCursor.pop()
         didPushCrosshairCursor = false
+    }
+}
+
+private extension CGRect {
+    /// 相交面积（比较「主要落在哪块屏上」用）。
+    var area: CGFloat {
+        let rect = isNull || isEmpty ? .zero : self
+        return rect.width * rect.height
     }
 }

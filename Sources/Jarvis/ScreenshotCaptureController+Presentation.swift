@@ -412,10 +412,14 @@ extension ScreenshotCaptureController {
         onAction: @escaping (ScreenshotAction) -> Void,
         makeAction: @escaping (Data) -> ScreenshotAction
     ) {
-        Task { @MainActor in
-            Task { @MainActor in
-                await onAction(makeAction(editor.finalPNGData()))
-            }
+        // 导出要几百毫秒到数秒，而「取消」随时可用。会话已经结束（取消/确认）之后
+        // 不能再把结果交出去——否则取消过的截图照样弹保存面板，还会因为
+        // editingHistoryID 已被清空而多写一条历史。
+        let generation = resultGeneration
+        Task { @MainActor [weak self] in
+            let data = await editor.finalPNGData()
+            guard let self, self.resultGeneration == generation else { return }
+            onAction(makeAction(data))
         }
     }
 
@@ -469,6 +473,8 @@ extension ScreenshotCaptureController {
     }
 
     func dismissResult() {
+        // 让在途的导出作废：它回来时会对不上号。
+        resultGeneration += 1
         activeEditor?.cancelTranslation()
         if let resultWindow, let toolbarWindow {
             resultWindow.removeChildWindow(toolbarWindow)

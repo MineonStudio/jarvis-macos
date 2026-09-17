@@ -147,6 +147,19 @@ struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
     var mosaicMode: ScreenshotMosaicMode = .rectangle
     var mosaicStyle: ScreenshotMosaicStyle = .blur
 
+    /// 标注在画布坐标里的外接矩形（右键菜单的热区用）。
+    var canvasBounds: CGRect {
+        let all = points.isEmpty ? [start, end] : points
+        let xs = all.map(\.x)
+        let ys = all.map(\.y)
+        guard let minX = xs.min(), let maxX = xs.max(),
+              let minY = ys.min(), let maxY = ys.max()
+        else {
+            return .zero
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     var start: CGPoint {
         points.first ?? .zero
     }
@@ -447,7 +460,9 @@ extension ScreenshotEditorModel {
             let length = zip(points, points.dropFirst()).reduce(0.0) { total, pair in
                 total + hypot(pair.1.x - pair.0.x, pair.1.y - pair.0.y)
             }
-            guard length >= 8 else { return }
+            // 只挡「没动」：渲染端对短笔画照样画出带圆头的点，阈值给大就把它
+            // 变成「拖了却没反应」。
+            guard length >= 2 else { return }
         }
         append(.init(
             kind: .mosaic,
@@ -602,17 +617,18 @@ extension ScreenshotEditorModel {
     }
 
     func undo() {
-        // 拖动还没结束时按 ⌘Z：过期快照会入栈并把重做历史清空。
-        activeMoveSnapshot = nil
         guard let previous = undoStack.popLast() else { return }
+        // 拖动还没结束时按 ⌘Z：过期快照会入栈并把重做历史清空。放在 popLast 之后
+        // 才能保证「栈是空的」那一下不会把进行中的拖动变成永远撤销不掉。
+        activeMoveSnapshot = nil
         redoStack.append(annotations)
         annotations = previous
         selectedAnnotationID = nil
     }
 
     func redo() {
-        activeMoveSnapshot = nil
         guard let next = redoStack.popLast() else { return }
+        activeMoveSnapshot = nil
         undoStack.append(annotations)
         annotations = next
         selectedAnnotationID = nil

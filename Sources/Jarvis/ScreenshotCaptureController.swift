@@ -187,17 +187,44 @@ enum ScreenshotToolbarMetrics {
 }
 
 enum ScreenshotToolbarPlacement {
-    /// 主按钮行在窗口坐标（原点左下）里的位置。两条胶囊按同一套高度口径排列，
-    /// 收起态窗口就只有主行那么高。
-    static func mainRowRect(
-        in windowRect: CGRect,
-        placesSecondaryAbove: Bool
-    ) -> CGRect {
-        let height = ScreenshotToolbarMetrics.mainRowHeight
-        // 二级行排在主行上面时，主行贴窗口下沿；否则主行是 VStack 的第一个孩子，
-        // 待在窗口顶部。
-        let y = placesSecondaryAbove ? windowRect.minY : windowRect.maxY - height
-        return CGRect(x: windowRect.minX, y: y, width: windowRect.width, height: height)
+    /// 工具栏相对选区的落位。
+    ///
+    /// 它同时决定窗口**以哪条边为基准**：放在选区下方时基准是窗口上沿，放在上方
+    /// 或压在图上时基准是下沿。主按钮行要待在基准那一侧，收起/展开二级行才不会
+    /// 把它推走。
+    enum Anchor {
+        case below
+        case above
+        case overlay
+
+        /// 基准是窗口下沿（二级行要排在主行上面）。
+        var anchorsWindowBottom: Bool {
+            self != .below
+        }
+    }
+
+    /// 按**收起态**的高度选落位。
+    ///
+    /// 用请求的高度选会有个要命的效果：展开二级行时窗口变高，原本放得下的一侧变得
+    /// 放不下，落位当场翻到对面——工具栏瞬移几百点，行序也跟着翻。收起态是它最小
+    /// 的占位，按它选就永远稳定。
+    static func anchor(
+        for imageFrame: CGRect,
+        in visibleFrame: CGRect,
+        requestedWidth _: CGFloat = ScreenshotToolbarMetrics.baseWidth
+    ) -> Anchor {
+        let height = ScreenshotToolbarMetrics.compactHeight
+        let minY = visibleFrame.minY
+        let maxY = visibleFrame.maxY - height
+        let belowY = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
+        let aboveY = imageFrame.maxY + ScreenshotToolbarMetrics.gap
+        if belowY >= minY {
+            return .below
+        }
+        if aboveY <= maxY {
+            return .above
+        }
+        return .overlay
     }
 
     static func frame(
@@ -216,17 +243,16 @@ enum ScreenshotToolbarPlacement {
 
         let minY = visibleFrame.minY
         let maxY = visibleFrame.maxY - height
-        let belowY = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
-        let aboveY = imageFrame.maxY + ScreenshotToolbarMetrics.gap
         let y: CGFloat
-        if belowY >= minY {
-            y = belowY
-        } else if aboveY <= maxY {
-            y = aboveY
-        } else {
+        switch anchor(for: imageFrame, in: visibleFrame, requestedWidth: requestedWidth) {
+        case .below:
+            y = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
+        case .above:
+            y = imageFrame.maxY + ScreenshotToolbarMetrics.gap
+        case .overlay:
             let visibleImage = imageFrame.intersection(visibleFrame)
             let base = visibleImage.isNull || visibleImage.isEmpty ? visibleFrame : visibleImage
-            y = min(base.minY + ScreenshotToolbarMetrics.overlayInset, maxY)
+            y = base.minY + ScreenshotToolbarMetrics.overlayInset
         }
 
         let clampedY = maxY >= minY ? min(max(y, minY), maxY) : minY
@@ -243,10 +269,14 @@ final class ScreenshotCaptureController {
     var activeEditor: ScreenshotEditorModel?
     var editorObservation: AnyCancellable?
     var toolbarLayout: ScreenshotToolbarLayoutModel?
+    /// 每次收起编辑界面就 +1，用来让在途的导出结果作废。
+    var resultGeneration = 0
     var selectionCompletionDelivered = false
     var pinNextSelectionResult = false
     var pinnedItems: [UUID: PinnedScreenshotItem] = [:]
     var selectedPinnedID: UUID?
+    /// 上一次看到的屏幕排布，用来判断「屏幕真的变了」。
+    var lastKnownScreenFrames: [CGRect] = []
     var activeCaptureScreenFrame: CGRect?
     var sessionPhase: ScreenshotSessionPhase = .idle
     var activeSessionID: UUID?

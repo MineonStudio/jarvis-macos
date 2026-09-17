@@ -51,16 +51,24 @@ struct ScreenshotCanvasView: View {
                         ? editor.mosaicImage(style: annotation.mosaicStyle)
                         : nil
                 )
-                // 删除/复制原来只有键盘路径（⌫ / ⌘D），界面上没有任何提示，
-                // 等于没做。右键菜单让它们可发现。
-                .contextMenu {
-                    Button("复制标注") {
-                        editor.selectedAnnotationID = annotation.id
-                        editor.duplicateSelectedAnnotation()
-                    }
-                    Button("删除标注", role: .destructive) {
-                        editor.deleteAnnotation(id: annotation.id)
-                    }
+                // 删除/复制原来只有键盘路径（⌫ / ⌘D），界面上没有任何提示，等于
+                // 没做。标注视图自身关掉了命中测试（它们是覆盖全画布的图层），所以
+                // 菜单要挂在一块按标注外接矩形单独铺出来、可接收点击的区域上。
+                .overlay {
+                    let bounds = annotation.canvasBounds
+                    Color.clear
+                        .frame(width: max(bounds.width, 1), height: max(bounds.height, 1))
+                        .contentShape(Rectangle())
+                        .position(x: bounds.midX, y: bounds.midY)
+                        .contextMenu {
+                            Button("复制标注") {
+                                editor.selectedAnnotationID = annotation.id
+                                editor.duplicateSelectedAnnotation()
+                            }
+                            Button("删除标注", role: .destructive) {
+                                editor.deleteAnnotation(id: annotation.id)
+                            }
+                        }
                 }
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }

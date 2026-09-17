@@ -535,10 +535,8 @@ final class PinnedScreenshotItem {
     // The imageFrame calculation still points to the original screenshot
     // bounds, so this does not change the pin's visible position or size.
     let contentInset: CGFloat = 40
-    var data: Data
     var containerView: PinnedScreenshotContainerView?
     var onAction: ((ScreenshotAction) -> Void)?
-    var showsShadow = true
 
     var imageFrame: CGRect {
         CGRect(
@@ -550,7 +548,6 @@ final class PinnedScreenshotItem {
     }
 
     init(data: Data, image: NSImage, frame: CGRect) {
-        self.data = data
         imageSize = image.size
         editor = ScreenshotEditorModel(
             image: image,

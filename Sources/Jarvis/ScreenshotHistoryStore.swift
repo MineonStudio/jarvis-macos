@@ -139,11 +139,16 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             }
             items.removeAll { $0.id == item.id }
             items.insert(item, at: 0)
-            guard save(trimmed(items)) else {
-                // 索引没写成功，这张 PNG 永远进不了索引，也永远不会被淘汰——
-                // 收回来，别留在磁盘上。
+            // 先算淘汰、**先写索引**，成功之后才删文件：反过来的话，索引写失败时
+            // 磁盘上的索引仍引用着已经被删掉的图，界面上那些条目还在，点开却报
+            // 「历史截图文件不存在」，而且每 add 一次就多删一批。
+            let (kept, removed) = trimmed(items)
+            guard save(kept) else {
                 discardFile(for: item)
                 return nil
+            }
+            for stale in removed {
+                discardFile(for: stale)
             }
             return item
         }
@@ -160,7 +165,12 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             var updated = items[index]
             updated.updatedAt = date
             items[index] = updated
-            guard save(items.sorted { $0.updatedAt > $1.updatedAt }) else { return nil }
+            // 重新编辑会让某张图变大，所以这里同样要过一遍容量约束。
+            let (kept, removed) = trimmed(items)
+            guard save(kept) else { return nil }
+            for stale in removed {
+                discardFile(for: stale)
+            }
             return updated
         }
     }
@@ -222,9 +232,14 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
         file.write(items)
     }
 
-    private func trimmed(_ items: [ScreenshotHistoryItem]) -> [ScreenshotHistoryItem] {
+    /// 按「条数 + 总字节」算出该留哪些、该淘汰哪些。**不删文件**——删要等索引
+    /// 写成功之后由调用方做，否则一次失败的写入会连带删掉索引里还引用着的图。
+    private func trimmed(
+        _ items: [ScreenshotHistoryItem]
+    ) -> (kept: [ScreenshotHistoryItem], removed: [ScreenshotHistoryItem]) {
         let sorted = items.sorted { $0.updatedAt > $1.updatedAt }
         var kept: [ScreenshotHistoryItem] = []
+        var removed: [ScreenshotHistoryItem] = []
         var totalBytes: Int64 = 0
 
         for item in sorted {
@@ -233,13 +248,26 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             // 第一张永远留着：单张就可能超过总上限，否则一张都存不下。
             let overBytes = !kept.isEmpty && totalBytes + size > maximumTotalBytes
             if overCount || overBytes {
-                discardFile(for: item)
+                removed.append(item)
             } else {
                 kept.append(item)
                 totalBytes += size
             }
         }
-        return kept
+        if !removed.isEmpty {
+            // 淘汰是「最旧的先走」。用户看不到这个仓库的占用，所以至少让日志说得清。
+            JarvisLog.notice(
+                category: .storage,
+                event: "screenshot.history.trimmed",
+                result: "success",
+                fields: [
+                    "removed": String(removed.count),
+                    "kept": String(kept.count),
+                    "keptBytes": String(totalBytes)
+                ]
+            )
+        }
+        return (kept, removed)
     }
 
     private func fileSize(of item: ScreenshotHistoryItem) -> Int64 {
@@ -269,31 +297,66 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     /// 删掉目录里没有被索引引用的 `screenshot-*.png`。
     ///
     /// 这些文件不会出现在历史里、也不会被淘汰（淘汰是按索引来的），只会一直占着
-    /// 磁盘：索引写失败留下的、以及索引损坏被隔离后整批失去引用的。
+    /// 磁盘。但「没被引用」有几种成因，其中一种是**索引读不出来**——那时删文件
+    /// 等于把用户的历史销毁掉，所以下面几道门禁一个都不能省。
     private func collectOrphansIfNeeded(keeping items: [ScreenshotHistoryItem]) {
         guard !hasCollectedOrphans else { return }
         hasCollectedOrphans = true
 
-        let referenced = Set(items.map(\.fileName))
         let contents = (try? fileManager.contentsOfDirectory(
             at: directoryURL,
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: [.contentModificationDateKey]
         )) ?? []
+
+        // ① 索引被隔离过（`.corrupt-*` 还在）说明这次读到的是坏索引，`items` 是空的
+        //    并不代表磁盘上的图没人要。这种时候一张都不许删。
+        guard !contents.contains(where: { $0.lastPathComponent.contains(".corrupt-") }) else {
+            JarvisLog.notice(
+                category: .storage,
+                event: "screenshot.history.orphanSweepSkipped",
+                result: "skipped",
+                fields: ["reason": "quarantinedIndex"]
+            )
+            return
+        }
+
+        let referenced = Set(items.map(\.fileName))
+        // ② 刚写出来、索引还没来得及落盘的图不能被当成孤儿。索引写在另一个队列上，
+        //    别的 Store 实例（启动仓库）也扫同一个目录。
+        let gracePeriod: TimeInterval = 10 * 60
+        let cutoff = Date().addingTimeInterval(-gracePeriod)
         var removedCount = 0
+        var failedCount = 0
         for url in contents where url.pathExtension.lowercased() == "png" {
             let name = url.lastPathComponent
             guard name.hasPrefix("screenshot-"), !referenced.contains(name) else { continue }
             // 只认名字合法的：非法名字留给人工处理，别误删别人的东西。
             guard safeFileURL(for: name) != nil else { continue }
-            try? fileManager.removeItem(at: url)
-            removedCount += 1
+            if let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate, modified > cutoff
+            {
+                continue
+            }
+            do {
+                try fileManager.removeItem(at: url)
+                removedCount += 1
+            } catch CocoaError.fileNoSuchFile {
+                continue
+            } catch {
+                failedCount += 1
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.history.orphanRemoval.failed",
+                    error: error
+                )
+            }
         }
-        guard removedCount > 0 else { return }
+        guard removedCount > 0 || failedCount > 0 else { return }
         JarvisLog.notice(
             category: .storage,
             event: "screenshot.history.orphansCollected",
-            result: "success",
-            fields: ["count": String(removedCount)]
+            result: failedCount == 0 ? "success" : "partial",
+            fields: ["count": String(removedCount), "failed": String(failedCount)]
         )
     }
 

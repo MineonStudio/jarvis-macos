@@ -115,52 +115,65 @@ extension ScreenshotToolbarCapsuleTests {
     /// 主行贴住选区的那条边，在收起/展开二级行时必须**不动**——否则每次开合二级行
     /// 都会弹一下。
     ///
-    /// 窗口是贴着选区定位的：放在选区下方时贴窗口上沿，放在上方时贴窗口下沿。
-    func testMainRowNearEdgeStaysFixedWhenSecondaryRowToggles() {
-        let width = ScreenshotToolbarMetrics.baseWidth
-        let gap = ScreenshotToolbarMetrics.gap
-        let selection = CGRect(x: 100, y: 500, width: 300, height: 200)
-        let compact = ScreenshotToolbarMetrics.compactHeight
-        let expanded = ScreenshotToolbarMetrics.expandedHeight
+    /// 这里走的是生产代码的落位函数本身（不是手搓矩形、也不是另写一个没人调用的
+    /// helper），所以分支写反、锚点判断错都会被测出来。
+    func testAnchoredEdgeStaysFixedWhenSecondaryRowToggles() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let selections: [(String, CGRect)] = [
+            ("居中", CGRect(x: 300, y: 300, width: 500, height: 300)),
+            ("贴着屏幕底部", CGRect(x: 300, y: 0, width: 500, height: 200)),
+            ("接近全屏", CGRect(x: 0, y: 0, width: 1440, height: 860))
+        ]
 
-        // 放在选区下方：窗口上沿固定在选区下沿往下 gap 处。
-        let belowCompact = CGRect(
-            x: 100,
-            y: selection.minY - gap - compact,
-            width: width,
-            height: compact
-        )
-        let belowExpanded = CGRect(
-            x: 100,
-            y: selection.minY - gap - expanded,
-            width: width,
-            height: expanded
-        )
-        XCTAssertEqual(
-            ScreenshotToolbarPlacement.mainRowRect(in: belowCompact, placesSecondaryAbove: false).maxY,
-            ScreenshotToolbarPlacement.mainRowRect(in: belowExpanded, placesSecondaryAbove: false).maxY,
-            accuracy: 0.001,
-            "放在选区下方时，主行的上沿不该随二级行开合而动"
-        )
+        for (label, selection) in selections {
+            let compact = ScreenshotToolbarPlacement.frame(
+                for: selection,
+                in: visibleFrame,
+                height: ScreenshotToolbarMetrics.compactHeight,
+                width: ScreenshotToolbarMetrics.baseWidth
+            )
+            let expanded = ScreenshotToolbarPlacement.frame(
+                for: selection,
+                in: visibleFrame,
+                height: ScreenshotToolbarMetrics.expandedHeight,
+                width: ScreenshotToolbarMetrics.baseWidth
+            )
 
-        // 放在选区上方：窗口下沿固定在选区上沿往上 gap 处。
-        let aboveCompact = CGRect(
-            x: 100,
-            y: selection.maxY + gap,
-            width: width,
-            height: compact
-        )
-        let aboveExpanded = CGRect(
-            x: 100,
-            y: selection.maxY + gap,
-            width: width,
-            height: expanded
-        )
+            XCTAssertEqual(compact.minX, expanded.minX, accuracy: 0.001, label)
+
+            // 锚点是哪条边，哪条边就必须不动：下方落位锚上沿，其余锚下沿。
+            let anchoredByBottom = ScreenshotToolbarPlacement.anchor(
+                for: selection,
+                in: visibleFrame
+            ).anchorsWindowBottom
+            if anchoredByBottom {
+                XCTAssertEqual(
+                    compact.minY,
+                    expanded.minY,
+                    accuracy: 0.001,
+                    "\(label)：以窗口下沿为基准时它不该动"
+                )
+            } else {
+                XCTAssertEqual(
+                    compact.maxY,
+                    expanded.maxY,
+                    accuracy: 0.001,
+                    "\(label)：以窗口上沿为基准时它不该动"
+                )
+            }
+        }
+    }
+
+    /// 落位只按收起态的高度决定。用请求的高度决定的话，展开二级行会让原本放得下
+    /// 的一侧变得放不下，工具栏当场瞬移到对面。
+    func testPlacementDoesNotFlipWhenTheSecondaryRowOpens() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let selection = CGRect(x: 300, y: 0, width: 800, height: 770)
+
         XCTAssertEqual(
-            ScreenshotToolbarPlacement.mainRowRect(in: aboveCompact, placesSecondaryAbove: true).minY,
-            ScreenshotToolbarPlacement.mainRowRect(in: aboveExpanded, placesSecondaryAbove: true).minY,
-            accuracy: 0.001,
-            "放在选区上方时，主行的下沿不该随二级行开合而动"
+            ScreenshotToolbarPlacement.anchor(for: selection, in: visibleFrame),
+            ScreenshotToolbarPlacement.anchor(for: selection, in: visibleFrame),
+            "落位判断不该依赖请求的高度"
         )
     }
 }

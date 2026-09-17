@@ -187,30 +187,52 @@ final class JarvisLocalLogStore: @unchecked Sendable {
         }
     }
 
-    func append(_ event: JarvisLogEvent) {
-        guard let data = try? JSONEncoder().encode(event) else { return }
-        let line = data + Data([0x0A])
+    /// 一批事件共用一次锁、一次轮转判断和一次 open/write/close。逐条写时每行要付
+    /// 十来个系统调用（含 `flock`、`chmod`、`createDirectory`），卡顿日志一多就把
+    /// 调用线程拖住——而卡顿日志恰恰是在主线程卡住时产生的。
+    ///
+    /// 只保留批量入口：单条转发的重载会诱使新调用方回到逐条写盘的旧路。
+    func append(_ events: [JarvisLogEvent]) {
+        let encoder = JSONEncoder()
+        var payload = Data()
+        for event in events {
+            guard let data = try? encoder.encode(event) else { continue }
+            payload.append(data)
+            payload.append(0x0A)
+        }
+        guard !payload.isEmpty else { return }
 
         lock.withLock {
             withProcessLock {
-                prepareDirectory()
-                let shouldRotateForNewDay = (try? fileManager.attributesOfItem(atPath: currentFileURL.path))
-                    .flatMap { $0[.modificationDate] as? Date }
+                // 一次 `attributesOfItem` 就同时给出「文件在不在、多大、多久没写」，
+                // 顶掉原来的三次 stat 和一次 fileExists。
+                let existing = try? fileManager.attributesOfItem(atPath: currentFileURL.path)
+                let shouldRotateForNewDay = (existing?[.modificationDate] as? Date)
                     .map { Calendar.current.startOfDay(for: $0) < Calendar.current.startOfDay(for: Date()) }
                     ?? false
-                rotateIfNeeded(for: line.count, force: shouldRotateForNewDay)
-                if !fileManager.fileExists(atPath: currentFileURL.path),
-                   !fileManager.createFile(atPath: currentFileURL.path, contents: nil)
-                {
-                    return
+                let existingBytes = (existing?[.size] as? NSNumber)?.int64Value ?? 0
+                let didRotate = rotateIfNeeded(
+                    currentBytes: existingBytes,
+                    incomingBytes: payload.count,
+                    force: shouldRotateForNewDay
+                )
+                // 只有真的要新建文件时才补目录和权限：目录被清掉或刚轮转过，文件才不在。
+                let needsNewFile = existing == nil || didRotate
+                if needsNewFile {
+                    prepareDirectory()
+                    guard fileManager.createFile(atPath: currentFileURL.path, contents: nil) else {
+                        return
+                    }
                 }
 
                 do {
                     let handle = try FileHandle(forWritingTo: currentFileURL)
                     try handle.seekToEnd()
-                    try handle.write(contentsOf: line)
+                    try handle.write(contentsOf: payload)
                     try handle.close()
-                    try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: currentFileURL.path)
+                    if needsNewFile {
+                        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: currentFileURL.path)
+                    }
                 } catch {
                     // Logging must never recursively log its own I/O failure.
                 }
@@ -240,19 +262,17 @@ final class JarvisLocalLogStore: @unchecked Sendable {
         try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directoryURL.path)
     }
 
-    private func rotateIfNeeded(for incomingBytes: Int, force: Bool) {
-        let currentBytes = (try? fileManager.attributesOfItem(atPath: currentFileURL.path))
-            .flatMap { $0[.size] as? NSNumber }
-            .map(\.int64Value)
-            ?? 0
+    /// 返回是否真的轮转过——调用方据此判断当前文件是否已经不在了。
+    @discardableResult
+    private func rotateIfNeeded(currentBytes: Int64, incomingBytes: Int, force: Bool) -> Bool {
         guard force || currentBytes + Int64(incomingBytes) > maximumFileBytes
         else {
-            return
+            return false
         }
 
         guard maximumFileCount > 1 else {
             try? fileManager.removeItem(at: currentFileURL)
-            return
+            return true
         }
 
         for index in stride(from: maximumFileCount - 1, through: 2, by: -1) {
@@ -269,6 +289,7 @@ final class JarvisLocalLogStore: @unchecked Sendable {
             try? fileManager.moveItem(at: currentFileURL, to: firstRotation)
         }
         try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: firstRotation.path)
+        return true
     }
 }
 
@@ -284,19 +305,62 @@ private final class JarvisLogRuntime: @unchecked Sendable {
     private let lock = NSLock()
     private var localStore: JarvisLocalLogStore
     private var debugEnabled: Bool
+    /// 已投递但还没落盘的事件数（`lock` 保护）：给 `flush()` 一个队列空时直接返回的
+    /// 机会，不必每次都在主线程上同步等一趟。
+    private var pendingWriteCount = 0
+
+    /// 脱敏、JSON 编码、OSLog、文件 I/O 全部挪到这条串行队列：调用方只投递一次
+    /// `async` 就返回。写盘按批合并，一批只开一次文件。
+    private let writerQueue = DispatchQueue(
+        label: "\(JarvisAppIdentity.bundleIdentifier).log-writer",
+        qos: .utility
+    )
+    private static let writerQueueKey = DispatchSpecificKey<Void>()
+    /// 下面两个只在 `writerQueue` 上访问。
+    private var pendingEvents: [JarvisLogEvent] = []
+    private var scheduledFlush: DispatchWorkItem?
+    private static let maximumBatchSize = 32
+    private static let flushDelay = DispatchTimeInterval.milliseconds(250)
+
+    /// 进程内不会变的字段算一次就够。原来每条日志都要重算一遍路径哈希和几次
+    /// `Bundle` 查询——都发生在 `flush()` 还在主线程上等着的那条队列里。
+    private static let bundleIdentifierValue = JarvisAppIdentity.bundleIdentifier
+    private static let bundlePathValue = JarvisLogRedactor.path(Bundle.main.bundleURL.path)
+    private static let processIdentifierValue = ProcessInfo.processInfo.processIdentifier
+    private static let appVersionValue = JarvisAppVersion.shortVersion
+    private static let buildValue = JarvisAppVersion.build
 
     init() {
         localStore = JarvisLocalLogStore()
         debugEnabled = ProcessInfo.processInfo.environment["JARVIS_DEBUG_LOGS"] == "1"
+        writerQueue.setSpecific(key: Self.writerQueueKey, value: ())
+    }
+
+    var eventFileURLs: [URL] {
+        lock.withLock { localStore }.eventFileURLs
     }
 
     func configure(localStore: JarvisLocalLogStore, debugEnabled: Bool? = nil) {
+        // 换存储前先把旧存储的待写事件落盘，避免它们落到新文件里。
+        flush()
         lock.withLock {
             self.localStore = localStore
             if let debugEnabled {
                 self.debugEnabled = debugEnabled
             }
         }
+    }
+
+    /// 等待已投递的日志落盘。测试、退出前、导出诊断包前调用。
+    func flush() {
+        guard DispatchQueue.getSpecific(key: Self.writerQueueKey) == nil else {
+            writePendingEvents()
+            return
+        }
+        guard lock.withLock({ pendingWriteCount > 0 }) else {
+            return
+        }
+        writerQueue.sync { writePendingEvents() }
     }
 
     func emit(
@@ -308,35 +372,73 @@ private final class JarvisLogRuntime: @unchecked Sendable {
         result: String?,
         fields: [String: String]
     ) {
-        let (store, debugEnabled) = lock.withLock { (localStore, self.debugEnabled) }
+        let debugEnabled = lock.withLock { self.debugEnabled }
         guard level != .debug || debugEnabled else { return }
+        // 时间戳必须在调用现场取：挪到写队列上就成了“队列排到它”的时刻，积压时
+        // 会晚好几秒，和事件自己记录的 durationMilliseconds 对不上。
+        let timestamp = Self.timestamp()
+        // 错误和崩溃不等合并窗口，强退或掉电也不会把现场丢掉。
+        let shouldWriteImmediately = level == .fault || level == .error
+        lock.withLock { pendingWriteCount += 1 }
 
-        let safeFields = JarvisLogRedactor.fields(fields)
-        let logEvent = JarvisLogEvent(
-            schemaVersion: JarvisLogEvent.currentSchemaVersion,
-            timestamp: Self.timestamp(),
-            level: level,
-            category: category,
-            event: event,
-            sessionID: JarvisLogContext.sessionID,
-            operationID: operationID,
-            processID: ProcessInfo.processInfo.processIdentifier,
-            bundleID: JarvisAppIdentity.bundleIdentifier,
-            bundlePath: JarvisLogRedactor.path(Bundle.main.bundleURL.path),
-            appVersion: JarvisAppVersion.shortVersion,
-            build: JarvisAppVersion.build,
-            durationMilliseconds: durationMilliseconds,
-            result: result.map(JarvisLogRedactor.text),
-            fields: safeFields
-        )
+        writerQueue.async { [self] in
+            let safeFields = JarvisLogRedactor.fields(fields)
+            let logEvent = JarvisLogEvent(
+                schemaVersion: JarvisLogEvent.currentSchemaVersion,
+                timestamp: timestamp,
+                level: level,
+                category: category,
+                event: event,
+                sessionID: JarvisLogContext.sessionID,
+                operationID: operationID,
+                processID: Self.processIdentifierValue,
+                bundleID: Self.bundleIdentifierValue,
+                bundlePath: Self.bundlePathValue,
+                appVersion: Self.appVersionValue,
+                build: Self.buildValue,
+                durationMilliseconds: durationMilliseconds,
+                result: result.map(JarvisLogRedactor.text),
+                fields: safeFields
+            )
 
-        let messageFields = safeFields.sorted { $0.key < $1.key }
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: " ")
-        let renderedMessage = messageFields.isEmpty ? event : "\(event) \(messageFields)"
-        Logger(subsystem: JarvisAppIdentity.bundleIdentifier, category: category.rawValue)
-            .log(level: level.osLogType, "\(renderedMessage, privacy: .public)")
-        store.append(logEvent)
+            let messageFields = safeFields.sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: " ")
+            let renderedMessage = messageFields.isEmpty ? event : "\(event) \(messageFields)"
+            Logger(subsystem: Self.bundleIdentifierValue, category: category.rawValue)
+                .log(level: level.osLogType, "\(renderedMessage, privacy: .public)")
+
+            pendingEvents.append(logEvent)
+            if shouldWriteImmediately || pendingEvents.count >= Self.maximumBatchSize {
+                writePendingEvents()
+            } else {
+                scheduleFlush()
+            }
+        }
+    }
+
+    /// 只在 `writerQueue` 上调用。存储在这里解析：这样 `configure` 的
+    /// “先 flush 再换” 才成立——排在它前面的块写旧存储，排在后面的写新存储。
+    private func writePendingEvents() {
+        scheduledFlush?.cancel()
+        scheduledFlush = nil
+        let events = pendingEvents
+        pendingEvents.removeAll(keepingCapacity: true)
+        guard !events.isEmpty else { return }
+
+        lock.withLock { localStore }.append(events)
+        lock.withLock { pendingWriteCount = max(0, pendingWriteCount - events.count) }
+    }
+
+    /// 只在 `writerQueue` 上调用。定时器由 `scheduledFlush` 独占：直接写盘的分支
+    /// 会把它取消掉，不会留下一个还在计时的旧定时器再冲一次盘。
+    private func scheduleFlush() {
+        guard scheduledFlush == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.writePendingEvents()
+        }
+        scheduledFlush = work
+        writerQueue.asyncAfter(deadline: .now() + Self.flushDelay, execute: work)
     }
 
     /// `ISO8601DateFormatter` 的构造要加载 locale 数据，而每条日志都要取一次时间，
@@ -368,6 +470,17 @@ enum JarvisLog {
 
     static func configure(localStore: JarvisLocalLogStore, debugEnabled: Bool? = nil) {
         runtime.configure(localStore: localStore, debugEnabled: debugEnabled)
+    }
+
+    /// 日志写入是异步批量的，需要立刻读到文件时（测试、退出前、导出诊断包前）先调它。
+    static func flush() {
+        runtime.flush()
+    }
+
+    /// 当前真正在写的存储里的日志文件。导出诊断包要用它——新建一个默认存储会把
+    /// `flush()` 冲刷的位置和实际打包的位置拆成两处。
+    static var eventFileURLs: [URL] {
+        runtime.eventFileURLs
     }
 
     static func operationID() -> String {

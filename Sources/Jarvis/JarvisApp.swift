@@ -135,6 +135,12 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
         JarvisApplicationPresentation.terminateAfterLastWindowClosed
     }
 
+    func applicationWillTerminate(_: Notification) {
+        JarvisLog.notice(category: .lifecycle, event: "application.willTerminate")
+        // 日志写入是异步批量的，退出前把还没落盘的事件写完。
+        JarvisLog.flush()
+    }
+
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard let appModel else { return .terminateNow }
 

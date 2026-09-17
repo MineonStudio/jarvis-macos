@@ -124,6 +124,43 @@ enum JarvisWebPlatformFullscreenLayout {
     }
 }
 
+enum JarvisWebPlaybackPolicy {
+    /// 媒体什么时候该暂停。
+    ///
+    /// 只挂视图的 `onDisappear` 不够：窗口被完全遮挡、最小化、关闭或应用被隐藏时
+    /// 视图并不消失，视频会在后台一直解码，GPU 和 `HTMLMediaElement playback`
+    /// 的防休眠断言都停不下来。
+    ///
+    /// 元素全屏是例外：那时网页被移进独立窗口，容器所在窗口的可见性不再代表画面
+    /// 状态，不能把用户正在全屏看的视频一起暂停。
+    static func shouldSuspendMediaPlayback(
+        isSuspendedByView: Bool,
+        isHostVisible: Bool,
+        isElementFullscreen: Bool
+    ) -> Bool {
+        if isSuspendedByView {
+            return true
+        }
+        return !isHostVisible && !isElementFullscreen
+    }
+
+    /// 全屏的进出过程都算“画面在用户眼前”。
+    ///
+    /// 退出的那一帧容器所在窗口往往还没恢复可见（全屏窗口还压在上面），按不可见处理
+    /// 会把刚退出全屏的视频立刻暂停；等到 `.notInFullscreen` 时遮挡状态已经补上，
+    /// 判定自然回到正确值。
+    static func isElementFullscreenProtectingPlayback(_ state: WKWebView.FullscreenState) -> Bool {
+        switch state {
+        case .enteringFullscreen, .inFullscreen, .exitingFullscreen:
+            true
+        case .notInFullscreen:
+            false
+        @unknown default:
+            false
+        }
+    }
+}
+
 final class JarvisWebPlatformCornerCoverView: NSView {
     var cornerRadius: CGFloat = JarvisWebPlatformFullscreenLayout.windowedCornerRadius {
         didSet {
@@ -179,6 +216,111 @@ final class JarvisWebPlatformCornerCoverView: NSView {
 
 final class JarvisWebPlatformViewContainer: NSView {
     private let cornerCover = JarvisWebPlatformCornerCoverView(frame: .zero)
+
+    /// 宿主画面是否露出。窗口被完全遮挡、最小化、关闭、切到别的空间，或应用被隐藏
+    /// 时都是 false。网页媒体只在可见时播放：窗口躲在后台时视频仍会一直解码，
+    /// GPU 和 `HTMLMediaElement playback` 的防休眠断言都不会停。
+    var onHostVisibilityChange: (@MainActor (Bool) -> Void)? {
+        didSet { publishHostVisibility() }
+    }
+
+    /// `nonisolated(unsafe)` 只是为了让 `deinit` 能摘掉观察者——`deinit` 是非隔离的，
+    /// 而 token 又不是 `Sendable`。实际读写都只在主线程。
+    private nonisolated(unsafe) var hostVisibilityObservers: [any NSObjectProtocol] = []
+    private var lastPublishedHostVisibility: Bool?
+
+    deinit {
+        for observer in hostVisibilityObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observeHostWindow()
+        publishHostVisibility()
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        publishHostVisibility()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        publishHostVisibility()
+    }
+
+    private var isHostVisible: Bool {
+        guard !isHiddenOrHasHiddenAncestor, !NSApplication.shared.isHidden else {
+            return false
+        }
+        guard let window, window.isVisible, !window.isMiniaturized else {
+            return false
+        }
+        return window.occlusionState.contains(.visible)
+    }
+
+    private func publishHostVisibility() {
+        let isVisible = isHostVisible
+        guard lastPublishedHostVisibility != isVisible else {
+            return
+        }
+        lastPublishedHostVisibility = isVisible
+        onHostVisibilityChange?(isVisible)
+    }
+
+    private func observeHostWindow() {
+        for observer in hostVisibilityObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        hostVisibilityObservers.removeAll()
+        guard let window else {
+            return
+        }
+
+        let center = NotificationCenter.default
+        // `willClose` 的通知是在窗口仍然可见的那一瞬间投递的，直接算会得到“可见”，
+        // 而关窗后既不会再发遮挡状态变化、也不会再调 `viewDidMoveToWindow`（实测），
+        // 所以它单独处理：等这次关闭落地后再判定。`didBecomeKey`/`didBecomeMain`
+        // 补上窗口重新显示的那一侧。
+        let windowNotifications: [Notification.Name] = [
+            NSWindow.didChangeOcclusionStateNotification,
+            NSWindow.didMiniaturizeNotification,
+            NSWindow.didDeminiaturizeNotification,
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didBecomeMainNotification
+        ]
+        for name in windowNotifications {
+            hostVisibilityObservers.append(
+                center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.publishHostVisibility()
+                    }
+                }
+            )
+        }
+        hostVisibilityObservers.append(
+            center.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.publishHostVisibility()
+                }
+            }
+        )
+        for name in [NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+            hostVisibilityObservers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.publishHostVisibility()
+                    }
+                }
+            )
+        }
+    }
 
     func embed(_ webView: WKWebView) {
         let isFullscreen = JarvisWebPlatformFullscreenLayout.isActive(webView.fullscreenState)
@@ -288,6 +430,7 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     private var canGoForwardObservation: NSKeyValueObservation?
     private var fullscreenObservation: NSKeyValueObservation?
     private var popupWebViews: [WKWebView] = []
+    private var popupFullscreenObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
     private var loadTimeoutTask: Task<Void, Never>?
 
     deinit {
@@ -295,6 +438,9 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         canGoBackObservation?.invalidate()
         canGoForwardObservation?.invalidate()
         fullscreenObservation?.invalidate()
+        for observation in popupFullscreenObservations.values {
+            observation.invalidate()
+        }
     }
 
     init(
@@ -315,6 +461,9 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         webView.underPageBackgroundColor = .controlBackgroundColor
         webView.clipsToBounds = false
         webViewContainer.embed(webView)
+        webViewContainer.onHostVisibilityChange = { [weak self] isVisible in
+            self?.setHostPlaybackVisible(isVisible)
+        }
         canGoBackObservation = webView.observe(\WKWebView.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.updateNavigationState()
@@ -404,23 +553,60 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
         }
     }
 
+    /// 实际生效的暂停状态 = 视图要求暂停 或 宿主不可见。
     private(set) var isMediaSuspended = false
+    private var isPlaybackSuspendedByView = false
+    private var isHostVisible = true
 
     /// Same effect as Safari hiding a tab: media pauses, live buffers stay.
     func suspendMediaPlayback() {
-        guard !isMediaSuspended else {
+        guard !isPlaybackSuspendedByView else {
             return
         }
-        isMediaSuspended = true
-        setMediaPlaybackSuspended(true)
+        isPlaybackSuspendedByView = true
+        updateMediaPlaybackSuspension()
     }
 
     func resumeMediaPlayback() {
-        guard isMediaSuspended else {
+        guard isPlaybackSuspendedByView else {
             return
         }
-        isMediaSuspended = false
-        setMediaPlaybackSuspended(false)
+        isPlaybackSuspendedByView = false
+        updateMediaPlaybackSuspension()
+    }
+
+    /// 窗口被遮挡/最小化/关闭或应用被隐藏时同样暂停：只挂 `onDisappear` 的话，
+    /// 躲在后台的窗口会一直解码视频。
+    func setHostPlaybackVisible(_ isVisible: Bool) {
+        guard isHostVisible != isVisible else {
+            return
+        }
+        isHostVisible = isVisible
+        updateMediaPlaybackSuspension()
+    }
+
+    private func updateMediaPlaybackSuspension() {
+        let shouldSuspend = JarvisWebPlaybackPolicy.shouldSuspendMediaPlayback(
+            isSuspendedByView: isPlaybackSuspendedByView,
+            isHostVisible: isHostVisible,
+            isElementFullscreen: isAnyElementFullscreen
+        )
+        guard shouldSuspend != isMediaSuspended else {
+            return
+        }
+        isMediaSuspended = shouldSuspend
+        setMediaPlaybackSuspended(shouldSuspend)
+    }
+
+    /// 暂停是作用在主视图和所有弹窗上的，所以“是否全屏”也得看全部——弹窗里全屏的
+    /// 视频同样在用户眼前。
+    private var isAnyElementFullscreen: Bool {
+        if JarvisWebPlaybackPolicy.isElementFullscreenProtectingPlayback(webView.fullscreenState) {
+            return true
+        }
+        return popupWebViews.contains {
+            JarvisWebPlaybackPolicy.isElementFullscreenProtectingPlayback($0.fullscreenState)
+        }
     }
 
     private func setMediaPlaybackSuspended(_ suspended: Bool) {
@@ -444,6 +630,8 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
             webView.clipsToBounds = false
             webViewContainer.embed(webView)
         }
+        // 进出全屏会改变“宿主是否可见”的判定，跟着重算一次暂停状态。
+        updateMediaPlaybackSuspension()
     }
 
     private func fillFullscreenWindowIfNeeded() {
@@ -603,6 +791,14 @@ extension JarvisWebPlatformController: WKUIDelegate {
         popup.clipsToBounds = false
         webView.addSubview(popup)
         popupWebViews.append(popup)
+        popupFullscreenObservations[ObjectIdentifier(popup)] = popup.observe(
+            \WKWebView.fullscreenState,
+            options: [.new]
+        ) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.updateMediaPlaybackSuspension()
+            }
+        }
         if isMediaSuspended {
             popup.setAllMediaPlaybackSuspended(true) {}
         }
@@ -612,6 +808,8 @@ extension JarvisWebPlatformController: WKUIDelegate {
     func webViewDidClose(_ webView: WKWebView) {
         webView.removeFromSuperview()
         popupWebViews.removeAll { $0 === webView }
+        popupFullscreenObservations[ObjectIdentifier(webView)]?.invalidate()
+        popupFullscreenObservations[ObjectIdentifier(webView)] = nil
     }
 
     func webView(

@@ -127,23 +127,41 @@ enum ScreenshotToolbarMetrics {
     static let secondaryRowHeight: CGFloat = 40
     /// 两条胶囊之间的缝。上下分成两块之后这里不再画分隔线。
     static let pillSpacing: CGFloat = 6
-    /// 胶囊底部的留白：玻璃效果贴着面板边缘会显得被切掉。
-    static let pillBottomPadding: CGFloat = 6
     /// 主按钮行里每颗按钮的边长。
     static let mainButtonSize: CGFloat = 42
-    /// 二级行里最高控件的高度（次要按钮），用来核算内缩够不够躲开圆头。
-    static let secondaryContentHeight: CGFloat = 32
-    /// 主按钮行的左右内缩。胶囊两端的圆头半径是行高的一半，内缩不够会把
-    /// 最外侧按钮的图标切掉。`ScreenshotToolbarCapsuleTests` 钉着这个约束。
-    static let mainRowHorizontalPadding: CGFloat = 11
-    static let secondaryRowHorizontalPadding: CGFloat = 14
+    /// 二级行里最高控件的高度。这是玻璃按钮在工具栏里的既有高度，直接引用，
+    /// 别再手写一个会漂移的镜像值。
+    static var secondaryContentHeight: CGFloat {
+        JarvisToolbarMetrics.controlSize
+    }
 
+    /// 主按钮行的左右内缩。胶囊两端的圆头半径是行高的一半，内缩不够会把
+    /// 最外侧按钮的图标切掉。下限由 `minimumCapsuleInset` 推出，
+    /// `ScreenshotToolbarCapsuleTests` 钉着这个约束。
+    static let mainRowHorizontalPadding: CGFloat = 11
+    /// 二级行的左右内缩。**含**各控件自己的内边距——一处内缩只有一个来源，
+    /// 否则测试算的是胶囊内缩、实际生效的是它加上控件内边距。
+    static let secondaryRowHorizontalPadding: CGFloat = 20
+
+    /// 行高 `rowHeight` 的胶囊要容下高 `contentHeight` 的内容，两端圆头至少要
+    /// 留出多少内缩。胶囊的圆头半径是行高的一半，圆心在 (r, r)，内容角点
+    /// (inset, (rowHeight - contentHeight) / 2) 到圆心的距离不能超过 r。
+    static func minimumCapsuleInset(rowHeight: CGFloat, contentHeight: CGFloat) -> CGFloat {
+        let radius = rowHeight / 2
+        let halfContent = min(contentHeight, rowHeight) / 2
+        let squared = radius * radius - halfContent * halfContent
+        guard squared > 0 else { return radius }
+        return radius - squared.squareRoot()
+    }
+
+    /// 收起态就是主按钮行本身；展开态再叠一条二级行。胶囊铺满窗口，不加额外留白
+    /// ——留白区会变成看得见截图却点不动的死区。
     static var compactHeight: CGFloat {
-        mainRowHeight + pillBottomPadding
+        mainRowHeight
     }
 
     static var expandedHeight: CGFloat {
-        mainRowHeight + pillSpacing + secondaryRowHeight + pillBottomPadding
+        mainRowHeight + pillSpacing + secondaryRowHeight
     }
 
     static let gap: CGFloat = 16

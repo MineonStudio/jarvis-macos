@@ -1,69 +1,107 @@
 @testable import Jarvis
 import XCTest
 
-/// 胶囊形状把内容裁掉是「看起来没坏、只是图标缺一角」的那种问题，改内缩或行高时
-/// 很容易踩到。这里把那两端的圆头换算成约束钉住：行高决定半径，内缩必须让最外侧
-/// 控件的角落在圆头里。
+/// 胶囊把内容裁掉是「看起来没坏、只是图标缺一角」的那种问题，改行高或内缩时很容易
+/// 踩到，而且只有肉眼能发现。这里把几何关系钉住。
+///
+/// 左右两端不必各测一遍：内缩是一个 `.horizontal` 常量（没有分侧的常量），两端到
+/// 各自圆头圆心的距离按对称性天然相等——真正会失效的是「内缩 < 圆头需要的下限」，
+/// 那一条才是要钉的。
 final class ScreenshotToolbarCapsuleTests: XCTestCase {
-    /// 行高 h 的胶囊，两端的圆头半径是 h/2，左上圆头的圆心在 (h/2, h/2)。
-    private func isInsideCap(x: CGFloat, y: CGFloat, rowHeight: CGFloat) -> Bool {
-        let radius = rowHeight / 2
-        let dx = x - radius
-        let dy = y - radius
-        return (dx * dx + dy * dy) <= radius * radius
+    private struct RowGeometry {
+        let label: String
+        let rowHeight: CGFloat
+        let contentHeight: CGFloat
+        let inset: CGFloat
     }
 
-    func testMainRowButtonsStayInsideTheCapsuleCaps() {
-        let rowHeight = ScreenshotToolbarMetrics.mainRowHeight
-        let buttonSize = ScreenshotToolbarMetrics.mainButtonSize
-        let inset = ScreenshotToolbarMetrics.mainRowHorizontalPadding
-        let top = (rowHeight - buttonSize) / 2
-
-        // 最左边按钮的左上角与最右边按钮的右下角是离圆头最近的四个点里最危险的两个。
-        XCTAssertTrue(
-            isInsideCap(x: inset, y: top, rowHeight: rowHeight),
-            "左侧按钮的角落在胶囊外面：内缩 \(inset) 太小，行高 \(rowHeight) 需要更大的内缩"
-        )
-        XCTAssertTrue(
-            isInsideCap(x: inset, y: top + buttonSize, rowHeight: rowHeight),
-            "左侧按钮的角落在胶囊外面"
-        )
-        XCTAssertTrue(
-            isInsideCap(x: inset + buttonSize, y: top, rowHeight: rowHeight),
-            "按钮内侧的角也不该越出圆头"
-        )
+    private var rows: [RowGeometry] {
+        [
+            RowGeometry(
+                label: "主按钮行",
+                rowHeight: ScreenshotToolbarMetrics.mainRowHeight,
+                contentHeight: ScreenshotToolbarMetrics.mainButtonSize,
+                inset: ScreenshotToolbarMetrics.mainRowHorizontalPadding
+            ),
+            RowGeometry(
+                label: "二级行",
+                rowHeight: ScreenshotToolbarMetrics.secondaryRowHeight,
+                contentHeight: ScreenshotToolbarMetrics.secondaryContentHeight,
+                inset: ScreenshotToolbarMetrics.secondaryRowHorizontalPadding
+            )
+        ]
     }
 
-    func testSecondaryRowContentStaysInsideTheCapsuleCaps() {
-        let rowHeight = ScreenshotToolbarMetrics.secondaryRowHeight
-        let inset = ScreenshotToolbarMetrics.secondaryRowHorizontalPadding
-        let contentHeight = ScreenshotToolbarMetrics.secondaryContentHeight
-        let top = (rowHeight - contentHeight) / 2
-
-        XCTAssertTrue(
-            isInsideCap(x: inset, y: top, rowHeight: rowHeight),
-            "二级控件的角落在胶囊外面：内缩 \(inset) 太小"
-        )
-        XCTAssertTrue(
-            isInsideCap(x: inset, y: top + contentHeight, rowHeight: rowHeight),
-            "二级控件的角落在胶囊外面"
-        )
-    }
-
-    /// 上下两块之间要留缝，否则贴在一起看起来还是一条被切开的整块。
-    func testPillsAreSeparatedAndAccountedForInHeight() {
-        XCTAssertGreaterThan(ScreenshotToolbarMetrics.pillSpacing, 0)
+    /// 圆头下限本身是个纯几何量：半径 r = 行高/2，内容角点到圆头圆心的距离不能超过 r。
+    func testMinimumCapsuleInsetMatchesTheCircleGeometry() {
+        // 64 高的胶囊（r=32）装 42 高的按钮：32 - √(32² - 21²) ≈ 7.86
         XCTAssertEqual(
-            ScreenshotToolbarMetrics.compactHeight,
-            ScreenshotToolbarMetrics.mainRowHeight + ScreenshotToolbarMetrics.pillBottomPadding,
+            ScreenshotToolbarMetrics.minimumCapsuleInset(rowHeight: 64, contentHeight: 42),
+            32 - (32 * 32 - 21 * 21).squareRoot(),
             accuracy: 0.001
         )
+        // 内容与行等高时退化成分半径。
+        XCTAssertEqual(
+            ScreenshotToolbarMetrics.minimumCapsuleInset(rowHeight: 40, contentHeight: 40),
+            20,
+            accuracy: 0.001
+        )
+        // 内容比行还高（会被裁）时不能给出负数下限。
+        XCTAssertGreaterThanOrEqual(
+            ScreenshotToolbarMetrics.minimumCapsuleInset(rowHeight: 40, contentHeight: 80),
+            0
+        )
+    }
+
+    func testRowInsetsClearTheCapsuleCaps() {
+        for row in rows {
+            XCTAssertGreaterThanOrEqual(
+                row.inset,
+                ScreenshotToolbarMetrics.minimumCapsuleInset(
+                    rowHeight: row.rowHeight,
+                    contentHeight: row.contentHeight
+                ),
+                "\(row.label)的内缩小于圆头需要的下限，最外侧控件会被切角"
+            )
+        }
+    }
+
+    func testRowContentFitsItsRow() {
+        for row in rows {
+            XCTAssertLessThanOrEqual(
+                row.contentHeight,
+                row.rowHeight,
+                "\(row.label)的内容比行还高"
+            )
+        }
+    }
+
+    /// 二级行的高度取自玻璃按钮的既有尺寸，不能是另一个会漂移的手写镜像值。
+    func testSecondaryContentHeightTracksTheSharedControlHeight() {
+        XCTAssertEqual(
+            ScreenshotToolbarMetrics.secondaryContentHeight,
+            JarvisToolbarMetrics.controlSize
+        )
+    }
+
+    /// 这两个高度是交给面板窗口的尺寸，必须钉成具体数值：用公式互相验算等于什么也没验
+    /// （两边同时改就一起漂），而窗口比内容矮一截会把胶囊顶边切掉。
+    func testHeightsHandedToThePanelArePinned() {
+        XCTAssertEqual(ScreenshotToolbarMetrics.mainRowHeight, 64, accuracy: 0.001)
+        XCTAssertEqual(ScreenshotToolbarMetrics.secondaryRowHeight, 40, accuracy: 0.001)
+        XCTAssertEqual(ScreenshotToolbarMetrics.pillSpacing, 6, accuracy: 0.001)
+        XCTAssertEqual(ScreenshotToolbarMetrics.compactHeight, 64, accuracy: 0.001)
+        XCTAssertEqual(ScreenshotToolbarMetrics.expandedHeight, 110, accuracy: 0.001)
+    }
+
+    /// 胶囊铺满窗口：窗口高度必须等于两条胶囊加中间那道缝，否则多出来的部分是
+    /// 看得见截图却点不动的死区。
+    func testWindowHeightLeavesNoDeadBand() {
         XCTAssertEqual(
             ScreenshotToolbarMetrics.expandedHeight,
-            ScreenshotToolbarMetrics.mainRowHeight
+            ScreenshotToolbarMetrics.compactHeight
                 + ScreenshotToolbarMetrics.pillSpacing
-                + ScreenshotToolbarMetrics.secondaryRowHeight
-                + ScreenshotToolbarMetrics.pillBottomPadding,
+                + ScreenshotToolbarMetrics.secondaryRowHeight,
             accuracy: 0.001
         )
     }

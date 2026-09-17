@@ -35,6 +35,26 @@ struct MosaicToolIcon: View {
     }
 }
 
+/// 两条胶囊共用同一套表面：圆角裁成胶囊 + 一层玻璃。复制两份的话，改一处漏一处
+/// 不会有任何信号。
+///
+/// `interactive: false`：胶囊里装的是自己带玻璃的按钮，胶囊再对指针起反应就会和
+/// 按钮的悬停/按下叠成两层反馈。
+private struct ScreenshotToolbarPillSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+            .jarvisGlass(in: Capsule(), interactive: false)
+    }
+}
+
+private extension View {
+    func screenshotToolbarPill() -> some View {
+        modifier(ScreenshotToolbarPillSurface())
+    }
+}
+
 struct ScreenshotToolbar: View {
     static let baseWidth = ScreenshotToolbarMetrics.baseWidth
 
@@ -67,19 +87,23 @@ extension ScreenshotToolbar {
             mainToolRow
                 .frame(height: ScreenshotToolbarMetrics.mainRowHeight)
                 .padding(.horizontal, ScreenshotToolbarMetrics.mainRowHorizontalPadding)
-                .clipShape(Capsule())
-                .jarvisGlass(in: Capsule())
+                // 撑满窗口宽度：面板窗口是按固定宽度摆的，胶囊若按内容收窄，
+                // 两侧就会留下一条看得见截图、点下去却没反应的死区（二级行窄的
+                // 时候每侧能有 36pt）。
+                .frame(maxWidth: .infinity)
+                .screenshotToolbarPill()
 
             if editor.secondaryBarVisible {
                 secondaryControl
                     .frame(height: ScreenshotToolbarMetrics.secondaryRowHeight)
                     .padding(.horizontal, ScreenshotToolbarMetrics.secondaryRowHorizontalPadding)
-                    .clipShape(Capsule())
-                    .jarvisGlass(in: Capsule())
+                    .frame(maxWidth: .infinity)
+                    .screenshotToolbarPill()
                     .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
-        .padding(.bottom, ScreenshotToolbarMetrics.pillBottomPadding)
+        // 不额外留边：胶囊就是窗口本身，留白会变成同样的死区，也会让工具栏放到
+        // 选区上方时的间距比放下方时多出一截。
         .frame(
             width: layout.width,
             height: editor.secondaryBarVisible
@@ -141,8 +165,13 @@ extension ScreenshotToolbar {
 
     private func toolButton(_ tool: ScreenshotTool) -> some View {
         Button {
-            editor.selectTool(editor.selectedTool == tool ? nil : tool)
-            onAction(.tool(tool))
+            let isDeselecting = editor.selectedTool == tool
+            editor.selectTool(isDeselecting ? nil : tool)
+            // 取消选中的那一下不能再上报「已选择某某工具」——状态栏会写着工具已激活，
+            // 而编辑器里其实没有工具，用户照着提示去拖拽什么都不会发生。
+            if !isDeselecting {
+                onAction(.tool(tool))
+            }
         } label: {
             Group {
                 if tool == .text {
@@ -265,9 +294,7 @@ extension ScreenshotToolbar {
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.16))
-                .frame(width: 1, height: 22)
+            secondaryDivider
 
             if let status = editor.translationState.statusMessage {
                 Text(status)
@@ -290,7 +317,6 @@ extension ScreenshotToolbar {
             .buttonStyle(JarvisSecondaryButtonStyle())
             .disabled(editor.translationState.isRunning || editor.translationBlocks.isEmpty)
         }
-        .padding(.horizontal, 6)
     }
 
     private var arrowStyleControl: some View {
@@ -303,9 +329,7 @@ extension ScreenshotToolbar {
                 editor.arrowColor = color
             }
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.16))
-                .frame(width: 1, height: 22)
+            secondaryDivider
 
             Text("粗细")
                 .font(JarvisTypography.control)
@@ -335,7 +359,6 @@ extension ScreenshotToolbar {
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
-        .padding(.horizontal, 6)
     }
 
     private var rectangleStyleControl: some View {
@@ -348,9 +371,7 @@ extension ScreenshotToolbar {
                 editor.rectangleColor = color
             }
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.16))
-                .frame(width: 1, height: 22)
+            secondaryDivider
 
             Text("粗细")
                 .font(JarvisTypography.control)
@@ -380,33 +401,32 @@ extension ScreenshotToolbar {
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
-        .padding(.horizontal, 6)
     }
 
+    /// 马赛克的全部控件装在同一条胶囊里：模式、效果、笔触是一个整体的工具设置，
+    /// 原来各占一块玻璃再加一条裸滑杆，看着像三件互不相干的东西。
     private var mosaicStyleControl: some View {
         HStack(spacing: 8) {
             mosaicModePicker
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.16))
-                .frame(width: 1, height: 22)
+            secondaryDivider
 
             mosaicEffectPicker
 
             if editor.mosaicMode == .brush {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.16))
-                    .frame(width: 1, height: 22)
+                secondaryDivider
                 mosaicBrushSizeControl
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 8)
+        .frame(height: JarvisToolbarMetrics.controlSize)
+        .background(Color.jarvisInsetSurface, in: Capsule())
     }
 
     private var mosaicModePicker: some View {
         HStack(spacing: 2) {
             ForEach(ScreenshotMosaicMode.allCases) { mode in
-                mosaicOptionButton(
+                MosaicOptionButton(
                     icon: mode.icon,
                     title: mode.title,
                     selected: editor.mosaicMode == mode
@@ -415,14 +435,12 @@ extension ScreenshotToolbar {
                 }
             }
         }
-        .padding(2)
-        .jarvisGlass(cornerRadius: 8, interactive: false)
     }
 
     private var mosaicEffectPicker: some View {
         HStack(spacing: 2) {
             ForEach(ScreenshotMosaicStyle.allCases) { style in
-                mosaicOptionButton(
+                MosaicOptionButton(
                     icon: style.icon,
                     title: style.title,
                     selected: editor.mosaicStyle == style
@@ -431,8 +449,13 @@ extension ScreenshotToolbar {
                 }
             }
         }
-        .padding(2)
-        .jarvisGlass(cornerRadius: 8, interactive: false)
+    }
+
+    /// 二级行里分组之间的竖线。
+    private var secondaryDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.16))
+            .frame(width: 1, height: 22)
     }
 
     private var mosaicBrushSizeControl: some View {
@@ -454,30 +477,55 @@ extension ScreenshotToolbar {
         }
     }
 
-    private func mosaicOptionButton(
-        icon: String,
-        title: String,
-        selected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                Text(title)
-                    .font(JarvisTypography.control)
+    /// 组合容器里的选项：选中态是与全局一致的胶囊药丸（同 `JarvisToolbarSelectionButton`），
+    /// 不再各自套一层玻璃。
+    private struct MosaicOptionButton: View {
+        let icon: String
+        let title: String
+        let selected: Bool
+        let action: () -> Void
+
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .medium))
+                    Text(title)
+                        .font(selected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                }
+                .foregroundStyle(selected ? Color.white : Color.jarvisTextSecondary)
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background {
+                    Capsule()
+                        .fill(
+                            selected
+                                ? JarvisMotion.selectionPillTint
+                                : (isHovered ? JarvisMotion.hoverPillTint : .clear)
+                        )
+                }
+                .contentShape(Capsule())
             }
-            .foregroundStyle(selected ? Color.primary : Color.secondary)
-            .padding(.horizontal, 7)
-            .frame(height: 26)
-            .jarvisGlass(
-                tint: selected ? .accentColor : nil,
-                cornerRadius: 6,
-                interactive: false
+            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
+            .animation(
+                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                value: isHovered
             )
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .animation(
+                JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                value: selected
+            )
+            .onHover { isHovering in
+                withAnimation(
+                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
+                ) {
+                    isHovered = isHovering
+                }
+            }
         }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
     }
 
     private var textStyleControl: some View {
@@ -494,9 +542,7 @@ extension ScreenshotToolbar {
                 .foregroundStyle(Color.secondary)
                 .frame(width: 22, alignment: .leading)
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.16))
-                .frame(width: 1, height: 22)
+            secondaryDivider
 
             HStack(spacing: 2) {
                 textToggleButton(icon: "bold", selected: editor.textBold) {
@@ -512,9 +558,7 @@ extension ScreenshotToolbar {
             .padding(2)
             .jarvisGlass(cornerRadius: 8, interactive: false)
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.16))
-                .frame(width: 1, height: 22)
+            secondaryDivider
 
             HStack(spacing: 6) {
                 ForEach(ScreenshotTextColor.allCases) { color in
@@ -537,7 +581,6 @@ extension ScreenshotToolbar {
                 }
             }
         }
-        .padding(.horizontal, 6)
     }
 
     private func textToggleButton(

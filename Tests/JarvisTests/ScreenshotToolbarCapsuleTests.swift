@@ -66,15 +66,15 @@ final class ScreenshotToolbarCapsuleTests: XCTestCase {
         }
     }
 
-    /// 内缩不只有下限：内容加上两侧内缩必须装得进面板的固定宽度，否则会被压扁。
-    /// 这条同时把内缩的**上界**写进代码——只看「内缩够不够大」会让内缩一路加大到
-    /// 把内容挤出面板。
-    func testRowInsetsAlsoStayWithinThePanelWidth() {
-        XCTAssertLessThanOrEqual(
+    /// 面板宽度由主按钮行推出（主行内容固定，窗口跟着它），钉成具体数值：这条
+    /// 一改，工具栏在屏幕上的落位、以及二级行能有多少余量都会跟着变。
+    func testPanelWidthFollowsTheMainRow() {
+        XCTAssertEqual(ScreenshotToolbarMetrics.baseWidth, 493, accuracy: 0.001)
+        XCTAssertEqual(
+            ScreenshotToolbarMetrics.baseWidth,
             ScreenshotToolbarMetrics.mainRowContentWidth
                 + (2 * ScreenshotToolbarMetrics.mainRowHorizontalPadding),
-            ScreenshotToolbarMetrics.baseWidth,
-            "主按钮行加内缩装不进面板宽度"
+            accuracy: 0.001
         )
     }
 

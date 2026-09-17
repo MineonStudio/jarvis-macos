@@ -179,25 +179,6 @@ enum ScreenshotToolbarDivider {
 }
 
 struct ScreenshotToolbar: View {
-    static let baseWidth = ScreenshotToolbarMetrics.baseWidth
-
-    static func preferredWidth(
-        for tool: ScreenshotTool?,
-        mosaicMode: ScreenshotMosaicMode = .rectangle,
-        translationMode: Bool = false
-    ) -> CGFloat {
-        if translationMode {
-            return ScreenshotToolbarMetrics.translationWidth
-        }
-        return switch tool {
-        case .mosaic: mosaicMode == .brush ? 520 : baseWidth
-        case .text: 520
-        case .arrow: 520
-        case .rectangle: 520
-        default: baseWidth
-        }
-    }
-
     @ObservedObject var editor: ScreenshotEditorModel
     @ObservedObject var layout: ScreenshotToolbarLayoutModel
     let onAction: (ScreenshotAction) -> Void
@@ -210,9 +191,7 @@ extension ScreenshotToolbar {
             mainToolRow
                 .frame(height: ScreenshotToolbarMetrics.mainRowHeight)
                 .padding(.horizontal, ScreenshotToolbarMetrics.mainRowHorizontalPadding)
-                // 撑满窗口宽度：面板窗口是按固定宽度摆的，胶囊若按内容收窄，
-                // 两侧就会留下一条看得见截图、点下去却没反应的死区（二级行窄的
-                // 时候每侧能有 36pt）。
+                // 主行内容固定，正好等于面板宽度，不留死区。
                 .frame(maxWidth: .infinity)
                 .screenshotToolbarPill()
 
@@ -220,7 +199,7 @@ extension ScreenshotToolbar {
                 secondaryControl
                     .frame(height: ScreenshotToolbarMetrics.secondaryRowHeight)
                     .padding(.horizontal, ScreenshotToolbarMetrics.secondaryRowHorizontalPadding)
-                    .frame(maxWidth: .infinity)
+                    // 不撑满：二级行按内容自适应，居中显示。
                     .screenshotToolbarPill()
                     .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
@@ -424,7 +403,7 @@ extension ScreenshotToolbar {
                     .foregroundStyle(editor.translationState.isFailure ? Color.red : Color.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 140, alignment: .leading)
+                    .frame(maxWidth: 110, alignment: .leading)
             }
 
             SecondaryCapsuleButton(

@@ -235,7 +235,7 @@ extension ScreenshotCaptureController {
         let frame = toolbarFrame(
             for: presentation.session.selectionFrame,
             height: ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbar.preferredWidth(for: nil)
+            width: ScreenshotToolbarMetrics.baseWidth
         )
         let toolbarLayout = ScreenshotToolbarLayoutModel(width: frame.width)
         let toolbarPanel = makeToolbarPanel(

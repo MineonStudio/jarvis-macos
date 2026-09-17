@@ -119,8 +119,12 @@ enum ScreenshotToolbarIconMetrics {
 }
 
 enum ScreenshotToolbarMetrics {
-    static let baseWidth: CGFloat = 520
-    static let translationWidth: CGFloat = 520
+    /// 面板宽度 = 主按钮行的宽度。主行内容固定，窗口就跟着它；二级行按内容
+    /// 自适应，在窗口里居中显示。
+    static var baseWidth: CGFloat {
+        mainRowContentWidth + (2 * mainRowHorizontalPadding)
+    }
+
     /// 主按钮行的高度。
     static let mainRowHeight: CGFloat = 64
     /// 二级控件行的高度。

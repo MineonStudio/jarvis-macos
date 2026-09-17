@@ -137,7 +137,7 @@ extension ScreenshotCaptureController {
         let frame = toolbarFrame(
             for: item.imageFrame,
             height: ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbar.preferredWidth(for: nil)
+            width: ScreenshotToolbarMetrics.baseWidth
         )
         let layout = ScreenshotToolbarLayoutModel(width: frame.width)
         let toolbarPanel = NSPanel(
@@ -220,11 +220,7 @@ extension ScreenshotCaptureController {
             height: item.editor.secondaryBarVisible
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbar.preferredWidth(
-                for: item.editor.selectedTool,
-                mosaicMode: item.editor.mosaicMode,
-                translationMode: item.editor.translationMode
-            )
+            width: ScreenshotToolbarMetrics.baseWidth
         )
         applyToolbarFrame(frame, to: toolbarWindow, updating: item.toolbarLayout)
     }
@@ -333,11 +329,7 @@ extension ScreenshotCaptureController {
             height: editor.secondaryBarVisible
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbar.preferredWidth(
-                for: editor.selectedTool,
-                mosaicMode: editor.mosaicMode,
-                translationMode: editor.translationMode
-            )
+            width: ScreenshotToolbarMetrics.baseWidth
         )
         applyToolbarFrame(frame, to: toolbarWindow, updating: toolbarLayout)
     }

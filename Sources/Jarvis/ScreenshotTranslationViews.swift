@@ -5,9 +5,17 @@ struct ScreenshotTranslationIcon: View {
 
     var body: some View {
         Image(systemName: isSelected ? "character.bubble.fill" : "character.bubble")
-            .font(.system(size: 21, weight: .medium))
+            .font(
+                .system(
+                    size: ScreenshotToolbarIconMetrics.pointSize(for: "character.bubble"),
+                    weight: .medium
+                )
+            )
             .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-            .frame(width: 24, height: 24)
+            .frame(
+                width: ScreenshotToolbarIconMetrics.box,
+                height: ScreenshotToolbarIconMetrics.box
+            )
             .accessibilityLabel("截图翻译")
     }
 }

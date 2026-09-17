@@ -3,6 +3,38 @@ import Translation
 
 // MARK: - Screenshot editing toolbar
 
+/// 自绘的马赛克图标，按统一墨迹尺寸等比缩放（原来写死 24pt，比同排符号大一截）。
+struct MosaicToolIcon: View {
+    let color: Color
+    var size: CGFloat = ScreenshotToolbarIconMetrics.targetInkHeight
+
+    var body: some View {
+        let gap = size * 0.083
+        let stroke = size * 0.0625
+        let square = (size - gap - stroke) / 2
+
+        ZStack {
+            VStack(spacing: gap) {
+                ForEach(0 ..< 2, id: \.self) { row in
+                    HStack(spacing: gap) {
+                        ForEach(0 ..< 2, id: \.self) { column in
+                            Rectangle()
+                                .fill((row + column).isMultiple(of: 2) ? color : .clear)
+                                .frame(width: square, height: square)
+                        }
+                    }
+                }
+            }
+
+            // 用 strokeBorder 而不是 stroke：描边居中的话有一半会落到画框外，
+            // 墨迹就比同排符号高一截。
+            RoundedRectangle(cornerRadius: size * 0.083, style: .continuous)
+                .strokeBorder(color, lineWidth: stroke)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 struct ScreenshotToolbar: View {
     static let baseWidth = ScreenshotToolbarMetrics.baseWidth
 
@@ -115,18 +147,32 @@ extension ScreenshotToolbar {
             Group {
                 if tool == .text {
                     Text("T")
-                        .font(.system(size: 24, weight: .regular, design: .serif))
+                        .font(
+                            .system(
+                                size: ScreenshotToolbarIconMetrics.textPointSize,
+                                weight: .regular,
+                                design: .serif
+                            )
+                        )
                 } else if tool == .mosaic {
                     MosaicToolIcon(
                         color: editor.selectedTool == tool ? Color.accentColor : Color.secondary
                     )
                 } else {
                     Image(systemName: tool.icon)
-                        .font(.system(size: 21, weight: .medium))
+                        .font(
+                            .system(
+                                size: ScreenshotToolbarIconMetrics.pointSize(for: tool.icon),
+                                weight: .medium
+                            )
+                        )
                 }
             }
             .foregroundStyle(editor.selectedTool == tool ? Color.accentColor : Color.secondary)
-            .frame(width: 24, height: 24)
+            .frame(
+                width: ScreenshotToolbarIconMetrics.box,
+                height: ScreenshotToolbarIconMetrics.box
+            )
             .frame(
                 width: ScreenshotToolbarMetrics.mainButtonSize,
                 height: ScreenshotToolbarMetrics.mainButtonSize
@@ -137,10 +183,14 @@ extension ScreenshotToolbar {
         .disabled(editor.translationState.isRunning)
     }
 
+    /// 与其它工具一致：点一下进翻译模式，再点一下退出。
     private var translationButton: some View {
         Button {
-            editor.enterTranslationMode()
-            onAction(.translation)
+            if editor.translationMode {
+                editor.exitTranslationMode()
+            } else {
+                onAction(.translation)
+            }
         } label: {
             if editor.translationState.isRunning {
                 ProgressView()
@@ -166,30 +216,6 @@ extension ScreenshotToolbar {
             "部分翻译完成：成功 \(completed)/\(total)，失败 \(max(0, total - completed))，点击重新翻译"
         default:
             "使用系统本地翻译，首次可能下载语言包"
-        }
-    }
-
-    private struct MosaicToolIcon: View {
-        let color: Color
-
-        var body: some View {
-            ZStack {
-                VStack(spacing: 2) {
-                    ForEach(0 ..< 2, id: \.self) { row in
-                        HStack(spacing: 2) {
-                            ForEach(0 ..< 2, id: \.self) { column in
-                                Rectangle()
-                                    .fill((row + column).isMultiple(of: 2) ? color : .clear)
-                                    .frame(width: 9, height: 9)
-                            }
-                        }
-                    }
-                }
-
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .stroke(color, lineWidth: 1.5)
-            }
-            .frame(width: 24, height: 24)
         }
     }
 
@@ -568,10 +594,21 @@ extension ScreenshotToolbar {
     ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 21, weight: .medium))
+                .font(
+                    .system(
+                        size: ScreenshotToolbarIconMetrics.pointSize(for: icon),
+                        weight: .medium
+                    )
+                )
                 .foregroundStyle(enabled ? (selected ? Color.accentColor : Color.secondary) : Color.secondary.opacity(0.35))
-                .frame(width: 24, height: 24)
-                .frame(width: 42, height: 42)
+                .frame(
+                    width: ScreenshotToolbarIconMetrics.box,
+                    height: ScreenshotToolbarIconMetrics.box
+                )
+                .frame(
+                    width: ScreenshotToolbarMetrics.mainButtonSize,
+                    height: ScreenshotToolbarMetrics.mainButtonSize
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))

@@ -45,6 +45,13 @@ extension ScreenshotEditorModel {
         translationMode = true
     }
 
+    /// 与其它工具一致：再点一次翻译图标就退出，二级栏跟着收起。
+    /// 这里不动已经完成的翻译结果，也不打断进行中的任务。
+    func exitTranslationMode() {
+        guard translationMode else { return }
+        translationMode = false
+    }
+
     func startTranslation() {
         guard !translationState.isRunning else { return }
 

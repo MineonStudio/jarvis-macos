@@ -79,6 +79,45 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
     }
 }
 
+/// 一级编辑栏里所有图标的视觉尺寸基准。
+///
+/// 只把字号写成同一个数是不够的：21pt 下 `arrow.up.right` 的墨迹只有 15.5pt 高，
+/// 而 `square.and.arrow.down` 有 22.25pt、马赛克自绘图形是 24pt——并排放在一行里
+/// 参差不齐一眼就能看出来。这里按实测的墨迹高度反推每颗图标各自的字号，让它们的
+/// 墨迹高度统一落在 `targetInkHeight` 上。数字由 `ScreenshotToolbarIconTests`
+/// 复测，改了字号或换了符号会被测出来。
+enum ScreenshotToolbarIconMetrics {
+    /// 所有一级图标统一的墨迹高度。
+    static let targetInkHeight: CGFloat = 18
+    /// 图标画框：比墨迹大一圈，宽图标才不会被裁。
+    static let box: CGFloat = 24
+    /// 量基准时用的字号。
+    private static let referencePointSize: CGFloat = 21
+
+    /// 符号名 → 在 `referencePointSize` 下的实测墨迹高度。
+    private static let measuredInkHeights: [String: CGFloat] = [
+        "arrow.up.right": 15.50,
+        "rectangle": 19.25,
+        "character.bubble": 21.75,
+        "arrow.uturn.backward": 19.75,
+        "arrow.uturn.forward": 19.75,
+        "square.and.arrow.down": 22.25,
+        "xmark": 16.75,
+        "checkmark": 17.75
+    ]
+
+    /// 某个符号要用的字号。
+    static func pointSize(for symbol: String) -> CGFloat {
+        guard let inkHeight = measuredInkHeights[symbol], inkHeight > 0 else {
+            return referencePointSize
+        }
+        return referencePointSize * targetInkHeight / inkHeight
+    }
+
+    /// 文字工具那个衬线 "T" 的字号（24pt 下墨迹 17.25pt 高）。
+    static let textPointSize: CGFloat = 24 * targetInkHeight / 17.25
+}
+
 enum ScreenshotToolbarMetrics {
     static let baseWidth: CGFloat = 520
     static let translationWidth: CGFloat = 520

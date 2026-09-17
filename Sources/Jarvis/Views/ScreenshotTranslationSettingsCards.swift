@@ -73,7 +73,6 @@ struct ScreenshotLanguagePackSettingsCard: View {
                     }
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .disabled(store.busyCount > 0)
-                    .help("重新检测")
                 }
 
                 VStack(spacing: 8) {
@@ -151,7 +150,6 @@ private struct LanguagePackRowView: View {
                 .foregroundStyle(Color.red)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .help(message)
             Button("重试") { model.startDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())
         }

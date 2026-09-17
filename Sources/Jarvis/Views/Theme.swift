@@ -209,7 +209,6 @@ struct JarvisToolbarSearchField: View {
                 isFocused = true
             }
         }
-        .help(help ?? placeholder)
         .accessibilityLabel(accessibilityTitle ?? placeholder)
     }
 }
@@ -532,6 +531,37 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Bottom-overlay action used by media cards. Keep this aligned with the
+/// wallpaper card's "设为壁纸" action so card-level operations share one
+/// visual language across modules.
+struct JarvisCardActionPillButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(JarvisTypography.control)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 8)
+            .opacity(configuration.isPressed ? 0.68 : 1)
+            .jarvisGlass(in: Capsule())
+            .contentShape(Capsule())
+            .shadow(
+                color: Color.black.opacity(0.24),
+                radius: 6,
+                y: 2
+            )
+            .fixedSize(horizontal: true, vertical: false)
+            .scaleEffect(
+                reduceMotion ? 1 : (configuration.isPressed ? 0.98 : 1)
+            )
+            .animation(
+                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
+    }
+}
+
 /// Text-first action style for module operation bars. The operation bar owns
 /// placement and spacing; individual actions provide only their label and
 /// hover/press feedback, so no control can grow into a toolbar background.
@@ -688,7 +718,6 @@ struct JarvisToolbarZoomControl: View {
         .opacity(isEnabled ? 1 : 0.35)
         .disabled(!isEnabled)
         .accessibilityLabel(help)
-        .help(help)
     }
 }
 

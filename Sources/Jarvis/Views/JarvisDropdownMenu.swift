@@ -191,7 +191,6 @@ struct JarvisDropdownMenu: View {
         }
         .buttonStyle(JarvisToolbarButtonStyle.menu())
         .disabled(!isEnabled || options.isEmpty)
-        .help(help)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(title)
         .frame(width: width)

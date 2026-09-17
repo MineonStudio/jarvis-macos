@@ -44,10 +44,10 @@ extension ScreenshotToolbar {
 
                 toolbarDivider
 
-                actionButton(icon: "arrow.uturn.backward", help: "撤销", enabled: editor.canUndo) {
+                actionButton(icon: "arrow.uturn.backward", enabled: editor.canUndo) {
                     onAction(.undo)
                 }
-                actionButton(icon: "arrow.uturn.forward", help: "重做", enabled: editor.canRedo) {
+                actionButton(icon: "arrow.uturn.forward", enabled: editor.canRedo) {
                     onAction(.redo)
                 }
 
@@ -55,21 +55,18 @@ extension ScreenshotToolbar {
 
                 actionButton(
                     icon: "square.and.arrow.down",
-                    help: "另存为",
                     enabled: !editor.translationState.isRunning
                 ) {
                     onAction(.saveRequested)
                 }
                 actionButton(
                     icon: "xmark",
-                    help: "取消",
                     enabled: !editor.translationState.isRunning
                 ) {
                     onAction(.cancel)
                 }
                 actionButton(
                     icon: "checkmark",
-                    help: "确认",
                     enabled: !editor.translationState.isRunning
                 ) {
                     onAction(.confirmRequested)
@@ -132,7 +129,6 @@ extension ScreenshotToolbar {
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(editor.translationState.isRunning)
-        .help(tool.title)
     }
 
     private var translationButton: some View {
@@ -151,7 +147,6 @@ extension ScreenshotToolbar {
         .contentShape(Rectangle())
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(editor.translationState.isRunning)
-        .help(editor.translationState.isRunning ? "正在翻译" : "截图翻译")
     }
 
     private var translationRetryHelp: String {
@@ -246,7 +241,6 @@ extension ScreenshotToolbar {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 150, alignment: .leading)
-                    .help(status)
             }
 
             Button("重新翻译") {
@@ -254,7 +248,6 @@ extension ScreenshotToolbar {
             }
             .buttonStyle(JarvisPrimaryButtonStyle())
             .disabled(editor.translationState.isRunning)
-            .help(translationRetryHelp)
 
             Button(editor.translationVisible ? "显示原文" : "显示译文") {
                 onAction(.toggleTranslationVisibility)
@@ -306,7 +299,6 @@ extension ScreenshotToolbar {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("箭头样式")
         }
         .padding(.horizontal, 6)
     }
@@ -352,7 +344,6 @@ extension ScreenshotToolbar {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("框线样式")
         }
         .padding(.horizontal, 6)
     }
@@ -375,7 +366,6 @@ extension ScreenshotToolbar {
             }
         }
         .padding(.horizontal, 6)
-        .help("支持涂抹、框选，并调整马赛克效果")
     }
 
     private var mosaicModePicker: some View {
@@ -474,13 +464,13 @@ extension ScreenshotToolbar {
                 .frame(width: 1, height: 22)
 
             HStack(spacing: 2) {
-                textToggleButton(icon: "bold", selected: editor.textBold, help: "粗体") {
+                textToggleButton(icon: "bold", selected: editor.textBold) {
                     editor.textBold.toggle()
                 }
-                textToggleButton(icon: "italic", selected: editor.textItalic, help: "斜体") {
+                textToggleButton(icon: "italic", selected: editor.textItalic) {
                     editor.textItalic.toggle()
                 }
-                textToggleButton(icon: "strikethrough", selected: editor.textStrikethrough, help: "删除线") {
+                textToggleButton(icon: "strikethrough", selected: editor.textStrikethrough) {
                     editor.textStrikethrough.toggle()
                 }
             }
@@ -509,18 +499,15 @@ extension ScreenshotToolbar {
                             .contentShape(Circle())
                     }
                     .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-                    .help("文字颜色")
                 }
             }
         }
         .padding(.horizontal, 6)
-        .help("文字样式")
     }
 
     private func textToggleButton(
         icon: String,
         selected: Bool,
-        help: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -536,7 +523,6 @@ extension ScreenshotToolbar {
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-        .help(help)
     }
 
     private func colorButtons(
@@ -567,7 +553,6 @@ extension ScreenshotToolbar {
 
     private func actionButton(
         icon: String,
-        help: String,
         selected: Bool = false,
         enabled: Bool = true,
         action: @escaping () -> Void
@@ -582,7 +567,6 @@ extension ScreenshotToolbar {
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(!enabled)
-        .help(help)
     }
 
     private var toolbarDivider: some View {

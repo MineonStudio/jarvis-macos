@@ -235,7 +235,8 @@ struct ScreenshotHistorySection: View {
                             gridZoom: gridZoom,
                             isSelected: selectedItemID == item.id,
                             onSelect: { selectedItemID = item.id },
-                            onDoubleClick: { app.showScreenshotHistoryPreview(item) }
+                            onDoubleClick: { app.showScreenshotHistoryPreview(item) },
+                            onClearSelection: { selectedItemID = nil }
                         )
                         .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                     }
@@ -261,11 +262,14 @@ struct ScreenshotHistorySection: View {
 struct ScreenshotHistoryCard: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showingDeleteConfirmation = false
+    @State private var isHovered = false
     let item: ScreenshotHistoryItem
     let gridZoom: HistoryGridZoomLevel
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
+    let onClearSelection: () -> Void
 
     private var thumbnailCacheKey: String {
         "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
@@ -297,7 +301,6 @@ struct ScreenshotHistoryCard: View {
             )
         )
         .contentShape(Rectangle())
-        .help("拖到 Finder 或其他应用导出 PNG")
     }
 
     @ViewBuilder
@@ -335,12 +338,50 @@ struct ScreenshotHistoryCard: View {
         )
     }
 
+    private var copyButton: some View {
+        Button {
+            app.copyScreenshotHistory(item)
+        } label: {
+            Text("复制")
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(JarvisCardActionPillButtonStyle())
+        .accessibilityLabel("复制截图")
+    }
+
+    @ViewBuilder
+    private var copyActionOverlay: some View {
+        if isHovered {
+            HStack {
+                Spacer(minLength: 0)
+                copyButton
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .transition(
+                reduceMotion
+                    ? .identity
+                    : .opacity.combined(with: .offset(y: 8))
+            )
+        }
+    }
+
     private var cardBody: some View {
         HistoryCardChrome(
             preview: previewArea,
             width: gridZoom.cardWidth,
             height: gridZoom.cardHeight,
             isSelected: isSelected
+        )
+        .overlay(alignment: .bottom) {
+            copyActionOverlay
+        }
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                style: .continuous
+            )
         )
     }
 
@@ -357,11 +398,63 @@ struct ScreenshotHistoryCard: View {
         )
         .onTapGesture(count: 2, perform: onDoubleClick)
         .onTapGesture(perform: onSelect)
+        .onHover { hovering in
+            guard hovering != isHovered else { return }
+            withAnimation(
+                JarvisMotion.animation(
+                    JarvisMotion.content,
+                    reduceMotion: reduceMotion
+                )
+            ) {
+                isHovered = hovering
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("截图，PNG，\(JarvisHistoryDateFormatting.string(from: item.updatedAt))")
         .accessibilityValue(isSelected ? "已选中" : "未选中")
         .accessibilityHint("点击选择，双击预览；可以拖到 Finder 或其他应用导出 PNG")
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "复制") {
+            app.copyScreenshotHistory(item)
+        }
+        .contextMenu {
+            Button {
+                app.showScreenshotHistoryPreview(item)
+            } label: {
+                Label("查看", systemImage: "eye")
+            }
+            Button {
+                app.editScreenshotHistory(item)
+            } label: {
+                Label("编辑", systemImage: "pencil")
+            }
+            Button {
+                app.copyScreenshotHistory(item)
+            } label: {
+                Label("复制", systemImage: "doc.on.doc")
+            }
+            Divider()
+            Button(role: .destructive) {
+                showingDeleteConfirmation = true
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+        .confirmationDialog(
+            "删除这张截图？",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                app.deleteScreenshotHistory(item)
+                if isSelected {
+                    onClearSelection()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后无法恢复。")
+        }
     }
 }
 

@@ -121,7 +121,6 @@ struct JarvisSidebarNavigation<
                         isFooterHighlighted = isHovering
                     }
                 }
-                .help(footerTitle)
                 .accessibilityAddTraits(footerIsSelected ? .isSelected : [])
                 .animation(
                     JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion),
@@ -207,7 +206,6 @@ struct JarvisSidebarNavigation<
             JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
             value: isHighlighted
         )
-        .help(title(item))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

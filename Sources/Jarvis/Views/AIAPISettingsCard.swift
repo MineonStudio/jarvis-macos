@@ -170,7 +170,6 @@ struct AIAPISettingsCard: View {
         }
         .buttonStyle(JarvisSecondaryButtonStyle())
         .disabled(isLocked || app.aiModelsLoading || !canRefreshModels)
-        .help("获取最新模型列表")
     }
 
     private func errorRow(_ error: String) -> some View {

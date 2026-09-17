@@ -125,7 +125,6 @@ struct JarvisPermissionGateView: View {
             }
             .buttonStyle(JarvisSecondaryButtonStyle())
             .disabled(isAdoptingIdentity)
-            .help("会用本机证书重新签名贾维斯，然后立刻重新打开")
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -115,11 +115,6 @@ struct MeetingView: View {
                 tint: isRecording ? MeetingRecordingStyle.activeTint : nil
             )
         )
-        .help(
-            isRecording
-                ? "结束录音并开始整理会议"
-                : (app.meetingModelsReady ? "开始新的会议录音" : "首次使用前请先下载会议识别模型")
-        )
         .accessibilityLabel(
             isRecording
                 ? "结束录音，已录制 \(MeetingRecordingStyle.formatDuration(app.meetingElapsed))"
@@ -516,7 +511,6 @@ private struct MeetingDetailPane: View {
                     isTitleFocused = false
                 }
             )
-            .help("点击修改会议名称")
 
             HStack(spacing: 12) {
                 Label(formatMeetingDateTime(record.createdAt), systemImage: "calendar")
@@ -1124,7 +1118,6 @@ private struct MeetingTranscriptSection: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .help("跳转到 \(formatMeetingTimestamp(segment.startTime))")
                     .accessibilityLabel("从\(formatMeetingTimestamp(segment.startTime))开始播放")
                     if segment.id != record.transcript.last?.id {
                         Divider().opacity(0.55)

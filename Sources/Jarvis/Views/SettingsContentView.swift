@@ -132,7 +132,6 @@ struct ShortcutSettingsCard: View {
             if !conflictMessage.isEmpty {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
-                    .help(conflictMessage)
             }
             Button("恢复默认", action: onRestore)
                 .buttonStyle(JarvisSecondaryButtonStyle())
@@ -257,7 +256,6 @@ struct SettingsView: View {
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .contentShape(Circle())
                 .accessibilityLabel("检查更新")
-                .help("检查更新")
             }
         }
     }

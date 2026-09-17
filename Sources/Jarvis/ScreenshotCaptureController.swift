@@ -82,8 +82,31 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 enum ScreenshotToolbarMetrics {
     static let baseWidth: CGFloat = 520
     static let translationWidth: CGFloat = 520
-    static let compactHeight: CGFloat = 70
-    static let expandedHeight: CGFloat = 111
+    /// 主按钮行的高度。
+    static let mainRowHeight: CGFloat = 64
+    /// 二级控件行的高度。
+    static let secondaryRowHeight: CGFloat = 40
+    /// 两条胶囊之间的缝。上下分成两块之后这里不再画分隔线。
+    static let pillSpacing: CGFloat = 6
+    /// 胶囊底部的留白：玻璃效果贴着面板边缘会显得被切掉。
+    static let pillBottomPadding: CGFloat = 6
+    /// 主按钮行里每颗按钮的边长。
+    static let mainButtonSize: CGFloat = 42
+    /// 二级行里最高控件的高度（次要按钮），用来核算内缩够不够躲开圆头。
+    static let secondaryContentHeight: CGFloat = 32
+    /// 主按钮行的左右内缩。胶囊两端的圆头半径是行高的一半，内缩不够会把
+    /// 最外侧按钮的图标切掉。`ScreenshotToolbarCapsuleTests` 钉着这个约束。
+    static let mainRowHorizontalPadding: CGFloat = 11
+    static let secondaryRowHorizontalPadding: CGFloat = 14
+
+    static var compactHeight: CGFloat {
+        mainRowHeight + pillBottomPadding
+    }
+
+    static var expandedHeight: CGFloat {
+        mainRowHeight + pillSpacing + secondaryRowHeight + pillBottomPadding
+    }
+
     static let gap: CGFloat = 16
     static let screenHorizontalInset: CGFloat = 12
     static let availableWidthInset: CGFloat = screenHorizontalInset * 2

@@ -31,76 +31,79 @@ struct ScreenshotToolbar: View {
 
 extension ScreenshotToolbar {
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                toolButton(.arrow)
-                toolButton(.rectangle)
-                toolButton(.mosaic)
-                toolButton(.text)
-
-                toolbarDivider
-
-                translationButton
-
-                toolbarDivider
-
-                actionButton(icon: "arrow.uturn.backward", enabled: editor.canUndo) {
-                    onAction(.undo)
-                }
-                actionButton(icon: "arrow.uturn.forward", enabled: editor.canRedo) {
-                    onAction(.redo)
-                }
-
-                toolbarDivider
-
-                actionButton(
-                    icon: "square.and.arrow.down",
-                    enabled: !editor.translationState.isRunning
-                ) {
-                    onAction(.saveRequested)
-                }
-                actionButton(
-                    icon: "xmark",
-                    enabled: !editor.translationState.isRunning
-                ) {
-                    onAction(.cancel)
-                }
-                actionButton(
-                    icon: "checkmark",
-                    enabled: !editor.translationState.isRunning
-                ) {
-                    onAction(.confirmRequested)
-                }
-            }
-            .frame(height: 64)
+        VStack(spacing: ScreenshotToolbarMetrics.pillSpacing) {
+            mainToolRow
+                .frame(height: ScreenshotToolbarMetrics.mainRowHeight)
+                .padding(.horizontal, ScreenshotToolbarMetrics.mainRowHorizontalPadding)
+                .clipShape(Capsule())
+                .jarvisGlass(in: Capsule())
 
             if editor.secondaryBarVisible {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.12))
-                    .frame(height: 1)
-                    .padding(.horizontal, 5)
-
                 secondaryControl
-                    .frame(height: 40)
+                    .frame(height: ScreenshotToolbarMetrics.secondaryRowHeight)
+                    .padding(.horizontal, ScreenshotToolbarMetrics.secondaryRowHorizontalPadding)
+                    .clipShape(Capsule())
+                    .jarvisGlass(in: Capsule())
                     .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
-        .padding(.horizontal, 11)
-        .padding(.bottom, 6)
+        .padding(.bottom, ScreenshotToolbarMetrics.pillBottomPadding)
         .frame(
             width: layout.width,
             height: editor.secondaryBarVisible
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .jarvisGlass(cornerRadius: 16)
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: editor.secondaryBarVisible
         )
         .translationTask(editor.appleTranslationConfiguration) { @Sendable session in
             await editor.consumeAppleTranslationSession(session)
+        }
+    }
+
+    /// 主按钮行自己是一条胶囊。
+    private var mainToolRow: some View {
+        HStack(spacing: 0) {
+            toolButton(.arrow)
+            toolButton(.rectangle)
+            toolButton(.mosaic)
+            toolButton(.text)
+
+            toolbarDivider
+
+            translationButton
+
+            toolbarDivider
+
+            actionButton(icon: "arrow.uturn.backward", enabled: editor.canUndo) {
+                onAction(.undo)
+            }
+            actionButton(icon: "arrow.uturn.forward", enabled: editor.canRedo) {
+                onAction(.redo)
+            }
+
+            toolbarDivider
+
+            actionButton(
+                icon: "square.and.arrow.down",
+                enabled: !editor.translationState.isRunning
+            ) {
+                onAction(.saveRequested)
+            }
+            actionButton(
+                icon: "xmark",
+                enabled: !editor.translationState.isRunning
+            ) {
+                onAction(.cancel)
+            }
+            actionButton(
+                icon: "checkmark",
+                enabled: !editor.translationState.isRunning
+            ) {
+                onAction(.confirmRequested)
+            }
         }
     }
 
@@ -124,7 +127,10 @@ extension ScreenshotToolbar {
             }
             .foregroundStyle(editor.selectedTool == tool ? Color.accentColor : Color.secondary)
             .frame(width: 24, height: 24)
-            .frame(width: 42, height: 42)
+            .frame(
+                width: ScreenshotToolbarMetrics.mainButtonSize,
+                height: ScreenshotToolbarMetrics.mainButtonSize
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
@@ -143,7 +149,10 @@ extension ScreenshotToolbar {
                 ScreenshotTranslationIcon(isSelected: editor.translationMode)
             }
         }
-        .frame(width: 42, height: 42)
+        .frame(
+            width: ScreenshotToolbarMetrics.mainButtonSize,
+            height: ScreenshotToolbarMetrics.mainButtonSize
+        )
         .contentShape(Rectangle())
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
         .disabled(editor.translationState.isRunning)

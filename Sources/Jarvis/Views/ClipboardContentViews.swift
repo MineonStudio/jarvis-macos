@@ -174,7 +174,6 @@ struct ClipboardCategoryFilterSelector: View {
             selectionID: selection.id,
             accessibilityLabel: "内容类型筛选",
             help: "按内容类型筛选",
-            controlWidth: 96,
             onSelect: { rawValue in
                 guard let category = ClipboardViewFilter(rawValue: rawValue) else { return }
                 selection = category

@@ -12,8 +12,12 @@ struct JarvisDropdownOption: Identifiable, Equatable {
     let title: String
 }
 
-private enum JarvisDropdownMetrics {
-    static let minimumControlWidth: CGFloat = 96
+enum JarvisDropdownMetrics {
+    /// 触发器贴合当前选中值，只保留一个很小的下限，避免单字标签出现过于局促的胶囊。
+    /// 按"最长选项"预留宽度会让短文本的控件右侧空出一大截。
+    static let minimumTriggerWidth: CGFloat = 56
+    /// 弹层仍按"当前值 + 最长选项"定宽，选项胶囊继续等宽对齐。
+    static let minimumMenuWidth: CGFloat = 96
     static let maximumControlWidth: CGFloat = 320
     static let optionSpacing: CGFloat = JarvisMetrics.segmentedItemSpacing
     static let triggerGap: CGFloat = JarvisMetrics.segmentedControlPadding
@@ -41,9 +45,49 @@ private enum JarvisDropdownMetrics {
         return symbolWidth ?? 11
     }()
 
+    static func triggerWidth(
+        for title: String,
+        includesArrow: Bool = true,
+        maximumWidth: CGFloat = maximumControlWidth
+    ) -> CGFloat {
+        width(
+            for: [title],
+            includesArrow: includesArrow,
+            minimumWidth: minimumTriggerWidth,
+            maximumWidth: maximumWidth
+        )
+    }
+
+    static func menuWidth(
+        for title: String,
+        options: [JarvisDropdownOption],
+        includesArrow: Bool = true,
+        maximumWidth: CGFloat = maximumControlWidth
+    ) -> CGFloat {
+        width(
+            for: [title] + options.map(\.title),
+            includesArrow: includesArrow,
+            minimumWidth: minimumMenuWidth,
+            maximumWidth: maximumWidth
+        )
+    }
+
+    /// 弹层和触发器左边缘对齐，和系统弹出菜单一致；贴近屏幕边缘时向内收，
+    /// 保证整块弹层留在屏幕内。
+    static func menuOriginX(
+        anchorMinX: CGFloat,
+        panelWidth: CGFloat,
+        visibleFrame: CGRect
+    ) -> CGFloat {
+        let aligned = anchorMinX - menuEdgePadding
+        let maximumX = visibleFrame.maxX - panelWidth
+        return min(max(aligned, visibleFrame.minX), max(visibleFrame.minX, maximumX))
+    }
+
     static func width(
         for titles: [String],
         includesArrow: Bool = true,
+        minimumWidth: CGFloat,
         maximumWidth: CGFloat = maximumControlWidth
     ) -> CGFloat {
         let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -57,7 +101,7 @@ private enum JarvisDropdownMetrics {
                 + (horizontalPadding * 2)
                 + (includesArrow ? arrowSpacing + arrowWidth : 0)
         )
-        return min(max(idealWidth, minimumControlWidth), maximumWidth)
+        return min(max(idealWidth, minimumWidth), maximumWidth)
     }
 }
 
@@ -80,6 +124,7 @@ struct JarvisDropdownMenu: View {
     let isEnabled: Bool
     let onSelect: (String) -> Void
     @State private var isPresented = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         title: String,
@@ -107,9 +152,20 @@ struct JarvisDropdownMenu: View {
         self.onSelect = onSelect
     }
 
+    /// 触发器贴合当前选中值：按最长选项预留宽度会在短文本时留下大片空白。
     private var resolvedControlWidth: CGFloat {
-        controlWidth ?? JarvisDropdownMetrics.width(
-            for: [title] + options.map(\.title),
+        controlWidth ?? JarvisDropdownMetrics.triggerWidth(
+            for: title,
+            includesArrow: showsChevron,
+            maximumWidth: maximumControlWidth
+        )
+    }
+
+    /// 弹层宽度单独计算，仍然覆盖最长选项，切换选项时选项胶囊不会换宽度。
+    private var resolvedMenuWidth: CGFloat {
+        controlWidth ?? JarvisDropdownMetrics.menuWidth(
+            for: title,
+            options: options,
             includesArrow: showsChevron,
             maximumWidth: maximumControlWidth
         )
@@ -140,13 +196,17 @@ struct JarvisDropdownMenu: View {
         .accessibilityValue(title)
         .frame(width: width)
         .fixedSize(horizontal: true, vertical: false)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: width
+        )
         .modifier(JarvisDropdownTriggerGlassModifier(isEnabled: usesLiquidGlass))
         .background(
             JarvisDropdownMenuPanelPresenter(
                 isPresented: $isPresented,
                 options: options,
                 selectionID: selectionID,
-                controlWidth: width,
+                controlWidth: resolvedMenuWidth,
                 onSelect: { optionID in
                     onSelect(optionID)
                 }
@@ -467,9 +527,11 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
                 ?? NSScreen.main?.visibleFrame
                 ?? .zero
             let panelSize = panel.frame.size
-            let horizontalOrigin = anchorRect.midX - (panelSize.width / 2)
-            let maximumX = visibleFrame.maxX - panelSize.width
-            let originX = min(max(horizontalOrigin, visibleFrame.minX), maximumX)
+            let originX = JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: anchorRect.minX,
+                panelWidth: panelSize.width,
+                visibleFrame: visibleFrame
+            )
             let originY = anchorRect.minY
                 - panelSize.height
                 - JarvisDropdownMetrics.triggerGap

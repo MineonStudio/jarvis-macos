@@ -345,3 +345,44 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertEqual(rendered.height, 80)
     }
 }
+
+@MainActor
+extension ScreenshotTranslationTests {
+    /// 译文块的排版现在是缓存的（原来挂在视图 body 上，每次拖动都会重算上万次
+    /// 文本测量）。缓存最怕的是**不更新**——这条钉住它跟着输入走。
+    func testRenderedBlocksTrackTheirInputs() {
+        let canvas = CGSize(width: 320, height: 200)
+        let model = ScreenshotEditorModel(
+            image: NSImage(size: NSSize(width: canvas.width, height: canvas.height)),
+            data: Data(),
+            outputData: Data(),
+            canvasSize: canvas
+        )
+        let selection = CGRect(x: 0, y: 0, width: 320, height: 200)
+        model.updateSelectionRect(selection)
+        model.translationSourceRect = selection
+
+        XCTAssertTrue(model.renderedTranslationBlocks.isEmpty)
+
+        model.translationBlocks = [ScreenshotTranslationBlock(
+            id: UUID(),
+            sourceText: "Settings",
+            translatedText: "设置",
+            normalizedBounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.1),
+            confidence: 0.9
+        )]
+        model.refreshRenderedTranslationBlocks()
+        XCTAssertEqual(model.renderedTranslationBlocks.count, 1)
+        XCTAssertEqual(model.renderedTranslationBlocks[0].translatedText, "设置")
+
+        // 关掉译文显示 → 渲染块清空
+        model.translationVisible = false
+        model.refreshRenderedTranslationBlocks()
+        XCTAssertTrue(model.renderedTranslationBlocks.isEmpty)
+
+        // 打开回来 → 恢复
+        model.translationVisible = true
+        model.refreshRenderedTranslationBlocks()
+        XCTAssertEqual(model.renderedTranslationBlocks.count, 1)
+    }
+}

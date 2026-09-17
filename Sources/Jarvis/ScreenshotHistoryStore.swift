@@ -16,10 +16,24 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     private let file: JarvisJSONFile<[ScreenshotHistoryItem]>
     /// 只保护「写 PNG + 改索引」这类组合操作；单次文件读写的锁在 `file` 里。
     private let lock = NSLock()
-    private let maximumCount = 100
+    /// 只按条数封顶挡不住体积：单张截图 1-20MB 不等，100 张 Retina 全屏可以到
+    /// 1-2GB，而用户完全看不到占用。所以再加一道总字节上限。
+    ///
+    /// 刻意**不**按时间淘汰：那会在升级后静默删掉用户几个月前的截图，而体积问题
+    /// 已经由字节上限解决了。
+    private let maximumCount: Int
+    private let maximumTotalBytes: Int64
+    /// 孤儿回收每次运行只做一次（`load()` 在每次增删改后都会被调用）。
+    private var hasCollectedOrphans = false
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        maximumCount: Int = 100,
+        maximumTotalBytes: Int64 = 512 * 1024 * 1024
+    ) {
         self.fileManager = fileManager
+        self.maximumCount = maximumCount
+        self.maximumTotalBytes = maximumTotalBytes
         let directory = JarvisAppDirectory.url("ScreenshotHistory", fileManager: fileManager)
         directoryURL = directory
         file = JarvisJSONFile(
@@ -30,8 +44,15 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
         )
     }
 
-    init(directoryURL: URL, fileManager: FileManager = .default) {
+    init(
+        directoryURL: URL,
+        fileManager: FileManager = .default,
+        maximumCount: Int = 100,
+        maximumTotalBytes: Int64 = 512 * 1024 * 1024
+    ) {
         self.fileManager = fileManager
+        self.maximumCount = maximumCount
+        self.maximumTotalBytes = maximumTotalBytes
         self.directoryURL = directoryURL
         file = JarvisJSONFile(
             directoryURL: directoryURL,
@@ -42,7 +63,11 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     }
 
     func load() -> [ScreenshotHistoryItem] {
-        lock.withLock { loadLocked() }
+        lock.withLock {
+            let items = loadLocked()
+            collectOrphansIfNeeded(keeping: items)
+            return items
+        }
     }
 
     private func loadLocked() -> [ScreenshotHistoryItem] {
@@ -114,7 +139,12 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             }
             items.removeAll { $0.id == item.id }
             items.insert(item, at: 0)
-            guard save(trimmed(items)) else { return nil }
+            guard save(trimmed(items)) else {
+                // 索引没写成功，这张 PNG 永远进不了索引，也永远不会被淘汰——
+                // 收回来，别留在磁盘上。
+                discardFile(for: item)
+                return nil
+            }
             return item
         }
     }
@@ -194,25 +224,77 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
 
     private func trimmed(_ items: [ScreenshotHistoryItem]) -> [ScreenshotHistoryItem] {
         let sorted = items.sorted { $0.updatedAt > $1.updatedAt }
-        guard sorted.count > maximumCount else { return sorted }
+        var kept: [ScreenshotHistoryItem] = []
+        var totalBytes: Int64 = 0
 
-        let kept = Array(sorted.prefix(maximumCount))
-        let keptIDs = Set(kept.map(\.id))
-        for removed in sorted where !keptIDs.contains(removed.id) {
-            do {
-                guard let url = safeFileURL(for: removed.fileName) else { continue }
-                try fileManager.removeItem(at: url)
-            } catch CocoaError.fileNoSuchFile {
-                continue
-            } catch {
-                JarvisLog.error(
-                    category: .storage,
-                    event: "screenshot.history.trim.failed",
-                    error: error
-                )
+        for item in sorted {
+            let size = fileSize(of: item)
+            let overCount = kept.count >= maximumCount
+            // 第一张永远留着：单张就可能超过总上限，否则一张都存不下。
+            let overBytes = !kept.isEmpty && totalBytes + size > maximumTotalBytes
+            if overCount || overBytes {
+                discardFile(for: item)
+            } else {
+                kept.append(item)
+                totalBytes += size
             }
         }
         return kept
+    }
+
+    private func fileSize(of item: ScreenshotHistoryItem) -> Int64 {
+        guard let url = safeFileURL(for: item.fileName),
+              let size = (try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+        else {
+            return 0
+        }
+        return size.int64Value
+    }
+
+    private func discardFile(for item: ScreenshotHistoryItem) {
+        guard let url = safeFileURL(for: item.fileName) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch CocoaError.fileNoSuchFile {
+            return
+        } catch {
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.trim.failed",
+                error: error
+            )
+        }
+    }
+
+    /// 删掉目录里没有被索引引用的 `screenshot-*.png`。
+    ///
+    /// 这些文件不会出现在历史里、也不会被淘汰（淘汰是按索引来的），只会一直占着
+    /// 磁盘：索引写失败留下的、以及索引损坏被隔离后整批失去引用的。
+    private func collectOrphansIfNeeded(keeping items: [ScreenshotHistoryItem]) {
+        guard !hasCollectedOrphans else { return }
+        hasCollectedOrphans = true
+
+        let referenced = Set(items.map(\.fileName))
+        let contents = (try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        var removedCount = 0
+        for url in contents where url.pathExtension.lowercased() == "png" {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("screenshot-"), !referenced.contains(name) else { continue }
+            // 只认名字合法的：非法名字留给人工处理，别误删别人的东西。
+            guard safeFileURL(for: name) != nil else { continue }
+            try? fileManager.removeItem(at: url)
+            removedCount += 1
+        }
+        guard removedCount > 0 else { return }
+        JarvisLog.notice(
+            category: .storage,
+            event: "screenshot.history.orphansCollected",
+            result: "success",
+            fields: ["count": String(removedCount)]
+        )
     }
 
     private func safeFileURL(for fileName: String) -> URL? {

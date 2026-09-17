@@ -2,7 +2,39 @@ import Foundation
 import Translation
 
 extension ScreenshotEditorModel {
-    var renderedTranslationBlocks: [ScreenshotTranslationRenderBlock] {
+    /// 重新算一遍用于渲染的译文块。
+    ///
+    /// 这段是 O(块数) 的排版计算——字号收敛循环里是上万次文本测量——所以不能挂在
+    /// 视图 body 上：那样每次拖动、每个 `@Published` 变化都会重跑一遍。现在只在
+    /// 真正影响排版的输入变化时重算（见各属性的 `didSet`），并且同一轮里的连续变化
+    /// 合并成一次。
+    func scheduleRenderedTranslationBlocksRefresh() {
+        guard !isTranslationLayoutRefreshScheduled else { return }
+        isTranslationLayoutRefreshScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            isTranslationLayoutRefreshScheduled = false
+            refreshRenderedTranslationBlocks()
+        }
+    }
+
+    func refreshRenderedTranslationBlocks() {
+        renderedTranslationBlocks = Self.makeRenderedTranslationBlocks(
+            translationVisible: translationVisible,
+            translationSourceRect: translationSourceRect,
+            selectionRect: selectionRect,
+            canvasSize: canvasSize,
+            translationBlocks: translationBlocks
+        )
+    }
+
+    private static func makeRenderedTranslationBlocks(
+        translationVisible: Bool,
+        translationSourceRect: CGRect?,
+        selectionRect: CGRect?,
+        canvasSize: CGSize,
+        translationBlocks: [ScreenshotTranslationBlock]
+    ) -> [ScreenshotTranslationRenderBlock] {
         guard translationVisible else { return [] }
         let selection = translationSourceRect
             ?? selectionRect

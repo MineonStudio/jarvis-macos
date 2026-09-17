@@ -223,7 +223,16 @@ final class ScreenshotEditorModel: ObservableObject {
     /// 正在编辑的既有文字标注 id；新建时为 nil。
     @Published var editingTextID: UUID?
 
-    @Published private(set) var selectionRect: CGRect?
+    @Published private(set) var selectionRect: CGRect? {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
+    /// 译文块变化（每收到一条译文就变一次）也要重排，但同一轮里合并成一次。
+    @Published var translationBlocks: [ScreenshotTranslationBlock] = [] {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
+    var isTranslationLayoutRefreshScheduled = false
     @Published var mosaicBrushSize: CGFloat = 28
     @Published var mosaicMode: ScreenshotMosaicMode = .rectangle
     @Published var mosaicStyle: ScreenshotMosaicStyle = .blur
@@ -242,11 +251,20 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published private(set) var annotations: [ScreenshotAnnotation] = []
     @Published private(set) var redoStack: [[ScreenshotAnnotation]] = []
     @Published var translationMode = false
-    @Published var translationVisible = true
+    /// 译文块的排版结果。缓存而不是每次视图更新现算——见
+    /// `scheduleRenderedTranslationBlocksRefresh()`。
+    /// 只能由 `refreshRenderedTranslationBlocks()` 写，别在别处赋值。
+    @Published var renderedTranslationBlocks: [ScreenshotTranslationRenderBlock] = []
+    @Published var translationVisible = true {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
     @Published var translationTargetLanguage: ScreenshotTranslationLanguage
-    @Published var translationBlocks: [ScreenshotTranslationBlock] = []
     @Published var translationState: ScreenshotTranslationState = .idle
-    @Published var translationSourceRect: CGRect?
+    @Published var translationSourceRect: CGRect? {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
     @Published var appleTranslationConfiguration: TranslationSession.Configuration?
 
     private let coordinateSpace: ScreenshotCoordinateSpace
@@ -616,6 +634,8 @@ extension ScreenshotEditorModel {
     /// 渲染与编码都在后台任务上跑：6K 画布上整段是几百毫秒到数秒的量级，压在主
     /// 线程就是点「完成」之后界面直接卡死几秒。
     func renderedPNGData() async -> Data? {
+        // 排版是合并刷新的，导出前先确保拿到的是最新结果。
+        refreshRenderedTranslationBlocks()
         guard let baseImage = Self.cgImage(from: originalImage) else { return nil }
         let blurred = annotations.contains { $0.kind == .mosaic && $0.mosaicStyle == .blur }
             ? Self.cgImage(from: mosaicImage(style: .blur))

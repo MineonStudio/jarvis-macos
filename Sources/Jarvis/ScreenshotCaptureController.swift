@@ -129,11 +129,11 @@ enum ScreenshotToolbarMetrics {
     static let pillSpacing: CGFloat = 6
     /// 主按钮行里每颗按钮的边长。
     static let mainButtonSize: CGFloat = 42
-    /// 二级行里最高控件的高度。这是玻璃按钮在工具栏里的既有高度，直接引用，
-    /// 别再手写一个会漂移的镜像值。
-    static var secondaryContentHeight: CGFloat {
-        JarvisToolbarMetrics.controlSize
-    }
+    /// 二级行里控件（选项药丸、下拉芯片、文字按钮）的统一高度。
+    ///
+    /// 二级行本身已经是一条大胶囊，里面的控件不再各自套容器——它们只用这一点
+    /// 高度上的药丸底表示选中，不再多叠一层圆角。
+    static let secondaryControlHeight: CGFloat = 26
 
     /// 主按钮行的左右内缩。胶囊两端的圆头半径是行高的一半，内缩不够会把
     /// 最外侧按钮的图标切掉。下限由 `minimumCapsuleInset` 推出，

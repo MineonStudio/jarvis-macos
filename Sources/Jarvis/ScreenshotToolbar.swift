@@ -55,23 +55,6 @@ private extension View {
     }
 }
 
-/// 二级行里一个工具的全部设置装进这样一条胶囊容器：内部靠分隔线分段。
-/// 五个二级行共用同一种结构，避免每个工具各长一个样子。
-private struct SecondaryGroupSurface: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, 8)
-            .frame(height: JarvisToolbarMetrics.controlSize)
-            .background(Color.jarvisInsetSurface, in: Capsule())
-    }
-}
-
-private extension View {
-    func secondaryGroupSurface() -> some View {
-        modifier(SecondaryGroupSurface())
-    }
-}
-
 /// 二级行里的可选项（马赛克的模式/效果、文字的粗体/斜体/删除线）。
 /// 选中态是与全局一致的胶囊药丸，同 `JarvisToolbarSelectionButton`。
 struct ScreenshotToolbarOptionButton: View {
@@ -96,7 +79,7 @@ struct ScreenshotToolbarOptionButton: View {
             }
             .foregroundStyle(selected ? Color.white : Color.jarvisTextSecondary)
             .padding(.horizontal, title == nil ? 0 : 9)
-            .frame(width: title == nil ? 28 : nil, height: 26)
+            .frame(width: title == nil ? 28 : nil, height: ScreenshotToolbarMetrics.secondaryControlHeight)
             .background {
                 Capsule()
                     .fill(
@@ -150,7 +133,7 @@ private struct SecondaryMenuChip<MenuContent: View>: View {
             }
             .foregroundStyle(Color.primary)
             .padding(.horizontal, 9)
-            .frame(height: 26)
+            .frame(height: ScreenshotToolbarMetrics.secondaryControlHeight)
             .background(Color.primary.opacity(0.06), in: Capsule())
             .contentShape(Capsule())
         }
@@ -176,7 +159,7 @@ private struct SecondaryCapsuleButton: View {
                         : Color.secondary.opacity(0.5)
                 )
                 .padding(.horizontal, 11)
-                .frame(height: 26)
+                .frame(height: ScreenshotToolbarMetrics.secondaryControlHeight)
                 .background(
                     isProminent && isEnabled
                         ? AnyShapeStyle(JarvisMotion.selectionPillTint)
@@ -459,7 +442,6 @@ extension ScreenshotToolbar {
                 onAction(.toggleTranslationVisibility)
             }
         }
-        .secondaryGroupSurface()
     }
 
     private var arrowStyleControl: some View {
@@ -499,7 +481,6 @@ extension ScreenshotToolbar {
                 }
             }
         }
-        .secondaryGroupSurface()
     }
 
     private var rectangleStyleControl: some View {
@@ -539,7 +520,6 @@ extension ScreenshotToolbar {
                 }
             }
         }
-        .secondaryGroupSurface()
     }
 
     /// 马赛克的全部控件装在同一条胶囊里：模式、效果、笔触是一个整体的工具设置，
@@ -557,7 +537,6 @@ extension ScreenshotToolbar {
                 mosaicBrushSizeControl
             }
         }
-        .secondaryGroupSurface()
     }
 
     private var mosaicModePicker: some View {
@@ -679,7 +658,6 @@ extension ScreenshotToolbar {
                 }
             }
         }
-        .secondaryGroupSurface()
     }
 
     private func colorButtons(

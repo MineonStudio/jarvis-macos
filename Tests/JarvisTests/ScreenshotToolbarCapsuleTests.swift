@@ -26,7 +26,7 @@ final class ScreenshotToolbarCapsuleTests: XCTestCase {
             RowGeometry(
                 label: "二级行",
                 rowHeight: ScreenshotToolbarMetrics.secondaryRowHeight,
-                contentHeight: ScreenshotToolbarMetrics.secondaryContentHeight,
+                contentHeight: ScreenshotToolbarMetrics.secondaryControlHeight,
                 inset: ScreenshotToolbarMetrics.secondaryRowHorizontalPadding
             )
         ]
@@ -86,14 +86,6 @@ final class ScreenshotToolbarCapsuleTests: XCTestCase {
                 "\(row.label)的内容比行还高"
             )
         }
-    }
-
-    /// 二级行的高度取自玻璃按钮的既有尺寸，不能是另一个会漂移的手写镜像值。
-    func testSecondaryContentHeightTracksTheSharedControlHeight() {
-        XCTAssertEqual(
-            ScreenshotToolbarMetrics.secondaryContentHeight,
-            JarvisToolbarMetrics.controlSize
-        )
     }
 
     /// 这两个高度是交给面板窗口的尺寸，必须钉成具体数值：用公式互相验算等于什么也没验

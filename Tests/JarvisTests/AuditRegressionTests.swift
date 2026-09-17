@@ -264,17 +264,18 @@ final class AuditRegressionTests: XCTestCase {
             mosaicMode: .rectangle,
             mosaicStyle: .blur
         )
-        let data = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(.init(
-            image: image,
+        let sourceImage = try XCTUnwrap(ScreenshotEditorModel.cgImage(from: image))
+        let rendered = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: sourceImage,
             canvasSize: CGSize(width: size, height: size),
             pixelScale: 1,
             annotations: [mosaic],
             // 直接用原图当"过滤后的图"，这样 mosaic 区域呈现的就是源内容本身，
             // 便于判断取到的是哪一块画面。
-            blurredImage: image,
+            blurredImage: sourceImage,
             pixelatedImage: nil
         )))
-        let exported = try XCTUnwrap(NSBitmapImageRep(data: data))
+        let exported = NSBitmapImageRep(cgImage: rendered)
         let sampled = try XCTUnwrap(
             exported.colorAt(x: 100, y: 120)?.usingColorSpace(.deviceRGB)
         )

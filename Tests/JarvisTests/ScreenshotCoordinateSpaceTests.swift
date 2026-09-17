@@ -158,7 +158,7 @@ final class ScreenshotCoordinateSpaceTests: XCTestCase {
 }
 
 extension ScreenshotCoordinateSpaceTests {
-    func testRenderPipelineProducesPNGForAnnotation() {
+    func testRenderPipelineProducesPNGForAnnotation() throws {
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: 160,
@@ -189,8 +189,8 @@ extension ScreenshotCoordinateSpaceTests {
             arrowHeadStyle: .filled
         )
 
-        let data = ScreenshotRenderPipeline().renderFullCanvas(.init(
-            image: image,
+        let rendered = try ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: XCTUnwrap(ScreenshotEditorModel.cgImage(from: image)),
             canvasSize: image.size,
             pixelScale: 1,
             annotations: [annotation],
@@ -198,11 +198,12 @@ extension ScreenshotCoordinateSpaceTests {
             pixelatedImage: nil
         ))
 
-        XCTAssertNotNil(data)
-        XCTAssertEqual(data?.prefix(8), Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+        XCTAssertNotNil(rendered)
+        XCTAssertEqual(rendered?.width, Int(image.size.width))
+        XCTAssertEqual(rendered?.height, Int(image.size.height))
     }
 
-    func testRectangleAnnotationSupportsDefaultAndDashedStyles() {
+    func testRectangleAnnotationSupportsDefaultAndDashedStyles() throws {
         XCTAssertEqual(ScreenshotLineStyle.solid.dashPattern, [])
         XCTAssertEqual(ScreenshotLineStyle.dashed.dashPattern, [10, 6])
 
@@ -224,15 +225,15 @@ extension ScreenshotCoordinateSpaceTests {
         NSColor.white.setFill()
         NSRect(x: 0, y: 0, width: 160, height: 120).fill()
         image.unlockFocus()
-        let data = ScreenshotRenderPipeline().renderFullCanvas(.init(
-            image: image,
+        let rendered = try ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: XCTUnwrap(ScreenshotEditorModel.cgImage(from: image)),
             canvasSize: image.size,
             pixelScale: 1,
             annotations: [annotation],
             blurredImage: nil,
             pixelatedImage: nil
         ))
-        XCTAssertNotNil(data)
+        XCTAssertNotNil(rendered)
     }
 
     func testRenderedCanvasAndDirectCropUseTheSameSelectionCoordinates() throws {
@@ -280,8 +281,8 @@ extension ScreenshotCoordinateSpaceTests {
             to: selection,
             on: CGRect(origin: .zero, size: canvasSize)
         )
-        guard let renderedData = ScreenshotRenderPipeline().renderFullCanvas(.init(
-            image: image,
+        guard let renderedImage = try ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: XCTUnwrap(ScreenshotEditorModel.cgImage(from: image)),
             canvasSize: canvasSize,
             pixelScale: 1,
             annotations: [],
@@ -291,6 +292,9 @@ extension ScreenshotCoordinateSpaceTests {
             XCTFail("Unable to render test canvas")
             return
         }
+        let renderedData = try XCTUnwrap(
+            NSBitmapImageRep(cgImage: renderedImage).representation(using: .png, properties: [:])
+        )
         let renderedCrop = try service.crop(
             ScreenshotCapture(data: renderedData, screenFrame: CGRect(origin: .zero, size: canvasSize)),
             to: selection,
@@ -400,14 +404,17 @@ extension ScreenshotCoordinateSpaceTests {
             arrowHeadSize: 20,
             arrowHeadStyle: .filled
         )
-        guard let renderedData = ScreenshotRenderPipeline().renderFullCanvas(.init(
-            image: image,
+        guard let renderedImage = try ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: XCTUnwrap(ScreenshotEditorModel.cgImage(from: image)),
             canvasSize: canvasSize,
             pixelScale: 2,
             annotations: [annotation],
             blurredImage: nil,
             pixelatedImage: nil
-        )) else {
+        )),
+            let renderedData = NSBitmapImageRep(cgImage: renderedImage)
+            .representation(using: .png, properties: [:])
+        else {
             XCTFail("Unable to render edited Retina canvas")
             return
         }

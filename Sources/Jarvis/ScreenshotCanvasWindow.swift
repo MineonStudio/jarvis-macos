@@ -7,6 +7,9 @@ final class ScreenshotImagePanel: NSPanel {
     var onDoubleClick: (() -> Void)?
     var onMiddleClick: (() -> Void)?
     var onEscape: (() -> Void)?
+    /// Esc 的第一道处理：返回 true 表示这次 Esc 已被消化（正在输入文字、或者
+    /// 只想取消标注选中），不必再结束整场截图。
+    var onEscapeIntercept: (() -> Bool)?
 
     override var canBecomeKey: Bool {
         true
@@ -18,6 +21,9 @@ final class ScreenshotImagePanel: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53 {
+            if onEscapeIntercept?() == true {
+                return
+            }
             onEscape?()
             return
         }
@@ -111,8 +117,12 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, let onEscape {
-            onEscape()
+        if event.keyCode == 53 {
+            // 与面板的 sendEvent 保持一致：先让编辑器决定，没人接手才结束整场。
+            if editor.handleEscape() {
+                return
+            }
+            onEscape?()
             return
         }
 
@@ -138,11 +148,6 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
             } else {
                 editor.undo()
             }
-            return
-        }
-
-        if event.keyCode == 53, editor.selectedAnnotationID != nil {
-            editor.clearSelection()
             return
         }
 

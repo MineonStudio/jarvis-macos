@@ -15,7 +15,7 @@ extension ScreenshotCaptureController {
         dismissResult()
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let data = editor.finalPNGData()
+            let data = await editor.finalPNGData()
             createPinnedScreenshot(data: data, frame: frame, onAction: onAction)
             sessionPhase = .idle
             activeSessionID = nil
@@ -274,7 +274,7 @@ extension ScreenshotCaptureController {
         let onAction = item.onAction
         destroyPinnedScreenshot(item)
         Task { @MainActor in
-            onAction?(makeAction(editor.finalPNGData()))
+            await onAction?(makeAction(editor.finalPNGData()))
         }
     }
 

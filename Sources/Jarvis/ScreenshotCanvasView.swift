@@ -25,8 +25,6 @@ struct ScreenshotCanvasView: View {
     @State private var lastDragLocation: CGPoint?
     @State private var mosaicPoints: [CGPoint] = []
     @State private var activeAnnotationID: UUID?
-    @State private var textInputPoint: CGPoint?
-    @State private var editingTextID: UUID?
     @State private var textDraft = ""
     @FocusState private var textFieldFocused: Bool
 
@@ -68,8 +66,8 @@ struct ScreenshotCanvasView: View {
                         .gesture(canvasGesture)
                 }
 
-                if let textInputPoint {
-                    inlineTextEditor(at: textInputPoint)
+                if let textInputAnchor = editor.textInputAnchor {
+                    inlineTextEditor(at: textInputAnchor)
                 }
             }
         }
@@ -167,8 +165,7 @@ struct ScreenshotCanvasView: View {
                             beginTextEditing(id: activeAnnotationID)
                         }
                     } else if dragDistance < 8 {
-                        textInputPoint = start
-                        editingTextID = nil
+                        editor.beginTextEditing(at: start)
                         textDraft = ""
                         textFieldFocused = true
                     }
@@ -244,11 +241,11 @@ struct ScreenshotCanvasView: View {
 
     private func beginTextEditing(id: UUID) {
         guard let annotation = editor.annotations.first(where: { $0.id == id && $0.kind == .text }) else { return }
-        textInputPoint = CGPoint(
+        editor.textInputAnchor = CGPoint(
             x: annotation.start.x - annotation.textSize.width / 2 + 9,
             y: annotation.start.y
         )
-        editingTextID = id
+        editor.editingTextID = id
         textDraft = annotation.text ?? ""
         editor.textFontSize = annotation.fontSize
         editor.textColor = annotation.textColor
@@ -259,26 +256,24 @@ struct ScreenshotCanvasView: View {
     }
 
     private func commitText() {
-        guard let textInputPoint else { return }
+        guard let anchor = editor.textInputAnchor else { return }
         let committedText = wrappedTextDraft
-        if let editingTextID {
+        if let editingTextID = editor.editingTextID {
             editor.updateText(
                 id: editingTextID,
                 text: committedText,
-                alignedAtLeft: textInputPoint
+                alignedAtLeft: anchor
             )
         } else {
-            editor.addText(alignedAtLeft: textInputPoint, text: committedText)
+            editor.addText(alignedAtLeft: anchor, text: committedText)
         }
-        self.textInputPoint = nil
-        editingTextID = nil
+        editor.endTextEditing()
         textDraft = ""
         textFieldFocused = false
     }
 
     private func cancelText() {
-        textInputPoint = nil
-        editingTextID = nil
+        editor.endTextEditing()
         textDraft = ""
         textFieldFocused = false
     }

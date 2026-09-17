@@ -260,7 +260,7 @@ extension ScreenshotCaptureController {
             guard let self, let editor else { return }
             dismissResult()
             Task { @MainActor in
-                presentation.onAction(.confirm(editor.finalPNGData()))
+                await presentation.onAction(.confirm(editor.finalPNGData()))
             }
         }
         let pasteToScreen: () -> Void = { [weak self, weak editor = presentation.editor] in
@@ -294,6 +294,9 @@ extension ScreenshotCaptureController {
             screenshotPanel.onDoubleClick = quickCopyAndClose
             screenshotPanel.onMiddleClick = pasteToScreen
             screenshotPanel.onEscape = cancelEditing
+            screenshotPanel.onEscapeIntercept = { [weak editor = presentation.editor] in
+                editor?.handleEscape() ?? false
+            }
             imagePanel = screenshotPanel
         }
 
@@ -409,7 +412,9 @@ extension ScreenshotCaptureController {
         makeAction: @escaping (Data) -> ScreenshotAction
     ) {
         Task { @MainActor in
-            onAction(makeAction(editor.finalPNGData()))
+            Task { @MainActor in
+                await onAction(makeAction(editor.finalPNGData()))
+            }
         }
     }
 

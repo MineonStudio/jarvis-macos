@@ -247,21 +247,21 @@ extension ScreenshotToolbar {
             actionButton(
                 icon: "square.and.arrow.down",
                 help: "保存",
-                enabled: !editor.translationState.isRunning
+                enabled: !editor.translationState.isRunning && !editor.isExporting
             ) {
                 onAction(.saveRequested)
             }
             actionButton(
                 icon: "xmark",
                 help: "取消",
-                enabled: !editor.translationState.isRunning
+                enabled: !editor.translationState.isRunning && !editor.isExporting
             ) {
                 onAction(.cancel)
             }
             actionButton(
                 icon: "checkmark",
                 help: "完成",
-                enabled: !editor.translationState.isRunning
+                enabled: !editor.translationState.isRunning && !editor.isExporting
             ) {
                 onAction(.confirmRequested)
             }

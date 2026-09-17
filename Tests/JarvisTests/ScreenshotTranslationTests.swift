@@ -318,8 +318,8 @@ final class ScreenshotTranslationTests: XCTestCase {
         NSRect(x: 0, y: 0, width: 120, height: 80).fill()
         image.unlockFocus()
 
-        let request = ScreenshotRenderRequest(
-            image: image,
+        let request = try ScreenshotRenderRequest(
+            image: XCTUnwrap(ScreenshotEditorModel.cgImage(from: image)),
             canvasSize: CGSize(width: 120, height: 80),
             pixelScale: 1,
             annotations: [],
@@ -340,7 +340,8 @@ final class ScreenshotTranslationTests: XCTestCase {
             showsTranslation: true
         )
 
-        let data = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(request))
-        XCTAssertNotNil(NSImage(data: data))
+        let rendered = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(request))
+        XCTAssertEqual(rendered.width, 120)
+        XCTAssertEqual(rendered.height, 80)
     }
 }

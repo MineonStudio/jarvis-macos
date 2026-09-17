@@ -1,23 +1,27 @@
 import AppKit
 import CoreGraphics
 
-struct ScreenshotRenderRequest {
-    let image: NSImage
+/// 渲染所需的全部输入。
+///
+/// 图都用 `CGImage` 而不是 `NSImage`：渲染整段跑在后台任务上（6K 画布上这一步是
+/// 秒级），而 `NSImage` 不是 Sendable，`CGImage` 是。
+struct ScreenshotRenderRequest: Sendable {
+    let image: CGImage
     let canvasSize: CGSize
     let pixelScale: CGFloat
     let annotations: [ScreenshotAnnotation]
-    let blurredImage: NSImage?
-    let pixelatedImage: NSImage?
+    let blurredImage: CGImage?
+    let pixelatedImage: CGImage?
     let translations: [ScreenshotTranslationRenderBlock]
     let showsTranslation: Bool
 
     init(
-        image: NSImage,
+        image: CGImage,
         canvasSize: CGSize,
         pixelScale: CGFloat,
         annotations: [ScreenshotAnnotation],
-        blurredImage: NSImage?,
-        pixelatedImage: NSImage?,
+        blurredImage: CGImage?,
+        pixelatedImage: CGImage?,
         translations: [ScreenshotTranslationRenderBlock] = [],
         showsTranslation: Bool = false
     ) {
@@ -37,9 +41,11 @@ struct ScreenshotRenderRequest {
 /// one deterministic Core Graphics pass so the final image does not depend on
 /// view layout or transient editor state.
 final class ScreenshotRenderPipeline {
-    func renderFullCanvas(_ request: ScreenshotRenderRequest) -> Data? {
-        guard let baseImage = cgImage(from: request.image),
-              request.canvasSize.width > 0,
+    /// 渲染整幅画布。返回位图而不是 PNG——调用方多数只要其中一块，先编码整幅
+    /// 再解码回来裁，是 6K 图上秒级的无用功。
+    func renderFullCanvas(_ request: ScreenshotRenderRequest) -> CGImage? {
+        let baseImage = request.image
+        guard request.canvasSize.width > 0,
               request.canvasSize.height > 0
         else {
             return nil
@@ -115,9 +121,7 @@ final class ScreenshotRenderPipeline {
             drawText(annotation, in: context, canvasSize: request.canvasSize, scale: scale)
         }
 
-        guard let renderedImage = context.makeImage() else { return nil }
-        return NSBitmapImageRep(cgImage: renderedImage)
-            .representation(using: .png, properties: [:])
+        return context.makeImage()
     }
 
     private func drawArrow(_ annotation: ScreenshotAnnotation, in context: CGContext) {
@@ -186,14 +190,14 @@ final class ScreenshotRenderPipeline {
         _ annotation: ScreenshotAnnotation,
         in context: CGContext,
         canvasRect: CGRect,
-        blurredImage: NSImage?,
-        pixelatedImage: NSImage?
+        blurredImage: CGImage?,
+        pixelatedImage: CGImage?
     ) {
-        let image: NSImage? = switch annotation.mosaicStyle {
+        let filteredImage: CGImage? = switch annotation.mosaicStyle {
         case .blur: blurredImage
         case .pixelate: pixelatedImage
         }
-        guard let image, let filteredImage = cgImage(from: image) else { return }
+        guard let filteredImage else { return }
 
         context.saveGState()
         switch annotation.mosaicMode {

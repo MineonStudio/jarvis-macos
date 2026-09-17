@@ -121,7 +121,7 @@ enum ScreenshotLineStyle: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
-struct ScreenshotAnnotation: Identifiable, Equatable {
+struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
     enum Kind: Equatable {
         case arrow
         case rectangle
@@ -212,6 +212,17 @@ final class ScreenshotEditorModel: ObservableObject {
 
     @Published var selectedTool: ScreenshotTool?
     @Published var selectedAnnotationID: UUID?
+
+    /// 内联文字输入框的锚点。为 nil 表示当前没有在编辑文字。
+    ///
+    /// 草稿本身留在画布视图（TextEditor 直接绑定它），但「正在编辑」这件事必须在
+    /// 模型里可读：Esc 的分级处理要据此决定是取消这次输入，还是退出整场截图。
+    /// 正在导出（渲染 + 编码在后台跑）。导出期间禁用导出相关按钮，避免重复触发。
+    @Published private(set) var isExporting = false
+    @Published var textInputAnchor: CGPoint?
+    /// 正在编辑的既有文字标注 id；新建时为 nil。
+    @Published var editingTextID: UUID?
+
     @Published private(set) var selectionRect: CGRect?
     @Published var mosaicBrushSize: CGFloat = 28
     @Published var mosaicMode: ScreenshotMosaicMode = .rectangle
@@ -329,7 +340,45 @@ extension ScreenshotEditorModel {
             || selectedTool == .text
     }
 
+    var isEditingText: Bool {
+        textInputAnchor != nil
+    }
+
+    /// 在指定位置开始输入一段新文字。
+    func beginTextEditing(at point: CGPoint) {
+        textInputAnchor = point
+        editingTextID = nil
+    }
+
+    /// 结束内联输入（提交与取消都走它）。
+    func endTextEditing() {
+        textInputAnchor = nil
+        editingTextID = nil
+    }
+
+    /// Esc 的分级处理：正在输入文字就先取消这次输入；选中了标注就取消选中；
+    /// 两者都没有才把手交给调用方去结束整场截图。
+    ///
+    /// 原来所有 Esc 都直达「结束整场」——打字打到一半本能按 Esc，整张截图连同
+    /// 已经画好的标注一起没了。
+    /// - Returns: 这次 Esc 是否已经被消化。
+    @discardableResult
+    func handleEscape() -> Bool {
+        if isEditingText {
+            endTextEditing()
+            return true
+        }
+        if selectedAnnotationID != nil {
+            clearSelection()
+            return true
+        }
+        return false
+    }
+
     func selectTool(_ tool: ScreenshotTool?) {
+        // 换工具时把内联输入收掉：否则锚点留在模型里，Esc 的第一步会被一个
+        // 已经不存在的「正在输入」永远吃掉。
+        endTextEditing()
         selectedTool = tool
         translationMode = false
         if tool != .text {
@@ -557,41 +606,86 @@ extension ScreenshotEditorModel {
             || (translationVisible && !translationBlocks.isEmpty)
     }
 
-    func finalPNGData() -> Data {
+    func finalPNGData() async -> Data {
         guard hasVisualEdits else { return originalOutputData }
-        return renderedPNGData() ?? originalOutputData
+        return await renderedPNGData() ?? originalOutputData
     }
 
-    func renderedPNGData() -> Data? {
+    /// 导出用的 PNG。
+    ///
+    /// 渲染与编码都在后台任务上跑：6K 画布上整段是几百毫秒到数秒的量级，压在主
+    /// 线程就是点「完成」之后界面直接卡死几秒。
+    func renderedPNGData() async -> Data? {
+        guard let baseImage = Self.cgImage(from: originalImage) else { return nil }
+        let blurred = annotations.contains { $0.kind == .mosaic && $0.mosaicStyle == .blur }
+            ? Self.cgImage(from: mosaicImage(style: .blur))
+            : nil
+        let pixelated = annotations.contains { $0.kind == .mosaic && $0.mosaicStyle == .pixelate }
+            ? Self.cgImage(from: mosaicImage(style: .pixelate))
+            : nil
         let request = ScreenshotRenderRequest(
-            image: originalImage,
+            image: baseImage,
             canvasSize: canvasSize,
             pixelScale: pixelScale,
             annotations: annotations,
-            blurredImage: annotations.contains(where: { $0.kind == .mosaic && $0.mosaicStyle == .blur })
-                ? mosaicImage(style: .blur)
-                : nil,
-            pixelatedImage: annotations.contains(where: { $0.kind == .mosaic && $0.mosaicStyle == .pixelate })
-                ? mosaicImage(style: .pixelate)
-                : nil,
+            blurredImage: blurred,
+            pixelatedImage: pixelated,
             translations: renderedTranslationBlocks,
             showsTranslation: translationVisible
         )
-        guard let data = ScreenshotRenderPipeline().renderFullCanvas(request) else {
-            return nil
-        }
-        guard let outputRect else { return data }
-        let renderedCapture = ScreenshotCapture(
-            data: data,
-            screenFrame: CGRect(origin: .zero, size: canvasSize)
+        let canvasSize = canvasSize
+        let outputRect = outputRect
+        isExporting = true
+        defer { isExporting = false }
+        return await Task.detached(priority: .userInitiated) { () -> Data? in
+            guard let rendered = ScreenshotRenderPipeline().renderFullCanvas(request) else {
+                return nil
+            }
+            guard let outputRect else {
+                return Self.pngData(from: rendered)
+            }
+            // 只裁需要的区域：直接在渲染好的位图上切，不再把整幅编码成 PNG、解码
+            // 回来、裁剪、再编码一次。6K 画布上那三步是秒级的无用功。
+            guard let cropped = Self.crop(rendered, toOutputRect: outputRect, canvasSize: canvasSize) else {
+                return nil
+            }
+            return Self.pngData(from: cropped)
+        }.value
+    }
+
+    nonisolated static func cgImage(from image: NSImage?) -> CGImage? {
+        guard let image else { return nil }
+        var proposedRect = NSRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
+    }
+
+    private nonisolated static func crop(
+        _ image: CGImage,
+        toOutputRect outputRect: CGRect,
+        canvasSize: CGSize
+    ) -> CGImage? {
+        let coordinateSpace = ScreenshotCoordinateSpace(
+            screenFrame: CGRect(origin: .zero, size: canvasSize),
+            canvasSize: canvasSize
         )
-        return try? ScreenshotService()
-            .crop(
-                renderedCapture,
-                to: outputRect,
-                on: CGRect(origin: .zero, size: canvasSize)
-            )
-            .data
+        // CGImage 的坐标是「左上角原点、y 向下」，与画布坐标一致；输出矩形是
+        // AppKit 那套 y 向上的，先用已有的换算转过去。
+        let canvasRect = coordinateSpace.canvasRect(fromOutputRect: outputRect)
+        let scaleX = CGFloat(image.width) / canvasSize.width
+        let scaleY = CGFloat(image.height) / canvasSize.height
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let pixelRect = CGRect(
+            x: canvasRect.minX * scaleX,
+            y: canvasRect.minY * scaleY,
+            width: canvasRect.width * scaleX,
+            height: canvasRect.height * scaleY
+        ).integral.intersection(bounds)
+        guard !pixelRect.isEmpty else { return nil }
+        return image.cropping(to: pixelRect)
+    }
+
+    private nonisolated static func pngData(from image: CGImage) -> Data? {
+        NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
 
     private func append(_ annotation: ScreenshotAnnotation) {

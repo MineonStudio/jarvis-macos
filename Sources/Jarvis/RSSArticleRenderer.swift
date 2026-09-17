@@ -39,7 +39,9 @@ enum RSSArticleRenderer {
                 result.append(collapsed)
             case let .startTag(name, _, selfClosing):
                 if skippedElements.contains(name) {
-                    skippedDepth += 1
+                    if !selfClosing {
+                        skippedDepth += 1
+                    }
                 } else if blockElements.contains(name), !selfClosing || name == "br" {
                     blockBreakPending = true
                 }
@@ -157,12 +159,23 @@ enum RSSHTMLTokenizer {
                 break
             }
             let raw = String(html[tagStart ... tagEnd])
-            if let token = parseTag(raw) {
+            if raw.hasPrefix("<!--") || raw.hasPrefix("<!") || raw.hasPrefix("<?") {
+                // 注释、doctype、处理指令：整段丢掉。
+            } else if let token = parseTag(raw) {
                 tokens.append(token)
+            } else {
+                // 解析不出标签名，说明这个 `<` 是正文（`5 < 10`），原样当文本。
+                tokens.append(.text(raw))
             }
             index = html.index(after: tagEnd)
         }
         return tokens
+    }
+
+    /// 标签名必须是字母开头、只含字母数字和连字符，否则那个 `<` 是正文里的符号。
+    private static func isValidTagName(_ name: String) -> Bool {
+        guard let first = name.first, first.isLetter else { return false }
+        return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
     }
 
     /// 找 `>` 时要跳过引号里的内容：`<a title="a>b">` 里的 `>` 不是标签结尾。
@@ -194,11 +207,12 @@ enum RSSHTMLTokenizer {
         if isClosing {
             body = body.dropFirst()
         }
-        let selfClosing = body.hasSuffix("/")
-        if selfClosing {
+        // 先去掉收尾的 `>`，再看有没有 `/`——反过来的话自闭合标签永远判断不出来。
+        if body.hasSuffix(">") {
             body = body.dropLast()
         }
-        if body.hasSuffix(">") {
+        let selfClosing = body.hasSuffix("/")
+        if selfClosing {
             body = body.dropLast()
         }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,7 +220,9 @@ enum RSSHTMLTokenizer {
 
         let nameEnd = trimmed.firstIndex { $0.isWhitespace } ?? trimmed.endIndex
         let name = String(trimmed[trimmed.startIndex ..< nameEnd]).lowercased()
-        guard !name.isEmpty else { return nil }
+        // 正文里裸写的 `<`（`5 < 10`、`a<b`）也会走到这里，这时它不是标签。
+        // 名字不合法就当文本还回去，否则这段内容会被整段吃掉。
+        guard isValidTagName(name) else { return nil }
         if isClosing {
             return .endTag(name)
         }
@@ -251,14 +267,14 @@ enum RSSHTMLTokenizer {
                 while valueEnd < text.endIndex, text[valueEnd] != quote {
                     valueEnd = text.index(after: valueEnd)
                 }
-                result[name] = String(text[valueStart ..< valueEnd])
+                result[name] = RSSHTMLEntities.decode(String(text[valueStart ..< valueEnd]))
                 cursor = valueEnd < text.endIndex ? text.index(after: valueEnd) : text.endIndex
             } else {
                 let valueStart = cursor
                 while cursor < text.endIndex, !text[cursor].isWhitespace {
                     cursor = text.index(after: cursor)
                 }
-                result[name] = String(text[valueStart ..< cursor])
+                result[name] = RSSHTMLEntities.decode(String(text[valueStart ..< cursor]))
             }
             if !name.isEmpty, result[name] == "" {
                 result[name] = name
@@ -312,8 +328,8 @@ private enum RSSHTMLTextExtractor {
             switch token {
             case let .text(raw):
                 state.handleText(raw)
-            case let .startTag(name, attributes, _):
-                state.handleStartTag(name, attributes: attributes, baseURL: baseURL)
+            case let .startTag(name, attributes, selfClosing):
+                state.handleStartTag(name, attributes: attributes, selfClosing: selfClosing, baseURL: baseURL)
             case let .endTag(name):
                 state.handleEndTag(name)
             }
@@ -372,9 +388,18 @@ private struct RSSHTMLTextState {
         append(text, style: currentStyle)
     }
 
-    mutating func handleStartTag(_ name: String, attributes: [String: String], baseURL: URL?) {
+    mutating func handleStartTag(
+        _ name: String,
+        attributes: [String: String],
+        selfClosing: Bool,
+        baseURL: URL?
+    ) {
         if RSSArticleRenderer.skippedElements.contains(name) {
-            skippedDepth += 1
+            // 自闭合的跳过元素没有对应的结束标签，计数加一就再也减不回去了，
+            // 后面的正文会被整段吞掉。
+            if !selfClosing {
+                skippedDepth += 1
+            }
             return
         }
         guard skippedDepth == 0 else { return }
@@ -457,8 +482,14 @@ private struct RSSHTMLTextState {
 
     private mutating func applySectionEndTag(_ name: String) {
         switch name {
-        case "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre":
+        case "h1", "h2", "h3", "h4", "h5", "h6", "blockquote":
             popStyle(tag: name)
+            requestBreak(2)
+        case "pre":
+            // `<pre><code>…</code></pre>` 里的 `</code>` 被有意跳过，所以这里要连带
+            // 它上面所有还没闭合的样式一起弹掉，否则等宽字体会漏到后面全文。
+            popStyleDeep(tag: name)
+            inPre = false
             requestBreak(2)
         case "code":
             if !inPre {
@@ -467,9 +498,14 @@ private struct RSSHTMLTextState {
         default:
             break
         }
-        if name == "pre" {
-            inPre = false
+    }
+
+    /// 弹出栈上直到（含）指定标签为止的所有样式帧。
+    private mutating func popStyleDeep(tag: String) {
+        while let last = styleStack.last, last.tag != tag {
+            styleStack.removeLast()
         }
+        popStyle(tag: tag)
     }
 
     private mutating func applyListStartTag(_ name: String) {

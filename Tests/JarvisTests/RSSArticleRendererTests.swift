@@ -1,5 +1,6 @@
 import Foundation
 @testable import Jarvis
+import SwiftUI
 import XCTest
 
 final class RSSArticleRendererTests: XCTestCase {
@@ -140,5 +141,50 @@ final class RSSArticleRendererTests: XCTestCase {
     func testUnknownTagsDegradeToPlainText() {
         let html = "<custom-tag>内容仍在</custom-tag>"
         XCTAssertTrue(RSSArticleRenderer.plainText(fromHTML: html).contains("内容仍在"))
+    }
+
+    /// 正文里裸写的 `<` 不是标签，不能把中间的内容吃掉。
+    func testBareLessThanSignsSurvive() {
+        let html = "<p>5 < 10 且 3 > 2</p>"
+        let text = RSSArticleRenderer.plainText(fromHTML: html)
+
+        XCTAssertTrue(text.contains("5 < 10"), text)
+        XCTAssertTrue(text.contains("3 > 2"), text)
+    }
+
+    /// 自闭合的跳过元素不能把后面的正文一起吞掉。
+    func testSelfClosingSkipElementDoesNotSwallowFollowingText() {
+        let html = #"<p>之前</p><iframe src="https://e.com/x"/><p>之后的正文</p>"#
+        let text = RSSArticleRenderer.plainText(fromHTML: html)
+
+        XCTAssertTrue(text.contains("之前"))
+        XCTAssertTrue(text.contains("之后的正文"))
+    }
+
+    /// `</code>` 在 `<pre>` 里被有意跳过，`</pre>` 必须把它一起弹掉，
+    /// 否则等宽字体会漏到后面全文。
+    func testPreWithNestedCodeDoesNotLeakMonospacedStyle() {
+        let html = "<pre><code>let x = 1</code></pre><p>普通段落</p>"
+        let attributed = RSSArticleRenderer.attributedString(fromHTML: html)
+        let text = String(attributed.characters)
+
+        XCTAssertTrue(text.contains("普通段落"))
+        var bodyFont: Font?
+        for run in attributed.runs where String(attributed[run.range].characters).contains("普通段落") {
+            bodyFont = run.font
+        }
+        XCTAssertEqual(bodyFont, JarvisTypography.body)
+    }
+
+    /// 属性里的实体必须解码，否则 `&amp;` 会变成 URL 里的 `amp;` 走进请求。
+    func testAttributeEntitiesAreDecoded() {
+        let html = #"<a href="https://example.com/p?a=1&amp;b=2">链接</a><img src="https://cdn.example.com/a.jpg?w=600&amp;h=400">"#
+
+        let attributed = RSSArticleRenderer.attributedString(fromHTML: html)
+        let links = attributed.runs.compactMap(\.link)
+        XCTAssertEqual(links.first?.absoluteString, "https://example.com/p?a=1&b=2")
+
+        let images = RSSArticleRenderer.imageURLs(inHTML: html, baseURL: nil)
+        XCTAssertEqual(images.first?.absoluteString, "https://cdn.example.com/a.jpg?w=600&h=400")
     }
 }

@@ -48,10 +48,14 @@ final class RSSFeedStore: @unchecked Sendable {
     }
 
     func saveFeeds(_ feeds: [RSSFeed]) throws {
+        // 读不出来的旧内容绝不能被覆盖：先按「写入所依据的内容」读一次，读不出来
+        // 又挪不开留证时它会抛错，调用方据此拒绝写入（与其它存储同一条规矩）。
+        _ = try feedsFile.readForWriting(default: [])
         try feedsFile.writeOrThrow(feeds)
     }
 
     func saveGroups(_ groups: [RSSGroup]) throws {
+        _ = try groupsFile.readForWriting(default: [])
         try groupsFile.writeOrThrow(groups)
     }
 
@@ -62,7 +66,9 @@ final class RSSFeedStore: @unchecked Sendable {
     }
 
     func saveItems(_ items: [RSSItem], feedID: UUID) throws {
-        try itemsFile(for: feedID).writeOrThrow(items)
+        let file = itemsFile(for: feedID)
+        _ = try file.readForWriting(default: [])
+        try file.writeOrThrow(items)
     }
 
     func deleteItems(feedID: UUID) {
@@ -175,11 +181,14 @@ enum RSSItemMerge {
     ) -> [RSSItem] {
         entries.map { entry in
             RSSItem(
-                id: RSSItemIdentity.deduplicationKey(
-                    guid: entry.guid,
-                    link: entry.link,
-                    title: entry.title,
-                    publishedAt: entry.publishedAt
+                id: RSSItemIdentity.itemID(
+                    feedID: feedID,
+                    key: RSSItemIdentity.deduplicationKey(
+                        guid: entry.guid,
+                        link: entry.link,
+                        title: entry.title,
+                        publishedAt: entry.publishedAt
+                    )
                 ),
                 feedID: feedID,
                 title: entry.title,

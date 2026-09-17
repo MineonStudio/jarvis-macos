@@ -153,6 +153,12 @@ enum RSSFilterLogic {
 /// 同一条目每次抓取必须落回同一个 `id`，否则每次刷新都会把全部文章再插一遍。
 /// `guid` 优先，其次规范化链接，最后退回标题 + 时间的哈希。
 enum RSSItemIdentity {
+    /// 条目 ID 带上订阅源：同一篇文章同时出现在主站和分类 feed 里是两条记录，
+    /// 共用一个 ID 会让已读状态、星标和正文缓存互相串台。
+    static func itemID(feedID: UUID, key: String) -> String {
+        "\(feedID.uuidString):\(key)"
+    }
+
     static func deduplicationKey(
         guid: String?,
         link: URL?,

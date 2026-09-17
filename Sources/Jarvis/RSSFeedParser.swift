@@ -280,16 +280,19 @@ private final class RSSFeedParserDelegate: NSObject, XMLParserDelegate {
 
     func parser(
         _: XMLParser,
-        didEndElement _: String,
+        didEndElement elementName: String,
         namespaceURI _: String?,
         qualifiedName _: String?
     ) {
         guard let frame = openElements.popLast() else { return }
         let text = frame.text
         let isClosingEntry = entryDepth == openElements.count + 1 && (frame.name == "item" || frame.name == "entry")
+        // `localName` 会抹掉命名空间前缀，`<itunes:title>` 和 `<title>` 因此长得
+        // 一模一样；带前缀的一律不当作条目自身的标题/链接。
+        let isPrefixed = elementName.contains(":")
 
         if entry != nil {
-            apply(entryField: frame.name, text: text)
+            apply(entryField: frame.name, text: text, isPrefixed: isPrefixed)
         } else {
             applyFeedField(frame.name, text: text)
         }
@@ -324,13 +327,17 @@ private final class RSSFeedParserDelegate: NSObject, XMLParserDelegate {
         }
     }
 
-    private func apply(entryField name: String, text: String) {
+    private func apply(entryField name: String, text: String, isPrefixed: Bool) {
         guard entry != nil else { return }
         let value = Self.clean(text)
+        // 标题和链接只认条目的直接子元素、且不带命名空间前缀：聚合站点的
+        // `<source><title>` 在更深一层，播客的 `<itunes:title>` 则是靠前缀区分，
+        // 两者都会把 `localName` 抹成 `title`，不设这两道就会覆盖真正的标题。
+        let isOwnField = openElements.count == entryDepth && !isPrefixed
         switch name {
-        case "title":
+        case "title" where isOwnField:
             entry?.title = value
-        case "link":
+        case "link" where isOwnField:
             // Atom 的 link 走属性（handleLink），RSS 的走文本，这里补后者。
             if entry?.link == nil, let url = Self.absoluteURL(value, base: baseURL) {
                 entry?.link = url

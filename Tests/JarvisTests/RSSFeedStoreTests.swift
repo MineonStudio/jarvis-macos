@@ -148,6 +148,27 @@ final class RSSItemMergeTests: XCTestCase {
         XCTAssertEqual(result.items.map(\.id), ["guid:new", "guid:old"])
     }
 
+    /// 同一篇文章同时出现在主站和分类 feed 里是两条记录：ID 必须带订阅源，
+    /// 否则已读状态、星标和正文缓存会互相串台。
+    func testSameArticleInTwoFeedsGetsDistinctItemIDs() {
+        let entry = RSSParsedEntry(
+            guid: "https://example.com/post",
+            title: "同一篇",
+            link: URL(string: "https://example.com/post"),
+            author: nil,
+            publishedAt: nil,
+            summaryHTML: "",
+            contentHTML: nil,
+            enclosureURL: nil,
+            enclosureType: nil
+        )
+
+        let first = RSSItemMerge.makeItems(from: [entry], feedID: UUID())
+        let second = RSSItemMerge.makeItems(from: [entry], feedID: UUID())
+
+        XCTAssertNotEqual(first[0].id, second[0].id)
+    }
+
     func testMakeItemsUsesStableDeduplicationKeys() {
         let entry = RSSParsedEntry(
             guid: nil,
@@ -285,6 +306,24 @@ final class RSSFeedStoreTests: XCTestCase {
 
         store.deleteItems(feedID: feedID)
         XCTAssertTrue(store.loadItems(feedID: feedID).isEmpty)
+    }
+
+    /// 读不出来的旧内容必须挡住写入：这里把目录设成不可写，让损坏文件挪不走，
+    /// 保存就应该抛错而不是把订阅列表覆盖成空。
+    func testSaveRefusesToOverwriteUnreadableContent() throws {
+        let (store, directory) = makeStore()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let feedsFile = directory.appendingPathComponent("feeds.json")
+        try Data("{ 这不是 JSON".utf8).write(to: feedsFile)
+
+        // 目录不可写：quarantine 挪不动文件，JarvisJSONFile 会判定为 unreadable。
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+
+        XCTAssertThrowsError(try store.saveFeeds([RSSFeed(title: "新的", feedURL: XCTUnwrap(URL(string: "https://a.example.com/f")))]))
     }
 
     func testItemsAreSortedNewestFirstOnLoad() throws {

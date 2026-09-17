@@ -51,18 +51,13 @@ struct ContentView: View {
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar immediately;
             // the section task below mounts the page after the tab settles.
-            switch newSection {
-            case let .skill(skill):
-                navigationSelection = .skill(skill)
-            case .home:
-                navigationSelection = .home
-            case .aiConversation:
-                navigationSelection = .aiConversation
-            case .entertainment:
-                navigationSelection = .entertainment
-            case .settings:
-                navigationSelection = .settings
-            }
+            navigationSelection = TopLevelSection(appSection: newSection)
+        }
+        .onAppear {
+            // 窗口重建时（关窗后用菜单栏或通知再打开）本地 @State 会回到首页，
+            // 而 app.selectedSection 仍然是入口选好的那一项。这里补一次同步，
+            // 否则「打开订阅」只会打开首页。
+            adoptSelectedSection()
         }
         .task(id: navigationTargetID) {
             let nextSection = contentSection(for: navigationSelection)
@@ -89,6 +84,12 @@ struct ContentView: View {
         guard navigationSelection != section || app.selectedSection != section.appSection else { return }
         navigationSelection = section
         app.selectedSection = section.appSection
+    }
+
+    private func adoptSelectedSection() {
+        let target = TopLevelSection(appSection: app.selectedSection)
+        guard navigationSelection != target else { return }
+        navigationSelection = target
     }
 
     private var selectedSectionBinding: Binding<TopLevelSection> {
@@ -188,6 +189,16 @@ private enum TopLevelSection: Hashable, Identifiable {
     case aiConversation
     case entertainment
     case settings
+
+    init(appSection: AppSection) {
+        switch appSection {
+        case .home: self = .home
+        case let .skill(skill): self = .skill(skill)
+        case .aiConversation: self = .aiConversation
+        case .entertainment: self = .entertainment
+        case .settings: self = .settings
+        }
+    }
 
     var id: String {
         switch self {

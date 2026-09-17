@@ -271,6 +271,46 @@ final class RSSFeedParserTests: XCTestCase {
         XCTAssertFalse(RSSFeedParser.looksLikeFeed(Data(RSSFeedFixtures.notAFeed.utf8)))
     }
 
+    /// 聚合站点的 `<source><title>` 和播客的 `<itunes:title>` 都在更深一层，
+    /// 不按层深过滤就会把条目标题覆盖成来源站的名字。
+    func testNestedSourceTitleDoesNotOverrideEntryTitle() throws {
+        let atomWithSource = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>聚合站</title>
+          <entry>
+            <title>真正的标题</title>
+            <link href="https://example.com/1"/>
+            <id>tag:example.com,2026:1</id>
+            <source><title>来源站点</title></source>
+          </entry>
+        </feed>
+        """
+
+        let feed = try RSSFeedParser.parse(Data(atomWithSource.utf8))
+        XCTAssertEqual(feed.entries.first?.title, "真正的标题")
+    }
+
+    func testPodcastNamespacedTitleDoesNotOverrideEntryTitle() throws {
+        let rssWithItunesTitle = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+          <channel>
+            <title>播客</title>
+            <link>https://podcast.example.com</link>
+            <item>
+              <title>本期节目</title>
+              <link>https://podcast.example.com/1</link>
+              <itunes:title>iTunes 里的标题</itunes:title>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let feed = try RSSFeedParser.parse(Data(rssWithItunesTitle.utf8))
+        XCTAssertEqual(feed.entries.first?.title, "本期节目")
+    }
+
     func testParsesRFC822AndISODatesEqually() {
         XCTAssertNotNil(RSSDateParser.parse("Mon, 15 Sep 2026 08:30:00 +0800"))
         XCTAssertNotNil(RSSDateParser.parse("2026-09-15T08:30:00+08:00"))

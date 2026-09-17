@@ -64,6 +64,10 @@ extension AppModel {
         rssRefreshInterval = loadRSSRefreshInterval()
         rssNotificationsEnabled = loadRSSNotificationsEnabled()
         UNUserNotificationCenter.current().delegate = rssNotificationDelegate
+        // 授权状态只存在系统里，重启后必须重新问一次，否则通知会静默地全部丢掉。
+        Task { [weak self] in
+            await self?.rssNotifications.refreshAuthorizationState()
+        }
         rssNotificationDelegate.onOpenItem = { [weak self] itemID in
             guard let self else { return }
             selectedSection = .skill(.rss)
@@ -219,10 +223,12 @@ extension AppModel {
                     "duplicates": String(result.duplicateCount)
                 ]
             )
-            if added > 0, rssNotificationsEnabled {
+            guard added > 0 else { return }
+            if rssNotificationsEnabled {
                 await rssNotifications.requestAuthorizationIfNeeded()
-                await refreshAllRSSFeeds(manual: true)
             }
+            // 抓取和通知开关无关：关掉通知也得把导入的订阅拉一遍，否则列表是空的。
+            await refreshAllRSSFeeds(manual: true)
         } catch {
             rssStorageError = "OPML 导入失败：\(error.localizedDescription)"
             JarvisLog.error(category: .storage, event: "rss.opml.importFailed", error: error)
@@ -283,80 +289,117 @@ extension AppModel {
     /// 抓单个订阅源。`notModified` 时只更新条件请求凭据，不解析也不落盘。
     @discardableResult
     func refreshRSSFeed(_ feed: RSSFeed, collectNewItems: Bool = true) async -> RSSRefreshOutcome {
-        guard let index = rssFeeds.firstIndex(where: { $0.id == feed.id }) else {
+        guard let snapshot = rssFeeds.first(where: { $0.id == feed.id }) else {
             return RSSRefreshOutcome()
         }
-        var current = rssFeeds[index]
+        let feedID = feed.id
         var outcome = RSSRefreshOutcome()
 
         do {
             let response = try await rssClient.fetch(
                 RSSFetchRequest(
-                    url: current.feedURL,
-                    etag: current.etag,
-                    lastModified: current.lastModified
+                    url: snapshot.feedURL,
+                    etag: snapshot.etag,
+                    lastModified: snapshot.lastModified
                 )
             )
-            current.lastFetchedAt = Date()
-            current.failureCount = 0
-            current.lastErrorMessage = nil
 
             if response.notModified {
-                current.lastSuccessAt = Date()
-                current.etag = response.etag
-                current.lastModified = response.lastModified
-                rssFeeds[index] = current
-                persistRSSFeedList()
+                updateRSSFeedRecord(feedID) { current in
+                    current.lastFetchedAt = Date()
+                    current.lastSuccessAt = Date()
+                    current.failureCount = 0
+                    current.lastErrorMessage = nil
+                    current.etag = response.etag
+                    current.lastModified = response.lastModified
+                }
                 return outcome
             }
 
-            let parsed = try RSSFeedParser.parse(response.data, baseURL: current.feedURL)
-            if let title = parsed.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-                current.title = title
-            }
-            if let siteURL = parsed.siteURL {
-                current.siteURL = siteURL
-            }
-            if let iconURL = parsed.iconURL {
-                current.iconURL = iconURL
-            }
-            current.etag = response.etag
-            current.lastModified = response.lastModified
-            current.lastSuccessAt = Date()
+            // 解析放在后台队列：上限 10 MB 的 XML 不能压在主线程上，否则订阅一个
+            // 大 feed 就是一次界面卡死。
+            let data = response.data
+            let baseURL = snapshot.feedURL
+            let parsed = try await Task.detached(priority: .utility) {
+                try RSSFeedParser.parse(data, baseURL: baseURL)
+            }.value
 
-            let incoming = RSSItemMerge.makeItems(from: parsed.entries, feedID: current.id)
+            let existing = rssItemsByFeed[feedID] ?? []
             let merge = RSSItemMerge.merge(
-                existing: rssItemsByFeed[current.id] ?? [],
-                incoming: incoming
+                existing: existing,
+                incoming: RSSItemMerge.makeItems(from: parsed.entries, feedID: feedID)
             )
-            cacheRSSContent(for: parsed.entries, itemIDs: Set(merge.insertedIDs), feedID: current.id)
-            rssStore.deleteContent(itemIDs: merge.removedIDs)
-            rssItemsByFeed[current.id] = merge.items
-            current.itemCount = merge.items.count
-            current.unreadCount = merge.items.count { !$0.isRead }
-            rssFeeds[index] = current
-            try? rssStore.saveItems(merge.items, feedID: current.id)
-            persistRSSFeedList()
+            let insertedIDs = Set(merge.insertedIDs)
+            let pendingContent = Self.rssContentToCache(
+                entries: parsed.entries,
+                feedID: feedID,
+                insertedIDs: insertedIDs
+            )
+
+            // 正文写盘与淘汰也在后台做，回主线程只更新标记。
+            let store = rssStore
+            let removedIDs = merge.removedIDs
+            let cachedIDs = await Task.detached(priority: .utility) { () -> Set<String> in
+                store.deleteContent(itemIDs: removedIDs)
+                var written: Set<String> = []
+                for entry in pendingContent {
+                    do {
+                        try store.writeContent(entry.html, itemID: entry.itemID)
+                        written.insert(entry.itemID)
+                    } catch {
+                        // 写不进去只是这一篇退回摘要渲染，但失败必须留下记录。
+                        JarvisLog.error(
+                            category: .storage,
+                            event: "rss.content.writeFailed",
+                            error: error
+                        )
+                    }
+                }
+                return written
+            }.value
+
+            var items = merge.items
+            if !cachedIDs.isEmpty {
+                for index in items.indices where cachedIDs.contains(items[index].id) {
+                    items[index].hasCachedContent = true
+                }
+            }
+            persistRSSItems(items, feedID: feedID)
+            updateRSSFeedRecord(feedID) { current in
+                if let title = parsed.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                    current.title = title
+                }
+                if let siteURL = parsed.siteURL {
+                    current.siteURL = siteURL
+                }
+                if let iconURL = parsed.iconURL {
+                    current.iconURL = iconURL
+                }
+                current.etag = response.etag
+                current.lastModified = response.lastModified
+                current.lastFetchedAt = Date()
+                current.lastSuccessAt = Date()
+                // 只有整条链路（抓取 + 解析 + 合并）都成功才清零，否则一个一直返回
+                // 错误页面的 feed 会永远停在第 1 次失败，退避永远不升级。
+                current.failureCount = 0
+                current.lastErrorMessage = nil
+            }
 
             if collectNewItems {
-                let newIDs = Set(merge.insertedIDs)
-                outcome.newItems = merge.items.filter { newIDs.contains($0.id) }
+                outcome.newItems = items.filter { insertedIDs.contains($0.id) }
             }
         } catch {
-            current.lastFetchedAt = Date()
-            current.failureCount += 1
-            current.lastErrorMessage = error.localizedDescription
-            rssFeeds[index] = current
-            persistRSSFeedList()
-            outcome.failures[current.id] = error.localizedDescription
+            updateRSSFeedRecord(feedID) { current in
+                current.lastFetchedAt = Date()
+                current.failureCount += 1
+                current.lastErrorMessage = error.localizedDescription
+            }
+            outcome.failures[feedID] = error.localizedDescription
             JarvisLog.error(
                 category: .network,
                 event: "rss.feed.refreshFailed",
                 error: error,
-                fields: [
-                    "failureCount": String(current.failureCount),
-                    "host": current.feedURL.host ?? ""
-                ]
+                fields: ["host": snapshot.feedURL.host ?? ""]
             )
         }
         return outcome
@@ -493,6 +536,16 @@ extension AppModel {
         persistRSSFeedList()
     }
 
+    /// 抓取流程专用的更新：按 ID 定位，且不重排列表。
+    ///
+    /// 网络等待期间用户可能删掉订阅、订阅新的源或者改名，拿 `await` 之前记下的
+    /// 下标去写会写到别的订阅上，列表变短时还会直接越界崩溃。
+    private func updateRSSFeedRecord(_ feedID: UUID, mutate: (inout RSSFeed) -> Void) {
+        guard let index = rssFeeds.firstIndex(where: { $0.id == feedID }) else { return }
+        mutate(&rssFeeds[index])
+        persistRSSFeedList()
+    }
+
     /// 条目落盘的同时把订阅列表里的计数一起更新，否则角标会和列表对不上。
     private func persistRSSItems(_ items: [RSSItem], feedID: UUID) {
         rssItemsByFeed[feedID] = items
@@ -519,34 +572,32 @@ extension AppModel {
         }
     }
 
-    /// 首屏抓取时每条正文都要写一个文件，限制一次写入的条数，避免导入 OPML 时
-    /// 一口气砸下几千个文件。
-    private func cacheRSSContent(for entries: [RSSParsedEntry], itemIDs: Set<String>, feedID: UUID) {
-        let feedID = feedID
-        var written = 0
+    /// 挑出本轮要缓存正文的新条目。纯函数，写盘交给调用方在后台做。
+    ///
+    /// 只缓存新增条目并设上限：首轮导入 OPML 时一口气能来几千条，全写下去既慢又
+    /// 没必要——旧条目退回摘要渲染就够了。
+    static func rssContentToCache(
+        entries: [RSSParsedEntry],
+        feedID: UUID,
+        insertedIDs: Set<String>
+    ) -> [(itemID: String, html: String)] {
+        var pending: [(itemID: String, html: String)] = []
         for entry in entries {
-            guard written < Self.rssContentCacheLimitPerRefresh else { break }
-            guard let content = entry.contentHTML, !content.isEmpty else { continue }
-            let key = RSSItemIdentity.deduplicationKey(
-                guid: entry.guid,
-                link: entry.link,
-                title: entry.title,
-                publishedAt: entry.publishedAt
+            guard pending.count < rssContentCacheLimitPerRefresh else { break }
+            guard let html = entry.contentHTML, !html.isEmpty else { continue }
+            let itemID = RSSItemIdentity.itemID(
+                feedID: feedID,
+                key: RSSItemIdentity.deduplicationKey(
+                    guid: entry.guid,
+                    link: entry.link,
+                    title: entry.title,
+                    publishedAt: entry.publishedAt
+                )
             )
-            guard itemIDs.contains(key) else { continue }
-            do {
-                try rssStore.writeContent(content, itemID: key)
-                written += 1
-                if var items = rssItemsByFeed[feedID],
-                   let index = items.firstIndex(where: { $0.id == key })
-                {
-                    items[index].hasCachedContent = true
-                    rssItemsByFeed[feedID] = items
-                }
-            } catch {
-                JarvisLog.error(category: .storage, event: "rss.content.writeFailed", error: error)
-            }
+            guard insertedIDs.contains(itemID) else { continue }
+            pending.append((itemID: itemID, html: html))
         }
+        return pending
     }
 
     private static let rssContentCacheLimitPerRefresh = 150

@@ -107,12 +107,23 @@ private struct JarvisRootView: View {
 private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     private let menuBarController = JarvisMenuBarController.shared
     private let instanceCoordinator = JarvisInstanceCoordinator()
+    private var screenParametersObserver: (any NSObjectProtocol)?
     weak var appModel: AppModel?
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
         menuBarController.install()
         NSApp.activate()
+        // 挂在委托上而不是主窗口上：主窗口关着时贴图也可能还在。
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.appModel?.handleScreenParametersChange()
+            }
+        }
         JarvisLog.info(
             category: .lifecycle,
             event: "application.didFinishLaunching"
@@ -136,6 +147,9 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+        }
         JarvisLog.notice(category: .lifecycle, event: "application.willTerminate")
         // 日志写入是异步批量的，退出前把还没落盘的事件写完。
         JarvisLog.flush()

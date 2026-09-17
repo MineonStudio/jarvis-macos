@@ -317,6 +317,14 @@ final class AppModel {
         )
     }
 
+    /// 显示器排布变化（拔插外接屏、改分辨率）时收拾场子。
+    ///
+    /// 贴图是常驻窗口：所在那块屏消失后它既点不到也拿不到焦点，Esc 也关不掉，
+    /// 只能重启应用。完全出屏的直接销毁，还留在屏幕内的重新收进可见范围。
+    func handleScreenParametersChange() {
+        screenshotController.reconcilePinnedScreenshotsWithVisibleDisplays()
+    }
+
     private func startDeferredStartup() {
         let startedAt = Date()
         JarvisLog.info(

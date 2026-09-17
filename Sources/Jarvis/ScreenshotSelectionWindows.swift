@@ -537,11 +537,7 @@ final class PinnedScreenshotItem {
     let contentInset: CGFloat = 40
     var data: Data
     var containerView: PinnedScreenshotContainerView?
-    var toolbarWindow: NSPanel?
-    var toolbarLayout: ScreenshotToolbarLayoutModel?
-    var editorObservation: AnyCancellable?
     var onAction: ((ScreenshotAction) -> Void)?
-    var showsToolbar = false
     var showsShadow = true
 
     var imageFrame: CGRect {

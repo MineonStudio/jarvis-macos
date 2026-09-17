@@ -44,7 +44,6 @@ extension ScreenshotCaptureController {
                   selectedPinnedID == item.id else { return }
             // The toolbar is a child window. Clicking a toolbar control can
             // briefly move key-window status to it, so keep the pin selected.
-            guard item.toolbarWindow?.isKeyWindow != true else { return }
             deselectPinnedScreenshot(item)
         }
 
@@ -102,15 +101,9 @@ extension ScreenshotCaptureController {
         setPinnedSelectionAppearance(item, selected: true)
         item.window.orderFrontRegardless()
         item.window.makeKey()
-        if item.showsToolbar {
-            showPinnedToolbar(for: item)
-        } else {
-            hidePinnedToolbar(for: item)
-        }
     }
 
     private func deselectPinnedScreenshot(_ item: PinnedScreenshotItem) {
-        hidePinnedToolbar(for: item)
         setPinnedSelectionAppearance(item, selected: false)
         if selectedPinnedID == item.id {
             selectedPinnedID = nil
@@ -128,185 +121,37 @@ extension ScreenshotCaptureController {
         item.window.hasShadow = false
     }
 
-    private func showPinnedToolbar(for item: PinnedScreenshotItem) {
-        guard item.toolbarWindow == nil else {
-            resizePinnedToolbar(for: item)
-            return
-        }
-
-        let placement = toolbarFrame(
-            for: item.imageFrame,
-            height: ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbarMetrics.baseWidth
-        )
-        let layout = ScreenshotToolbarLayoutModel(width: placement.rect.width)
-        layout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
-        let toolbarPanel = NSPanel(
-            contentRect: placement.rect,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        toolbarPanel.level = .screenSaver
-        toolbarPanel.backgroundColor = .clear
-        toolbarPanel.isOpaque = false
-        toolbarPanel.hasShadow = false
-        toolbarPanel.hidesOnDeactivate = false
-        toolbarPanel.isReleasedWhenClosed = false
-        toolbarPanel.animationBehavior = .none
-
-        let toolbarHostingView = NSHostingView(
-            rootView: ScreenshotToolbar(
-                editor: item.editor,
-                layout: layout,
-                onAction: { [weak self, weak item] action in
-                    guard let self, let item else { return }
-                    handlePinnedToolbarAction(action, for: item)
-                }
-            )
-        )
-        toolbarHostingView.autoresizingMask = NSView.AutoresizingMask(arrayLiteral: .width, .height)
-        toolbarHostingView.frame = NSRect(origin: .zero, size: placement.rect.size)
-        toolbarPanel.contentView = toolbarHostingView
-
-        item.window.addChildWindow(toolbarPanel, ordered: .above)
-        item.toolbarWindow = toolbarPanel
-        item.toolbarLayout = layout
-        toolbarPanel.orderFrontRegardless()
-
-        item.editorObservation = item.editor.objectWillChange.sink { [weak self, weak item] _ in
-            DispatchQueue.main.async {
-                guard let self, let item else { return }
-                self.resizePinnedToolbar(for: item)
-            }
-        }
-    }
-
-    private func hidePinnedToolbar(for item: PinnedScreenshotItem) {
-        if let toolbarWindow = item.toolbarWindow {
-            item.window.removeChildWindow(toolbarWindow)
-            toolbarWindow.orderOut(nil)
-        }
-        item.toolbarWindow = nil
-        item.toolbarLayout = nil
-        item.editorObservation?.cancel()
-        item.editorObservation = nil
-        item.editor.selectTool(nil)
-    }
-
-    /// 把工具栏挪到新位置。
+    /// 显示器排布变化后收拾贴图：所在那块屏没了的直接销毁，否则把它收回可见范围。
     ///
-    /// 这个函数挂在 `editor.objectWillChange` 上，编辑器的每次变更都会走到它——拖动
-    /// 标注时就是每个鼠标事件一次。原本无条件 `setFrame(display: true)`：帧没变也会
-    /// 强制一次同步重绘，并且每次都写一遍 `@Published` 的 width，让整个 SwiftUI 工具栏
-    /// 重新排布一次。
-    private func applyToolbarFrame(
-        _ placement: ToolbarFramePlacement,
-        to window: NSWindow,
-        updating layout: ScreenshotToolbarLayoutModel?
-    ) {
-        let frame = placement.rect
-        if window.frame != frame {
-            window.setFrame(frame, display: false, animate: false)
-            window.contentView?.frame = NSRect(origin: .zero, size: frame.size)
-        }
-        guard let layout else { return }
-        if layout.width != frame.width {
-            layout.width = frame.width
-        }
-        if layout.placesSecondaryRowAboveMain != placement.placesSecondaryRowAboveMain {
-            layout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
-        }
-    }
+    /// 不做这一步，拔掉外接屏后留下的贴图会变成幽灵窗口——不在任何屏幕上、点不到、
+    /// 拿不到焦点，Esc 也关不掉，只能重启应用。
+    func reconcilePinnedScreenshotsWithVisibleDisplays() {
+        let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+        guard !visibleFrames.isEmpty else { return }
 
-    private func resizePinnedToolbar(for item: PinnedScreenshotItem) {
-        guard let toolbarWindow = item.toolbarWindow else { return }
-        let placement = toolbarFrame(
-            for: item.imageFrame,
-            height: item.editor.secondaryBarVisible
-                ? ScreenshotToolbarMetrics.expandedHeight
-                : ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbarMetrics.baseWidth
+        for item in pinnedItems.values {
+            let frame = item.window.frame
+            guard let host = visibleFrames.first(where: { $0.intersects(frame) }) else {
+                destroyPinnedScreenshot(item)
+                continue
+            }
+            var clamped = frame
+            clamped.origin.x = min(max(clamped.minX, host.minX), max(host.minX, host.maxX - clamped.width))
+            clamped.origin.y = min(max(clamped.minY, host.minY), max(host.minY, host.maxY - clamped.height))
+            guard clamped != frame else { continue }
+            item.window.setFrame(clamped, display: false)
+        }
+        JarvisLog.notice(
+            category: .window,
+            event: "screenshot.pinned.reconciled",
+            result: "success",
+            fields: ["count": String(pinnedItems.count)]
         )
-        applyToolbarFrame(placement, to: toolbarWindow, updating: item.toolbarLayout)
-    }
-
-    private func handlePinnedToolbarAction(
-        _ action: ScreenshotAction,
-        for item: PinnedScreenshotItem
-    ) {
-        switch action {
-        case .saveRequested:
-            finishPinnedScreenshot(item, makeAction: ScreenshotAction.save)
-        case .confirmRequested:
-            finishPinnedScreenshot(item, makeAction: ScreenshotAction.confirm)
-        case let .save(data):
-            let onAction = item.onAction
-            destroyPinnedScreenshot(item)
-            onAction?(.save(data))
-        case let .confirm(data):
-            let onAction = item.onAction
-            destroyPinnedScreenshot(item)
-            onAction?(.confirm(data))
-        case .cancel:
-            destroyPinnedScreenshot(item)
-        case let .tool(tool):
-            resizePinnedToolbar(for: item)
-            item.onAction?(.tool(tool))
-        case .translation:
-            item.editor.startTranslation()
-            resizePinnedToolbar(for: item)
-        case .startTranslation:
-            item.editor.startTranslation()
-            resizePinnedToolbar(for: item)
-        case .cancelTranslation:
-            item.editor.cancelTranslation()
-            resizePinnedToolbar(for: item)
-        case .toggleTranslationVisibility:
-            item.editor.translationVisible.toggle()
-            resizePinnedToolbar(for: item)
-        case .undo, .redo, .delete, .duplicate:
-            handlePinnedEditorAction(action, for: item)
-        case .pin:
-            break
-        }
-    }
-
-    private func finishPinnedScreenshot(
-        _ item: PinnedScreenshotItem,
-        makeAction: @escaping (Data) -> ScreenshotAction
-    ) {
-        let editor = item.editor
-        let onAction = item.onAction
-        destroyPinnedScreenshot(item)
-        Task { @MainActor in
-            await onAction?(makeAction(editor.finalPNGData()))
-        }
-    }
-
-    private func handlePinnedEditorAction(_ action: ScreenshotAction, for item: PinnedScreenshotItem) {
-        switch action {
-        case .undo:
-            item.editor.undo()
-            item.onAction?(.undo)
-        case .redo:
-            item.editor.redo()
-            item.onAction?(.redo)
-        case .delete:
-            item.editor.deleteSelectedAnnotation()
-            item.onAction?(.delete)
-        case .duplicate:
-            item.editor.duplicateSelectedAnnotation()
-            item.onAction?(.duplicate)
-        default:
-            break
-        }
     }
 
     private func destroyPinnedScreenshot(_ item: PinnedScreenshotItem) {
         guard pinnedItems.removeValue(forKey: item.id) != nil else { return }
         item.editor.cancelTranslation()
-        hidePinnedToolbar(for: item)
         item.window.onEscape = nil
         item.window.onDidResignKey = nil
         item.window.orderOut(nil)
@@ -340,6 +185,25 @@ extension ScreenshotCaptureController {
             // 窗口下沿已经在选区顶边之上 = 整条工具栏在选区上方。
             placesSecondaryRowAboveMain: rect.minY >= imageFrame.maxY - 1
         )
+    }
+
+    private func applyToolbarFrame(
+        _ placement: ToolbarFramePlacement,
+        to window: NSWindow,
+        updating layout: ScreenshotToolbarLayoutModel?
+    ) {
+        let frame = placement.rect
+        if window.frame != frame {
+            window.setFrame(frame, display: false, animate: false)
+            window.contentView?.frame = NSRect(origin: .zero, size: frame.size)
+        }
+        guard let layout else { return }
+        if layout.width != frame.width {
+            layout.width = frame.width
+        }
+        if layout.placesSecondaryRowAboveMain != placement.placesSecondaryRowAboveMain {
+            layout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
+        }
     }
 
     func resizeToolbar(for editor: ScreenshotEditorModel, on screenFrame: CGRect) {

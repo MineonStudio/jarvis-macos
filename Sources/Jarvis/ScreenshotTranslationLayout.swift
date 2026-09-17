@@ -10,18 +10,15 @@ struct ScreenshotTranslationLayoutMetrics: Equatable, Sendable {
     let displayLineBounds: [CGRect]
 }
 
-private struct ScreenshotTranslationTextLayoutRequest {
+private struct ScreenshotTranslationTextUnit {
     let text: String
-    let sourceLineCount: Int
-    let sourceWidths: [CGFloat]
-    let baseFontSize: CGFloat
-    let minimumFontSize: CGFloat
-    let maximumLineCount: Int
-    let maximumWidth: CGFloat
+    let isWhitespace: Bool
 }
 
 enum ScreenshotTranslationTextLayout {
-    static let minimumFontScale: CGFloat = 0.5
+    /// 译文最多缩小到基准字号的这个比例。再放不下就按可用行数截断，
+    /// 而不是继续缩小——否则同一张图里的字号会相差数倍。
+    static let minimumFontScale: CGFloat = 0.6
 
     static func measuredWidth(_ text: String, fontSize: CGFloat) -> CGFloat {
         let font = NSFont.systemFont(ofSize: max(1, fontSize), weight: .medium)
@@ -33,47 +30,20 @@ enum ScreenshotTranslationTextLayout {
         return font.ascender - font.descender + font.leading
     }
 
+    /// 按整段文本自然折行：中日韩字符可以任意位置断行，拉丁单词、数字、网址整体保留。
     static func wrappedLines(
         _ text: String,
         fontSize: CGFloat,
         maximumWidth: CGFloat
     ) -> [String] {
         let width = max(1, maximumWidth)
-        var result: [String] = []
+        var lines: [String] = []
 
         for paragraph in text.components(separatedBy: "\n") {
-            guard !paragraph.isEmpty else {
-                result.append("")
-                continue
-            }
-
-            var current = ""
-            for character in paragraph {
-                let candidate = current + String(character)
-                if current.isEmpty || measuredWidth(candidate, fontSize: fontSize) <= width {
-                    current = candidate
-                    continue
-                }
-
-                if let breakIndex = current.lastIndex(where: { $0.isWhitespace }) {
-                    let line = current[..<breakIndex]
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !line.isEmpty {
-                        result.append(line)
-                    }
-                    let remainderStart = current.index(after: breakIndex)
-                    current = String(current[remainderStart...]) + String(character)
-                } else {
-                    result.append(current)
-                    current = String(character)
-                }
-            }
-            if !current.isEmpty {
-                result.append(current.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
+            appendWrappedParagraph(paragraph, fontSize: fontSize, width: width, to: &lines)
         }
 
-        return result.isEmpty ? [""] : result
+        return lines
     }
 
     static func limitedLines(_ lines: [String], to maximumLines: Int) -> [String] {
@@ -85,69 +55,121 @@ enum ScreenshotTranslationTextLayout {
         return visible
     }
 
-    static func lineSlots(
-        _ text: String,
-        sourceWidths: [CGFloat],
+    private static func appendWrappedParagraph(
+        _ paragraph: String,
         fontSize: CGFloat,
-        maximumWidth: CGFloat
-    ) -> [String] {
-        guard sourceWidths.count > 1 else {
-            return wrappedLines(text, fontSize: fontSize, maximumWidth: maximumWidth)
-        }
+        width: CGFloat,
+        to lines: inout [String]
+    ) {
+        let units = wrappingUnits(in: paragraph)
+        guard !units.isEmpty else { return }
 
-        let characters = Array(text)
-        guard !characters.isEmpty else { return [""] }
-        var lines: [String] = []
-        var cursor = 0
-
-        for slotIndex in sourceWidths.indices {
-            guard cursor < characters.count else {
-                lines.append("")
+        var current = ""
+        for unit in units {
+            if unit.isWhitespace {
+                // 行首不保留空白，行尾空白在入行时去掉。
+                if !current.isEmpty {
+                    current += unit.text
+                }
                 continue
             }
-            let slotsRemaining = sourceWidths.count - slotIndex
-            let charactersRemaining = characters.count - cursor
-            let targetCount = max(1, Int(ceil(
-                Double(charactersRemaining) / Double(slotsRemaining)
-            )))
-            let width = min(maximumWidth, max(1, sourceWidths[slotIndex]))
-            var end = min(characters.count, cursor + targetCount)
-            while end > cursor + 1,
-                  measuredWidth(
-                      String(characters[cursor ..< end]),
-                      fontSize: fontSize
-                  ) > width
-            {
-                end -= 1
+
+            if measuredWidth(current + unit.text, fontSize: fontSize) <= width {
+                current += unit.text
+                continue
+            }
+            if !current.isEmpty {
+                lines.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            }
+            if measuredWidth(unit.text, fontSize: fontSize) <= width {
+                current = unit.text
+                continue
             }
 
-            if end < characters.count {
-                let candidate = characters[cursor ..< end]
-                if let breakOffset = candidate.lastIndex(where: { $0.isWhitespace }),
-                   breakOffset > 0
-                {
-                    end = breakOffset
+            // 单个不可拆单元本身就超宽（长单词、无空格网址）：只能按字符硬拆，
+            // 最后一段留给这一行继续拼接。
+            let chunks = splitOverwideUnit(unit.text, fontSize: fontSize, width: width)
+            lines.append(contentsOf: chunks.dropLast())
+            current = chunks.last ?? ""
+        }
+
+        let trimmed = current.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            lines.append(trimmed)
+        }
+    }
+
+    private static func splitOverwideUnit(
+        _ unit: String,
+        fontSize: CGFloat,
+        width: CGFloat
+    ) -> [String] {
+        var chunks: [String] = []
+        var chunk = ""
+        for character in unit {
+            let candidate = chunk + String(character)
+            if chunk.isEmpty || measuredWidth(candidate, fontSize: fontSize) <= width {
+                chunk = candidate
+            } else {
+                chunks.append(chunk)
+                chunk = String(character)
+            }
+        }
+        if !chunk.isEmpty {
+            chunks.append(chunk)
+        }
+        return chunks
+    }
+
+    private static func wrappingUnits(in text: String) -> [ScreenshotTranslationTextUnit] {
+        var units: [ScreenshotTranslationTextUnit] = []
+        var word = ""
+
+        for character in text {
+            if character.isWhitespace {
+                if !word.isEmpty {
+                    units.append(ScreenshotTranslationTextUnit(text: word, isWhitespace: false))
+                    word = ""
                 }
+                if let last = units.last, last.isWhitespace {
+                    units[units.count - 1] = ScreenshotTranslationTextUnit(
+                        text: last.text + String(character),
+                        isWhitespace: true
+                    )
+                } else {
+                    units.append(ScreenshotTranslationTextUnit(text: String(character), isWhitespace: true))
+                }
+                continue
             }
 
-            end = max(cursor + 1, end)
-            lines.append(
-                String(characters[cursor ..< end])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            )
-            cursor = end
+            if breaksEagerly(character) {
+                if !word.isEmpty {
+                    units.append(ScreenshotTranslationTextUnit(text: word, isWhitespace: false))
+                    word = ""
+                }
+                units.append(ScreenshotTranslationTextUnit(text: String(character), isWhitespace: false))
+            } else {
+                word.append(character)
+            }
         }
 
-        if cursor < characters.count {
-            lines.append(
-                contentsOf: wrappedLines(
-                    String(characters[cursor...]),
-                    fontSize: fontSize,
-                    maximumWidth: maximumWidth
-                )
-            )
+        if !word.isEmpty {
+            units.append(ScreenshotTranslationTextUnit(text: word, isWhitespace: false))
         }
-        return lines.isEmpty ? [""] : lines
+        return units
+    }
+
+    /// 中日韩文字、谚文与全角字符可以在任意位置断行；拉丁词、数字、网址必须整体保留。
+    private static func breaksEagerly(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { scalar in
+            scalar.properties.isIdeographic
+                || (0x2E80 ... 0x2EFF).contains(scalar.value)
+                || (0x3000 ... 0x303F).contains(scalar.value)
+                || (0x3040 ... 0x30FF).contains(scalar.value)
+                || (0xAC00 ... 0xD7AF).contains(scalar.value)
+                || (0xFF00 ... 0xFFEF).contains(scalar.value)
+        }
     }
 }
 
@@ -155,6 +177,9 @@ enum ScreenshotTranslationLayout {
     private static let minimumReadableFontSize: CGFloat = 8
     private static let blockSpacing: CGFloat = 4
     private static let verticalSpacing: CGFloat = 6
+    private static let lineShrinkStep: CGFloat = 0.95
+    /// 折行时预留的宽度余量，抵消 SwiftUI 与 AppKit 的字宽测量差异。
+    private static let widthSafetyMargin: CGFloat = 2
 
     private struct BlockLimits {
         let maximumWidth: CGFloat
@@ -164,6 +189,15 @@ enum ScreenshotTranslationLayout {
     private struct ResolvedTextLayout {
         let fontSize: CGFloat
         let lines: [String]
+    }
+
+    private struct ScreenshotTranslationTextLayoutRequest {
+        let text: String
+        let baseFontSize: CGFloat
+        let minimumFontSize: CGFloat
+        let maximumHeight: CGFloat
+        let wrappingWidth: CGFloat
+        let allowsSingleLineFit: Bool
     }
 
     static func apply(
@@ -208,75 +242,35 @@ enum ScreenshotTranslationLayout {
         }
     }
 
-    static func metrics(
-        for block: ScreenshotTranslationRenderBlock,
-        among blocks: [ScreenshotTranslationRenderBlock],
-        canvasSize: CGSize,
-        translationRegion: CGRect? = nil
-    ) -> ScreenshotTranslationLayoutMetrics {
-        let canvasBounds = CGRect(origin: .zero, size: canvasSize)
-        let region = clampedBounds(translationRegion ?? canvasBounds, in: canvasBounds)
-        let sortedBlocks = blocks.sorted { lhs, rhs in
-            if lhs.bounds.minY != rhs.bounds.minY {
-                return lhs.bounds.minY < rhs.bounds.minY
-            }
-            return lhs.bounds.minX < rhs.bounds.minX
-        }
-        let limits = makeLimits(for: sortedBlocks, in: region)
-        return metrics(
-            for: block,
-            limits: limits[block.id] ?? BlockLimits(
-                maximumWidth: max(1, region.width),
-                maximumHeight: max(1, region.height)
-            ),
-            region: region
-        )
-    }
-
     private static func metrics(
         for block: ScreenshotTranslationRenderBlock,
         limits: BlockLimits,
         region: CGRect
     ) -> ScreenshotTranslationLayoutMetrics {
         let sourceBounds = clampedBounds(block.bounds, in: region)
-        let sourceLineHeight = block.sourceLineHeight > 0
-            ? block.sourceLineHeight
-            : sourceBounds.height
-        let baseFontSize = max(1, sourceLineHeight - 2)
+        let baseFontSize = max(1, resolvedSourceLineHeight(for: block) - 2)
         let horizontalPadding = min(6, max(2, sourceBounds.height * 0.2))
         let availableTextWidth = max(1, limits.maximumWidth - horizontalPadding * 2)
-        let sourceLineCount = max(1, block.sourceLines.count)
-        let lineHeight = ScreenshotTranslationTextLayout.measuredLineHeight(
-            fontSize: baseFontSize
-        )
-        let maximumLineCount = max(
-            sourceLineCount,
-            Int(max(1, (limits.maximumHeight - verticalSpacing * 2) / max(lineHeight, 1)))
-        )
-        let minimumFontSize = max(
-            1,
-            min(minimumReadableFontSize, baseFontSize * ScreenshotTranslationTextLayout.minimumFontScale)
-        )
-        let sourceWidths = block.sourceLines.map(\.bounds.width)
+        let wrappingWidth = max(1, availableTextWidth - widthSafetyMargin)
+        let minimumFontSize = minimumFontSize(for: baseFontSize)
 
-        let textLayout = resolveTextLayout(
+        let resolved = resolveTextLayout(
             ScreenshotTranslationTextLayoutRequest(
                 text: block.translatedText,
-                sourceLineCount: sourceLineCount,
-                sourceWidths: sourceWidths,
                 baseFontSize: baseFontSize,
                 minimumFontSize: minimumFontSize,
-                maximumLineCount: maximumLineCount,
-                maximumWidth: availableTextWidth
+                maximumHeight: limits.maximumHeight,
+                wrappingWidth: wrappingWidth,
+                allowsSingleLineFit: block.sourceLines.count <= 1
             )
         )
-        let fontSize = textLayout.fontSize
-        let lines = textLayout.lines
 
-        let lineLimit = min(maximumLineCount, max(sourceLineCount, lines.count))
-        let displayLines = ScreenshotTranslationTextLayout.limitedLines(lines, to: lineLimit)
+        let capacity = lineCapacity(forFontSize: resolved.fontSize, maximumHeight: limits.maximumHeight)
+        let displayLines = resolved.lines.count > capacity
+            ? ScreenshotTranslationTextLayout.limitedLines(resolved.lines, to: capacity)
+            : resolved.lines
         let displayLineHeight = ScreenshotTranslationTextLayout.measuredLineHeight(
-            fontSize: fontSize
+            fontSize: resolved.fontSize
         )
         let requiredHeight = max(
             sourceBounds.height,
@@ -284,7 +278,7 @@ enum ScreenshotTranslationLayout {
         )
         let height = min(limits.maximumHeight, requiredHeight)
         let contentWidth = displayLines.map {
-            ScreenshotTranslationTextLayout.measuredWidth($0, fontSize: fontSize)
+            ScreenshotTranslationTextLayout.measuredWidth($0, fontSize: resolved.fontSize)
         }.max() ?? 0
         let width = min(
             limits.maximumWidth,
@@ -298,7 +292,6 @@ enum ScreenshotTranslationLayout {
         )
         let displayLineBounds = makeDisplayLineBounds(
             count: displayLines.count,
-            sourceLines: block.sourceLines,
             blockBounds: finalBounds,
             lineHeight: displayLineHeight,
             region: region
@@ -306,49 +299,36 @@ enum ScreenshotTranslationLayout {
 
         return ScreenshotTranslationLayoutMetrics(
             bounds: finalBounds,
-            fontSize: fontSize,
-            lineLimit: max(1, lineLimit),
+            fontSize: resolved.fontSize,
+            lineLimit: max(1, displayLines.count),
             horizontalPadding: horizontalPadding,
             displayLines: displayLines,
             displayLineBounds: displayLineBounds
         )
     }
 
+    /// 译文行从块顶部依次向下排；整块盒子仍然覆盖原文区域，只有一行时在框内居中。
     private static func makeDisplayLineBounds(
         count: Int,
-        sourceLines: [ScreenshotTranslationLine],
         blockBounds: CGRect,
         lineHeight: CGFloat,
         region: CGRect
     ) -> [CGRect] {
         guard count > 0 else { return [] }
-        var result: [CGRect] = sourceLines.prefix(count).map { line in
+        let topInset = count == 1
+            ? max(0, min(verticalSpacing, (blockBounds.height - lineHeight) / 2))
+            : verticalSpacing
+        return (0 ..< count).map { index in
             clampedBounds(
                 CGRect(
                     x: blockBounds.minX,
-                    y: line.bounds.minY,
+                    y: blockBounds.minY + topInset + CGFloat(index) * lineHeight,
                     width: blockBounds.width,
-                    height: max(line.bounds.height, lineHeight)
+                    height: max(1, lineHeight)
                 ),
                 in: region
             )
         }
-
-        while result.count < count {
-            let previous = result.last ?? blockBounds
-            result.append(
-                clampedBounds(
-                    CGRect(
-                        x: blockBounds.minX,
-                        y: previous.maxY,
-                        width: blockBounds.width,
-                        height: lineHeight
-                    ),
-                    in: region
-                )
-            )
-        }
-        return result
     }
 
     private static func makeLimits(
@@ -414,57 +394,68 @@ enum ScreenshotTranslationLayout {
 }
 
 private extension ScreenshotTranslationLayout {
+    /// 字号以原文行高为准。Vision 偶尔会给单行文本一个明显偏小的行高
+    /// （像素字体、艺术字尤其常见），此时按块高兜底，避免译文被压成极小字号。
+    private static func resolvedSourceLineHeight(for block: ScreenshotTranslationRenderBlock) -> CGFloat {
+        let blockHeight = max(1, block.bounds.height)
+        let measured = block.sourceLineHeight > 0 ? block.sourceLineHeight : blockHeight
+        var resolved = min(measured, blockHeight)
+        if block.sourceLines.count == 1 {
+            resolved = max(resolved, blockHeight * 0.6)
+        }
+        return max(1, resolved)
+    }
+
+    private static func minimumFontSize(for baseFontSize: CGFloat) -> CGFloat {
+        let readableFloor = min(minimumReadableFontSize, baseFontSize)
+        let scaleFloor = baseFontSize * ScreenshotTranslationTextLayout.minimumFontScale
+        return max(1, min(baseFontSize, max(readableFloor, scaleFloor)))
+    }
+
+    private static func lineCapacity(forFontSize fontSize: CGFloat, maximumHeight: CGFloat) -> Int {
+        let lineHeight = max(1, ScreenshotTranslationTextLayout.measuredLineHeight(fontSize: fontSize))
+        return max(1, Int(max(1, maximumHeight - verticalSpacing * 2) / lineHeight))
+    }
+
     private static func resolveTextLayout(
         _ request: ScreenshotTranslationTextLayoutRequest
     ) -> ResolvedTextLayout {
-        var fontSize = request.baseFontSize
-        let naturalWidth = ScreenshotTranslationTextLayout.measuredWidth(
-            request.text,
-            fontSize: request.baseFontSize
-        )
-        if request.sourceLineCount == 1, naturalWidth > request.maximumWidth {
-            let fittedFontSize = max(
-                request.minimumFontSize,
-                request.baseFontSize * request.maximumWidth / max(naturalWidth, 1)
-            )
-            if ScreenshotTranslationTextLayout.measuredWidth(
+        if request.allowsSingleLineFit {
+            let naturalWidth = ScreenshotTranslationTextLayout.measuredWidth(
                 request.text,
-                fontSize: fittedFontSize
-            ) <= request.maximumWidth + 1 {
-                fontSize = fittedFontSize
+                fontSize: request.baseFontSize
+            )
+            if naturalWidth <= request.wrappingWidth {
+                return ResolvedTextLayout(fontSize: request.baseFontSize, lines: [request.text])
+            }
+            // 单行块只有在缩小幅度可接受时才为了保持一行而缩字号，否则自然折行。
+            let fittedFontSize = request.baseFontSize * request.wrappingWidth / max(naturalWidth, 1)
+            if fittedFontSize >= request.minimumFontSize,
+               ScreenshotTranslationTextLayout.measuredWidth(
+                   request.text,
+                   fontSize: fittedFontSize
+               ) <= request.wrappingWidth + 0.5
+            {
+                return ResolvedTextLayout(fontSize: fittedFontSize, lines: [request.text])
             }
         }
 
-        var lines = makeLines(request, fontSize: fontSize, naturalWidth: naturalWidth)
-        while lines.count > request.maximumLineCount,
+        var fontSize = request.baseFontSize
+        var lines = ScreenshotTranslationTextLayout.wrappedLines(
+            request.text,
+            fontSize: fontSize,
+            maximumWidth: request.wrappingWidth
+        )
+        while lines.count > lineCapacity(forFontSize: fontSize, maximumHeight: request.maximumHeight),
               fontSize > request.minimumFontSize + 0.5
         {
-            fontSize = max(request.minimumFontSize, fontSize * 0.9)
-            lines = makeLines(request, fontSize: fontSize, naturalWidth: naturalWidth)
+            fontSize = max(request.minimumFontSize, fontSize * lineShrinkStep)
+            lines = ScreenshotTranslationTextLayout.wrappedLines(
+                request.text,
+                fontSize: fontSize,
+                maximumWidth: request.wrappingWidth
+            )
         }
         return ResolvedTextLayout(fontSize: fontSize, lines: lines)
-    }
-
-    private static func makeLines(
-        _ request: ScreenshotTranslationTextLayoutRequest,
-        fontSize: CGFloat,
-        naturalWidth: CGFloat
-    ) -> [String] {
-        if request.sourceLineCount > 1 {
-            return ScreenshotTranslationTextLayout.lineSlots(
-                request.text,
-                sourceWidths: request.sourceWidths,
-                fontSize: fontSize,
-                maximumWidth: request.maximumWidth
-            )
-        }
-        if fontSize == request.baseFontSize, naturalWidth > request.maximumWidth {
-            return ScreenshotTranslationTextLayout.wrappedLines(
-                request.text,
-                fontSize: fontSize,
-                maximumWidth: request.maximumWidth
-            )
-        }
-        return [request.text]
     }
 }

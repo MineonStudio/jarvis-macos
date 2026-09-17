@@ -345,11 +345,9 @@ extension ScreenshotCaptureController {
         guard activeSessionID == sessionID,
               !selectionCompletionDelivered else { return }
         guard localRect.width >= 24, localRect.height >= 24 else {
-            cancelSelection(
-                sessionID: sessionID,
-                completion: completion,
-                error: ScreenshotError.invalidSelection
-            )
+            // 太小的选区（在空白桌面上点一下、或者手抖拖出十几点）不当作一次截图：
+            // 留着遮罩和冻结帧，让用户在同一屏上重新拖。原来这里直接 cancelSelection，
+            // 整场截图被销毁，用户得重新按热键再等一次全屏采集。
             return
         }
 

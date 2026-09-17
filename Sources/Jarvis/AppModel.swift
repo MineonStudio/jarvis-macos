@@ -68,6 +68,9 @@ private struct ScreenshotSaveRequest {
     let data: Data
     let historyID: UUID?
     let finalizesHistory: Bool
+    /// 保存之后编辑会话是否结束。工具栏上的「保存」不结束（还能接着改），
+    /// 所以它不能把 `editingHistoryID` 清掉。
+    let endsSession: Bool
     let successMessage: String
 }
 
@@ -515,6 +518,7 @@ extension AppModel {
             for: data,
             historyID: historyID,
             finalizesHistory: true,
+            endsSession: false,
             successMessage: "截图已保存",
             presentingWindow: presentingWindow
         )
@@ -535,6 +539,7 @@ extension AppModel {
         for data: Data,
         historyID: UUID?,
         finalizesHistory: Bool,
+        endsSession: Bool,
         successMessage: String,
         presentingWindow: NSWindow? = nil
     ) {
@@ -558,6 +563,7 @@ extension AppModel {
                         data: data,
                         historyID: historyID,
                         finalizesHistory: finalizesHistory,
+                        endsSession: endsSession,
                         successMessage: successMessage
                     )
                 )
@@ -571,6 +577,7 @@ extension AppModel {
                         data: data,
                         historyID: historyID,
                         finalizesHistory: finalizesHistory,
+                        endsSession: endsSession,
                         successMessage: successMessage
                     )
                 )
@@ -589,7 +596,11 @@ extension AppModel {
         do {
             try request.data.write(to: url, options: .atomic)
             if request.finalizesHistory {
-                finalizeScreenshot(request.data, historyID: request.historyID)
+                finalizeScreenshot(
+                    request.data,
+                    historyID: request.historyID,
+                    endsSession: request.endsSession
+                )
             }
             showToast(request.successMessage)
         } catch {
@@ -654,7 +665,24 @@ extension AppModel {
         return true
     }
 
-    private func finalizeScreenshot(_ data: Data, historyID: UUID?) {
+    /// 落盘之后 `editingHistoryID` 该变成什么。
+    ///
+    /// - 会话结束（「完成」「贴图」）→ 清空。
+    /// - 会话继续（「保存」）→ 记住这次落在哪条（新截图第一次保存时本来是空的），
+    ///   否则下一次保存/完成会再新增一条一模一样的记录。
+    nonisolated static func editingHistoryIDAfterFinalize(
+        endsSession: Bool,
+        resolvedID: UUID?,
+        current: UUID?
+    ) -> UUID? {
+        endsSession ? nil : (resolvedID ?? current)
+    }
+
+    /// - Parameter endsSession: 这次落盘之后编辑会话是否就结束了。点「完成」「贴图」
+    ///   会结束；点「保存」不会——用户可以接着编辑。会话没结束时要把这次落在历史里
+    ///   的条目 id 记回 `editingHistoryID`，否则下一次保存/完成会再新增一条一模一样
+    ///   的记录（新截图第一保存时 id 本来是空的，正好踩中）。
+    private func finalizeScreenshot(_ data: Data, historyID: UUID?, endsSession: Bool = true) {
         let historyItem = historyID.flatMap { id in
             screenshotHistory.first(where: { $0.id == id })
         }
@@ -662,18 +690,23 @@ extension AppModel {
         let historyStore = screenshotHistoryStore
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let cacheSaved = cacheStore.save(data)
-            let historySaved: Bool = if let historyItem {
-                historyStore.update(historyItem, data: data) != nil
+            // 这次落盘实际对应的条目 id：更新时是原来那条，新建时是刚加进去那条。
+            let resolvedID: UUID? = if let historyItem {
+                historyStore.update(historyItem, data: data) != nil ? historyItem.id : nil
             } else {
-                historyStore.add(data: data) != nil
+                historyStore.add(data: data)?.id
             }
             let history = historyStore.load()
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.latestScreenshotData = cacheSaved ? data : self.latestScreenshotData
                 self.screenshotHistory = history
-                self.editingHistoryID = nil
-                if !cacheSaved || !historySaved {
+                self.editingHistoryID = Self.editingHistoryIDAfterFinalize(
+                    endsSession: endsSession,
+                    resolvedID: resolvedID,
+                    current: self.editingHistoryID
+                )
+                if !cacheSaved || resolvedID == nil {
                     self.showToast("截图已完成，但历史记录保存失败")
                 }
             }

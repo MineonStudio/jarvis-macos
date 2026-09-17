@@ -49,6 +49,15 @@ struct WindowSelectionCandidate {
 enum WindowSelectionDetector {
     private static let dockOwnerNames: Set<String> = ["dock", "程序坞"]
 
+    /// Quartz 全局坐标的翻转基准：主屏高度。
+    ///
+    /// 不是「所有屏里最高的那块」——Quartz 的原点跟着主屏走，取最高屏会在有屏排到
+    /// 主屏上方时让所有局部坐标整体平移。`ScreenshotWindowSelectionGeometryTests`
+    /// 用 AppKit 侧的主屏高度交叉验证这个值。
+    static var quartzDesktopTop: CGFloat {
+        CGDisplayBounds(CGMainDisplayID()).maxY
+    }
+
     static func candidates(
         for screenFrame: CGRect
     ) -> [WindowSelectionCandidate] {
@@ -59,7 +68,7 @@ enum WindowSelectionDetector {
             return []
         }
 
-        let desktopTop = NSScreen.screens.map(\.frame.maxY).max() ?? screenFrame.maxY
+        let desktopTop = quartzDesktopTop
         let screenBounds = CGRect(origin: .zero, size: screenFrame.size)
         let dockGlobalRect = dockRegion(for: screenFrame)
         let context = WindowSelectionContext(

@@ -228,6 +228,13 @@ final class ScreenshotRenderPipeline {
         }
 
         context.interpolationQuality = annotation.mosaicStyle == .pixelate ? .none : .high
+        // 这里的 CTM 是 y 向下（标注坐标来自左上角原点的画布），而
+        // `CGContext.draw(image:in:)` 总是把图像按当前用户空间正立绘制——在翻转
+        // 空间里画出来就是上下镜像的。底图和文字各自处理过这一点，马赛克原来漏了：
+        // 框住顶部的内容，导出后框里显示的是镜像位置的画面。clip 已经固定到设备
+        // 空间，所以补的这一层反向翻转只影响图像本身落笔的方向。
+        context.translateBy(x: 0, y: canvasRect.height)
+        context.scaleBy(x: 1, y: -1)
         context.draw(filteredImage, in: canvasRect)
         context.restoreGState()
     }

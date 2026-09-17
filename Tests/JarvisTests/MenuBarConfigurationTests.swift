@@ -17,7 +17,8 @@ final class MenuBarConfigurationTests: XCTestCase {
         let menu = controller.configuredMenuForTesting()
         let actionableItems = menu.items.filter { !$0.isSeparatorItem }
 
-        XCTAssertEqual(actionableItems.count, 5 + WindowLayout.allCases.count)
+        // 打开贾维斯 / 截图 / 剪贴板 / 会议 / 订阅 / 退出，加上每个窗口布局一项。
+        XCTAssertEqual(actionableItems.count, 6 + WindowLayout.allCases.count)
         for item in actionableItems {
             XCTAssertNotNil(item.action, item.title)
             XCTAssertIdentical(item.target, controller, item.title)

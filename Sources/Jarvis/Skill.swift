@@ -7,6 +7,7 @@ enum SkillID: String, CaseIterable, Hashable, Identifiable {
     case resume
     case wallpaper
     case meetingNotes
+    case rss
 
     var id: String {
         rawValue
@@ -20,6 +21,7 @@ enum SkillID: String, CaseIterable, Hashable, Identifiable {
         case .resume: "简历制作技能"
         case .wallpaper: "桌面壁纸技能"
         case .meetingNotes: "会议记录技能"
+        case .rss: "RSS 订阅技能"
         }
     }
 
@@ -31,6 +33,7 @@ enum SkillID: String, CaseIterable, Hashable, Identifiable {
         case .resume: "简历制作"
         case .wallpaper: "桌面壁纸"
         case .meetingNotes: "会议记录"
+        case .rss: "订阅"
         }
     }
 
@@ -42,6 +45,7 @@ enum SkillID: String, CaseIterable, Hashable, Identifiable {
         case .resume: "doc.text.magnifyingglass"
         case .wallpaper: "photo.on.rectangle.angled"
         case .meetingNotes: "waveform.and.person.filled"
+        case .rss: "dot.radiowaves.up.forward"
         }
     }
 }

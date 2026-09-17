@@ -8,6 +8,8 @@ struct JarvisSidebarNavigation<
     @Binding var selection: Item
     let title: (Item) -> String
     let icon: (Item) -> String
+    /// 可选的角标数字，返回 nil 表示这一项不显示角标。
+    let badge: ((Item) -> Int?)?
     let footerTitle: String?
     let footerIcon: String?
     let footerIsSelected: Bool
@@ -23,6 +25,7 @@ struct JarvisSidebarNavigation<
         selection: Binding<Item>,
         title: @escaping (Item) -> String,
         icon: @escaping (Item) -> String,
+        badge: ((Item) -> Int?)? = nil,
         footerTitle: String? = nil,
         footerIcon: String? = nil,
         footerIsSelected: Bool = false,
@@ -33,6 +36,7 @@ struct JarvisSidebarNavigation<
         _selection = selection
         self.title = title
         self.icon = icon
+        self.badge = badge
         self.footerTitle = footerTitle
         self.footerIcon = footerIcon
         self.footerIsSelected = footerIsSelected
@@ -171,6 +175,18 @@ struct JarvisSidebarNavigation<
                             ? Color.white
                             : Color.primary.opacity(0.74)
                     )
+                if let count = badge?(item), count > 0 {
+                    Spacer(minLength: 4)
+                    Text(count > 99 ? "99+" : String(count))
+                        .font(JarvisTypography.badge)
+                        .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            isSelected ? Color.white.opacity(0.24) : Color.accentColor.opacity(0.16),
+                            in: Capsule()
+                        )
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .padding(.horizontal, 8)

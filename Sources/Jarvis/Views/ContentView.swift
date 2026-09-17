@@ -16,6 +16,12 @@ struct ContentView: View {
                 selection: selectedSectionBinding,
                 title: { $0.title },
                 icon: { $0.icon },
+                badge: { item in
+                    if case .skill(.rss) = item {
+                        return app.rssUnreadTotal
+                    }
+                    return nil
+                },
                 footerTitle: "设置",
                 footerIcon: "gearshape",
                 footerIsSelected: navigationSelection == .settings,
@@ -147,6 +153,7 @@ struct ContentView: View {
         case .skill(.resume): ResumeContentView()
         case .skill(.wallpaper): WallpaperView()
         case .skill(.meetingNotes): MeetingView()
+        case .skill(.rss): RSSView()
         case .settings: SettingsView()
         }
     }

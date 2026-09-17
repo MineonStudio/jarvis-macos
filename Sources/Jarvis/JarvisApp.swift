@@ -33,6 +33,8 @@ struct JarvisApp: App {
                 JarvisThumbnailCache.purge()
                 ClipboardItemPreview.purgeVideoThumbnailCache()
                 WallpaperImageLoader.purgeCache()
+                // RSS 正文里的题图走 URLSession 的共享缓存。
+                URLCache.shared.removeAllCachedResponses()
             }
         }
         mainThreadHealthMonitor.start()

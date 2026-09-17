@@ -73,6 +73,12 @@ enum ScreenshotTool: CaseIterable {
 @MainActor
 final class ScreenshotToolbarLayoutModel: ObservableObject {
     @Published var width: CGFloat
+    /// 工具栏整体在选区上方时，二级行排在主行**上面**。
+    ///
+    /// 窗口是按贴着选区的那条边定位的：放下方时贴的是窗口上沿，主行正好在顶部，
+    /// 所以收起二级行主行不动；放上方时贴的是窗口下沿，主行若还在顶部，窗口一变矮
+    /// 它就会跟着弹一下。把二级行挪到上面、主行贴着下沿，两边就都不动了。
+    @Published var placesSecondaryRowAboveMain = false
 
     init(width: CGFloat) {
         self.width = width
@@ -181,6 +187,19 @@ enum ScreenshotToolbarMetrics {
 }
 
 enum ScreenshotToolbarPlacement {
+    /// 主按钮行在窗口坐标（原点左下）里的位置。两条胶囊按同一套高度口径排列，
+    /// 收起态窗口就只有主行那么高。
+    static func mainRowRect(
+        in windowRect: CGRect,
+        placesSecondaryAbove: Bool
+    ) -> CGRect {
+        let height = ScreenshotToolbarMetrics.mainRowHeight
+        // 二级行排在主行上面时，主行贴窗口下沿；否则主行是 VStack 的第一个孩子，
+        // 待在窗口顶部。
+        let y = placesSecondaryAbove ? windowRect.minY : windowRect.maxY - height
+        return CGRect(x: windowRect.minX, y: y, width: windowRect.width, height: height)
+    }
+
     static func frame(
         for imageFrame: CGRect,
         in visibleFrame: CGRect,

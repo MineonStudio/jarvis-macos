@@ -232,14 +232,15 @@ extension ScreenshotCaptureController {
         _ presentation: ScreenshotPresentation
     ) -> ScreenshotPresentationPanels {
         let imagePanel = makeImagePanel(presentation)
-        let frame = toolbarFrame(
+        let placement = toolbarFrame(
             for: presentation.session.selectionFrame,
             height: ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbarMetrics.baseWidth
         )
-        let toolbarLayout = ScreenshotToolbarLayoutModel(width: frame.width)
+        let toolbarLayout = ScreenshotToolbarLayoutModel(width: placement.rect.width)
+        toolbarLayout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
         let toolbarPanel = makeToolbarPanel(
-            frame: frame,
+            frame: placement.rect,
             layout: toolbarLayout,
             presentation: presentation
         )

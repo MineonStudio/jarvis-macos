@@ -134,14 +134,15 @@ extension ScreenshotCaptureController {
             return
         }
 
-        let frame = toolbarFrame(
+        let placement = toolbarFrame(
             for: item.imageFrame,
             height: ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbarMetrics.baseWidth
         )
-        let layout = ScreenshotToolbarLayoutModel(width: frame.width)
+        let layout = ScreenshotToolbarLayoutModel(width: placement.rect.width)
+        layout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
         let toolbarPanel = NSPanel(
-            contentRect: frame,
+            contentRect: placement.rect,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -165,7 +166,7 @@ extension ScreenshotCaptureController {
             )
         )
         toolbarHostingView.autoresizingMask = NSView.AutoresizingMask(arrayLiteral: .width, .height)
-        toolbarHostingView.frame = NSRect(origin: .zero, size: frame.size)
+        toolbarHostingView.frame = NSRect(origin: .zero, size: placement.rect.size)
         toolbarPanel.contentView = toolbarHostingView
 
         item.window.addChildWindow(toolbarPanel, ordered: .above)
@@ -200,29 +201,34 @@ extension ScreenshotCaptureController {
     /// 强制一次同步重绘，并且每次都写一遍 `@Published` 的 width，让整个 SwiftUI 工具栏
     /// 重新排布一次。
     private func applyToolbarFrame(
-        _ frame: NSRect,
+        _ placement: ToolbarFramePlacement,
         to window: NSWindow,
         updating layout: ScreenshotToolbarLayoutModel?
     ) {
+        let frame = placement.rect
         if window.frame != frame {
             window.setFrame(frame, display: false, animate: false)
             window.contentView?.frame = NSRect(origin: .zero, size: frame.size)
         }
-        if let layout, layout.width != frame.width {
+        guard let layout else { return }
+        if layout.width != frame.width {
             layout.width = frame.width
+        }
+        if layout.placesSecondaryRowAboveMain != placement.placesSecondaryRowAboveMain {
+            layout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
         }
     }
 
     private func resizePinnedToolbar(for item: PinnedScreenshotItem) {
         guard let toolbarWindow = item.toolbarWindow else { return }
-        let frame = toolbarFrame(
+        let placement = toolbarFrame(
             for: item.imageFrame,
             height: item.editor.secondaryBarVisible
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbarMetrics.baseWidth
         )
-        applyToolbarFrame(frame, to: toolbarWindow, updating: item.toolbarLayout)
+        applyToolbarFrame(placement, to: toolbarWindow, updating: item.toolbarLayout)
     }
 
     private func handlePinnedToolbarAction(
@@ -310,28 +316,43 @@ extension ScreenshotCaptureController {
         }
     }
 
-    func toolbarFrame(for imageFrame: CGRect, height toolbarHeight: CGFloat, width requestedWidth: CGFloat) -> NSRect {
+    /// 工具栏窗口的落位，外加它是落在选区上方还是下方。
+    struct ToolbarFramePlacement {
+        let rect: NSRect
+        let placesSecondaryRowAboveMain: Bool
+    }
+
+    func toolbarFrame(
+        for imageFrame: CGRect,
+        height toolbarHeight: CGFloat,
+        width requestedWidth: CGFloat
+    ) -> ToolbarFramePlacement {
         let screen = NSScreen.screens.first { $0.frame.intersects(imageFrame) } ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? .zero
-        return ScreenshotToolbarPlacement.frame(
+        let rect = ScreenshotToolbarPlacement.frame(
             for: imageFrame,
             in: visibleFrame,
             height: toolbarHeight,
             width: requestedWidth
+        )
+        return ToolbarFramePlacement(
+            rect: rect,
+            // 窗口下沿已经在选区顶边之上 = 整条工具栏在选区上方。
+            placesSecondaryRowAboveMain: rect.minY >= imageFrame.maxY - 1
         )
     }
 
     func resizeToolbar(for editor: ScreenshotEditorModel, on screenFrame: CGRect) {
         guard let toolbarWindow else { return }
         let imageFrame = editor.selectionFrame(on: screenFrame) ?? screenFrame
-        let frame = toolbarFrame(
+        let placement = toolbarFrame(
             for: imageFrame,
             height: editor.secondaryBarVisible
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight,
             width: ScreenshotToolbarMetrics.baseWidth
         )
-        applyToolbarFrame(frame, to: toolbarWindow, updating: toolbarLayout)
+        applyToolbarFrame(placement, to: toolbarWindow, updating: toolbarLayout)
     }
 
     func finishSelection(

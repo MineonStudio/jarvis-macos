@@ -65,3 +65,27 @@ final class ScreenshotToolbarInteractionTests: XCTestCase {
         XCTAssertFalse(editor.secondaryBarVisible)
     }
 }
+
+extension ScreenshotToolbarInteractionTests {
+    /// 截图快捷键的迁移只做一次。
+    ///
+    /// 用户手动把快捷键录成 ⌘⇧J 或 F2（正是两个旧默认值）之后，重启不该被静默
+    /// 改回 F1——迁移标记一旦置位，选什么就是什么。
+    func testShortcutMigrationOnlyRunsOnce() {
+        XCTAssertTrue(
+            AppModel.shouldMigrateScreenshotShortcut(hasMigrated: false, stored: .previousDefault),
+            "首次迁移时应当把旧默认值换掉"
+        )
+        XCTAssertFalse(
+            AppModel.shouldMigrateScreenshotShortcut(hasMigrated: true, stored: .previousDefault),
+            "已经迁移过就不该再覆盖用户的选择"
+        )
+        XCTAssertFalse(
+            AppModel.shouldMigrateScreenshotShortcut(hasMigrated: true, stored: .legacyDefault),
+            "F2 同理：用户选它就是选它"
+        )
+        XCTAssertFalse(
+            AppModel.shouldMigrateScreenshotShortcut(hasMigrated: true, stored: .default)
+        )
+    }
+}

@@ -110,3 +110,57 @@ final class ScreenshotToolbarCapsuleTests: XCTestCase {
         )
     }
 }
+
+extension ScreenshotToolbarCapsuleTests {
+    /// 主行贴住选区的那条边，在收起/展开二级行时必须**不动**——否则每次开合二级行
+    /// 都会弹一下。
+    ///
+    /// 窗口是贴着选区定位的：放在选区下方时贴窗口上沿，放在上方时贴窗口下沿。
+    func testMainRowNearEdgeStaysFixedWhenSecondaryRowToggles() {
+        let width = ScreenshotToolbarMetrics.baseWidth
+        let gap = ScreenshotToolbarMetrics.gap
+        let selection = CGRect(x: 100, y: 500, width: 300, height: 200)
+        let compact = ScreenshotToolbarMetrics.compactHeight
+        let expanded = ScreenshotToolbarMetrics.expandedHeight
+
+        // 放在选区下方：窗口上沿固定在选区下沿往下 gap 处。
+        let belowCompact = CGRect(
+            x: 100,
+            y: selection.minY - gap - compact,
+            width: width,
+            height: compact
+        )
+        let belowExpanded = CGRect(
+            x: 100,
+            y: selection.minY - gap - expanded,
+            width: width,
+            height: expanded
+        )
+        XCTAssertEqual(
+            ScreenshotToolbarPlacement.mainRowRect(in: belowCompact, placesSecondaryAbove: false).maxY,
+            ScreenshotToolbarPlacement.mainRowRect(in: belowExpanded, placesSecondaryAbove: false).maxY,
+            accuracy: 0.001,
+            "放在选区下方时，主行的上沿不该随二级行开合而动"
+        )
+
+        // 放在选区上方：窗口下沿固定在选区上沿往上 gap 处。
+        let aboveCompact = CGRect(
+            x: 100,
+            y: selection.maxY + gap,
+            width: width,
+            height: compact
+        )
+        let aboveExpanded = CGRect(
+            x: 100,
+            y: selection.maxY + gap,
+            width: width,
+            height: expanded
+        )
+        XCTAssertEqual(
+            ScreenshotToolbarPlacement.mainRowRect(in: aboveCompact, placesSecondaryAbove: true).minY,
+            ScreenshotToolbarPlacement.mainRowRect(in: aboveExpanded, placesSecondaryAbove: true).minY,
+            accuracy: 0.001,
+            "放在选区上方时，主行的下沿不该随二级行开合而动"
+        )
+    }
+}

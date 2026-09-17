@@ -188,20 +188,14 @@ struct ScreenshotToolbar: View {
 extension ScreenshotToolbar {
     var body: some View {
         VStack(spacing: ScreenshotToolbarMetrics.pillSpacing) {
-            mainToolRow
-                .frame(height: ScreenshotToolbarMetrics.mainRowHeight)
-                .padding(.horizontal, ScreenshotToolbarMetrics.mainRowHorizontalPadding)
-                // 主行内容固定，正好等于面板宽度，不留死区。
-                .frame(maxWidth: .infinity)
-                .screenshotToolbarPill()
-
-            if editor.secondaryBarVisible {
-                secondaryControl
-                    .frame(height: ScreenshotToolbarMetrics.secondaryRowHeight)
-                    .padding(.horizontal, ScreenshotToolbarMetrics.secondaryRowHorizontalPadding)
-                    // 不撑满：二级行按内容自适应，居中显示。
-                    .screenshotToolbarPill()
-                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+            if layout.placesSecondaryRowAboveMain {
+                // 工具栏在选区上方：主行贴着选区（窗口下沿），二级行向上伸展。
+                // 否则收起二级行时窗口一变矮，主行会跟着弹一下。
+                secondaryRow
+                mainRow
+            } else {
+                mainRow
+                secondaryRow
             }
         }
         // 不额外留边：胶囊就是窗口本身，留白会变成同样的死区，也会让工具栏放到
@@ -218,6 +212,28 @@ extension ScreenshotToolbar {
         )
         .translationTask(editor.appleTranslationConfiguration) { @Sendable session in
             await editor.consumeAppleTranslationSession(session)
+        }
+    }
+
+    /// 主按钮行：撑满窗口宽度（面板按固定宽度摆位，胶囊收窄就会留下看得见截图、
+    /// 点下去却没反应的死区）。
+    private var mainRow: some View {
+        mainToolRow
+            .frame(height: ScreenshotToolbarMetrics.mainRowHeight)
+            .padding(.horizontal, ScreenshotToolbarMetrics.mainRowHorizontalPadding)
+            .frame(maxWidth: .infinity)
+            .screenshotToolbarPill()
+    }
+
+    /// 二级行：按内容自适应，居中显示。
+    @ViewBuilder
+    private var secondaryRow: some View {
+        if editor.secondaryBarVisible {
+            secondaryControl
+                .frame(height: ScreenshotToolbarMetrics.secondaryRowHeight)
+                .padding(.horizontal, ScreenshotToolbarMetrics.secondaryRowHorizontalPadding)
+                .screenshotToolbarPill()
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
         }
     }
 

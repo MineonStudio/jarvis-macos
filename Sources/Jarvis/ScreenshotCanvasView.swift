@@ -44,7 +44,12 @@ struct ScreenshotCanvasView: View {
                 ScreenshotAnnotationView(
                     annotation: annotation,
                     canvasSize: editor.canvasSize,
-                    mosaicImage: editor.mosaicImage(style: annotation.mosaicStyle)
+                    // 只有马赛克需要过滤图。原来对每个标注都取一次，于是画下第一条
+                    // 箭头就会触发整幅 6K 的高斯模糊——新建 CIContext、过滤、把 81MB
+                    // 位图读回，全在主线程上。
+                    mosaicImage: annotation.kind == .mosaic
+                        ? editor.mosaicImage(style: annotation.mosaicStyle)
+                        : nil
                 )
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
@@ -53,7 +58,9 @@ struct ScreenshotCanvasView: View {
                 ScreenshotAnnotationView(
                     annotation: draftAnnotation,
                     canvasSize: editor.canvasSize,
-                    mosaicImage: editor.mosaicImage(style: draftAnnotation.mosaicStyle),
+                    mosaicImage: draftAnnotation.kind == .mosaic
+                        ? editor.mosaicImage(style: draftAnnotation.mosaicStyle)
+                        : nil,
                     isDraft: true
                 )
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))

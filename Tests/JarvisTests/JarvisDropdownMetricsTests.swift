@@ -2,7 +2,7 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
-final class JarvisDropdownWidthTests: XCTestCase {
+final class JarvisDropdownMetricsTests: XCTestCase {
     private let wallpaperSortingOptions = [
         JarvisDropdownOption(id: "toplist", title: "热门"),
         JarvisDropdownOption(id: "dateAdded", title: "最新"),
@@ -53,6 +53,53 @@ final class JarvisDropdownWidthTests: XCTestCase {
                 maximumWidth: 480
             ),
             480
+        )
+    }
+
+    func testMenuPanelAlignsItsLeftEdgeWithTheTrigger() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1000, height: 800)
+
+        XCTAssertEqual(
+            JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: 400,
+                panelWidth: 200,
+                visibleFrame: visibleFrame
+            ),
+            400 - JarvisDropdownMetrics.menuEdgePadding
+        )
+    }
+
+    func testMenuPanelStaysOnScreenNearBothEdges() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1000, height: 800)
+
+        XCTAssertEqual(
+            JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: 980,
+                panelWidth: 200,
+                visibleFrame: visibleFrame
+            ),
+            800
+        )
+        XCTAssertEqual(
+            JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: -50,
+                panelWidth: 200,
+                visibleFrame: visibleFrame
+            ),
+            0
+        )
+    }
+
+    func testMenuPanelPinsToTheScreenEdgeWhenItIsWiderThanTheScreen() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 150, height: 800)
+
+        XCTAssertEqual(
+            JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: 100,
+                panelWidth: 200,
+                visibleFrame: visibleFrame
+            ),
+            0
         )
     }
 

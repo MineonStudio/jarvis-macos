@@ -72,6 +72,18 @@ enum JarvisDropdownMetrics {
         )
     }
 
+    /// 弹层和触发器左边缘对齐，和系统弹出菜单一致；贴近屏幕边缘时向内收，
+    /// 保证整块弹层留在屏幕内。
+    static func menuOriginX(
+        anchorMinX: CGFloat,
+        panelWidth: CGFloat,
+        visibleFrame: CGRect
+    ) -> CGFloat {
+        let aligned = anchorMinX - menuEdgePadding
+        let maximumX = visibleFrame.maxX - panelWidth
+        return min(max(aligned, visibleFrame.minX), max(visibleFrame.minX, maximumX))
+    }
+
     static func width(
         for titles: [String],
         includesArrow: Bool = true,
@@ -515,9 +527,11 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
                 ?? NSScreen.main?.visibleFrame
                 ?? .zero
             let panelSize = panel.frame.size
-            let horizontalOrigin = anchorRect.midX - (panelSize.width / 2)
-            let maximumX = visibleFrame.maxX - panelSize.width
-            let originX = min(max(horizontalOrigin, visibleFrame.minX), maximumX)
+            let originX = JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: anchorRect.minX,
+                panelWidth: panelSize.width,
+                visibleFrame: visibleFrame
+            )
             let originY = anchorRect.minY
                 - panelSize.height
                 - JarvisDropdownMetrics.triggerGap

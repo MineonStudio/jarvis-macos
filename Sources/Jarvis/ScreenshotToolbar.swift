@@ -55,6 +55,146 @@ private extension View {
     }
 }
 
+/// 二级行里一个工具的全部设置装进这样一条胶囊容器：内部靠分隔线分段。
+/// 五个二级行共用同一种结构，避免每个工具各长一个样子。
+private struct SecondaryGroupSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 8)
+            .frame(height: JarvisToolbarMetrics.controlSize)
+            .background(Color.jarvisInsetSurface, in: Capsule())
+    }
+}
+
+private extension View {
+    func secondaryGroupSurface() -> some View {
+        modifier(SecondaryGroupSurface())
+    }
+}
+
+/// 二级行里的可选项（马赛克的模式/效果、文字的粗体/斜体/删除线）。
+/// 选中态是与全局一致的胶囊药丸，同 `JarvisToolbarSelectionButton`。
+struct ScreenshotToolbarOptionButton: View {
+    let icon: String
+    var title: String?
+    let selected: Bool
+    let help: String
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                if let title {
+                    Text(title)
+                        .font(selected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                }
+            }
+            .foregroundStyle(selected ? Color.white : Color.jarvisTextSecondary)
+            .padding(.horizontal, title == nil ? 0 : 9)
+            .frame(width: title == nil ? 28 : nil, height: 26)
+            .background {
+                Capsule()
+                    .fill(
+                        selected
+                            ? JarvisMotion.selectionPillTint
+                            : (isHovered ? JarvisMotion.hoverPillTint : .clear)
+                    )
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
+        .help(help)
+        .accessibilityLabel(title ?? help)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: isHovered
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            value: selected
+        )
+        .onHover { isHovering in
+            withAnimation(
+                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
+            ) {
+                isHovered = isHovering
+            }
+        }
+    }
+}
+
+/// 二级行里的下拉（目标语言、箭头样式、线型）：外形与选项药丸一致，右侧带 chevron。
+private struct SecondaryMenuChip<MenuContent: View>: View {
+    let title: String
+    var systemImage: String?
+    @ViewBuilder let menuContent: MenuContent
+
+    var body: some View {
+        Menu {
+            menuContent
+        } label: {
+            HStack(spacing: 4) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                Text(title)
+                    .font(JarvisTypography.control)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+}
+
+/// 二级行里的文字按钮：与下拉芯片同一种胶囊外形。
+private struct SecondaryCapsuleButton: View {
+    let title: String
+    var isProminent = false
+    var isEnabled = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(isProminent ? JarvisTypography.controlEmphasis : JarvisTypography.control)
+                .foregroundStyle(
+                    isEnabled
+                        ? (isProminent ? Color.white : Color.primary)
+                        : Color.secondary.opacity(0.5)
+                )
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background(
+                    isProminent && isEnabled
+                        ? AnyShapeStyle(JarvisMotion.selectionPillTint)
+                        : AnyShapeStyle(Color.primary.opacity(0.06)),
+                    in: Capsule()
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
+        .disabled(!isEnabled)
+    }
+}
+
+/// 分隔线的统一口径：一级行和二级行原来各写一个透明度（0.22 / 0.16）。
+enum ScreenshotToolbarDivider {
+    static let color = Color.primary.opacity(0.18)
+}
+
 struct ScreenshotToolbar: View {
     static let baseWidth = ScreenshotToolbarMetrics.baseWidth
 
@@ -133,10 +273,10 @@ extension ScreenshotToolbar {
 
             toolbarDivider
 
-            actionButton(icon: "arrow.uturn.backward", enabled: editor.canUndo) {
+            actionButton(icon: "arrow.uturn.backward", help: "撤销", enabled: editor.canUndo) {
                 onAction(.undo)
             }
-            actionButton(icon: "arrow.uturn.forward", enabled: editor.canRedo) {
+            actionButton(icon: "arrow.uturn.forward", help: "重做", enabled: editor.canRedo) {
                 onAction(.redo)
             }
 
@@ -144,18 +284,21 @@ extension ScreenshotToolbar {
 
             actionButton(
                 icon: "square.and.arrow.down",
+                help: "保存",
                 enabled: !editor.translationState.isRunning
             ) {
                 onAction(.saveRequested)
             }
             actionButton(
                 icon: "xmark",
+                help: "取消",
                 enabled: !editor.translationState.isRunning
             ) {
                 onAction(.cancel)
             }
             actionButton(
                 icon: "checkmark",
+                help: "完成",
                 enabled: !editor.translationState.isRunning
             ) {
                 onAction(.confirmRequested)
@@ -209,6 +352,8 @@ extension ScreenshotToolbar {
             .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .help(tool.title)
+        .accessibilityLabel(tool.title)
         .disabled(editor.translationState.isRunning)
     }
 
@@ -232,6 +377,8 @@ extension ScreenshotToolbar {
         )
         .contentShape(Rectangle())
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .help(translationRetryHelp)
+        .accessibilityLabel("截图翻译")
         .disabled(editor.translationState.isRunning)
     }
 
@@ -262,12 +409,12 @@ extension ScreenshotToolbar {
     }
 
     private var translationControl: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Text("目标语言")
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
-            Menu {
+            SecondaryMenuChip(title: editor.translationTargetLanguage.title) {
                 ForEach(ScreenshotTranslationLanguage.allCases) { language in
                     Button {
                         editor.translationTargetLanguage = language
@@ -284,41 +431,39 @@ extension ScreenshotToolbar {
                         )
                     }
                 }
-            } label: {
-                Text(editor.translationTargetLanguage.title)
-                    .font(JarvisTypography.control)
-                    .foregroundStyle(Color.primary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-
-            secondaryDivider
 
             if let status = editor.translationState.statusMessage {
+                secondaryDivider
+
                 Text(status)
                     .font(JarvisTypography.caption)
                     .foregroundStyle(editor.translationState.isFailure ? Color.red : Color.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 150, alignment: .leading)
+                    .frame(maxWidth: 140, alignment: .leading)
             }
 
-            Button("重新翻译") {
+            SecondaryCapsuleButton(
+                title: "重新翻译",
+                isProminent: true,
+                isEnabled: !editor.translationState.isRunning
+            ) {
                 onAction(.startTranslation)
             }
-            .buttonStyle(JarvisPrimaryButtonStyle())
-            .disabled(editor.translationState.isRunning)
 
-            Button(editor.translationVisible ? "显示原文" : "显示译文") {
+            SecondaryCapsuleButton(
+                title: editor.translationVisible ? "显示原文" : "显示译文",
+                isEnabled: !editor.translationState.isRunning && !editor.translationBlocks.isEmpty
+            ) {
                 onAction(.toggleTranslationVisibility)
             }
-            .buttonStyle(JarvisSecondaryButtonStyle())
-            .disabled(editor.translationState.isRunning || editor.translationBlocks.isEmpty)
         }
+        .secondaryGroupSurface()
     }
 
     private var arrowStyleControl: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             Text("颜色")
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
@@ -341,7 +486,10 @@ extension ScreenshotToolbar {
                 .foregroundStyle(Color.secondary)
                 .frame(width: 18, alignment: .leading)
 
-            Menu {
+            SecondaryMenuChip(
+                title: editor.arrowHeadStyle.title,
+                systemImage: "arrow.up.right"
+            ) {
                 ForEach(ScreenshotArrowHeadStyle.allCases) { style in
                     Button {
                         editor.arrowHeadStyle = style
@@ -349,18 +497,13 @@ extension ScreenshotToolbar {
                         Label(style.title, systemImage: style == .none ? "line.diagonal" : "arrow.up.right")
                     }
                 }
-            } label: {
-                Label(editor.arrowHeadStyle.title, systemImage: "arrow.up.right")
-                    .font(JarvisTypography.control)
-                    .foregroundStyle(Color.primary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
+        .secondaryGroupSurface()
     }
 
     private var rectangleStyleControl: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             Text("颜色")
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
@@ -383,7 +526,10 @@ extension ScreenshotToolbar {
                 .foregroundStyle(Color.secondary)
                 .frame(width: 18, alignment: .leading)
 
-            Menu {
+            SecondaryMenuChip(
+                title: editor.rectangleLineStyle.title,
+                systemImage: editor.rectangleLineStyle.icon
+            ) {
                 ForEach(ScreenshotLineStyle.allCases) { style in
                     Button {
                         editor.rectangleLineStyle = style
@@ -391,14 +537,9 @@ extension ScreenshotToolbar {
                         Label(style.title, systemImage: style.icon)
                     }
                 }
-            } label: {
-                Label(editor.rectangleLineStyle.title, systemImage: editor.rectangleLineStyle.icon)
-                    .font(JarvisTypography.control)
-                    .foregroundStyle(Color.primary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
+        .secondaryGroupSurface()
     }
 
     /// 马赛克的全部控件装在同一条胶囊里：模式、效果、笔触是一个整体的工具设置，
@@ -416,18 +557,17 @@ extension ScreenshotToolbar {
                 mosaicBrushSizeControl
             }
         }
-        .padding(.horizontal, 8)
-        .frame(height: JarvisToolbarMetrics.controlSize)
-        .background(Color.jarvisInsetSurface, in: Capsule())
+        .secondaryGroupSurface()
     }
 
     private var mosaicModePicker: some View {
         HStack(spacing: 2) {
             ForEach(ScreenshotMosaicMode.allCases) { mode in
-                MosaicOptionButton(
+                ScreenshotToolbarOptionButton(
                     icon: mode.icon,
                     title: mode.title,
-                    selected: editor.mosaicMode == mode
+                    selected: editor.mosaicMode == mode,
+                    help: mode.title
                 ) {
                     editor.mosaicMode = mode
                 }
@@ -438,10 +578,11 @@ extension ScreenshotToolbar {
     private var mosaicEffectPicker: some View {
         HStack(spacing: 2) {
             ForEach(ScreenshotMosaicStyle.allCases) { style in
-                MosaicOptionButton(
+                ScreenshotToolbarOptionButton(
                     icon: style.icon,
                     title: style.title,
-                    selected: editor.mosaicStyle == style
+                    selected: editor.mosaicStyle == style,
+                    help: style.title
                 ) {
                     editor.mosaicStyle = style
                 }
@@ -452,7 +593,7 @@ extension ScreenshotToolbar {
     /// 二级行里分组之间的竖线。
     private var secondaryDivider: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.16))
+            .fill(ScreenshotToolbarDivider.color)
             .frame(width: 1, height: 22)
     }
 
@@ -475,57 +616,6 @@ extension ScreenshotToolbar {
         }
     }
 
-    /// 组合容器里的选项：选中态是与全局一致的胶囊药丸（同 `JarvisToolbarSelectionButton`），
-    /// 不再各自套一层玻璃。
-    private struct MosaicOptionButton: View {
-        let icon: String
-        let title: String
-        let selected: Bool
-        let action: () -> Void
-
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        @State private var isHovered = false
-
-        var body: some View {
-            Button(action: action) {
-                HStack(spacing: 4) {
-                    Image(systemName: icon)
-                        .font(.system(size: 12, weight: .medium))
-                    Text(title)
-                        .font(selected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
-                }
-                .foregroundStyle(selected ? Color.white : Color.jarvisTextSecondary)
-                .padding(.horizontal, 9)
-                .frame(height: 26)
-                .background {
-                    Capsule()
-                        .fill(
-                            selected
-                                ? JarvisMotion.selectionPillTint
-                                : (isHovered ? JarvisMotion.hoverPillTint : .clear)
-                        )
-                }
-                .contentShape(Capsule())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
-            .animation(
-                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                value: isHovered
-            )
-            .animation(
-                JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
-                value: selected
-            )
-            .onHover { isHovering in
-                withAnimation(
-                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
-                ) {
-                    isHovered = isHovering
-                }
-            }
-        }
-    }
-
     private var textStyleControl: some View {
         HStack(spacing: 9) {
             Text("字号")
@@ -543,18 +633,28 @@ extension ScreenshotToolbar {
             secondaryDivider
 
             HStack(spacing: 2) {
-                textToggleButton(icon: "bold", selected: editor.textBold) {
+                ScreenshotToolbarOptionButton(
+                    icon: "bold",
+                    selected: editor.textBold,
+                    help: "粗体"
+                ) {
                     editor.textBold.toggle()
                 }
-                textToggleButton(icon: "italic", selected: editor.textItalic) {
+                ScreenshotToolbarOptionButton(
+                    icon: "italic",
+                    selected: editor.textItalic,
+                    help: "斜体"
+                ) {
                     editor.textItalic.toggle()
                 }
-                textToggleButton(icon: "strikethrough", selected: editor.textStrikethrough) {
+                ScreenshotToolbarOptionButton(
+                    icon: "strikethrough",
+                    selected: editor.textStrikethrough,
+                    help: "删除线"
+                ) {
                     editor.textStrikethrough.toggle()
                 }
             }
-            .padding(2)
-            .jarvisGlass(cornerRadius: 8, interactive: false)
 
             secondaryDivider
 
@@ -579,26 +679,7 @@ extension ScreenshotToolbar {
                 }
             }
         }
-    }
-
-    private func textToggleButton(
-        icon: String,
-        selected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(selected ? Color.primary : Color.secondary)
-                .frame(width: 28, height: 28)
-                .jarvisGlass(
-                    tint: selected ? .accentColor : nil,
-                    cornerRadius: 6,
-                    interactive: false
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .secondaryGroupSurface()
     }
 
     private func colorButtons(
@@ -629,7 +710,7 @@ extension ScreenshotToolbar {
 
     private func actionButton(
         icon: String,
-        selected: Bool = false,
+        help: String,
         enabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
@@ -641,7 +722,7 @@ extension ScreenshotToolbar {
                         weight: .medium
                     )
                 )
-                .foregroundStyle(enabled ? (selected ? Color.accentColor : Color.secondary) : Color.secondary.opacity(0.35))
+                .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.35))
                 .frame(
                     width: ScreenshotToolbarIconMetrics.box,
                     height: ScreenshotToolbarIconMetrics.box
@@ -653,12 +734,14 @@ extension ScreenshotToolbar {
                 .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .help(help)
+        .accessibilityLabel(help)
         .disabled(!enabled)
     }
 
     private var toolbarDivider: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.22))
+            .fill(ScreenshotToolbarDivider.color)
             .frame(width: 1, height: 28)
             .padding(.horizontal, 8)
     }

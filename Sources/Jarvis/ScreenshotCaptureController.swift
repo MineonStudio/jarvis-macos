@@ -143,6 +143,12 @@ enum ScreenshotToolbarMetrics {
     /// 否则测试算的是胶囊内缩、实际生效的是它加上控件内边距。
     static let secondaryRowHorizontalPadding: CGFloat = 20
 
+    /// 主按钮行的内容宽度：10 颗按钮，加 3 组分隔线（1pt 线 + 两侧各 8pt 留白）。
+    /// 它和面板的固定宽度一起决定内缩的**上界**——内缩不是越大越好。
+    static var mainRowContentWidth: CGFloat {
+        (10 * mainButtonSize) + (3 * (1 + 2 * 8))
+    }
+
     /// 行高 `rowHeight` 的胶囊要容下高 `contentHeight` 的内容，两端圆头至少要
     /// 留出多少内缩。胶囊的圆头半径是行高的一半，圆心在 (r, r)，内容角点
     /// (inset, (rowHeight - contentHeight) / 2) 到圆心的距离不能超过 r。

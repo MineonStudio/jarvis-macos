@@ -65,11 +65,21 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertFalse(progress.isComplete)
     }
 
-    func testPartialTranslationStateExposesSuccessAndFailureCounts() {
-        let state = ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5)
+    /// 状态文字不再报数量：完成态不显示，部分完成只说失败。
+    func testTranslationStateMessagesDropTheCounts() {
+        XCTAssertEqual(
+            ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5).statusMessage,
+            "部分翻译失败"
+        )
+        XCTAssertTrue(ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5).isFailure)
 
-        XCTAssertEqual(state.statusMessage, "部分完成：成功 2/5，失败 3")
-        XCTAssertTrue(state.isFailure)
+        XCTAssertNil(ScreenshotTranslationState.completed(count: 5).statusMessage)
+        XCTAssertEqual(
+            ScreenshotTranslationState.translating(completed: 3, total: 5).statusMessage,
+            "正在翻译…"
+        )
+        XCTAssertEqual(ScreenshotTranslationState.recognizing.statusMessage, "正在识别文字…")
+        XCTAssertNil(ScreenshotTranslationState.idle.statusMessage)
     }
 
     func testTranslationConfigurationLoadsTargetLanguageAndIgnoresLegacyAPIKeys() throws {

@@ -42,7 +42,6 @@ enum AppSection: Hashable, Identifiable {
         case .skill(.resume): "简历制作"
         case .skill(.wallpaper): "桌面壁纸"
         case .skill(.meetingNotes): "会议记录"
-        case .skill(.rss): "订阅"
         case .settings: "设置"
         }
     }
@@ -123,19 +122,6 @@ final class AppModel {
         capacityBytes: ClipboardCacheStore.defaultMaximumBytes,
         fileCount: 0
     )
-    var rssFeeds: [RSSFeed] = []
-    var rssGroups: [RSSGroup] = []
-    var rssItemsByFeed: [UUID: [RSSItem]] = [:]
-    var rssSelectedFeedID: UUID?
-    var rssSelectedItemID: String?
-    var rssFilter: RSSItemFilter = .all
-    var rssSearchText = ""
-    var rssIsRefreshing = false
-    var rssLastRefreshAt: Date?
-    var rssStorageError: String?
-    var rssSubscribeMessage: String?
-    var rssRefreshInterval: RSSRefreshScheduler.Interval = .default
-    var rssNotificationsEnabled = true
 
     @ObservationIgnored let clipboardCacheStore: ClipboardCacheStore
     @ObservationIgnored let clipboardService: ClipboardService
@@ -143,14 +129,6 @@ final class AppModel {
     @ObservationIgnored lazy var clipboardHistoryWriter = ClipboardHistoryWriter(store: clipboardStore)
     @ObservationIgnored lazy var startupRepository = JarvisStartupRepository()
     @ObservationIgnored let clipboardPanelController = ClipboardPanelController()
-    @ObservationIgnored lazy var rssStore = RSSFeedStore()
-    @ObservationIgnored let rssClient = RSSFeedClient()
-    @ObservationIgnored let rssScheduler = RSSRefreshScheduler()
-    @ObservationIgnored let rssNotifications = RSSNotificationService()
-    @ObservationIgnored let rssNotificationDelegate = RSSNotificationDelegate()
-    @ObservationIgnored var rssRefreshTask: Task<Void, Never>?
-    @ObservationIgnored let rssRefreshIntervalKey = "jarvis.rss.refresh.interval"
-    @ObservationIgnored let rssNotificationsEnabledKey = "jarvis.rss.notifications.enabled"
     @ObservationIgnored lazy var screenshotCacheStore = ScreenshotCacheStore()
     @ObservationIgnored lazy var screenshotHistoryStore = ScreenshotHistoryStore()
     @ObservationIgnored let screenshotController = ScreenshotCaptureController()
@@ -348,10 +326,6 @@ final class AppModel {
             let snapshot = await startupRepository.load()
             guard !Task.isCancelled else { return }
             applyStartupSnapshot(snapshot)
-            // RSS 的读盘与调度都挂在延迟启动里：不拖慢首屏，也不进 init。
-            await loadRSSState()
-            guard !Task.isCancelled else { return }
-            startRSSServices()
             JarvisLog.info(
                 category: .lifecycle,
                 event: "startup.load.complete",
@@ -424,7 +398,6 @@ final class AppModel {
 
     deinit {
         toastDismissTask?.cancel()
-        rssRefreshTask?.cancel()
         startupTask?.cancel()
         clipboardSaveTask?.cancel()
         aiModelsRefreshTask?.cancel()

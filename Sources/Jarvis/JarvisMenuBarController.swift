@@ -43,11 +43,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         action: #selector(toggleMeetingRecording),
         keyEquivalent: ""
     )
-    private let rssMenuItem = NSMenuItem(
-        title: "打开订阅",
-        action: #selector(openRSS),
-        keyEquivalent: ""
-    )
 
     deinit {
         appearanceObservation?.invalidate()
@@ -128,13 +123,9 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         configureMenuShortcut(clipboardMenuItem, with: app.clipboardShortcut)
         updateMeetingMenuItem()
         configureMenuShortcut(meetingMenuItem, with: app.meetingShortcut)
-        updateRSSMenuItem()
         let allowed = app.hasAllRequiredPermissions
         for item in menu.items where !item.isSeparatorItem {
-            if item.action == #selector(openMainWindow)
-                || item.action == #selector(terminate)
-                || item.action == #selector(openRSS)
-            {
+            if item.action == #selector(openMainWindow) || item.action == #selector(terminate) {
                 item.isEnabled = true
             } else if item.action == #selector(toggleMeetingRecording) {
                 item.isEnabled = allowed || isMeetingRecording
@@ -157,7 +148,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         addMenuItem(screenshotMenuItem)
         addMenuItem(clipboardMenuItem)
         addMenuItem(meetingMenuItem)
-        addMenuItem(rssMenuItem)
         menu.addItem(.separator())
 
         for layout in WindowLayout.allCases {
@@ -356,15 +346,7 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openMainWindow() {
-        presentMainWindow(resetSection: true)
-    }
-
-    /// `resetSection: false` 用于「打开订阅」这类已经选好目标模块的入口——
-    /// 不然窗口一开就被拉回首页。
-    private func presentMainWindow(resetSection: Bool) {
-        if resetSection {
-            app?.selectedSection = .home
-        }
+        app?.selectedSection = .home
         NSApp.activate(ignoringOtherApps: true)
 
         let mainWindow = NSApp.windows.first { window in
@@ -405,22 +387,6 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openClipboardPanel() {
         app?.showClipboardPanel()
-    }
-
-    /// 未读数是这个模块存在的理由，菜单项直接把数字写在标题里。
-    private func updateRSSMenuItem() {
-        guard let app else { return }
-        let unread = app.rssUnreadTotal
-        rssMenuItem.title = unread > 0 ? "订阅（\(unread) 篇未读）" : "打开订阅"
-    }
-
-    @objc private func openRSS() {
-        app?.selectedSection = .skill(.rss)
-        app?.rssSelectedFeedID = nil
-        if let item = app?.rssFilteredRSSItems().first {
-            app?.rssSelectedItemID = item.id
-        }
-        presentMainWindow(resetSection: false)
     }
 
     @objc private func toggleMeetingRecording() {

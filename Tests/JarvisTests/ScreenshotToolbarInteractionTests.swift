@@ -21,15 +21,26 @@ final class ScreenshotToolbarInteractionTests: XCTestCase {
         )
     }
 
-    func testTranslationModeTogglesClosedOnSecondTap() throws {
+    /// 走按钮真正调用的那个入口：进入时必须置上 translationMode，否则二级栏根本
+    /// 不会出现（上一版就是漏了这一步，而且测试测的是模型方法、覆盖不到接线）。
+    func testFirstTranslationTapEntersModeAndStartsTranslation() throws {
         let editor = try makeEditor()
         XCTAssertFalse(editor.secondaryBarVisible)
 
-        editor.enterTranslationMode()
+        let shouldStart = editor.toggleTranslationMode()
+
+        XCTAssertTrue(shouldStart, "第一次点翻译图标应当发起翻译")
         XCTAssertTrue(editor.translationMode)
         XCTAssertTrue(editor.secondaryBarVisible, "进入翻译模式后二级栏应当展开")
+    }
 
-        editor.exitTranslationMode()
+    func testSecondTranslationTapLeavesModeWithoutRestarting() throws {
+        let editor = try makeEditor()
+        XCTAssertTrue(editor.toggleTranslationMode())
+
+        let shouldStartAgain = editor.toggleTranslationMode()
+
+        XCTAssertFalse(shouldStartAgain, "再点一次只是退出，不该重跑一遍翻译")
         XCTAssertFalse(editor.translationMode)
         XCTAssertFalse(editor.secondaryBarVisible, "再点一次翻译图标应当收起二级栏")
     }

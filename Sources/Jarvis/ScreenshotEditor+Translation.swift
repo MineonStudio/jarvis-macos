@@ -52,6 +52,20 @@ extension ScreenshotEditorModel {
         translationMode = false
     }
 
+    /// 点翻译图标：不在翻译态就进入并开始翻译，已经在就退出。
+    ///
+    /// 决策放在模型里而不是按钮闭包里：写在闭包里就只能靠肉眼验，上一版正是漏掉了
+    /// 「进入翻译态」这一步，二级栏再也出不来。
+    /// - Returns: 这一次是否需要真的发起翻译。
+    func toggleTranslationMode() -> Bool {
+        if translationMode {
+            exitTranslationMode()
+            return false
+        }
+        enterTranslationMode()
+        return true
+    }
+
     func startTranslation() {
         guard !translationState.isRunning else { return }
 

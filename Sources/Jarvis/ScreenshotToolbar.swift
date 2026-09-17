@@ -215,9 +215,7 @@ extension ScreenshotToolbar {
     /// 与其它工具一致：点一下进翻译模式，再点一下退出。
     private var translationButton: some View {
         Button {
-            if editor.translationMode {
-                editor.exitTranslationMode()
-            } else {
+            if editor.toggleTranslationMode() {
                 onAction(.translation)
             }
         } label: {

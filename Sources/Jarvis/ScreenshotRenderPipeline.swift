@@ -91,7 +91,6 @@ final class ScreenshotRenderPipeline {
         }
 
         for annotation in request.annotations {
-            guard annotation.kind != .text else { continue }
             context.saveGState()
             // Annotation points come from the SwiftUI canvas (top-left
             // origin), while the exported bitmap keeps the source image's
@@ -112,13 +111,13 @@ final class ScreenshotRenderPipeline {
                     pixelatedImage: request.pixelatedImage
                 )
             case .text:
-                break
+                // 文字和别的标注一样走这条翻转过 CTM 的通道，位置由
+                // `ScreenshotAnnotationText` 统一给出——预览和输入控件用的是同一份。
+                // 它也因此和别的标注一样按数组顺序叠：导出与预览的上下层关系一致
+                // （原来文字单独留到最后画，永远压在所有标注之上）。
+                ScreenshotAnnotationText.draw(annotation, in: context)
             }
             context.restoreGState()
-        }
-
-        for annotation in request.annotations where annotation.kind == .text {
-            drawText(annotation, in: context, canvasSize: request.canvasSize, scale: scale)
         }
 
         return context.makeImage()
@@ -240,67 +239,6 @@ final class ScreenshotRenderPipeline {
         context.translateBy(x: 0, y: canvasRect.height)
         context.scaleBy(x: 1, y: -1)
         context.draw(filteredImage, in: canvasRect)
-        context.restoreGState()
-    }
-
-    private func drawText(
-        _ annotation: ScreenshotAnnotation,
-        in context: CGContext,
-        canvasSize: CGSize,
-        scale: CGFloat
-    ) {
-        guard let text = annotation.text, !text.isEmpty else { return }
-
-        let baseFont = NSFont.systemFont(
-            ofSize: annotation.fontSize,
-            weight: annotation.isBold ? .semibold : .regular
-        )
-        var descriptor = baseFont.fontDescriptor
-        if annotation.isItalic {
-            var traits = descriptor.symbolicTraits
-            traits.insert(.italic)
-            descriptor = descriptor.withSymbolicTraits(traits)
-        }
-        let font = NSFont(descriptor: descriptor, size: annotation.fontSize) ?? baseFont
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: annotation.textColor.nsColor,
-            .strikethroughStyle: annotation.isStrikethrough ? NSUnderlineStyle.single.rawValue : 0
-        ]
-        let textSize = annotation.textSize
-        let lines = text.components(separatedBy: "\n")
-        let lineHeight = max(
-            annotation.fontSize * 1.22,
-            font.ascender - font.descender + font.leading
-        )
-        let top = annotation.start.y - textSize.height / 2 + 9
-        let left = annotation.start.x - textSize.width / 2 + 9
-
-        context.saveGState()
-        // The previous canvas pass restored the context to its identity
-        // transform. Text is drawn in the native bottom-left coordinate
-        // system, scaled back to logical points for AppKit typography.
-        context.scaleBy(x: scale, y: scale)
-        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = graphicsContext
-        for (index, line) in lines.enumerated() {
-            let lineWidth = (line as NSString).size(withAttributes: attributes).width
-            let baselineY = canvasSize.height - (top + font.ascender + CGFloat(index) * lineHeight)
-            NSAttributedString(string: line, attributes: attributes)
-                .draw(at: NSPoint(x: left, y: baselineY))
-
-            if annotation.isStrikethrough {
-                annotation.textColor.nsColor.setStroke()
-                let strikeY = baselineY + font.pointSize * 0.28
-                let path = NSBezierPath()
-                path.move(to: NSPoint(x: left, y: strikeY))
-                path.line(to: NSPoint(x: left + lineWidth, y: strikeY))
-                path.lineWidth = max(1, annotation.fontSize / 14)
-                path.stroke()
-            }
-        }
-        NSGraphicsContext.restoreGraphicsState()
         context.restoreGState()
     }
 

@@ -121,28 +121,20 @@ struct TextAnnotationView: View {
     let isDraft: Bool
 
     var body: some View {
-        Text(verbatim: annotation.text ?? "")
-            .font(.system(size: annotation.fontSize, weight: annotation.isBold ? .semibold : .regular))
-            .italic(annotation.isItalic)
-            .strikethrough(annotation.isStrikethrough, color: annotation.textColor.color)
-            .foregroundStyle(annotation.textColor.color.opacity(isDraft ? 0.62 : 1))
-            .multilineTextAlignment(.leading)
-            .lineLimit(nil)
-            // 与渲染端一致：文字从左上角起排、内缩 9pt。
-            //
-            // 原来是默认居中：多行时每行各自居中，而导出端是左对齐——预览里排得好好的
-            // 两行，导出来是另一个样子。`textSize` 里那 18pt 的横向余量就是这 9pt 的两侧。
-            .padding(.leading, 9)
-            .padding(.top, 5)
-            .frame(
-                width: annotation.textSize.width,
-                height: annotation.textSize.height,
-                alignment: .topLeading
-            )
-            .position(
-                x: annotation.start.x - origin.x,
-                y: annotation.start.y - origin.y
-            )
+        // 不用 SwiftUI 的 `Text`：它的行框落点和 AppKit 的文本绘制对不上，而且偏差随
+        // 字号变（22pt 时约 4pt，72pt 时 14pt 上下），正好是「正在编辑的文字」与
+        // 「画布上的文字」叠不上的那一段。走共享的绘制器，预览、输入控件、导出三边
+        // 就只有一个位置公式。
+        Canvas { context, _ in
+            context.translateBy(x: -origin.x, y: -origin.y)
+            context.withCGContext { cgContext in
+                ScreenshotAnnotationText.draw(
+                    annotation,
+                    in: cgContext,
+                    opacity: isDraft ? 0.62 : 1
+                )
+            }
+        }
     }
 }
 

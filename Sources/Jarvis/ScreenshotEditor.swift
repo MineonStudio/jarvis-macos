@@ -178,15 +178,15 @@ struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
+    /// 占位尺寸（也是命中区与拖动夹取用的框）。字体与行高都取自
+    /// `ScreenshotAnnotationText`——排版的字体若在这里再写一份，斜体这类要靠
+    /// descriptor 拼出来的字形就会量得比实际窄。
     var textSize: CGSize {
         let lines = (text ?? "").components(separatedBy: "\n")
-        let font = NSFont.systemFont(
-            ofSize: fontSize,
-            weight: isBold ? .semibold : .regular
-        )
+        let font = ScreenshotAnnotationText.font(for: self)
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         let lineWidths = lines.map { ($0 as NSString).size(withAttributes: attributes).width }
-        let lineHeight = max(fontSize * 1.22, font.ascender - font.descender + font.leading)
+        let lineHeight = ScreenshotAnnotationText.lineHeight(fontSize: fontSize, font: font)
         let width = max(90, (lineWidths.max() ?? 0) + 18)
         let height = max(lineHeight + 14, lineHeight * CGFloat(max(lines.count, 1)) + 10)
         return CGSize(width: width, height: height)
@@ -391,6 +391,23 @@ extension ScreenshotEditorModel {
         editingTextID = nil
     }
 
+    /// 重新编辑一段已有的文字：内容与样式都装回输入状态。
+    ///
+    /// 锚点用 `ScreenshotAnnotationText.topLeft(of:)` 反推——输入控件就摆在那个点
+    /// 上，而提交时文字的左上角也落在那里，所以「点进编辑」这个动作画面上不该有
+    /// 任何位移（这条以前是歪的：预览、输入控件、导出各画各的）。
+    func beginTextEditing(id: UUID) {
+        guard let annotation = annotations.first(where: { $0.id == id && $0.kind == .text }) else { return }
+        textInputAnchor = ScreenshotAnnotationText.topLeft(of: annotation)
+        editingTextID = id
+        textDraft = annotation.text ?? ""
+        textFontSize = annotation.fontSize
+        textColor = annotation.textColor
+        textBold = annotation.isBold
+        textItalic = annotation.isItalic
+        textStrikethrough = annotation.isStrikethrough
+    }
+
     /// 结束内联输入（取消：草稿丢弃）。
     func endTextEditing() {
         textInputAnchor = nil
@@ -420,7 +437,9 @@ extension ScreenshotEditorModel {
         let editingID = editingTextID
         endTextEditing()
         guard !text.isEmpty else { return false }
-        if let editingID {
+        // 找不到目标（编辑期间那条标注被撤掉/删掉了）就当作新的一段落下来：
+        // `updateText` 对找不到的 id 是静默返回，用户打过的字会连同这次输入一起没了。
+        if let editingID, annotations.contains(where: { $0.id == editingID && $0.kind == .text }) {
             updateText(id: editingID, text: text, alignedAtLeft: anchor)
         } else {
             addText(alignedAtLeft: anchor, text: text)

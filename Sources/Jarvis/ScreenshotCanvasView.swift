@@ -42,11 +42,11 @@ struct ScreenshotCanvasView: View {
     }
 
     /// 从既有标注反推出输入锚点（`textCenter(alignedAtLeft:)` 的逆运算）。
+    ///
+    /// 位置公式住在 `ScreenshotAnnotationText.topLeft(of:)`——预览、输入控件、导出
+    /// 都用那一份，这里只是它在画布视图里的名字。
     static func textEditingAnchor(for annotation: ScreenshotAnnotation) -> CGPoint {
-        CGPoint(
-            x: annotation.start.x - annotation.textSize.width / 2 + 9,
-            y: annotation.start.y - annotation.textSize.height / 2 + 9
-        )
+        ScreenshotAnnotationText.topLeft(of: annotation)
     }
 
     static func textToolTapOutcome(
@@ -73,7 +73,7 @@ struct ScreenshotCanvasView: View {
                 ScreenshotTranslationBlockView(block: block)
             }
 
-            ForEach(editor.annotations) { annotation in
+            ForEach(canvasAnnotations) { annotation in
                 ScreenshotAnnotationView(
                     annotation: annotation,
                     canvasSize: editor.canvasSize,
@@ -222,7 +222,7 @@ struct ScreenshotCanvasView: View {
                     switch outcome {
                     case let .commitThenEditExisting(id):
                         editor.endMove()
-                        beginTextEditing(id: id)
+                        editor.beginTextEditing(id: id)
                     case .commitOnly:
                         if activeAnnotationID != nil {
                             editor.endMove()
@@ -243,6 +243,27 @@ struct ScreenshotCanvasView: View {
             x: min(max(point.x, selectionRect.minX), selectionRect.maxX),
             y: min(max(point.y, selectionRect.minY), selectionRect.maxY)
         )
+    }
+
+    /// 画布上真正要画的标注：正在编辑的那段文字除外。
+    ///
+    /// 它是画布上唯一「有另一份正在显示」的标注——内联输入控件正把同样的文字摆在
+    /// 同一个位置。两处都画，就是两份叠着的字（二次编辑时最容易看见：点一下已写好的
+    /// 文字，它就重影）。输入控件本来就是最终要落下去的那份显示的化身，让位给它。
+    ///
+    /// 例外是多行文字：输入控件是单行的（回车即确认），顶上去只显示得了第一行，
+    /// 第 2..n 行会在编辑期间凭空消失。这种文字现在的界面打不出来（只可能来自旧
+    /// 数据），那就让画布继续画着，别在半路抽走几行。
+    var canvasAnnotations: [ScreenshotAnnotation] {
+        guard let editingTextID = editor.editingTextID, editor.isEditingText else {
+            return editor.annotations
+        }
+        let editedIsMultiLine = editor.annotations
+            .first { $0.id == editingTextID }?
+            .text?
+            .contains("\n") ?? false
+        guard !editedIsMultiLine else { return editor.annotations }
+        return editor.annotations.filter { $0.id != editingTextID }
     }
 
     private var draftAnnotation: ScreenshotAnnotation? {
@@ -307,18 +328,6 @@ struct ScreenshotCanvasView: View {
     private func commitTextIfEditing() {
         guard editor.isEditingText else { return }
         commitText()
-    }
-
-    private func beginTextEditing(id: UUID) {
-        guard let annotation = editor.annotations.first(where: { $0.id == id && $0.kind == .text }) else { return }
-        editor.textInputAnchor = Self.textEditingAnchor(for: annotation)
-        editor.editingTextID = id
-        editor.textDraft = annotation.text ?? ""
-        editor.textFontSize = annotation.fontSize
-        editor.textColor = annotation.textColor
-        editor.textBold = annotation.isBold
-        editor.textItalic = annotation.isItalic
-        editor.textStrikethrough = annotation.isStrikethrough
     }
 
     private func commitText() {

@@ -555,11 +555,7 @@ extension AppModel {
         presentingWindow: NSWindow? = nil
     ) {
         let savePanel = NSSavePanel()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        savePanel.nameFieldStringValue = "贾维斯-\(formatter.string(from: Date())).png"
+        savePanel.nameFieldStringValue = ScreenshotSaveName.defaultName()
         savePanel.canCreateDirectories = true
         if let presentingWindow {
             // The history preview is a high-level panel. Present the native

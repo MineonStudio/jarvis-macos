@@ -249,6 +249,10 @@ extension ScreenshotCaptureController {
     /// 编辑面按贴图在原位铺开。走的是「重新编辑历史截图」同一条路（`showResult`），
     /// 只是承载面板落在贴图原位而不是屏幕中央——看起来就像在贴图本身上面标注。
     ///
+    /// 这两个开关都关掉：这是**标注**这张贴图，不是重新框一次选区。开着的话贴着边
+    /// 拖一下就把贴图裁了（编辑器里还没法撤销），空手拖一下画布就跟着走、工具栏
+    /// 留在原地。
+    ///
     /// - Returns: 编辑面有没有真的开起来。没开起来时调用方要把贴图放回去。
     private func showPinnedEditSurface(
         data: Data,
@@ -264,7 +268,12 @@ extension ScreenshotCaptureController {
             initialCapture: capture
         )
         activeSessionID = session.id
-        showResult(session, onAction: onAction)
+        showResult(
+            session,
+            onAction: onAction,
+            allowsSelectionTransform: false,
+            allowsWindowDrag: false
+        )
         return resultWindow != nil
     }
 

@@ -197,7 +197,9 @@ extension ScreenshotCaptureController {
 
     func showResult(
         _ session: ScreenshotEditingSession,
-        onAction: @escaping (ScreenshotAction) -> Void
+        onAction: @escaping (ScreenshotAction) -> Void,
+        allowsSelectionTransform: Bool = true,
+        allowsWindowDrag: Bool = true
     ) {
         guard activeSessionID == session.id else { return }
         let capture = session.frozenScreen
@@ -223,7 +225,9 @@ extension ScreenshotCaptureController {
             capture: capture,
             image: image,
             editor: editor,
-            onAction: onAction
+            onAction: onAction,
+            allowsSelectionTransform: allowsSelectionTransform,
+            allowsWindowDrag: allowsWindowDrag
         )
         let panels = makePresentationPanels(presentation)
         panels.imagePanel.addChildWindow(panels.toolbarPanel, ordered: .above)
@@ -344,6 +348,8 @@ extension ScreenshotCaptureController {
                 interactive: true
             ),
             editor: presentation.editor,
+            allowsSelectionTransform: presentation.allowsSelectionTransform,
+            allowsWindowDrag: presentation.allowsWindowDrag,
             onDoubleClick: quickCopyAndClose,
             onMiddleClick: pasteToScreen,
             onEscape: cancelEditing,

@@ -37,6 +37,12 @@ struct ScreenshotPresentation {
     let image: NSImage
     let editor: ScreenshotEditorModel
     let onAction: (ScreenshotAction) -> Void
+    /// 画布上拖选区手柄改裁剪的开关。截图与历史重编辑要它（那就是裁剪），
+    /// 贴图编辑面不要——用户只是想标注，贴着边拖一下就把贴图裁了。
+    let allowsSelectionTransform: Bool
+    /// 空手拖画布时窗口跟着走的开关。贴图编辑面同样不要：画布被拖走之后，
+    /// 工具栏（子窗口）还留在原地，看上去就是断的。
+    let allowsWindowDrag: Bool
 }
 
 struct ScreenshotPresentationPanels {

@@ -608,10 +608,15 @@ extension ScreenshotEditorModel {
         redoStack.removeAll()
     }
 
+    /// 把「左上角锚点」换成标注的中心点。
+    ///
+    /// 约定：调用方给的 `point` 就是文字的**左上角**——渲染端画在
+    /// `center - size/2 + 9`，这两个 9 正好把它抵回来。这样输入时的光标位置
+    /// （输入控件把内边距归零，文字起点就是锚点）和确认后文字落下的位置完全一致。
     private func textCenter(alignedAtLeft point: CGPoint, for annotation: ScreenshotAnnotation) -> CGPoint {
         CGPoint(
             x: point.x + annotation.textSize.width / 2 - 9,
-            y: point.y
+            y: point.y + annotation.textSize.height / 2 - 9
         )
     }
 

@@ -238,7 +238,7 @@ extension ScreenshotEditorBehaviorTests {
 }
 
 extension ScreenshotEditorBehaviorTests {
-    /// 编辑状态下按住文字拖动：已有的标注跟着走。
+    /// 编辑状态下按住输入区拖动：已有的标注跟着走，锚点一起走。
     func testDraggingWhileEditingMovesTheExistingText() throws {
         let editor = try makeEditor()
         editor.addText(alignedAtLeft: CGPoint(x: 70, y: 50), text: "拖我")
@@ -246,10 +246,7 @@ extension ScreenshotEditorBehaviorTests {
         let originalStart = try XCTUnwrap(editor.annotations.first?.start)
 
         // 进入编辑态（锚点按反推公式还原）。
-        editor.textInputAnchor = CGPoint(
-            x: originalStart.x - editor.annotations[0].textSize.width / 2 + 9,
-            y: originalStart.y
-        )
+        editor.textInputAnchor = ScreenshotCanvasView.textEditingAnchor(for: editor.annotations[0])
         editor.editingTextID = id
         let anchorBefore = try XCTUnwrap(editor.textInputAnchor)
 

@@ -222,6 +222,9 @@ extension ScreenshotAnnotationPlacementTests {
     }
 
     /// 二次编辑：从既有标注反推出来的输入锚点，必须能原样还原它的位置。
+    ///
+    /// 这条同时是「光标位置 = 确认后文字位置」的保证：输入控件把内边距归零、放在
+    /// 这个锚点上，而确认时文字的左上角也落在这个锚点上。
     func testReeditingAnchorRoundTrips() throws {
         let editor = ScreenshotEditorModel(
             image: NSImage(size: canvas),
@@ -233,13 +236,34 @@ extension ScreenshotAnnotationPlacementTests {
         editor.addText(alignedAtLeft: anchor, text: "原文")
         let annotation = try XCTUnwrap(editor.annotations.first)
 
-        // 这三行与画布视图里 `beginTextEditing(id:)` 的反推公式一致。
-        let reconstructed = CGPoint(
-            x: annotation.start.x - annotation.textSize.width / 2 + 9,
-            y: annotation.start.y
-        )
+        // 用的是画布视图里那个反推函数本身，不是另抄一遍公式。
+        let reconstructed = ScreenshotCanvasView.textEditingAnchor(for: annotation)
 
         XCTAssertEqual(reconstructed.x, anchor.x, accuracy: 0.001, "二次编辑的锚点偏了")
         XCTAssertEqual(reconstructed.y, anchor.y, accuracy: 0.001)
+    }
+}
+
+extension ScreenshotAnnotationPlacementTests {
+    /// 光标所在的位置就是确认后文字落下的位置。
+    ///
+    /// 输入控件把内边距归零、整体放在锚点上，所以「光标位置 = 锚点」；这条断言渲染端
+    /// 也把文字画在锚点上——两边一致，确认后文字才不会偏。用户反馈过的「确认后明显
+    /// 偏左上」，差的就是原来 SwiftUI 控件那圈改不掉的内容内边距。
+    func testCommittedTextTopLeftLandsOnTheEditingAnchor() throws {
+        let editor = ScreenshotEditorModel(
+            image: NSImage(size: canvas),
+            data: Data(),
+            outputData: Data(),
+            canvasSize: canvas
+        )
+        let anchor = CGPoint(x: 140, y: 100)
+        editor.addText(alignedAtLeft: anchor, text: "对齐检查")
+
+        let annotation = try XCTUnwrap(editor.annotations.first)
+        let ink = try inkBounds(of: annotation)
+
+        XCTAssertEqual(ink.minX, anchor.x, accuracy: 8, "确认后的文字应当落在锚点上")
+        XCTAssertEqual(ink.minY, anchor.y, accuracy: 10, "确认后的文字应当落在锚点上")
     }
 }

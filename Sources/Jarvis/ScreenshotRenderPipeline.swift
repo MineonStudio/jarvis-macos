@@ -404,7 +404,7 @@ private func translationLineBounds(
     }
 }
 
-private extension ScreenshotTextColor {
+extension ScreenshotTextColor {
     var nsColor: NSColor {
         switch self {
         case .red: NSColor(red: 1, green: 0.12, blue: 0.12, alpha: 1)

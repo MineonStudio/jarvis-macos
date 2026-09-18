@@ -24,9 +24,6 @@ struct ScreenshotCanvasView: View {
     @State private var lastDragLocation: CGPoint?
     @State private var mosaicPoints: [CGPoint] = []
     @State private var activeAnnotationID: UUID?
-    @FocusState private var textFieldFocused: Bool
-    /// 拖动文字时的上一帧位置（`DragGesture` 给的是累计位移）。
-    @State private var textDragLocation: CGPoint?
 
     static let canvasCoordinateSpace = "jarvis.screenshot.canvas"
 
@@ -42,6 +39,14 @@ struct ScreenshotCanvasView: View {
         case commitOnly
         /// 开始一段新的文字。
         case beginNew
+    }
+
+    /// 从既有标注反推出输入锚点（`textCenter(alignedAtLeft:)` 的逆运算）。
+    static func textEditingAnchor(for annotation: ScreenshotAnnotation) -> CGPoint {
+        CGPoint(
+            x: annotation.start.x - annotation.textSize.width / 2 + 9,
+            y: annotation.start.y - annotation.textSize.height / 2 + 9
+        )
     }
 
     static func textToolTapOutcome(
@@ -225,7 +230,6 @@ struct ScreenshotCanvasView: View {
                     case .beginNew:
                         editor.beginTextEditing(at: start)
                         editor.textDraft = ""
-                        textFieldFocused = true
                     }
                 }
                 resetDragState()
@@ -282,43 +286,20 @@ struct ScreenshotCanvasView: View {
     }
 
     private func inlineTextEditor(at point: CGPoint) -> some View {
-        let height = inlineTextEditorHeight
-        return ScreenshotInlineTextEditor(
-            editor: editor,
-            textDraft: $editor.textDraft,
-            textFieldFocused: $textFieldFocused,
-            fieldWidth: inlineFieldWidth,
-            textEditorHeight: height
+        // 视图原点 = 锚点 = 确认后文字的左上角。输入控件把内边距归零了，所以光标
+        // 停的位置就是文字将要落下的位置。
+        ScreenshotSingleLineTextInput(
+            text: $editor.textDraft,
+            fontSize: editor.textFontSize,
+            isBold: editor.textBold,
+            isItalic: editor.textItalic,
+            isStrikethrough: editor.textStrikethrough,
+            color: editor.textColor.nsColor,
+            onCommit: { commitText() },
+            onMove: { delta in editor.moveTextEditing(by: delta) }
         )
-        // 按住输入区拖动 = 移动这段文字（无论是否已有标注）。
-        //
-        // 用高优先级手势：拖动被它接走，于是不会变成「框选文字」；而单击（位移小于
-        // 3pt）不进这个手势，仍然落到 TextEditor 上完成定位光标与开始输入。
-        .highPriorityGesture(
-            // 坐标系必须钉在画布上：手势挂在输入区上，而输入区本身会跟着移动，
-            // 用它自己的局部坐标算位移会自我反馈、抖起来。
-            DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.canvasCoordinateSpace))
-                .onChanged { value in
-                    let previous = textDragLocation ?? value.startLocation
-                    let delta = CGPoint(
-                        x: value.location.x - previous.x,
-                        y: value.location.y - previous.y
-                    )
-                    textDragLocation = value.location
-                    guard delta != .zero else { return }
-                    editor.moveTextEditing(by: delta)
-                }
-                .onEnded { _ in textDragLocation = nil }
-        )
-        // 输入区跟着光标走，并夹在画布内：它原来是靠 .position 定位的，重做控件时
-        // 被连着参数一起删掉了，于是光标跑到了画布左上角。
-        .position(
-            x: point.x - 8 + inlineFieldWidth / 2,
-            y: min(
-                max(point.y + height / 2, height / 2),
-                max(height / 2, editor.canvasSize.height - height / 2)
-            )
-        )
+        .frame(width: inlineFieldWidth, height: inlineTextEditorHeight)
+        .offset(x: point.x, y: point.y)
     }
 
     /// 正在输入的话先把草稿落到标注上。编辑器没有确认按钮，这些「离开输入」的
@@ -330,10 +311,7 @@ struct ScreenshotCanvasView: View {
 
     private func beginTextEditing(id: UUID) {
         guard let annotation = editor.annotations.first(where: { $0.id == id && $0.kind == .text }) else { return }
-        editor.textInputAnchor = CGPoint(
-            x: annotation.start.x - annotation.textSize.width / 2 + 9,
-            y: annotation.start.y
-        )
+        editor.textInputAnchor = Self.textEditingAnchor(for: annotation)
         editor.editingTextID = id
         editor.textDraft = annotation.text ?? ""
         editor.textFontSize = annotation.fontSize
@@ -341,92 +319,35 @@ struct ScreenshotCanvasView: View {
         editor.textBold = annotation.isBold
         editor.textItalic = annotation.isItalic
         editor.textStrikethrough = annotation.isStrikethrough
-        textFieldFocused = true
     }
 
     private func commitText() {
         editor.commitTextEditing()
-        textFieldFocused = false
     }
 
     private func cancelText() {
         editor.endTextEditing()
-        textFieldFocused = false
     }
 
     /// 输入区的宽度：跟着内容长，上限留到画布边。
-    ///
-    /// 原来卡在「十五个字符」宽（还带一圈胶囊底），既像输入框又逼着文字提前折行。
     private var inlineFieldWidth: CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
-        let measuredWidth = inlineTextLines
-            .map { ($0 as NSString).size(withAttributes: attributes).width }
-            .max() ?? 0
-        let minimumFieldWidth = textWidth(for: 6, using: attributes) + 30
+        let measuredWidth = (editor.textDraft as NSString).size(withAttributes: attributes).width
+        let minimumFieldWidth = textWidth(for: 6, using: attributes) + 8
         let availableWidth = max(minimumFieldWidth, editor.canvasSize.width - inlineFieldHorizontalMargin)
-        let contentWidth = measuredWidth + 30
-        return min(availableWidth, max(minimumFieldWidth, contentWidth))
+        return min(availableWidth, max(minimumFieldWidth, measuredWidth + 8))
     }
 
-    /// 输入区的高度：按实际行数长（换行靠回车，不靠自动折行）。
+    /// 单行输入区的高度：正好一行。
     private var inlineTextEditorHeight: CGFloat {
-        let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
-        let width = max(inlineFieldWidth - 30, 1)
-        let totalLines = inlineTextLineCount(using: attributes, width: width)
-        let lineHeight = max(
+        max(
             editor.textFontSize * 1.28,
             inlineTextFont.ascender - inlineTextFont.descender + inlineTextFont.leading
         )
-        // 不封顶：内容多高输入区就多高，这样它永远不需要滚动，滚动条也就不会出现。
-        // 多出来的 16pt 是给 TextEditor 自己的内容内边距留的余量。
-        return max(lineHeight + 16, CGFloat(totalLines) * lineHeight + 16)
     }
 
     private var inlineFieldHorizontalMargin: CGFloat {
         96
-    }
-
-    private func inlineTextLineCount(
-        using attributes: [NSAttributedString.Key: Any],
-        width: CGFloat
-    ) -> Int {
-        inlineTextLines.reduce(0) { count, line in
-            count + wrappedLines(for: line, width: width, using: attributes).count
-        }
-    }
-
-    private func wrappedLines(
-        for line: String,
-        width: CGFloat,
-        using attributes: [NSAttributedString.Key: Any]
-    ) -> [String] {
-        guard !line.isEmpty else { return [""] }
-
-        var lines: [String] = []
-        var currentLine = ""
-        var currentWidth: CGFloat = 0
-
-        for character in line {
-            let characterString = String(character)
-            let characterWidth = (characterString as NSString).size(withAttributes: attributes).width
-            if !currentLine.isEmpty, currentWidth + characterWidth > width {
-                lines.append(currentLine)
-                currentLine = characterString
-                currentWidth = characterWidth
-            } else if currentLine.count >= 15 {
-                lines.append(currentLine)
-                currentLine = characterString
-                currentWidth = characterWidth
-            } else {
-                currentLine.append(character)
-                currentWidth += characterWidth
-            }
-        }
-
-        if !currentLine.isEmpty {
-            lines.append(currentLine)
-        }
-        return lines
     }
 
     private func textWidth(
@@ -442,10 +363,6 @@ struct ScreenshotCanvasView: View {
             ofSize: editor.textFontSize,
             weight: editor.textBold ? .semibold : .regular
         )
-    }
-
-    private var inlineTextLines: [String] {
-        editor.textDraft.components(separatedBy: "\n")
     }
 
     private var inlineEditorWidth: CGFloat {
@@ -466,35 +383,6 @@ struct ScreenshotCanvasView: View {
 
     private func distance(from start: CGPoint, to end: CGPoint) -> CGFloat {
         hypot(end.x - start.x, end.y - start.y)
-    }
-}
-
-private struct ScreenshotInlineTextEditor: View {
-    @ObservedObject var editor: ScreenshotEditorModel
-    @Binding var textDraft: String
-    @FocusState.Binding var textFieldFocused: Bool
-    let fieldWidth: CGFloat
-    let textEditorHeight: CGFloat
-
-    var body: some View {
-        // 只留光标和文字：没有输入框外观、没有确认/取消按钮。
-        //
-        // 底下仍然是一个真的 TextEditor——它承担输入法、光标位置、选区这些必须由
-        // 系统控件负责的事，只是不带任何装饰。文字与光标的位置由它的内边距决定，
-        // 那圈内边距和落盘时 `addText(alignedAtLeft:)` / 渲染端的 ±9 是配套的，
-        // 去掉就会让「正在输入的文字」和「提交后的文字」错位。
-        TextEditor(text: $textDraft)
-            .scrollContentBackground(.hidden)
-            .font(.system(size: editor.textFontSize, weight: editor.textBold ? .semibold : .regular))
-            .italic(editor.textItalic)
-            .strikethrough(editor.textStrikethrough, color: editor.textColor.color)
-            .foregroundStyle(editor.textColor.color)
-            .tint(editor.textColor.color)
-            .focused($textFieldFocused)
-            .scrollIndicators(.hidden, axes: .vertical)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 8)
-            .frame(width: fieldWidth, height: textEditorHeight)
     }
 }
 

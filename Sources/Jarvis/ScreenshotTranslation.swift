@@ -323,9 +323,10 @@ struct ScreenshotTranslationService: Sendable {
         targetLanguage: ScreenshotTranslationLanguage
     ) -> ScreenshotTranslationPlan {
         var grouped: [String: (source: Locale.Language?, blocks: [ScreenshotOCRBlock])] = [:]
+        let recognizer = makeLanguageRecognizer()
         for block in blocks {
             guard needsTranslation(block.text) else { continue }
-            let language = detectedLanguage(for: block.text)
+            let language = detectedLanguage(for: block.text, using: recognizer)
             if let language, targetLanguage.matches(language) {
                 continue
             }
@@ -355,7 +356,9 @@ struct ScreenshotTranslationService: Sendable {
         }
     }
 
-    static func detectedLanguage(for text: String) -> Locale.Language? {
+    /// 复用同一个识别器。`NLLanguageRecognizer` 的构造要加载模型，逐块新建的话
+    /// 一张 200 块的截图就是 200 次初始化。
+    static func makeLanguageRecognizer() -> NLLanguageRecognizer {
         let recognizer = NLLanguageRecognizer()
         recognizer.languageConstraints = [
             .simplifiedChinese,
@@ -365,6 +368,13 @@ struct ScreenshotTranslationService: Sendable {
             .korean,
             .spanish
         ]
+        return recognizer
+    }
+
+    static func detectedLanguage(
+        for text: String,
+        using recognizer: NLLanguageRecognizer
+    ) -> Locale.Language? {
         recognizer.processString(text)
         let hypotheses = recognizer.languageHypotheses(withMaximum: 5)
         guard let best = hypotheses.max(by: { $0.value < $1.value }),
@@ -553,16 +563,6 @@ struct ScreenshotTranslationService: Sendable {
     private static func joinedText(_ left: String, _ right: String) -> String {
         let needsSpace = left.last?.isASCII == true || right.first?.isASCII == true
         return needsSpace ? "\(left) \(right)" : left + right
-    }
-
-    private static func joinedParagraphText(_ left: String, _ right: String) -> String {
-        if left.last == "\u{00AD}" {
-            return "\(left.dropLast())\(right)"
-        }
-        if left.last == "-", right.first?.isLetter == true {
-            return "\(left.dropLast())\(right)"
-        }
-        return joinedText(left, right)
     }
 
     private static func ocrImage(from data: Data) -> CGImage? {

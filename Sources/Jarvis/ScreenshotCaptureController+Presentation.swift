@@ -33,12 +33,32 @@ extension ScreenshotCaptureController {
             return
         }
 
-        Task { [weak self] in
+        // 采集任务存下来：原来它不挂在任何属性上，既取消不了也没有超时——
+        // 屏幕被别的采集程序占着、显示器正在重配时 SCK 会长时间不返回，应用就停在
+        // 「请在屏幕上框选区域」，没有任何窗口能接 Esc，再按热键还会被"请先完成
+        // 当前截图操作"拦下，只能重启。
+        captureTask?.cancel()
+        captureTask = Task { [weak self] in
             guard let self else { return }
+            // 看门狗：SCK 长时间不返回（显示器正在重配、屏幕被别的采集程序占着）时
+            // 主动收场，而不是把整个截图功能锁死到重启。
+            let watchdog = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self, self.activeSessionID == sessionID else { return }
+                self.captureTask?.cancel()
+                self.captureTask = nil
+                self.activeSessionID = nil
+                self.sessionPhase = .idle
+                completion(.failure(ScreenshotError.captureFailed("截图超时，请重试")))
+            }
+            defer { watchdog.cancel() }
+
             do {
                 let frozenScreens = try await screenshotService.captureFullScreens(
                     screenFrames: NSScreen.screens.map(\.frame)
                 )
+                guard !Task.isCancelled else { return }
+                captureTask = nil
                 presentSelection(
                     frozenScreens: frozenScreens,
                     sessionID: sessionID,
@@ -48,6 +68,7 @@ extension ScreenshotCaptureController {
                 guard activeSessionID == sessionID else { return }
                 activeSessionID = nil
                 sessionPhase = .idle
+                captureTask = nil
                 completion(.failure(error))
             }
         }
@@ -232,14 +253,15 @@ extension ScreenshotCaptureController {
         _ presentation: ScreenshotPresentation
     ) -> ScreenshotPresentationPanels {
         let imagePanel = makeImagePanel(presentation)
-        let frame = toolbarFrame(
+        let placement = toolbarFrame(
             for: presentation.session.selectionFrame,
             height: ScreenshotToolbarMetrics.compactHeight,
-            width: ScreenshotToolbar.preferredWidth(for: nil)
+            width: ScreenshotToolbarMetrics.baseWidth
         )
-        let toolbarLayout = ScreenshotToolbarLayoutModel(width: frame.width)
+        let toolbarLayout = ScreenshotToolbarLayoutModel(width: placement.rect.width)
+        toolbarLayout.placesSecondaryRowAboveMain = placement.placesSecondaryRowAboveMain
         let toolbarPanel = makeToolbarPanel(
-            frame: frame,
+            frame: placement.rect,
             layout: toolbarLayout,
             presentation: presentation
         )
@@ -260,7 +282,7 @@ extension ScreenshotCaptureController {
             guard let self, let editor else { return }
             dismissResult()
             Task { @MainActor in
-                presentation.onAction(.confirm(editor.finalPNGData()))
+                await presentation.onAction(.confirm(editor.finalPNGData()))
             }
         }
         let pasteToScreen: () -> Void = { [weak self, weak editor = presentation.editor] in
@@ -294,6 +316,13 @@ extension ScreenshotCaptureController {
             screenshotPanel.onDoubleClick = quickCopyAndClose
             screenshotPanel.onMiddleClick = pasteToScreen
             screenshotPanel.onEscape = cancelEditing
+            screenshotPanel.onResignKey = { [weak editor = presentation.editor] in
+                // 点出窗口也算「离开输入」。
+                editor?.commitTextEditing()
+            }
+            screenshotPanel.onEscapeIntercept = { [weak editor = presentation.editor] in
+                editor?.handleEscape() ?? false
+            }
             imagePanel = screenshotPanel
         }
 
@@ -316,7 +345,16 @@ extension ScreenshotCaptureController {
             editor: presentation.editor,
             onDoubleClick: quickCopyAndClose,
             onMiddleClick: pasteToScreen,
-            onEscape: cancelEditing
+            onEscape: cancelEditing,
+            onAction: { [weak self] action in
+                guard let self else { return }
+                handleToolbarAction(
+                    action,
+                    editor: presentation.editor,
+                    screenFrame: presentation.capture.screenFrame,
+                    onAction: presentation.onAction
+                )
+            }
         )
         canvasHostingView.frame = NSRect(origin: .zero, size: presentation.capture.screenFrame.size)
         canvasHostingView.autoresizingMask = NSView.AutoresizingMask(arrayLiteral: .width, .height)
@@ -370,6 +408,9 @@ extension ScreenshotCaptureController {
         screenFrame: CGRect,
         onAction: @escaping (ScreenshotAction) -> Void
     ) {
+        // 工具栏上的任何动作都意味着「这次输入结束了」：先把草稿落下去，
+        // 否则点保存/撤销/完成时正在打的那段字会丢。
+        editor.commitTextEditing()
         switch action {
         case .saveRequested:
             finishToolbarAction(editor, onAction: onAction, makeAction: ScreenshotAction.save)
@@ -408,8 +449,14 @@ extension ScreenshotCaptureController {
         onAction: @escaping (ScreenshotAction) -> Void,
         makeAction: @escaping (Data) -> ScreenshotAction
     ) {
-        Task { @MainActor in
-            onAction(makeAction(editor.finalPNGData()))
+        // 导出要几百毫秒到数秒，而「取消」随时可用。会话已经结束（取消/确认）之后
+        // 不能再把结果交出去——否则取消过的截图照样弹保存面板，还会因为
+        // editingHistoryID 已被清空而多写一条历史。
+        let generation = resultGeneration
+        Task { @MainActor [weak self] in
+            let data = await editor.finalPNGData()
+            guard let self, self.resultGeneration == generation else { return }
+            onAction(makeAction(data))
         }
     }
 
@@ -425,12 +472,6 @@ extension ScreenshotCaptureController {
         case .redo:
             editor.redo()
             onAction(.redo)
-        case .delete:
-            editor.deleteSelectedAnnotation()
-            onAction(.delete)
-        case .duplicate:
-            editor.duplicateSelectedAnnotation()
-            onAction(.duplicate)
         default:
             break
         }
@@ -455,7 +496,11 @@ extension ScreenshotCaptureController {
         let session = ScreenshotEditingSession(
             id: UUID(),
             frozenScreen: capture,
-            selectionRect: CGRect(origin: .zero, size: image.size),
+            // 选区是**画布**坐标：画布是缩放后的 frame，不是原图的像素尺寸。
+            // 原来这里写的是 image.size，于是图比屏幕大时选区有一部分在画布外
+            // （手柄看不到），工具栏也会按原图尺寸定位、偏出画面，中键贴图更是
+            // 生成一个比屏幕还大的窗口。
+            selectionRect: CGRect(origin: .zero, size: frame.size),
             initialCapture: capture
         )
         activeSessionID = session.id
@@ -463,6 +508,10 @@ extension ScreenshotCaptureController {
     }
 
     func dismissResult() {
+        // 让在途的导出作废：它回来时会对不上号。
+        resultGeneration += 1
+        captureTask?.cancel()
+        captureTask = nil
         activeEditor?.cancelTranslation()
         if let resultWindow, let toolbarWindow {
             resultWindow.removeChildWindow(toolbarWindow)

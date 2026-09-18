@@ -65,11 +65,21 @@ final class ScreenshotTranslationTests: XCTestCase {
         XCTAssertFalse(progress.isComplete)
     }
 
-    func testPartialTranslationStateExposesSuccessAndFailureCounts() {
-        let state = ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5)
+    /// 状态文字不再报数量：完成态不显示，部分完成只说失败。
+    func testTranslationStateMessagesDropTheCounts() {
+        XCTAssertEqual(
+            ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5).statusMessage,
+            "部分翻译失败"
+        )
+        XCTAssertTrue(ScreenshotTranslationState.partiallyCompleted(completed: 2, total: 5).isFailure)
 
-        XCTAssertEqual(state.statusMessage, "部分完成：成功 2/5，失败 3")
-        XCTAssertTrue(state.isFailure)
+        XCTAssertNil(ScreenshotTranslationState.completed(count: 5).statusMessage)
+        XCTAssertEqual(
+            ScreenshotTranslationState.translating(completed: 3, total: 5).statusMessage,
+            "正在翻译…"
+        )
+        XCTAssertEqual(ScreenshotTranslationState.recognizing.statusMessage, "正在识别文字…")
+        XCTAssertNil(ScreenshotTranslationState.idle.statusMessage)
     }
 
     func testTranslationConfigurationLoadsTargetLanguageAndIgnoresLegacyAPIKeys() throws {
@@ -200,7 +210,8 @@ final class ScreenshotTranslationTests: XCTestCase {
 
     func testDetectedLanguageRecognizesSpanishWhenItIsAPackTarget() {
         let language = ScreenshotTranslationService.detectedLanguage(
-            for: "El rápido zorro marrón salta sobre el perro perezoso todas las mañanas."
+            for: "El rápido zorro marrón salta sobre el perro perezoso todas las mañanas.",
+            using: ScreenshotTranslationService.makeLanguageRecognizer()
         )
         XCTAssertEqual(language?.languageCode?.identifier.lowercased(), "es")
     }
@@ -308,8 +319,8 @@ final class ScreenshotTranslationTests: XCTestCase {
         NSRect(x: 0, y: 0, width: 120, height: 80).fill()
         image.unlockFocus()
 
-        let request = ScreenshotRenderRequest(
-            image: image,
+        let request = try ScreenshotRenderRequest(
+            image: XCTUnwrap(ScreenshotEditorModel.cgImage(from: image)),
             canvasSize: CGSize(width: 120, height: 80),
             pixelScale: 1,
             annotations: [],
@@ -330,7 +341,49 @@ final class ScreenshotTranslationTests: XCTestCase {
             showsTranslation: true
         )
 
-        let data = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(request))
-        XCTAssertNotNil(NSImage(data: data))
+        let rendered = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(request))
+        XCTAssertEqual(rendered.width, 120)
+        XCTAssertEqual(rendered.height, 80)
+    }
+}
+
+@MainActor
+extension ScreenshotTranslationTests {
+    /// 译文块的排版现在是缓存的（原来挂在视图 body 上，每次拖动都会重算上万次
+    /// 文本测量）。缓存最怕的是**不更新**——这条钉住它跟着输入走。
+    func testRenderedBlocksTrackTheirInputs() {
+        let canvas = CGSize(width: 320, height: 200)
+        let model = ScreenshotEditorModel(
+            image: NSImage(size: NSSize(width: canvas.width, height: canvas.height)),
+            data: Data(),
+            outputData: Data(),
+            canvasSize: canvas
+        )
+        let selection = CGRect(x: 0, y: 0, width: 320, height: 200)
+        model.updateSelectionRect(selection)
+        model.translationSourceRect = selection
+
+        XCTAssertTrue(model.renderedTranslationBlocks.isEmpty)
+
+        model.translationBlocks = [ScreenshotTranslationBlock(
+            id: UUID(),
+            sourceText: "Settings",
+            translatedText: "设置",
+            normalizedBounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.1),
+            confidence: 0.9
+        )]
+        model.refreshRenderedTranslationBlocks()
+        XCTAssertEqual(model.renderedTranslationBlocks.count, 1)
+        XCTAssertEqual(model.renderedTranslationBlocks[0].translatedText, "设置")
+
+        // 关掉译文显示 → 渲染块清空
+        model.translationVisible = false
+        model.refreshRenderedTranslationBlocks()
+        XCTAssertTrue(model.renderedTranslationBlocks.isEmpty)
+
+        // 打开回来 → 恢复
+        model.translationVisible = true
+        model.refreshRenderedTranslationBlocks()
+        XCTAssertEqual(model.renderedTranslationBlocks.count, 1)
     }
 }

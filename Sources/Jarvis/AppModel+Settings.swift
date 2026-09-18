@@ -493,22 +493,34 @@ extension AppModel {
             return
         }
 
-        // The previous build could leave a custom or stale binding behind while
-        // F1 is now the product default. Migrate that binding once; any custom
-        // shortcut selected after this build is preserved on future launches.
-        if !UserDefaults.standard.bool(forKey: screenshotShortcutDefaultMigrationKey)
-            || shortcut == .legacyDefault
-            || shortcut == .previousDefault
-        {
-            screenshotShortcut = .default
-            if let migratedData = try? JSONEncoder().encode(ScreenshotShortcut.default) {
-                UserDefaults.standard.set(migratedData, forKey: screenshotShortcutKey)
-            }
-            UserDefaults.standard.set(true, forKey: screenshotShortcutDefaultMigrationKey)
+        // 旧版本可能留下自定义或过期的绑定，而 F1 现在是产品默认值：**一次性**
+        // 换掉它，之后只认用户自己的选择。
+        //
+        // 原来「已存的值等于旧默认值」这两个条件写在一次性标记之外，于是每次启动
+        // 都生效——用户手动把截图快捷键录成 ⌘⇧J 或 F2（正是那两个旧默认值），
+        // 重启一次就被静默改回 F1，还没有任何提示。
+        guard Self.shouldMigrateScreenshotShortcut(
+            hasMigrated: UserDefaults.standard.bool(forKey: screenshotShortcutDefaultMigrationKey),
+            stored: shortcut
+        ) else {
+            screenshotShortcut = shortcut
             return
         }
 
-        screenshotShortcut = shortcut
+        screenshotShortcut = .default
+        if let migratedData = try? JSONEncoder().encode(ScreenshotShortcut.default) {
+            UserDefaults.standard.set(migratedData, forKey: screenshotShortcutKey)
+        }
+        UserDefaults.standard.set(true, forKey: screenshotShortcutDefaultMigrationKey)
+    }
+
+    /// 是否要把已存的截图快捷键换成新默认值。只认一次性标记：迁移过的用户，
+    /// 选什么就是什么。
+    nonisolated static func shouldMigrateScreenshotShortcut(
+        hasMigrated: Bool,
+        stored _: ScreenshotShortcut
+    ) -> Bool {
+        !hasMigrated
     }
 
     func loadClipboardShortcut() {

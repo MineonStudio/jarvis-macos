@@ -169,7 +169,10 @@ enum HistoryGridMetrics {
     static let historyFilterToGridSpacing: CGFloat = 10
 
     // Both history galleries use the same 16:9 landscape panel and controls.
-    static let historyCardBaseWidth: CGFloat = 192
+    //
+    // 基准宽度（用户定的 200；壁纸模块那边一格约 282×190，这里比它小一档，
+    // 一屏能多放一张）。想换大小改这一个数，缩放档位按它成比例走。
+    static let historyCardBaseWidth: CGFloat = 200
     static let historyCardBasePadding: CGFloat = 10
     static let clipboardCardWidth: CGFloat = historyCardBaseWidth * 1.1
     static let clipboardCardHeight: CGFloat = clipboardCardWidth * 9 / 16
@@ -182,14 +185,51 @@ enum HistoryGridMetrics {
     static let clipboardPreviewHoverScale: CGFloat = 1.08
     static let clipboardCornerRadius: CGFloat = 12
     static let clipboardGridSpacing: CGFloat = 10
-    static let filterChipHeight = JarvisMetrics.segmentedItemHeight
-    static let filterChipSpacing: CGFloat = 7
-    static let filterChipHorizontalPadding: CGFloat = 10
-    static let filterChipVerticalPadding: CGFloat = 8
     static let topControlHeight = JarvisToolbarMetrics.controlSize
     static let clipboardSearchFieldHeight: CGFloat = topControlHeight
     static let clipboardFilterToGridSpacing: CGFloat = 10
     static let screenshotFilterBarHeight: CGFloat = topControlHeight
+}
+
+/// 宫格的列宽：先按目标宽度算这一行放几列（四舍五入到最接近的列数，卡片就不会
+/// 比目标大太多），再把行内空间分满——右边不留参差的空档。
+///
+/// 壁纸模块是 justified 布局（行高随图的宽高比变），这里卡片比例恒为 16:9，所以改成
+/// 让**列宽**承担"铺满"这件事：宽定下来，高就是宽 × 9/16，比例始终不变。
+enum HistoryGridLayout {
+    /// 卡片比例（恒为 16:9）。卡片视图用 `.aspectRatio` 直接挂这个值，
+    /// 宽怎么变都走同一条约定。
+    ///
+    /// 「一行铺满」交给 `LazyVGrid` 的 `.adaptive(minimum:maximum: .infinity)`：
+    /// 列数由最小宽度（缩放档位）决定，剩余空间由列自己撑开，卡片按比例跟着长高。
+    /// 之前量宽度存 `@State` 再回算的写法在缩放时会滞后一帧（卡出空档），
+    /// 而且每帧一次状态更新——闪烁和卡顿都是它带来的。
+    static let aspectRatio: CGFloat = 16.0 / 9.0
+
+    /// 卡片高度：比例恒为 16:9。
+    static func cardHeight(forCardWidth width: CGFloat) -> CGFloat {
+        width / aspectRatio
+    }
+}
+
+/// 宫格的列几何：贴着一行铺满，卡片按比例跟着长。给测试用，也是这条约定的成文版本。
+enum HistoryGridColumns {
+    /// 按可用宽度算这一行放几列：取最接近目标宽度的那个列数。
+    static func columns(availableWidth: CGFloat, targetWidth: CGFloat, spacing: CGFloat) -> Int {
+        guard availableWidth > 0, targetWidth > 0 else { return 1 }
+        return max(1, Int(((availableWidth + spacing) / (targetWidth + spacing)).rounded()))
+    }
+
+    /// 铺满后的列宽。
+    static func cardWidth(availableWidth: CGFloat, targetWidth: CGFloat, spacing: CGFloat) -> CGFloat {
+        guard availableWidth > 0, targetWidth > 0 else { return targetWidth }
+        let count = CGFloat(columns(
+            availableWidth: availableWidth,
+            targetWidth: targetWidth,
+            spacing: spacing
+        ))
+        return max(1, (availableWidth - (count - 1) * spacing) / count)
+    }
 }
 
 struct ScreenshotHistorySection: View {
@@ -220,9 +260,12 @@ struct ScreenshotHistorySection: View {
             } else {
                 LazyVGrid(
                     columns: [GridItem(
+                        // 列数由最小宽度决定，剩下的一点点空间让列自己撑满——
+                        // 这就是"一行铺满"：不量宽度、不存状态，缩放时也就没有
+                        // 滞后一帧的空档，更没有每帧状态更新带来的闪烁和卡顿。
                         .adaptive(
                             minimum: gridZoom.cardWidth,
-                            maximum: gridZoom.cardWidth
+                            maximum: .infinity
                         ),
                         spacing: HistoryGridMetrics.clipboardGridSpacing
                     )],
@@ -232,7 +275,6 @@ struct ScreenshotHistorySection: View {
                     ForEach(filteredItems) { item in
                         ScreenshotHistoryCard(
                             item: item,
-                            gridZoom: gridZoom,
                             isSelected: selectedItemID == item.id,
                             onSelect: { selectedItemID = item.id },
                             onDoubleClick: { app.showScreenshotHistoryPreview(item) },
@@ -265,7 +307,6 @@ struct ScreenshotHistoryCard: View {
     @State private var showingDeleteConfirmation = false
     @State private var isHovered = false
     let item: ScreenshotHistoryItem
-    let gridZoom: HistoryGridZoomLevel
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
@@ -275,32 +316,38 @@ struct ScreenshotHistoryCard: View {
         "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
     }
 
+    /// 预览区：比例锁在**占位**这一层。
+    ///
+    /// `Color.clear` 是弹性的，`.aspectRatio` 才能真的按列宽定出高度；把它直接挂在
+    /// 图片上不行——图片自带固有尺寸（一张竖图就能把卡片撑成 227×680），比例会被带跑。
+    /// 内容盖在占位上面，溢出的部分裁掉。
     private var previewContent: some View {
-        Group {
-            if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
-                ScreenshotHistoryThumbnail(
-                    fileURL: app.screenshotHistoryFileURL(for: item),
-                    cacheKey: thumbnailCacheKey,
-                    gridZoom: gridZoom
+        Color.clear
+            .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay { previewLayer }
+            .clipped()
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                    style: .continuous
                 )
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 28))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-        }
-        .frame(
-            width: gridZoom.cardWidth,
-            height: gridZoom.cardHeight,
-            alignment: .center
-        )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
             )
-        )
-        .contentShape(Rectangle())
+            .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var previewLayer: some View {
+        if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
+            ScreenshotHistoryThumbnail(
+                fileURL: app.screenshotHistoryFileURL(for: item),
+                cacheKey: thumbnailCacheKey
+            )
+        } else {
+            Image(systemName: "photo")
+                .font(.system(size: 28))
+                .foregroundStyle(Color.jarvisTextSecondary)
+        }
     }
 
     @ViewBuilder
@@ -311,10 +358,7 @@ struct ScreenshotHistoryCard: View {
                     guard let data = app.screenshotHistoryData(for: item) else {
                         return NSItemProvider()
                     }
-                    return ScreenshotSharing.itemProvider(
-                        data: data,
-                        suggestedName: item.fileName
-                    )
+                    return ScreenshotSharing.itemProvider(for: item, data: data)
                 }
         } else {
             previewContent
@@ -332,10 +376,8 @@ struct ScreenshotHistoryCard: View {
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
         }
-        .frame(
-            width: gridZoom.cardWidth,
-            height: HistoryGridMetrics.clipboardMetadataHeight
-        )
+        .frame(maxWidth: .infinity)
+        .frame(height: HistoryGridMetrics.clipboardMetadataHeight)
     }
 
     private var copyButton: some View {
@@ -370,8 +412,6 @@ struct ScreenshotHistoryCard: View {
     private var cardBody: some View {
         HistoryCardChrome(
             preview: previewArea,
-            width: gridZoom.cardWidth,
-            height: gridZoom.cardHeight,
             isSelected: isSelected
         )
         .overlay(alignment: .bottom) {
@@ -461,7 +501,6 @@ struct ScreenshotHistoryCard: View {
 struct ScreenshotHistoryThumbnail: View {
     let fileURL: URL
     let cacheKey: String
-    let gridZoom: HistoryGridZoomLevel
     @State private var image: NSImage?
 
     var body: some View {
@@ -476,10 +515,7 @@ struct ScreenshotHistoryThumbnail: View {
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
-        .frame(
-            width: gridZoom.cardWidth,
-            height: gridZoom.cardHeight
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: cacheKey) {
             image = await JarvisThumbnailCache.loadAsync(fileURL: fileURL, maxPixelSize: 640)

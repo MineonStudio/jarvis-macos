@@ -27,18 +27,20 @@ enum ScreenshotTranslationState: Equatable {
         }
     }
 
+    /// 二级栏里的状态文字。
+    ///
+    /// 只保留「正在做什么」和失败原因，不再报「完成了几项」：译文就画在图上，
+    /// 数量和进度是多余的。失败仍然要说话，否则用户只看到没翻出来。
     var statusMessage: String? {
         switch self {
-        case .idle:
+        case .idle, .completed:
             nil
         case .recognizing:
             "正在识别文字…"
-        case let .translating(completed, total):
-            "正在翻译 \(completed)/\(total)"
-        case let .completed(count):
-            "翻译完成：\(count) 项"
-        case let .partiallyCompleted(completed, total):
-            "部分完成：成功 \(completed)/\(total)，失败 \(max(0, total - completed))"
+        case .translating:
+            "正在翻译…"
+        case .partiallyCompleted:
+            "部分翻译失败"
         case let .failed(message):
             message
         }

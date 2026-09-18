@@ -40,6 +40,15 @@ enum ScreenshotSharing {
     }
 }
 
+extension ScreenshotSharing {
+    /// 历史里的截图拖到别处：落盘名取 `suggestedFileName`（时间戳），不是内部那串
+    /// `screenshot-<uuid>.png`。单独一个函数是为了让这条出口能被测试直接调用——
+    /// 名字写在视图的 `onDrag` 闭包里就没法钉住了。
+    static func itemProvider(for item: ScreenshotHistoryItem, data: Data) -> NSItemProvider {
+        itemProvider(data: data, suggestedName: item.suggestedFileName)
+    }
+}
+
 enum ClipboardSharing {
     /// 这份内容能不能拖走，只做 stat，不构造 provider。
     ///
@@ -74,7 +83,10 @@ enum ClipboardSharing {
             }
             return ScreenshotSharing.itemProvider(
                 data: data,
-                suggestedName: item.fileName ?? "图片.png"
+                // 名字按「复制时间」现取，不读存下来的 `fileName`：图片项不存名字
+                // （见 `ClipboardService.captureImage`），而且已经躺在历史里的老条目
+                // 存的是那个每张都一样的 `图片.png`——拖两张必然撞名。
+                suggestedName: ScreenshotFileName.timestamped(at: item.createdAt)
             )
         case .file, .video:
             guard let path = item.filePath,

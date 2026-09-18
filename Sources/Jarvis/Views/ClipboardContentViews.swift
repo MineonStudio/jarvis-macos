@@ -130,30 +130,17 @@ enum ClipboardFilterLogic {
     }
 }
 
+/// 时间筛选：与截图模块同一枚分组容器（见 `ScreenshotTimeFilterBar`）。
 struct ClipboardTimeFilterSelector: ToolbarContent {
     @Binding var selection: ClipboardTimeFilter
 
     var body: some ToolbarContent {
-        ToolbarItem(id: "clipboard.time.three-days", placement: .navigation) {
-            selectionButton(for: .threeDays)
-        }
-        ToolbarItem(id: "clipboard.time.seven-days", placement: .navigation) {
-            selectionButton(for: .sevenDays)
-        }
-        ToolbarItem(id: "clipboard.time.one-month", placement: .navigation) {
-            selectionButton(for: .oneMonth)
-        }
-        ToolbarItem(id: "clipboard.time.all", placement: .navigation) {
-            selectionButton(for: .all)
-        }
-    }
-
-    private func selectionButton(for filter: ClipboardTimeFilter) -> some View {
-        JarvisToolbarSelectionButton(
-            title: filter.title,
-            isSelected: selection == filter
-        ) {
-            selection = filter
+        JarvisToolbarSurface(id: "clipboard.time-filter", placement: .navigation) {
+            JarvisToolbarGroupedPicker(
+                items: ClipboardTimeFilter.allCases,
+                selection: $selection,
+                title: \.title
+            )
         }
     }
 }
@@ -400,26 +387,39 @@ struct ClipboardCard: View {
     @State private var showingSensitivePreviewConfirmation = false
     @State private var isHovered = false
     let item: ClipboardItem
-    let gridZoom: HistoryGridZoomLevel
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
 
     init(
         item: ClipboardItem,
-        gridZoom: HistoryGridZoomLevel = .regular,
         isSelected: Bool = false,
         onSelect: @escaping () -> Void = {},
         onDoubleClick: @escaping () -> Void = {}
     ) {
         self.item = item
-        self.gridZoom = gridZoom
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
     }
 
+    /// 预览区：比例锁在占位层（见 `ScreenshotHistoryCard.previewContent` 的说明）。
     private var previewContent: some View {
+        Color.clear
+            .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay { previewLayer }
+            .clipped()
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                    style: .continuous
+                )
+            )
+            .contentShape(Rectangle())
+    }
+
+    private var previewLayer: some View {
         ZStack {
             if item.kind == .text {
                 VStack(spacing: 8) {
@@ -495,18 +495,6 @@ struct ClipboardCard: View {
                 ClipboardItemPreview(item: item)
             }
         }
-        .frame(
-            width: gridZoom.cardWidth,
-            height: gridZoom.cardHeight,
-            alignment: .center
-        )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-        )
-        .contentShape(Rectangle())
     }
 
     private var shouldOfferTextExpansion: Bool {
@@ -598,17 +586,13 @@ struct ClipboardCard: View {
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
         }
-        .frame(
-            width: gridZoom.cardWidth,
-            height: HistoryGridMetrics.clipboardMetadataHeight
-        )
+        .frame(maxWidth: .infinity)
+        .frame(height: HistoryGridMetrics.clipboardMetadataHeight)
     }
 
     private var cardBody: some View {
         HistoryCardChrome(
             preview: previewArea,
-            width: gridZoom.cardWidth,
-            height: gridZoom.cardHeight,
             isSelected: isSelected,
             alignment: .topLeading
         )
@@ -762,7 +746,6 @@ struct ClipboardGrid: View {
     let onSelect: (ClipboardItem) -> Void
     let onDoubleClick: (ClipboardItem) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     init(
         items: [ClipboardItem],
         gridZoom: HistoryGridZoomLevel = .regular,
@@ -780,9 +763,12 @@ struct ClipboardGrid: View {
     var body: some View {
         LazyVGrid(
             columns: [GridItem(
+                // 列数由最小宽度决定，剩余空间让列自己撑满——和截图宫格、壁纸模块
+                // 一样不量宽度、不存状态：缩放时没有滞后一帧的空档，也没有每帧
+                // 状态更新带来的闪烁与卡顿。
                 .adaptive(
                     minimum: gridZoom.cardWidth,
-                    maximum: gridZoom.cardWidth
+                    maximum: .infinity
                 ),
                 spacing: HistoryGridMetrics.clipboardGridSpacing
             )],
@@ -792,7 +778,6 @@ struct ClipboardGrid: View {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
-                    gridZoom: gridZoom,
                     isSelected: selectedItemID == item.id,
                     onSelect: { onSelect(item) },
                     onDoubleClick: { onDoubleClick(item) }

@@ -2,14 +2,35 @@ import AppKit
 import SwiftUI
 import WebKit
 
+/// 工具栏里的分段选择器：一枚自绘的胶囊容器，里面是等宽内边距的选中胶囊。
+///
+/// 容器自己画，不用系统给工具栏 item 铺的那层底：那层的内边距由 AppKit 决定，
+/// 和我们的胶囊对不齐（会多出一圈），也给不出「参考图」那种嵌合感。
+/// 调用点要配 `JarvisToolbarSurface`，把系统那层关掉，否则会叠成双层。
 struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: View {
     let items: [Item]
     @Binding var selection: Item
     let title: (Item) -> String
-    let icon: (Item, Bool) -> Icon
+    /// 可选项的图标。文字型的分段控件（截图/剪贴板的时间筛选）不传。
+    @ViewBuilder var icon: (Item, Bool) -> Icon
 
     var body: some View {
-        HStack(spacing: 2) {
+        toolbarContainer
+            .jarvisGlass(in: Capsule(), interactive: false)
+    }
+
+    /// 容器那一层（内边距 + 行高），不带玻璃。
+    ///
+    /// 离屏渲染看不到 glass，测试要量「选中胶囊到容器四边等距」就得拿到这一层——
+    /// 内边距的表达式只有这一处，测试量的和生产用的是同一个。
+    var toolbarContainer: some View {
+        selectionRow
+            .padding(JarvisSegmentedMetrics.toolbarGroupPadding)
+            .frame(height: JarvisToolbarMetrics.controlSize)
+    }
+
+    private var selectionRow: some View {
+        HStack(spacing: JarvisSegmentedMetrics.itemSpacing) {
             ForEach(items) { item in
                 let isSelected = selection == item
                 Button {
@@ -23,12 +44,8 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                             .foregroundStyle(isSelected ? Color.white : Color.secondary)
                     }
                     .padding(.horizontal, 8)
-                    .frame(height: 26)
-                    .background {
-                        Capsule()
-                            .fill(JarvisMotion.selectionPillTint)
-                            .opacity(isSelected ? 1 : 0)
-                    }
+                    .frame(height: JarvisSegmentedMetrics.compactItemHeight)
+                    .jarvisSelectionPill(isSelected: isSelected)
                     .overlay {
                         Capsule()
                             .strokeBorder(
@@ -45,10 +62,13 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(3)
-        .frame(height: JarvisToolbarMetrics.controlSize)
-        // The enclosing ToolbarItem supplies the native toolbar group surface.
-        // Do not add a second custom glass capsule inside it.
+    }
+}
+
+extension JarvisToolbarGroupedPicker where Icon == EmptyView {
+    /// 纯文字的分段控件（时间筛选、图库来源这类）。
+    init(items: [Item], selection: Binding<Item>, title: @escaping (Item) -> String) {
+        self.init(items: items, selection: selection, title: title) { _, _ in EmptyView() }
     }
 }
 
@@ -91,7 +111,7 @@ struct JarvisWebPlatformActionCluster<DownloadPopover: View>: View {
                 popover: downloadPopover
             )
         }
-        .padding(3)
+        .padding(JarvisToolbarMetrics.iconClusterPadding)
         .frame(height: JarvisToolbarMetrics.controlSize)
         // The enclosing ToolbarItem supplies the native toolbar group surface.
         // Do not add a second custom glass capsule inside it.

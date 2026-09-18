@@ -83,9 +83,17 @@ final class SystemLanguagePackSessionHandler: LanguagePackSessionHandling, @unch
             _ = try await session.translations(from: [request])
         }
 
-        guard await SystemLanguagePackService().status(for: target) == .installed else {
-            throw LanguagePackDownloadIssue(message: "语言包未能完成安装，请重试")
+        // prepareTranslation 返回后系统资产未必已经落盘，立刻探一次就判失败会让用户
+        // 看到「未能完成安装，请重试」——而他真的重试就是对同一个语言对再发一次下载。
+        // 给几秒钟的收敛时间。
+        for _ in 0 ..< 5 {
+            if await SystemLanguagePackService().status(for: target) == .installed {
+                return
+            }
+            try Task.checkCancellation()
+            try? await Task.sleep(for: .seconds(2))
         }
+        throw LanguagePackDownloadIssue(message: "语言包仍在后台安装，稍后可在设置里刷新查看")
     }
 
     func cancel() {

@@ -68,6 +68,9 @@ private struct ScreenshotSaveRequest {
     let data: Data
     let historyID: UUID?
     let finalizesHistory: Bool
+    /// 保存之后编辑会话是否结束。工具栏上的「保存」不结束（还能接着改），
+    /// 所以它不能把 `editingHistoryID` 清掉。
+    let endsSession: Bool
     let successMessage: String
 }
 
@@ -314,6 +317,14 @@ final class AppModel {
         )
     }
 
+    /// 显示器排布变化（拔插外接屏、改分辨率）时收拾场子。
+    ///
+    /// 贴图是常驻窗口：所在那块屏消失后它既点不到也拿不到焦点，Esc 也关不掉，
+    /// 只能重启应用。完全出屏的直接销毁，还留在屏幕内的重新收进可见范围。
+    func handleScreenParametersChange() {
+        screenshotController.reconcilePinnedScreenshotsWithVisibleDisplays()
+    }
+
     private func startDeferredStartup() {
         let startedAt = Date()
         JarvisLog.info(
@@ -479,8 +490,11 @@ extension AppModel {
             NSPasteboard.general.setData(data, forType: .png)
             showToast("截图已确认并复制到剪贴板")
         case let .pin(data):
+            // 贴图和普通截图走同一条保存路径：每次写一个新文件到截图历史目录，
+            // 所以贴图不会因为关掉那个浮窗而丢。提示里说明白，否则用户以为它只是
+            // 临时贴在屏幕上的。
             finalizeScreenshot(data, historyID: editingHistoryID)
-            showToast("截图已贴在屏幕上")
+            showToast("贴图已保存到截图历史")
         case .cancel:
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
@@ -515,6 +529,7 @@ extension AppModel {
             for: data,
             historyID: historyID,
             finalizesHistory: true,
+            endsSession: false,
             successMessage: "截图已保存",
             presentingWindow: presentingWindow
         )
@@ -535,15 +550,12 @@ extension AppModel {
         for data: Data,
         historyID: UUID?,
         finalizesHistory: Bool,
+        endsSession: Bool,
         successMessage: String,
         presentingWindow: NSWindow? = nil
     ) {
         let savePanel = NSSavePanel()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        savePanel.nameFieldStringValue = "贾维斯-\(formatter.string(from: Date())).png"
+        savePanel.nameFieldStringValue = ScreenshotFileName.timestamped()
         savePanel.canCreateDirectories = true
         if let presentingWindow {
             // The history preview is a high-level panel. Present the native
@@ -558,6 +570,7 @@ extension AppModel {
                         data: data,
                         historyID: historyID,
                         finalizesHistory: finalizesHistory,
+                        endsSession: endsSession,
                         successMessage: successMessage
                     )
                 )
@@ -571,6 +584,7 @@ extension AppModel {
                         data: data,
                         historyID: historyID,
                         finalizesHistory: finalizesHistory,
+                        endsSession: endsSession,
                         successMessage: successMessage
                     )
                 )
@@ -589,7 +603,11 @@ extension AppModel {
         do {
             try request.data.write(to: url, options: .atomic)
             if request.finalizesHistory {
-                finalizeScreenshot(request.data, historyID: request.historyID)
+                finalizeScreenshot(
+                    request.data,
+                    historyID: request.historyID,
+                    endsSession: request.endsSession
+                )
             }
             showToast(request.successMessage)
         } catch {
@@ -654,7 +672,24 @@ extension AppModel {
         return true
     }
 
-    private func finalizeScreenshot(_ data: Data, historyID: UUID?) {
+    /// 落盘之后 `editingHistoryID` 该变成什么。
+    ///
+    /// - 会话结束（「完成」「贴图」）→ 清空。
+    /// - 会话继续（「保存」）→ 记住这次落在哪条（新截图第一次保存时本来是空的），
+    ///   否则下一次保存/完成会再新增一条一模一样的记录。
+    nonisolated static func editingHistoryIDAfterFinalize(
+        endsSession: Bool,
+        resolvedID: UUID?,
+        current: UUID?
+    ) -> UUID? {
+        endsSession ? nil : (resolvedID ?? current)
+    }
+
+    /// - Parameter endsSession: 这次落盘之后编辑会话是否就结束了。点「完成」「贴图」
+    ///   会结束；点「保存」不会——用户可以接着编辑。会话没结束时要把这次落在历史里
+    ///   的条目 id 记回 `editingHistoryID`，否则下一次保存/完成会再新增一条一模一样
+    ///   的记录（新截图第一保存时 id 本来是空的，正好踩中）。
+    private func finalizeScreenshot(_ data: Data, historyID: UUID?, endsSession: Bool = true) {
         let historyItem = historyID.flatMap { id in
             screenshotHistory.first(where: { $0.id == id })
         }
@@ -662,18 +697,23 @@ extension AppModel {
         let historyStore = screenshotHistoryStore
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let cacheSaved = cacheStore.save(data)
-            let historySaved: Bool = if let historyItem {
-                historyStore.update(historyItem, data: data) != nil
+            // 这次落盘实际对应的条目 id：更新时是原来那条，新建时是刚加进去那条。
+            let resolvedID: UUID? = if let historyItem {
+                historyStore.update(historyItem, data: data) != nil ? historyItem.id : nil
             } else {
-                historyStore.add(data: data) != nil
+                historyStore.add(data: data)?.id
             }
             let history = historyStore.load()
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.latestScreenshotData = cacheSaved ? data : self.latestScreenshotData
                 self.screenshotHistory = history
-                self.editingHistoryID = nil
-                if !cacheSaved || !historySaved {
+                self.editingHistoryID = Self.editingHistoryIDAfterFinalize(
+                    endsSession: endsSession,
+                    resolvedID: resolvedID,
+                    current: self.editingHistoryID
+                )
+                if !cacheSaved || resolvedID == nil {
                     self.showToast("截图已完成，但历史记录保存失败")
                 }
             }

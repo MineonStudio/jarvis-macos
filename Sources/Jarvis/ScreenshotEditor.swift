@@ -121,7 +121,7 @@ enum ScreenshotLineStyle: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
-struct ScreenshotAnnotation: Identifiable, Equatable {
+struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
     enum Kind: Equatable {
         case arrow
         case rectangle
@@ -147,6 +147,19 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
     var mosaicMode: ScreenshotMosaicMode = .rectangle
     var mosaicStyle: ScreenshotMosaicStyle = .blur
 
+    /// 标注在画布坐标里的外接矩形（右键菜单的热区用）。
+    var canvasBounds: CGRect {
+        let all = points.isEmpty ? [start, end] : points
+        let xs = all.map(\.x)
+        let ys = all.map(\.y)
+        guard let minX = xs.min(), let maxX = xs.max(),
+              let minY = ys.min(), let maxY = ys.max()
+        else {
+            return .zero
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     var start: CGPoint {
         points.first ?? .zero
     }
@@ -165,15 +178,15 @@ struct ScreenshotAnnotation: Identifiable, Equatable {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
+    /// 占位尺寸（也是命中区与拖动夹取用的框）。字体与行高都取自
+    /// `ScreenshotAnnotationText`——排版的字体若在这里再写一份，斜体这类要靠
+    /// descriptor 拼出来的字形就会量得比实际窄。
     var textSize: CGSize {
         let lines = (text ?? "").components(separatedBy: "\n")
-        let font = NSFont.systemFont(
-            ofSize: fontSize,
-            weight: isBold ? .semibold : .regular
-        )
+        let font = ScreenshotAnnotationText.font(for: self)
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         let lineWidths = lines.map { ($0 as NSString).size(withAttributes: attributes).width }
-        let lineHeight = max(fontSize * 1.22, font.ascender - font.descender + font.leading)
+        let lineHeight = ScreenshotAnnotationText.lineHeight(fontSize: fontSize, font: font)
         let width = max(90, (lineWidths.max() ?? 0) + 18)
         let height = max(lineHeight + 14, lineHeight * CGFloat(max(lines.count, 1)) + 10)
         return CGSize(width: width, height: height)
@@ -212,7 +225,32 @@ final class ScreenshotEditorModel: ObservableObject {
 
     @Published var selectedTool: ScreenshotTool?
     @Published var selectedAnnotationID: UUID?
-    @Published private(set) var selectionRect: CGRect?
+
+    /// 内联文字输入框的锚点。为 nil 表示当前没有在编辑文字。
+    ///
+    /// 草稿本身留在画布视图（TextEditor 直接绑定它），但「正在编辑」这件事必须在
+    /// 模型里可读：Esc 的分级处理要据此决定是取消这次输入，还是退出整场截图。
+    /// 正在导出（渲染 + 编码在后台跑）。导出期间禁用导出相关按钮，避免重复触发。
+    @Published private(set) var isExporting = false
+    @Published var textInputAnchor: CGPoint?
+    /// 正在编辑的既有文字标注 id；新建时为 nil。
+    @Published var editingTextID: UUID?
+    /// 正在输入的文本。
+    ///
+    /// 放在模型里而不是视图里：编辑器没有确认按钮，「换工具 / 在别处落笔」这些
+    /// 离开输入的动作都要先把草稿提交掉，而那些动作发生在模型这一层。
+    @Published var textDraft = ""
+
+    @Published private(set) var selectionRect: CGRect? {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
+    /// 译文块变化（每收到一条译文就变一次）也要重排，但同一轮里合并成一次。
+    @Published var translationBlocks: [ScreenshotTranslationBlock] = [] {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
+    var isTranslationLayoutRefreshScheduled = false
     @Published var mosaicBrushSize: CGFloat = 28
     @Published var mosaicMode: ScreenshotMosaicMode = .rectangle
     @Published var mosaicStyle: ScreenshotMosaicStyle = .blur
@@ -231,11 +269,20 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published private(set) var annotations: [ScreenshotAnnotation] = []
     @Published private(set) var redoStack: [[ScreenshotAnnotation]] = []
     @Published var translationMode = false
-    @Published var translationVisible = true
+    /// 译文块的排版结果。缓存而不是每次视图更新现算——见
+    /// `scheduleRenderedTranslationBlocksRefresh()`。
+    /// 只能由 `refreshRenderedTranslationBlocks()` 写，别在别处赋值。
+    @Published var renderedTranslationBlocks: [ScreenshotTranslationRenderBlock] = []
+    @Published var translationVisible = true {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
     @Published var translationTargetLanguage: ScreenshotTranslationLanguage
-    @Published var translationBlocks: [ScreenshotTranslationBlock] = []
     @Published var translationState: ScreenshotTranslationState = .idle
-    @Published var translationSourceRect: CGRect?
+    @Published var translationSourceRect: CGRect? {
+        didSet { scheduleRenderedTranslationBlocksRefresh() }
+    }
+
     @Published var appleTranslationConfiguration: TranslationSession.Configuration?
 
     private let coordinateSpace: ScreenshotCoordinateSpace
@@ -247,6 +294,9 @@ final class ScreenshotEditorModel: ObservableObject {
     var pendingAppleTranslationJob: ScreenshotAppleTranslationJob?
     var appleTranslationJobContinuation: CheckedContinuation<Void, Error>?
     var appleTranslationSourceBlocks: [UUID: ScreenshotOCRBlock] = [:]
+    /// OCR 结果按选区缓存：换目标语言、或上次部分失败后重试时不必重跑 Vision
+    /// （6K 图 0.5-2 秒加一次整图解码），识别结果只跟选区有关。
+    var cachedOCR: (sourceRect: CGRect, blocks: [ScreenshotOCRBlock])?
     var translationProgress: ScreenshotTranslationProgress?
     init(
         image: NSImage,
@@ -302,6 +352,8 @@ extension ScreenshotEditorModel {
         if translationSourceRect != nil || !translationBlocks.isEmpty || translationState.isRunning {
             clearTranslation()
         }
+        // 选区变了，缓存的 OCR 结果就不再对应当前画面。
+        invalidateCachedOCR()
         selectionRect = clamped
     }
 
@@ -329,7 +381,96 @@ extension ScreenshotEditorModel {
             || selectedTool == .text
     }
 
+    var isEditingText: Bool {
+        textInputAnchor != nil
+    }
+
+    /// 在指定位置开始输入一段新文字。
+    func beginTextEditing(at point: CGPoint) {
+        textInputAnchor = point
+        editingTextID = nil
+    }
+
+    /// 重新编辑一段已有的文字：内容与样式都装回输入状态。
+    ///
+    /// 锚点用 `ScreenshotAnnotationText.topLeft(of:)` 反推——输入控件就摆在那个点
+    /// 上，而提交时文字的左上角也落在那里，所以「点进编辑」这个动作画面上不该有
+    /// 任何位移（这条以前是歪的：预览、输入控件、导出各画各的）。
+    func beginTextEditing(id: UUID) {
+        guard let annotation = annotations.first(where: { $0.id == id && $0.kind == .text }) else { return }
+        textInputAnchor = ScreenshotAnnotationText.topLeft(of: annotation)
+        editingTextID = id
+        textDraft = annotation.text ?? ""
+        textFontSize = annotation.fontSize
+        textColor = annotation.textColor
+        textBold = annotation.isBold
+        textItalic = annotation.isItalic
+        textStrikethrough = annotation.isStrikethrough
+    }
+
+    /// 结束内联输入（取消：草稿丢弃）。
+    func endTextEditing() {
+        textInputAnchor = nil
+        editingTextID = nil
+        textDraft = ""
+    }
+
+    /// 按住正在编辑的文字拖动：已有的标注跟着走，输入框的锚点也一起走（新建时
+    /// 只有锚点）。编辑器允许这么拖，是因为拖动被优先识别成「移动这段文字」，
+    /// 而不是框选文字。
+    func moveTextEditing(by delta: CGPoint) {
+        if let editingTextID, annotations.contains(where: { $0.id == editingTextID }) {
+            // 内部会把锚点一起同步过去。
+            moveAnnotation(id: editingTextID, by: delta)
+        } else if let anchor = textInputAnchor {
+            textInputAnchor = CGPoint(x: anchor.x + delta.x, y: anchor.y + delta.y)
+        }
+    }
+
+    /// 结束内联输入并把草稿落到标注上。
+    ///
+    /// - Returns: 是否真的落下了内容（空草稿只是收起输入框）。
+    @discardableResult
+    func commitTextEditing() -> Bool {
+        guard let anchor = textInputAnchor else { return false }
+        let text = textDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let editingID = editingTextID
+        endTextEditing()
+        guard !text.isEmpty else { return false }
+        // 找不到目标（编辑期间那条标注被撤掉/删掉了）就当作新的一段落下来：
+        // `updateText` 对找不到的 id 是静默返回，用户打过的字会连同这次输入一起没了。
+        if let editingID, annotations.contains(where: { $0.id == editingID && $0.kind == .text }) {
+            updateText(id: editingID, text: text, alignedAtLeft: anchor)
+        } else {
+            addText(alignedAtLeft: anchor, text: text)
+        }
+        return true
+    }
+
+    /// Esc 的分级处理：正在输入文字就先取消这次输入；选中了标注就取消选中；
+    /// 两者都没有才把手交给调用方去结束整场截图。
+    ///
+    /// 原来所有 Esc 都直达「结束整场」——打字打到一半本能按 Esc，整张截图连同
+    /// 已经画好的标注一起没了。
+    /// - Returns: 这次 Esc 是否已经被消化。
+    @discardableResult
+    func handleEscape() -> Bool {
+        if isEditingText {
+            endTextEditing()
+            return true
+        }
+        if selectedAnnotationID != nil {
+            clearSelection()
+            return true
+        }
+        return false
+    }
+
     func selectTool(_ tool: ScreenshotTool?) {
+        // 换工具时把正在输入的文字落下去：编辑器没有确认按钮，换工具就是提交时机。
+        // （顺带保证锚点不会留在模型里——Esc 的第一步会被一个不存在的「正在输入」
+        // 永远吃掉。）
+        commitTextEditing()
         selectedTool = tool
         translationMode = false
         if tool != .text {
@@ -366,6 +507,24 @@ extension ScreenshotEditorModel {
 
     func addMosaic(points: [CGPoint]) {
         guard points.count > 1 else { return }
+        // 点一下就松手会留下宽高为 0 的马赛克：画面上看不见、也永远选不中删不掉，
+        // 却让 hasVisualEdits 为真，之后每次导出都走昂贵的渲染路径。
+        if mosaicMode == .rectangle {
+            let rect = CGRect(
+                x: min(points[0].x, points[1].x),
+                y: min(points[0].y, points[1].y),
+                width: abs(points[1].x - points[0].x),
+                height: abs(points[1].y - points[0].y)
+            )
+            guard rect.width >= 4, rect.height >= 4 else { return }
+        } else {
+            let length = zip(points, points.dropFirst()).reduce(0.0) { total, pair in
+                total + hypot(pair.1.x - pair.0.x, pair.1.y - pair.0.y)
+            }
+            // 只挡「没动」：渲染端对短笔画照样画出带圆头的点，阈值给大就把它
+            // 变成「拖了却没反应」。
+            guard length >= 2 else { return }
+        }
         append(.init(
             kind: .mosaic,
             points: points,
@@ -373,21 +532,6 @@ extension ScreenshotEditorModel {
             brushSize: mosaicBrushSize,
             mosaicMode: mosaicMode,
             mosaicStyle: mosaicStyle
-        ))
-    }
-
-    func addText(at point: CGPoint, text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        append(.init(
-            kind: .text,
-            points: [point],
-            text: text,
-            brushSize: 0,
-            fontSize: textFontSize,
-            textColor: textColor,
-            isBold: textBold,
-            isItalic: textItalic,
-            isStrikethrough: textStrikethrough
         ))
     }
 
@@ -435,6 +579,15 @@ extension ScreenshotEditorModel {
         annotations[index].points = annotations[index].points.map {
             CGPoint(x: $0.x + adjustedDelta.x, y: $0.y + adjustedDelta.y)
         }
+        // 正在编辑的那段文字被拖走时，输入框的锚点要跟着走：否则提交时
+        // `updateText(alignedAtLeft:)` 会拿旧锚点把它拽回原位——看起来就是
+        // 「拖了，然后又弹回去了」。
+        if editingTextID == id, let anchor = textInputAnchor {
+            textInputAnchor = CGPoint(
+                x: anchor.x + adjustedDelta.x,
+                y: anchor.y + adjustedDelta.y
+            )
+        }
     }
 
     func endMove() {
@@ -450,10 +603,6 @@ extension ScreenshotEditorModel {
             annotation.kind == .text
                 && annotation.bounds.insetBy(dx: -8, dy: -8).contains(point)
         }?.id
-    }
-
-    func updateText(id: UUID, text: String) {
-        updateText(id: id, text: text, alignedAtLeft: nil)
     }
 
     func updateText(id: UUID, text: String, alignedAtLeft point: CGPoint?) {
@@ -478,10 +627,15 @@ extension ScreenshotEditorModel {
         redoStack.removeAll()
     }
 
+    /// 把「左上角锚点」换成标注的中心点。
+    ///
+    /// 约定：调用方给的 `point` 就是文字的**左上角**——渲染端画在
+    /// `center - size/2 + 9`，这两个 9 正好把它抵回来。这样输入时的光标位置
+    /// （输入控件把内边距归零，文字起点就是锚点）和确认后文字落下的位置完全一致。
     private func textCenter(alignedAtLeft point: CGPoint, for annotation: ScreenshotAnnotation) -> CGPoint {
         CGPoint(
             x: point.x + annotation.textSize.width / 2 - 9,
-            y: point.y
+            y: point.y + annotation.textSize.height / 2 - 9
         )
     }
 
@@ -539,6 +693,9 @@ extension ScreenshotEditorModel {
 
     func undo() {
         guard let previous = undoStack.popLast() else { return }
+        // 拖动还没结束时按 ⌘Z：过期快照会入栈并把重做历史清空。放在 popLast 之后
+        // 才能保证「栈是空的」那一下不会把进行中的拖动变成永远撤销不掉。
+        activeMoveSnapshot = nil
         redoStack.append(annotations)
         annotations = previous
         selectedAnnotationID = nil
@@ -546,6 +703,7 @@ extension ScreenshotEditorModel {
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
+        activeMoveSnapshot = nil
         undoStack.append(annotations)
         annotations = next
         selectedAnnotationID = nil
@@ -557,41 +715,88 @@ extension ScreenshotEditorModel {
             || (translationVisible && !translationBlocks.isEmpty)
     }
 
-    func finalPNGData() -> Data {
+    func finalPNGData() async -> Data {
         guard hasVisualEdits else { return originalOutputData }
-        return renderedPNGData() ?? originalOutputData
+        return await renderedPNGData() ?? originalOutputData
     }
 
-    func renderedPNGData() -> Data? {
+    /// 导出用的 PNG。
+    ///
+    /// 渲染与编码都在后台任务上跑：6K 画布上整段是几百毫秒到数秒的量级，压在主
+    /// 线程就是点「完成」之后界面直接卡死几秒。
+    func renderedPNGData() async -> Data? {
+        // 排版是合并刷新的，导出前先确保拿到的是最新结果。
+        refreshRenderedTranslationBlocks()
+        guard let baseImage = Self.cgImage(from: originalImage) else { return nil }
+        let blurred = annotations.contains { $0.kind == .mosaic && $0.mosaicStyle == .blur }
+            ? Self.cgImage(from: mosaicImage(style: .blur))
+            : nil
+        let pixelated = annotations.contains { $0.kind == .mosaic && $0.mosaicStyle == .pixelate }
+            ? Self.cgImage(from: mosaicImage(style: .pixelate))
+            : nil
         let request = ScreenshotRenderRequest(
-            image: originalImage,
+            image: baseImage,
             canvasSize: canvasSize,
             pixelScale: pixelScale,
             annotations: annotations,
-            blurredImage: annotations.contains(where: { $0.kind == .mosaic && $0.mosaicStyle == .blur })
-                ? mosaicImage(style: .blur)
-                : nil,
-            pixelatedImage: annotations.contains(where: { $0.kind == .mosaic && $0.mosaicStyle == .pixelate })
-                ? mosaicImage(style: .pixelate)
-                : nil,
+            blurredImage: blurred,
+            pixelatedImage: pixelated,
             translations: renderedTranslationBlocks,
             showsTranslation: translationVisible
         )
-        guard let data = ScreenshotRenderPipeline().renderFullCanvas(request) else {
-            return nil
-        }
-        guard let outputRect else { return data }
-        let renderedCapture = ScreenshotCapture(
-            data: data,
-            screenFrame: CGRect(origin: .zero, size: canvasSize)
+        let canvasSize = canvasSize
+        let outputRect = outputRect
+        isExporting = true
+        defer { isExporting = false }
+        return await Task.detached(priority: .userInitiated) { () -> Data? in
+            guard let rendered = ScreenshotRenderPipeline().renderFullCanvas(request) else {
+                return nil
+            }
+            guard let outputRect else {
+                return Self.pngData(from: rendered)
+            }
+            // 只裁需要的区域：直接在渲染好的位图上切，不再把整幅编码成 PNG、解码
+            // 回来、裁剪、再编码一次。6K 画布上那三步是秒级的无用功。
+            guard let cropped = Self.crop(rendered, toOutputRect: outputRect, canvasSize: canvasSize) else {
+                return nil
+            }
+            return Self.pngData(from: cropped)
+        }.value
+    }
+
+    nonisolated static func cgImage(from image: NSImage?) -> CGImage? {
+        guard let image else { return nil }
+        var proposedRect = NSRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
+    }
+
+    private nonisolated static func crop(
+        _ image: CGImage,
+        toOutputRect outputRect: CGRect,
+        canvasSize: CGSize
+    ) -> CGImage? {
+        let coordinateSpace = ScreenshotCoordinateSpace(
+            screenFrame: CGRect(origin: .zero, size: canvasSize),
+            canvasSize: canvasSize
         )
-        return try? ScreenshotService()
-            .crop(
-                renderedCapture,
-                to: outputRect,
-                on: CGRect(origin: .zero, size: canvasSize)
-            )
-            .data
+        // CGImage 的坐标是「左上角原点、y 向下」，与画布坐标一致；输出矩形是
+        // AppKit 那套 y 向上的，先用已有的换算转过去。
+        let canvasRect = coordinateSpace.canvasRect(fromOutputRect: outputRect)
+        let scaleX = CGFloat(image.width) / canvasSize.width
+        let scaleY = CGFloat(image.height) / canvasSize.height
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let pixelRect = CGRect(
+            x: canvasRect.minX * scaleX,
+            y: canvasRect.minY * scaleY,
+            width: canvasRect.width * scaleX,
+            height: canvasRect.height * scaleY
+        ).integral.intersection(bounds)
+        guard !pixelRect.isEmpty else { return nil }
+        return image.cropping(to: pixelRect)
+    }
+
+    private nonisolated static func pngData(from image: CGImage) -> Data? {
+        NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
 
     private func append(_ annotation: ScreenshotAnnotation) {

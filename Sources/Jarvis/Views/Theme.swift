@@ -99,12 +99,42 @@ enum JarvisMetrics {
     static let iconTintOpacity: CGFloat = 0.22
     static let segmentedItemHeight: CGFloat = 28
     static let segmentedControlPadding: CGFloat = 2
-    static let segmentedItemSpacing: CGFloat = 2
+    /// 选项之间的缝：转发 `JarvisSegmentedMetrics`，全 app 只有那一个数。
+    static let segmentedItemSpacing: CGFloat = JarvisSegmentedMetrics.itemSpacing
     static let segmentedItemVerticalPadding: CGFloat = 4
     static let sidebarMinimumWidth: CGFloat = 152
     static let sidebarWidth: CGFloat = 168
     static let sidebarMaximumWidth: CGFloat = 220
     static let sidebarContentPadding: CGFloat = 8
+}
+
+/// 分段 / 组合容器的统一几何。
+///
+/// 一条规则：**容器四边留等宽的内边距，选中项填满这一圈以内，形状是胶囊**。
+/// 等宽不是审美偏好——容器和选中胶囊的圆头圆心重合（容器半径 − 内边距 = 胶囊半径），
+/// 胶囊才像嵌在容器里；两边给得不一样，选中块就会从圆头上歪出来。截图工具栏二级行
+/// 原来横向留 20、纵向留 7（由行高 40 − 控件 26 反推），选中胶囊明显偏内。
+///
+/// 所以内边距只有一个来源：`padding(containerHeight:itemHeight:)`。调用点别再写第二个数。
+enum JarvisSegmentedMetrics {
+    /// 等宽内边距：选中胶囊到容器左 / 上 / 下（以及末项到右侧）都取它。
+    static func padding(containerHeight: CGFloat, itemHeight: CGFloat) -> CGFloat {
+        max(0, (containerHeight - itemHeight) / 2)
+    }
+
+    /// 选项之间的缝。
+    static let itemSpacing: CGFloat = 2
+    /// 紧凑档选项：截图工具栏二级行、网页模块的分组选择器。
+    static let compactItemHeight: CGFloat = 26
+
+    /// 窗口工具栏里的成组控件：容器就是工具栏那一行（`JarvisToolbarMetrics.controlSize`），
+    /// 装的是紧凑档选项。
+    static var toolbarGroupPadding: CGFloat {
+        padding(
+            containerHeight: JarvisToolbarMetrics.controlSize,
+            itemHeight: compactItemHeight
+        )
+    }
 }
 
 /// Metrics shared by every control rendered in the native window toolbar.
@@ -115,6 +145,10 @@ enum JarvisToolbarMetrics {
     static let controlSize: CGFloat = 32
     static let iconSize: CGFloat = 13
     static let searchFieldWidth: CGFloat = 240
+    /// 图标簇（网页模块那组前进/后退/刷新）自己的留白。里面装的是 32 高的图标按钮，
+    /// 不是 26 高的紧凑选项——`JarvisSegmentedMetrics` 那条「容器高 − 选项高」的公式
+    /// 在这里会算出 0，别混用。
+    static let iconClusterPadding: CGFloat = 3
 }
 
 /// Marks a toolbar item whose view owns its own capsule, glass, or other
@@ -350,6 +384,33 @@ struct JarvisGlassModifier: ViewModifier {
     }
 }
 
+/// 选中 / 悬停的胶囊底。全应用共用一套：形状恒为 `Capsule`，选中恒为 accent 实心，
+/// 悬停恒为淡色。
+///
+/// 这套判断（选中 > 悬停 > 透明）原来在五六个控件里各写一遍，颜色和形状各有出入，
+/// 改一处漏一处不会有信号。分段容器里的可选项、工具栏筛选按钮都用它。
+struct JarvisSelectionPillModifier: ViewModifier {
+    let isSelected: Bool
+    let isHovered: Bool
+
+    func body(content: Content) -> some View {
+        content.background {
+            Capsule().fill(
+                isSelected
+                    ? JarvisMotion.selectionPillTint
+                    : (isHovered ? JarvisMotion.hoverPillTint : .clear)
+            )
+        }
+    }
+}
+
+extension View {
+    /// 选中 / 悬停的胶囊底，见 `JarvisSelectionPillModifier`。
+    func jarvisSelectionPill(isSelected: Bool, isHovered: Bool = false) -> some View {
+        modifier(JarvisSelectionPillModifier(isSelected: isSelected, isHovered: isHovered))
+    }
+}
+
 struct JarvisGlassShapeModifier<GlassShape: Shape>: ViewModifier {
     let tint: Color?
     let shape: GlassShape
@@ -450,8 +511,9 @@ extension View {
 /// 剪贴板和截图两张卡片原本各写一份完全一样的外壳，唯一的差别是内容的对齐方式。
 struct HistoryCardChrome<Preview: View>: View {
     let preview: Preview
-    let width: CGFloat
-    let height: CGFloat
+    /// 固定宽高；传 nil 表示跟着列宽走（内容自己带 16:9 的比例）。
+    var width: CGFloat?
+    var height: CGFloat?
     let isSelected: Bool
     var alignment: Alignment = .center
 
@@ -473,6 +535,7 @@ struct HistoryCardChrome<Preview: View>: View {
                 )
         }
         .frame(width: width, height: height, alignment: alignment)
+        .frame(maxWidth: width == nil ? .infinity : nil)
         .clipShape(
             RoundedRectangle(
                 cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
@@ -498,7 +561,9 @@ struct HistoryCardChrome<Preview: View>: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.92), in: Capsule())
+                    // 选中色和全app的选中胶囊同一枚（`selectionPillTint`）：
+                    // 徽标原来自己用了 0.92，比别处深一档，放在一起能看出色差。
+                    .background(JarvisMotion.selectionPillTint, in: Capsule())
                     .padding(8)
                     .accessibilityHidden(true)
             }
@@ -623,14 +688,7 @@ struct JarvisToolbarSelectionButton: View {
                 .foregroundStyle(isSelected ? Color.white : Color.jarvisTextSecondary)
                 .padding(.horizontal, 10)
                 .frame(height: JarvisToolbarMetrics.controlSize)
-                .background {
-                    Capsule()
-                        .fill(
-                            isSelected
-                                ? JarvisMotion.selectionPillTint
-                                : (isHovered ? JarvisMotion.hoverPillTint : .clear)
-                        )
-                }
+                .jarvisSelectionPill(isSelected: isSelected, isHovered: isHovered)
                 .contentShape(Capsule())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.82))

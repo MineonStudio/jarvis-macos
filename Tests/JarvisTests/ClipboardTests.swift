@@ -297,9 +297,11 @@ final class ClipboardTests: XCTestCase {
     }
 
     func testClipboardGridUsesOneUniformCardSize() {
-        XCTAssertEqual(HistoryGridMetrics.clipboardCardWidth, 211.2, accuracy: 0.001)
-        XCTAssertEqual(HistoryGridMetrics.clipboardCardHeight, 118.8, accuracy: 0.001)
-        XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHeight, 118.8, accuracy: 0.001)
+        // 基准宽度 200（用户定的）；剪贴板比截图再大一档（1.1×）。
+        XCTAssertEqual(HistoryGridMetrics.historyCardBaseWidth, 200, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCardWidth, 220, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCardHeight, 123.75, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHeight, 123.75, accuracy: 0.001)
         XCTAssertEqual(
             HistoryGridMetrics.clipboardCardHeight,
             HistoryGridMetrics.clipboardCardWidth * 9 / 16,

@@ -49,6 +49,15 @@ struct WindowSelectionCandidate {
 enum WindowSelectionDetector {
     private static let dockOwnerNames: Set<String> = ["dock", "程序坞"]
 
+    /// Quartz 全局坐标的翻转基准：主屏高度。
+    ///
+    /// 不是「所有屏里最高的那块」——Quartz 的原点跟着主屏走，取最高屏会在有屏排到
+    /// 主屏上方时让所有局部坐标整体平移。`ScreenshotWindowSelectionGeometryTests`
+    /// 用 AppKit 侧的主屏高度交叉验证这个值。
+    static var quartzDesktopTop: CGFloat {
+        CGDisplayBounds(CGMainDisplayID()).maxY
+    }
+
     static func candidates(
         for screenFrame: CGRect
     ) -> [WindowSelectionCandidate] {
@@ -59,7 +68,7 @@ enum WindowSelectionDetector {
             return []
         }
 
-        let desktopTop = NSScreen.screens.map(\.frame.maxY).max() ?? screenFrame.maxY
+        let desktopTop = quartzDesktopTop
         let screenBounds = CGRect(origin: .zero, size: screenFrame.size)
         let dockGlobalRect = dockRegion(for: screenFrame)
         let context = WindowSelectionContext(
@@ -364,6 +373,8 @@ final class PinnedScreenshotContainerView: NSView {
     private let contentInset: CGFloat
     private let editor: ScreenshotEditorModel
     private let onActivate: (() -> Void)?
+    /// 右键菜单里的「关闭贴图」（由控制器接到销毁流程上）。
+    var onClose: (() -> Void)?
     var isSelected = false {
         didSet {
             needsDisplay = true
@@ -403,6 +414,54 @@ final class PinnedScreenshotContainerView: NSView {
     /// entire pin activates immediately instead of requiring a second click.
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
         true
+    }
+
+    /// 贴图原来只有拖动和 Esc：复制、找到存到哪儿去都没有入口。
+    override func menu(for _: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        let copyItem = NSMenuItem(
+            title: "复制图片",
+            action: #selector(copyImageToPasteboard),
+            keyEquivalent: ""
+        )
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        let revealItem = NSMenuItem(
+            title: "在访达中显示截图目录",
+            action: #selector(revealSavedScreenshots),
+            keyEquivalent: ""
+        )
+        revealItem.target = self
+        menu.addItem(revealItem)
+
+        menu.addItem(.separator())
+        let closeItem = NSMenuItem(title: "关闭贴图", action: #selector(closePin), keyEquivalent: "")
+        closeItem.target = self
+        menu.addItem(closeItem)
+        return menu
+    }
+
+    @objc private func copyImageToPasteboard() {
+        // 导出是异步的（渲染 + 编码在后台），菜单动作里开个任务等它。
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let data = await editor.finalPNGData()
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.setData(data, forType: .png) else { return }
+            JarvisLog.notice(category: .window, event: "screenshot.pinned.copy", result: "success")
+        }
+    }
+
+    @objc private func revealSavedScreenshots() {
+        // 贴图和普通截图存在同一个目录里，这里直接带用户过去。
+        let directory = JarvisAppDirectory.url("ScreenshotHistory")
+        NSWorkspace.shared.activateFileViewerSelecting([directory])
+    }
+
+    @objc private func closePin() {
+        onClose?()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -526,14 +585,8 @@ final class PinnedScreenshotItem {
     // The imageFrame calculation still points to the original screenshot
     // bounds, so this does not change the pin's visible position or size.
     let contentInset: CGFloat = 40
-    var data: Data
     var containerView: PinnedScreenshotContainerView?
-    var toolbarWindow: NSPanel?
-    var toolbarLayout: ScreenshotToolbarLayoutModel?
-    var editorObservation: AnyCancellable?
     var onAction: ((ScreenshotAction) -> Void)?
-    var showsToolbar = false
-    var showsShadow = true
 
     var imageFrame: CGRect {
         CGRect(
@@ -545,7 +598,6 @@ final class PinnedScreenshotItem {
     }
 
     init(data: Data, image: NSImage, frame: CGRect) {
-        self.data = data
         imageSize = image.size
         editor = ScreenshotEditorModel(
             image: image,

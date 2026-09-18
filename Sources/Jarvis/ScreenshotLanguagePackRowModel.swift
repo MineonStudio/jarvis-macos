@@ -45,7 +45,10 @@ final class LanguagePackRowModel: ObservableObject {
     }
 
     func refresh() async {
-        guard phase != .downloading else {
+        // 只有**句柄还在**才说明真的在下载。切走设置页会 tearDown 掉句柄，而相位
+        // 留在 .downloading——原来这里无条件早退，那一行就永远停在「下载中…」，
+        // 连刷新都救不回来。
+        guard phase != .downloading || handler == nil else {
             return
         }
         let g = beginGeneration()

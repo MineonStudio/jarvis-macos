@@ -87,7 +87,7 @@ struct AIConversationView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                ToolbarItem(placement: .navigation) {
+                JarvisToolbarSurface(id: "ai.provider", placement: .navigation) {
                     JarvisToolbarGroupedPicker(
                         items: AIConversationProvider.allCases,
                         selection: selectedProvider,
@@ -146,7 +146,9 @@ struct AIConversationProviderIcon: View {
                     .scaledToFit()
             }
         }
-        .frame(width: 16, height: 16)
+        // 与娱乐广场的平台图标同一套：墨迹最大边 = inkSize，方块和字形看上去一样大。
+        .padding(JarvisBrandIconMetrics.inset)
+        .frame(width: JarvisBrandIconMetrics.box, height: JarvisBrandIconMetrics.box)
         .accessibilityHidden(true)
     }
 
@@ -166,6 +168,6 @@ struct AIConversationProviderIcon: View {
         }
 
         image.isTemplate = false
-        return image
+        return JarvisBrandIconMetrics.trimmed(image, cacheKey: "ai.\(resourceName)")
     }
 }

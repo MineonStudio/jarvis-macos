@@ -67,30 +67,20 @@ enum ScreenshotTimeFilterLogic {
     }
 }
 
+/// 时间筛选：一枚自绘胶囊装着四个等宽内边距的选项。
+///
+/// 原来是四个各自独立的工具栏 item、光秃秃四个药丸——没有容器，就谈不上「选中胶囊
+/// 到容器四边等距」。`JarvisToolbarSurface` 关掉系统给每个 item 铺的那层底。
 struct ScreenshotTimeFilterBar: ToolbarContent {
     @Binding var selectedFilter: ScreenshotTimeFilter
 
     var body: some ToolbarContent {
-        ToolbarItem(id: "screenshot.time.three-days", placement: .navigation) {
-            selectionButton(for: .threeDays)
-        }
-        ToolbarItem(id: "screenshot.time.seven-days", placement: .navigation) {
-            selectionButton(for: .sevenDays)
-        }
-        ToolbarItem(id: "screenshot.time.one-month", placement: .navigation) {
-            selectionButton(for: .oneMonth)
-        }
-        ToolbarItem(id: "screenshot.time.all", placement: .navigation) {
-            selectionButton(for: .all)
-        }
-    }
-
-    private func selectionButton(for filter: ScreenshotTimeFilter) -> some View {
-        JarvisToolbarSelectionButton(
-            title: filter.title,
-            isSelected: selectedFilter == filter
-        ) {
-            selectedFilter = filter
+        JarvisToolbarSurface(id: "screenshot.time-filter", placement: .navigation) {
+            JarvisToolbarGroupedPicker(
+                items: ScreenshotTimeFilter.displayCases,
+                selection: $selectedFilter,
+                title: \.title
+            )
         }
     }
 }

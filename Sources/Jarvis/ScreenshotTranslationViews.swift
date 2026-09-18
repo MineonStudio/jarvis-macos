@@ -2,12 +2,23 @@ import SwiftUI
 
 struct ScreenshotTranslationIcon: View {
     let isSelected: Bool
+    /// 选中态的图标颜色。工具栏把它压在 accent 胶囊上，得用白色——胶囊和图标
+    /// 都是 accent 的话整个糊在一起。
+    var selectedColor: Color = .accentColor
 
     var body: some View {
         Image(systemName: isSelected ? "character.bubble.fill" : "character.bubble")
-            .font(.system(size: 21, weight: .medium))
-            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-            .frame(width: 24, height: 24)
+            .font(
+                .system(
+                    size: ScreenshotToolbarIconMetrics.pointSize(for: "character.bubble"),
+                    weight: .medium
+                )
+            )
+            .foregroundStyle(isSelected ? selectedColor : Color.secondary)
+            .frame(
+                width: ScreenshotToolbarIconMetrics.box,
+                height: ScreenshotToolbarIconMetrics.box
+            )
             .accessibilityLabel("截图翻译")
     }
 }

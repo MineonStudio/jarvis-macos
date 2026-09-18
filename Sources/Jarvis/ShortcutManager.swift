@@ -243,6 +243,10 @@ final class ScreenshotShortcutManager {
     }
 
     func validate(_ candidate: ScreenshotShortcut) -> ScreenshotShortcutValidation {
+        // 当前绑定直接算可用，不能去探测：同一个进程里重复注册同一个键码+修饰键，
+        // Carbon 一律返回 eventHotKeyExistsErr（-9878），探测结果是「冲突」——
+        // 于是设置页每次打开都给三个正常工作的快捷键标红，连「恢复默认」都会被拒。
+        // 注册失败另有一条状态（`isRegistered`）来暴露。
         guard candidate != binding else { return .available }
 
         var probe: EventHotKeyRef?

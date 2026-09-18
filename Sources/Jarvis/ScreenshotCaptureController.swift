@@ -73,17 +73,121 @@ enum ScreenshotTool: CaseIterable {
 @MainActor
 final class ScreenshotToolbarLayoutModel: ObservableObject {
     @Published var width: CGFloat
+    /// 工具栏整体在选区上方时，二级行排在主行**上面**。
+    ///
+    /// 窗口是按贴着选区的那条边定位的：放下方时贴的是窗口上沿，主行正好在顶部，
+    /// 所以收起二级行主行不动；放上方时贴的是窗口下沿，主行若还在顶部，窗口一变矮
+    /// 它就会跟着弹一下。把二级行挪到上面、主行贴着下沿，两边就都不动了。
+    @Published var placesSecondaryRowAboveMain = false
 
     init(width: CGFloat) {
         self.width = width
     }
 }
 
+/// 一级编辑栏里所有图标的视觉尺寸基准。
+///
+/// 只把字号写成同一个数是不够的：21pt 下 `arrow.up.right` 的墨迹只有 15.5pt 高，
+/// 而 `square.and.arrow.down` 有 22.25pt、马赛克自绘图形是 24pt——并排放在一行里
+/// 参差不齐一眼就能看出来。这里按实测的墨迹高度反推每颗图标各自的字号，让它们的
+/// 墨迹高度统一落在 `targetInkHeight` 上。数字由 `ScreenshotToolbarIconTests`
+/// 复测，改了字号或换了符号会被测出来。
+enum ScreenshotToolbarIconMetrics {
+    /// 所有一级图标统一的墨迹高度。
+    static let targetInkHeight: CGFloat = 18
+    /// 图标画框：比墨迹大一圈，宽图标才不会被裁。
+    static let box: CGFloat = 24
+    /// 量基准时用的字号。
+    private static let referencePointSize: CGFloat = 21
+
+    /// 符号名 → 在 `referencePointSize` 下的实测墨迹高度。
+    private static let measuredInkHeights: [String: CGFloat] = [
+        "arrow.up.right": 15.50,
+        "rectangle": 19.25,
+        "character.bubble": 21.75,
+        "arrow.uturn.backward": 19.75,
+        "arrow.uturn.forward": 19.75,
+        "square.and.arrow.down": 22.25,
+        "xmark": 16.75,
+        "checkmark": 17.75
+    ]
+
+    /// 某个符号要用的字号。
+    static func pointSize(for symbol: String) -> CGFloat {
+        guard let inkHeight = measuredInkHeights[symbol], inkHeight > 0 else {
+            return referencePointSize
+        }
+        return referencePointSize * targetInkHeight / inkHeight
+    }
+
+    /// 文字工具那个衬线 "T" 的字号（24pt 下墨迹 17.25pt 高）。
+    static let textPointSize: CGFloat = 24 * targetInkHeight / 17.25
+}
+
 enum ScreenshotToolbarMetrics {
-    static let baseWidth: CGFloat = 520
-    static let translationWidth: CGFloat = 520
-    static let compactHeight: CGFloat = 70
-    static let expandedHeight: CGFloat = 111
+    /// 面板宽度 = 主按钮行的宽度。主行内容固定，窗口就跟着它；二级行按内容
+    /// 自适应，在窗口里居中显示。
+    static var baseWidth: CGFloat {
+        mainRowContentWidth + (2 * mainRowHorizontalPadding)
+    }
+
+    /// 主按钮行的高度。
+    static let mainRowHeight: CGFloat = 64
+    /// 二级控件行的高度。
+    static let secondaryRowHeight: CGFloat = 40
+    /// 两条胶囊之间的缝。上下分成两块之后这里不再画分隔线。
+    static let pillSpacing: CGFloat = 6
+    /// 主按钮行里每颗按钮的边长。
+    static let mainButtonSize: CGFloat = 42
+    /// 二级行里控件（选项药丸、下拉芯片、文字按钮）的统一高度。
+    ///
+    /// 二级行本身已经是一条大胶囊，里面的控件不再各自套容器——它们只用这一点
+    /// 高度上的药丸底表示选中，不再多叠一层圆角。
+    static let secondaryControlHeight: CGFloat = 26
+
+    /// 主按钮行的左右内缩。胶囊两端的圆头半径是行高的一半，内缩不够会把
+    /// 最外侧按钮的图标切掉。下限由 `minimumCapsuleInset` 推出，
+    /// `ScreenshotToolbarCapsuleTests` 钉着这个约束。
+    static let mainRowHorizontalPadding: CGFloat = 11
+    /// 二级行的左右内缩 = 行高减控件高的一半，和上下内缩**同一个数**：选中胶囊的
+    /// 圆头圆心才会和行胶囊的圆头圆心重合，看上去是"嵌"进去的。原来写死 20，横向
+    /// 比纵向（(40−26)/2 = 7）宽出一大截，选中药丸在圆头上明显偏内。
+    ///
+    /// 下限由 `minimumCapsuleInset` 推出，`ScreenshotToolbarCapsuleTests` 钉着。
+    static var secondaryRowHorizontalPadding: CGFloat {
+        JarvisSegmentedMetrics.padding(
+            containerHeight: secondaryRowHeight,
+            itemHeight: secondaryControlHeight
+        )
+    }
+
+    /// 主按钮行的内容宽度：10 颗按钮，加 3 组分隔线（1pt 线 + 两侧各 8pt 留白）。
+    /// 它和面板的固定宽度一起决定内缩的**上界**——内缩不是越大越好。
+    static var mainRowContentWidth: CGFloat {
+        (10 * mainButtonSize) + (3 * (1 + 2 * 8))
+    }
+
+    /// 行高 `rowHeight` 的胶囊要容下高 `contentHeight` 的内容，两端圆头至少要
+    /// 留出多少内缩。胶囊的圆头半径是行高的一半，圆心在 (r, r)，内容角点
+    /// (inset, (rowHeight - contentHeight) / 2) 到圆心的距离不能超过 r。
+    static func minimumCapsuleInset(rowHeight: CGFloat, contentHeight: CGFloat) -> CGFloat {
+        let radius = rowHeight / 2
+        let halfContent = min(contentHeight, rowHeight) / 2
+        let squared = radius * radius - halfContent * halfContent
+        guard squared > 0 else { return radius }
+        return radius - squared.squareRoot()
+    }
+
+    /// 收起态就是主按钮行本身；展开态再叠一条二级行。胶囊铺满窗口，不加额外留白
+    /// ——留白区会变成看得见截图却点不动的死区。
+    static var compactHeight: CGFloat {
+        mainRowHeight
+    }
+
+    static var expandedHeight: CGFloat {
+        mainRowHeight + pillSpacing + secondaryRowHeight
+    }
+
     static let gap: CGFloat = 16
     static let screenHorizontalInset: CGFloat = 12
     static let availableWidthInset: CGFloat = screenHorizontalInset * 2
@@ -91,6 +195,46 @@ enum ScreenshotToolbarMetrics {
 }
 
 enum ScreenshotToolbarPlacement {
+    /// 工具栏相对选区的落位。
+    ///
+    /// 它同时决定窗口**以哪条边为基准**：放在选区下方时基准是窗口上沿，放在上方
+    /// 或压在图上时基准是下沿。主按钮行要待在基准那一侧，收起/展开二级行才不会
+    /// 把它推走。
+    enum Anchor {
+        case below
+        case above
+        case overlay
+
+        /// 基准是窗口下沿（二级行要排在主行上面）。
+        var anchorsWindowBottom: Bool {
+            self != .below
+        }
+    }
+
+    /// 按**收起态**的高度选落位。
+    ///
+    /// 用请求的高度选会有个要命的效果：展开二级行时窗口变高，原本放得下的一侧变得
+    /// 放不下，落位当场翻到对面——工具栏瞬移几百点，行序也跟着翻。收起态是它最小
+    /// 的占位，按它选就永远稳定。
+    static func anchor(
+        for imageFrame: CGRect,
+        in visibleFrame: CGRect,
+        requestedWidth _: CGFloat = ScreenshotToolbarMetrics.baseWidth
+    ) -> Anchor {
+        let height = ScreenshotToolbarMetrics.compactHeight
+        let minY = visibleFrame.minY
+        let maxY = visibleFrame.maxY - height
+        let belowY = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
+        let aboveY = imageFrame.maxY + ScreenshotToolbarMetrics.gap
+        if belowY >= minY {
+            return .below
+        }
+        if aboveY <= maxY {
+            return .above
+        }
+        return .overlay
+    }
+
     static func frame(
         for imageFrame: CGRect,
         in visibleFrame: CGRect,
@@ -107,17 +251,16 @@ enum ScreenshotToolbarPlacement {
 
         let minY = visibleFrame.minY
         let maxY = visibleFrame.maxY - height
-        let belowY = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
-        let aboveY = imageFrame.maxY + ScreenshotToolbarMetrics.gap
         let y: CGFloat
-        if belowY >= minY {
-            y = belowY
-        } else if aboveY <= maxY {
-            y = aboveY
-        } else {
+        switch anchor(for: imageFrame, in: visibleFrame, requestedWidth: requestedWidth) {
+        case .below:
+            y = imageFrame.minY - height - ScreenshotToolbarMetrics.gap
+        case .above:
+            y = imageFrame.maxY + ScreenshotToolbarMetrics.gap
+        case .overlay:
             let visibleImage = imageFrame.intersection(visibleFrame)
             let base = visibleImage.isNull || visibleImage.isEmpty ? visibleFrame : visibleImage
-            y = min(base.minY + ScreenshotToolbarMetrics.overlayInset, maxY)
+            y = base.minY + ScreenshotToolbarMetrics.overlayInset
         }
 
         let clampedY = maxY >= minY ? min(max(y, minY), maxY) : minY
@@ -134,10 +277,16 @@ final class ScreenshotCaptureController {
     var activeEditor: ScreenshotEditorModel?
     var editorObservation: AnyCancellable?
     var toolbarLayout: ScreenshotToolbarLayoutModel?
+    /// 每次收起编辑界面就 +1，用来让在途的导出结果作废。
+    var resultGeneration = 0
+    /// 在途的全屏采集。会话结束/退出时要取消，否则它会一直挂着。
+    var captureTask: Task<Void, Never>?
     var selectionCompletionDelivered = false
     var pinNextSelectionResult = false
     var pinnedItems: [UUID: PinnedScreenshotItem] = [:]
     var selectedPinnedID: UUID?
+    /// 上一次看到的屏幕排布，用来判断「屏幕真的变了」。
+    var lastKnownScreenFrames: [CGRect] = []
     var activeCaptureScreenFrame: CGRect?
     var sessionPhase: ScreenshotSessionPhase = .idle
     var activeSessionID: UUID?

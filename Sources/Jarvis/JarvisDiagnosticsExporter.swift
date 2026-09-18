@@ -43,7 +43,9 @@ enum JarvisDiagnosticsExporter {
             try? fileManager.removeItem(at: stagingDirectory)
         }
 
-        let eventFiles = JarvisLocalLogStore().eventFileURLs
+        // 日志写入是异步批量的，先落盘再打包，否则最近几百毫秒的事件会漏掉。
+        JarvisLog.flush()
+        let eventFiles = JarvisLog.eventFileURLs
         for sourceURL in eventFiles {
             let destinationURL = stagingDirectory.appendingPathComponent(
                 sourceURL.lastPathComponent,

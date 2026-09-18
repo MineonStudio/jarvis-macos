@@ -3,9 +3,45 @@ import Foundation
 import XCTest
 
 final class LoggingTests: XCTestCase {
+    /// `JarvisLog` 的运行时的存储是进程级的：这里的测试把它指向临时目录，必须还原，
+    /// 否则后面所有测试的日志都会写进一个已经删掉的目录，还会继承 `debugEnabled`
+    /// （测试报告里记过的 L-47）。
+    override func tearDown() {
+        JarvisLog.configure(localStore: JarvisLocalLogStore(), debugEnabled: false)
+        super.tearDown()
+    }
+
+    private func makeTemporaryDirectory(_ name: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func makeEvent(
+        event: String = "test.event",
+        operationID: String? = "operation",
+        fields: [String: String] = [:]
+    ) -> JarvisLogEvent {
+        JarvisLogEvent(
+            schemaVersion: JarvisLogEvent.currentSchemaVersion,
+            timestamp: "2026-09-11T00:00:00Z",
+            level: .info,
+            category: .storage,
+            event: event,
+            sessionID: "session",
+            operationID: operationID,
+            processID: 1,
+            bundleID: "com.jarvis.mac",
+            bundlePath: "<app>",
+            appVersion: "1.3.6",
+            build: "333",
+            durationMilliseconds: nil,
+            result: "success",
+            fields: fields
+        )
+    }
+
     func testLogFacadeWritesContextAndRedactsFields() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("JarvisLogFacadeTests-\(UUID().uuidString)", isDirectory: true)
+        let directory = makeTemporaryDirectory("JarvisLogFacadeTests")
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = JarvisLocalLogStore(directoryURL: directory)
@@ -21,6 +57,8 @@ final class LoggingTests: XCTestCase {
                 ]
             )
         }
+        // 日志写入是异步批量的，读文件前先落盘。
+        JarvisLog.flush()
 
         let file = try XCTUnwrap(store.eventFileURLs.first)
         let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
@@ -91,8 +129,7 @@ final class LoggingTests: XCTestCase {
     }
 
     func testLocalLogStoreWritesJSONLinesWithPermissionsAndRotates() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("JarvisLoggingTests-\(UUID().uuidString)", isDirectory: true)
+        let directory = makeTemporaryDirectory("JarvisLoggingTests")
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = JarvisLocalLogStore(
@@ -101,25 +138,12 @@ final class LoggingTests: XCTestCase {
             maximumFileCount: 3
         )
         for index in 0 ..< 24 {
-            store.append(
-                JarvisLogEvent(
-                    schemaVersion: 1,
-                    timestamp: "2026-09-11T00:00:00Z",
-                    level: .info,
-                    category: .storage,
-                    event: "test.event",
-                    sessionID: "session",
+            store.append([
+                makeEvent(
                     operationID: "operation-\(index)",
-                    processID: 1,
-                    bundleID: "com.jarvis.mac",
-                    bundlePath: "<app>",
-                    appVersion: "1.2.20",
-                    build: "254",
-                    durationMilliseconds: nil,
-                    result: "success",
                     fields: ["payload": String(repeating: "x", count: 140)]
                 )
-            )
+            ])
         }
 
         let files = store.eventFileURLs
@@ -139,6 +163,48 @@ final class LoggingTests: XCTestCase {
 
         let directoryAttributes = try FileManager.default.attributesOfItem(atPath: directory.path)
         XCTAssertEqual((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+    }
+
+    /// 异步批量写入不能丢事件，也不能打乱顺序：卡顿日志本来就是成串产生的。
+    func testLogFacadeFlushKeepsEveryEventInOrder() throws {
+        let directory = makeTemporaryDirectory("JarvisLogBatchTests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = JarvisLocalLogStore(directoryURL: directory, maximumFileBytes: 10 * 1024 * 1024)
+        JarvisLog.configure(localStore: store, debugEnabled: true)
+        for index in 0 ..< 40 {
+            JarvisLog.info(
+                category: .performance,
+                event: "test.batch",
+                fields: ["index": String(index)]
+            )
+        }
+        JarvisLog.flush()
+
+        let file = try XCTUnwrap(store.eventFileURLs.first)
+        let events = try String(contentsOf: file, encoding: .utf8)
+            .split(separator: "\n")
+            .map { try JSONDecoder().decode(JarvisLogEvent.self, from: Data($0.utf8)) }
+        XCTAssertEqual(events.count, 40)
+        XCTAssertEqual(
+            events.compactMap { $0.fields["index"] },
+            (0 ..< 40).map(String.init)
+        )
+    }
+
+    func testLocalLogStoreBatchAppendWritesEveryEvent() throws {
+        let directory = makeTemporaryDirectory("JarvisLogStoreBatchTests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = JarvisLocalLogStore(directoryURL: directory, maximumFileBytes: 10 * 1024 * 1024)
+        let events = (0 ..< 5).map { index in
+            makeEvent(event: "test.batch.store", operationID: "operation-\(index)")
+        }
+        store.append(events)
+
+        let file = try XCTUnwrap(store.eventFileURLs.first)
+        let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.count, 5)
     }
 
     func testClipboardCacheAuditCountsMissingReferencesWithoutChangingItems() throws {

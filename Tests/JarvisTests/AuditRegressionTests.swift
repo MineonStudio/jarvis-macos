@@ -264,28 +264,25 @@ final class AuditRegressionTests: XCTestCase {
             mosaicMode: .rectangle,
             mosaicStyle: .blur
         )
-        let data = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(.init(
-            image: image,
+        let sourceImage = try XCTUnwrap(ScreenshotEditorModel.cgImage(from: image))
+        let rendered = try XCTUnwrap(ScreenshotRenderPipeline().renderFullCanvas(.init(
+            image: sourceImage,
             canvasSize: CGSize(width: size, height: size),
             pixelScale: 1,
             annotations: [mosaic],
             // 直接用原图当"过滤后的图"，这样 mosaic 区域呈现的就是源内容本身，
             // 便于判断取到的是哪一块画面。
-            blurredImage: image,
+            blurredImage: sourceImage,
             pixelatedImage: nil
         )))
-        let exported = try XCTUnwrap(NSBitmapImageRep(data: data))
+        let exported = NSBitmapImageRep(cgImage: rendered)
         let sampled = try XCTUnwrap(
             exported.colorAt(x: 100, y: 120)?.usingColorSpace(.deviceRGB)
         )
 
-        // 正确行为：应当是用户框选的蓝色区域。
-        // 当前实现取到的是镜像位置的绿色区域，因此用 XCTExpectFailure 固定缺陷。
-        // 修复（在 `draw(filteredImage:...)` 之前反向翻转）后，这个用例会因为
-        // "预期失败但没有失败" 而报错，提醒删除该标记。
-        XCTExpectFailure("缺陷 H-7：mosaic 图层被上下镜像，导出内容与预览不一致") {
-            XCTAssertGreaterThan(sampled.blueComponent, 0.8, "mosaic 区域应为蓝色（用户框选的内容）")
-            XCTAssertGreaterThan(sampled.greenComponent, 0.8, "记录缺陷：当前取到的是镜像位置的绿色内容")
-        }
+        // 镜像已修（`draw(filteredImage:...)` 之前补了一层反向翻转），这里断言的是
+        // 正确行为：框里应当是用户框选的蓝色，而不是镜像位置的绿色。
+        XCTAssertGreaterThan(sampled.blueComponent, 0.8, "mosaic 区域应为蓝色（用户框选的内容）")
+        XCTAssertLessThan(sampled.greenComponent, 0.2, "不该再取到镜像位置的绿色内容")
     }
 }

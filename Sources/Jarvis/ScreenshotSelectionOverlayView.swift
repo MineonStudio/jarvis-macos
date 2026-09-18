@@ -1,6 +1,26 @@
 import AppKit
 
 final class SelectionOverlayView: NSView {
+    /// 只把变化的那块标脏。
+    ///
+    /// 原来每次都 `needsDisplay = true`，而 `draw` 又忽略 `dirtyRect` 直接填满整屏：
+    /// 6K 上拖选就是每个鼠标事件一次两千多万像素的填充+合成。这里只把新旧选区
+    /// （含尺寸标签）的并集标脏，AppKit 会把绘制裁到那块。
+    private func invalidateSelectionArea(from old: CGRect?, to new: CGRect?) {
+        var dirty = CGRect.null
+        if let old {
+            dirty = dirty.union(old.insetBy(dx: -32, dy: -32))
+        }
+        if let new {
+            dirty = dirty.union(new.insetBy(dx: -32, dy: -32))
+        }
+        guard !dirty.isNull else {
+            needsDisplay = true
+            return
+        }
+        setNeedsDisplay(dirty.intersection(bounds))
+    }
+
     var onFinish: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
     var onPin: ((CGRect) -> Void)?
@@ -91,7 +111,7 @@ final class SelectionOverlayView: NSView {
         moveAnchor = nil
         didDragSelection = false
         windowCandidateAtMouseDown = updateHoveredWindowCandidate(at: startPoint)
-        needsDisplay = true
+        invalidateSelectionArea(from: hoveredWindowCandidate?.localRect, to: nil)
     }
 
     func pinHoveredWindow() {
@@ -128,9 +148,10 @@ final class SelectionOverlayView: NSView {
                 self.moveAnchor = point
             }
         } else {
+            let previous = selectionRect
             currentPoint = point
+            invalidateSelectionArea(from: previous, to: selectionRect)
         }
-        needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -172,8 +193,9 @@ final class SelectionOverlayView: NSView {
         let changed = candidate?.windowID != hoveredWindowCandidate?.windowID
             || candidate?.localRect != hoveredWindowCandidate?.localRect
         if changed {
+            let previous = hoveredWindowCandidate?.localRect
             hoveredWindowCandidate = candidate
-            needsDisplay = true
+            invalidateSelectionArea(from: previous, to: candidate?.localRect)
         }
         return candidate
     }

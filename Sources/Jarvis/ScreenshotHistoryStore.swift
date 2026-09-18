@@ -5,6 +5,15 @@ struct ScreenshotHistoryItem: Codable, Identifiable, Equatable, Sendable {
     let createdAt: Date
     var updatedAt: Date
     let fileName: String
+
+    /// 拖到别处（Finder、聊天窗口）时落盘用的名字。
+    ///
+    /// `fileName` 是内部名（`screenshot-<uuid>.png`，索引照它找文件），用户不该看见
+    /// 一串 UUID。时间取 `updatedAt`：界面里显示的是它，文件内容也是那一次写进去的
+    /// （改过再存的截图，`createdAt` 会是更早的时刻）。
+    var suggestedFileName: String {
+        ScreenshotFileName.timestamped(at: updatedAt)
+    }
 }
 
 /// Stores screenshot history as PNG files plus a small JSON index. Keeping the
@@ -16,10 +25,24 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     private let file: JarvisJSONFile<[ScreenshotHistoryItem]>
     /// 只保护「写 PNG + 改索引」这类组合操作；单次文件读写的锁在 `file` 里。
     private let lock = NSLock()
-    private let maximumCount = 100
+    /// 只按条数封顶挡不住体积：单张截图 1-20MB 不等，100 张 Retina 全屏可以到
+    /// 1-2GB，而用户完全看不到占用。所以再加一道总字节上限。
+    ///
+    /// 刻意**不**按时间淘汰：那会在升级后静默删掉用户几个月前的截图，而体积问题
+    /// 已经由字节上限解决了。
+    private let maximumCount: Int
+    private let maximumTotalBytes: Int64
+    /// 孤儿回收每次运行只做一次（`load()` 在每次增删改后都会被调用）。
+    private var hasCollectedOrphans = false
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        maximumCount: Int = 100,
+        maximumTotalBytes: Int64 = 512 * 1024 * 1024
+    ) {
         self.fileManager = fileManager
+        self.maximumCount = maximumCount
+        self.maximumTotalBytes = maximumTotalBytes
         let directory = JarvisAppDirectory.url("ScreenshotHistory", fileManager: fileManager)
         directoryURL = directory
         file = JarvisJSONFile(
@@ -30,8 +53,15 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
         )
     }
 
-    init(directoryURL: URL, fileManager: FileManager = .default) {
+    init(
+        directoryURL: URL,
+        fileManager: FileManager = .default,
+        maximumCount: Int = 100,
+        maximumTotalBytes: Int64 = 512 * 1024 * 1024
+    ) {
         self.fileManager = fileManager
+        self.maximumCount = maximumCount
+        self.maximumTotalBytes = maximumTotalBytes
         self.directoryURL = directoryURL
         file = JarvisJSONFile(
             directoryURL: directoryURL,
@@ -42,7 +72,11 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
     }
 
     func load() -> [ScreenshotHistoryItem] {
-        lock.withLock { loadLocked() }
+        lock.withLock {
+            let items = loadLocked()
+            collectOrphansIfNeeded(keeping: items)
+            return items
+        }
     }
 
     private func loadLocked() -> [ScreenshotHistoryItem] {
@@ -114,7 +148,17 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             }
             items.removeAll { $0.id == item.id }
             items.insert(item, at: 0)
-            guard save(trimmed(items)) else { return nil }
+            // 先算淘汰、**先写索引**，成功之后才删文件：反过来的话，索引写失败时
+            // 磁盘上的索引仍引用着已经被删掉的图，界面上那些条目还在，点开却报
+            // 「历史截图文件不存在」，而且每 add 一次就多删一批。
+            let (kept, removed) = trimmed(items)
+            guard save(kept) else {
+                discardFile(for: item)
+                return nil
+            }
+            for stale in removed {
+                discardFile(for: stale)
+            }
             return item
         }
     }
@@ -130,7 +174,12 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             var updated = items[index]
             updated.updatedAt = date
             items[index] = updated
-            guard save(items.sorted { $0.updatedAt > $1.updatedAt }) else { return nil }
+            // 重新编辑会让某张图变大，所以这里同样要过一遍容量约束。
+            let (kept, removed) = trimmed(items)
+            guard save(kept) else { return nil }
+            for stale in removed {
+                discardFile(for: stale)
+            }
             return updated
         }
     }
@@ -192,27 +241,132 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
         file.write(items)
     }
 
-    private func trimmed(_ items: [ScreenshotHistoryItem]) -> [ScreenshotHistoryItem] {
+    /// 按「条数 + 总字节」算出该留哪些、该淘汰哪些。**不删文件**——删要等索引
+    /// 写成功之后由调用方做，否则一次失败的写入会连带删掉索引里还引用着的图。
+    private func trimmed(
+        _ items: [ScreenshotHistoryItem]
+    ) -> (kept: [ScreenshotHistoryItem], removed: [ScreenshotHistoryItem]) {
         let sorted = items.sorted { $0.updatedAt > $1.updatedAt }
-        guard sorted.count > maximumCount else { return sorted }
+        var kept: [ScreenshotHistoryItem] = []
+        var removed: [ScreenshotHistoryItem] = []
+        var totalBytes: Int64 = 0
 
-        let kept = Array(sorted.prefix(maximumCount))
-        let keptIDs = Set(kept.map(\.id))
-        for removed in sorted where !keptIDs.contains(removed.id) {
+        for item in sorted {
+            let size = fileSize(of: item)
+            let overCount = kept.count >= maximumCount
+            // 第一张永远留着：单张就可能超过总上限，否则一张都存不下。
+            let overBytes = !kept.isEmpty && totalBytes + size > maximumTotalBytes
+            if overCount || overBytes {
+                removed.append(item)
+            } else {
+                kept.append(item)
+                totalBytes += size
+            }
+        }
+        if !removed.isEmpty {
+            // 淘汰是「最旧的先走」。用户看不到这个仓库的占用，所以至少让日志说得清。
+            JarvisLog.notice(
+                category: .storage,
+                event: "screenshot.history.trimmed",
+                result: "success",
+                fields: [
+                    "removed": String(removed.count),
+                    "kept": String(kept.count),
+                    "keptBytes": String(totalBytes)
+                ]
+            )
+        }
+        return (kept, removed)
+    }
+
+    private func fileSize(of item: ScreenshotHistoryItem) -> Int64 {
+        guard let url = safeFileURL(for: item.fileName),
+              let size = (try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+        else {
+            return 0
+        }
+        return size.int64Value
+    }
+
+    private func discardFile(for item: ScreenshotHistoryItem) {
+        guard let url = safeFileURL(for: item.fileName) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch CocoaError.fileNoSuchFile {
+            return
+        } catch {
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.trim.failed",
+                error: error
+            )
+        }
+    }
+
+    /// 删掉目录里没有被索引引用的 `screenshot-*.png`。
+    ///
+    /// 这些文件不会出现在历史里、也不会被淘汰（淘汰是按索引来的），只会一直占着
+    /// 磁盘。但「没被引用」有几种成因，其中一种是**索引读不出来**——那时删文件
+    /// 等于把用户的历史销毁掉，所以下面几道门禁一个都不能省。
+    private func collectOrphansIfNeeded(keeping items: [ScreenshotHistoryItem]) {
+        guard !hasCollectedOrphans else { return }
+        hasCollectedOrphans = true
+
+        let contents = (try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+
+        // ① 索引被隔离过（`.corrupt-*` 还在）说明这次读到的是坏索引，`items` 是空的
+        //    并不代表磁盘上的图没人要。这种时候一张都不许删。
+        guard !contents.contains(where: { $0.lastPathComponent.contains(".corrupt-") }) else {
+            JarvisLog.notice(
+                category: .storage,
+                event: "screenshot.history.orphanSweepSkipped",
+                result: "skipped",
+                fields: ["reason": "quarantinedIndex"]
+            )
+            return
+        }
+
+        let referenced = Set(items.map(\.fileName))
+        // ② 刚写出来、索引还没来得及落盘的图不能被当成孤儿。索引写在另一个队列上，
+        //    别的 Store 实例（启动仓库）也扫同一个目录。
+        let gracePeriod: TimeInterval = 10 * 60
+        let cutoff = Date().addingTimeInterval(-gracePeriod)
+        var removedCount = 0
+        var failedCount = 0
+        for url in contents where url.pathExtension.lowercased() == "png" {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("screenshot-"), !referenced.contains(name) else { continue }
+            // 只认名字合法的：非法名字留给人工处理，别误删别人的东西。
+            guard safeFileURL(for: name) != nil else { continue }
+            if let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate, modified > cutoff
+            {
+                continue
+            }
             do {
-                guard let url = safeFileURL(for: removed.fileName) else { continue }
                 try fileManager.removeItem(at: url)
+                removedCount += 1
             } catch CocoaError.fileNoSuchFile {
                 continue
             } catch {
+                failedCount += 1
                 JarvisLog.error(
                     category: .storage,
-                    event: "screenshot.history.trim.failed",
+                    event: "screenshot.history.orphanRemoval.failed",
                     error: error
                 )
             }
         }
-        return kept
+        guard removedCount > 0 || failedCount > 0 else { return }
+        JarvisLog.notice(
+            category: .storage,
+            event: "screenshot.history.orphansCollected",
+            result: failedCount == 0 ? "success" : "partial",
+            fields: ["count": String(removedCount), "failed": String(failedCount)]
+        )
     }
 
     private func safeFileURL(for fileName: String) -> URL? {

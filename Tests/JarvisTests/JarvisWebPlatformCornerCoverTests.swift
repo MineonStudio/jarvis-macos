@@ -47,10 +47,38 @@ final class JarvisWebPlatformCornerCoverTests: XCTestCase {
         }
     }
 
+    /// 角落那圈得带上面板的投影，不能只是一块平色。
+    ///
+    /// 面板的阴影在 `JarvisFloatingPanelModifier` 里画在网页视图底下、被盖住了；
+    /// 别的模块（截图、壁纸、会议……）的圆角处能看见这层浅投影，这两个模块要是没有，
+    /// 边角就对不上。判据：越靠近圆角（越靠近面板本体）越暗。
+    func testCornerCarriesThePanelShadow() throws {
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let rep = try coverPixels(appearance)
+            // 视图不是 flipped，缓存位图第 0 行是顶部：左上角 = 矩形角，往里走靠近圆弧。
+            let atCorner = try XCTUnwrap(rep.colorAt(x: 2, y: 2)?.usingColorSpace(.deviceRGB))
+            let nearArc = try XCTUnwrap(rep.colorAt(x: 13, y: 13)?.usingColorSpace(.deviceRGB))
+
+            XCTAssertGreaterThan(
+                atCorner.brightness,
+                nearArc.brightness + 0.005,
+                "\(appearanceName.rawValue)：角落没有投影的渐变，像是只填了平色"
+            )
+        }
+    }
+
     /// 圆角半径沿用面板的：和 `jarvisModulePanel()` / `jarvisFloatingPanel` 一致。
     func testDefaultCornerRadiusMatchesThePanel() {
         let cover = JarvisWebPlatformCornerCoverView(frame: .zero)
 
         XCTAssertEqual(cover.cornerRadius, JarvisMetrics.panelRadius, accuracy: 0.001)
+    }
+}
+
+private extension NSColor {
+    var brightness: CGFloat {
+        guard let rgb = usingColorSpace(.deviceRGB) else { return 0 }
+        return (rgb.redComponent + rgb.greenComponent + rgb.blueComponent) / 3
     }
 }

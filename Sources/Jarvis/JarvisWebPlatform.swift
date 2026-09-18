@@ -203,13 +203,40 @@ final class JarvisWebPlatformCornerCoverView: NSView {
             return
         }
         effectiveAppearance.performAsCurrentDrawingAppearance {
+            let rounded = NSBezierPath(
+                roundedRect: bounds,
+                xRadius: cornerRadius,
+                yRadius: cornerRadius
+            )
+            // 圆角矩形**外面**那一圈：网页是方的，方角就落在这里，得盖掉。
             let path = NSBezierPath(rect: bounds)
-            path.append(NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius))
+            path.append(rounded)
             path.windingRule = .evenOdd
             // Match the SwiftUI floating panel fill so uncovered WKWebView
             // corners do not show as light-gray squares.
             NSColor.controlBackgroundColor.setFill()
             path.fill()
+
+            // 面板自己的阴影也要补进这一圈：它在 `JarvisFloatingPanelModifier` 里
+            // 画在网页视图**底下**，被网页盖住了。别的模块（截图、壁纸、会议……）
+            // 的圆角处能看见这层浅浅的投影，这两个模块要是没有，边角就对不上。
+            //
+            // 画法：在"只留外面那一圈"的裁剪里，把圆角矩形带阴影再填一遍——填充
+            // 落在圆角以内、被裁掉，只剩它投在外圈的阴影。
+            NSGraphicsContext.saveGraphicsState()
+            path.addClip()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.11)
+            // 与 SwiftUI `.shadow(radius: 16, y: 6)` 对齐的换算见
+            // `JarvisWebPlatformCornerCoverTests`（SwiftUI 的 radius 约是
+            // NSShadow 模糊半径的一半）。
+            shadow.shadowBlurRadius = cornerRadius * 2
+            // 视图不是 flipped，向下投就是负的 y。
+            shadow.shadowOffset = NSSize(width: 0, height: -6)
+            shadow.set()
+            NSColor.controlBackgroundColor.setFill()
+            rounded.fill()
+            NSGraphicsContext.restoreGraphicsState()
 
             // 再描一圈圆角。填色用的是面板底色，和网页底色同色时（浅色模式下两边
             // 都是白的）整个圆角就看不出来了，面板看上去是个直角矩形；而面板自己

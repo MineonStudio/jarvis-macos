@@ -2,15 +2,18 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
-/// 宫格的列宽算法：把一行铺满（右边不留参差的空档），卡片比例恒为 16:9。
+/// 宫格的列几何：一行铺满（右边不留参差的空档），卡片比例恒为 16:9。
 ///
 /// 参考桌面壁纸模块的 justified 布局——那边行高随图的宽高比变；截图和剪贴板的卡片
 /// 比例是固定的，所以"铺满"由**列宽**承担，比例一点都不能动。
+///
+/// 视图侧现在直接交给 `LazyVGrid.adaptive(minimum:maximum: .infinity)`，这里钉住的是
+/// 同一套算术：给它一个可用宽度，它该算出几列、列宽多少。
 final class HistoryGridLayoutTests: XCTestCase {
     private let spacing = HistoryGridMetrics.clipboardGridSpacing
 
     private func width(available: CGFloat, target: CGFloat) -> CGFloat {
-        HistoryGridLayout.cardWidth(availableWidth: available, targetWidth: target, spacing: spacing)
+        HistoryGridColumns.cardWidth(availableWidth: available, targetWidth: target, spacing: spacing)
     }
 
     /// 一行正好铺满：n 张卡 + (n-1) 条缝 = 可用宽度。
@@ -18,7 +21,7 @@ final class HistoryGridLayoutTests: XCTestCase {
         let target: CGFloat = 280
         for available in stride(from: 320.0, through: 2400.0, by: 37.0) {
             let card = width(available: available, target: target)
-            let columns = max(1, Int(((available + spacing) / (target + spacing)).rounded()))
+            let columns = HistoryGridColumns.columns(availableWidth: available, targetWidth: target, spacing: spacing)
             let used = CGFloat(columns) * card + CGFloat(columns - 1) * spacing
             if columns == 1, card >= target * 1.5 {
                 continue // 巨卡上限生效时本来就不铺满

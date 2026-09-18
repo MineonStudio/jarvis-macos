@@ -511,8 +511,9 @@ extension View {
 /// 剪贴板和截图两张卡片原本各写一份完全一样的外壳，唯一的差别是内容的对齐方式。
 struct HistoryCardChrome<Preview: View>: View {
     let preview: Preview
-    let width: CGFloat
-    let height: CGFloat
+    /// 固定宽高；传 nil 表示跟着列宽走（内容自己带 16:9 的比例）。
+    var width: CGFloat?
+    var height: CGFloat?
     let isSelected: Bool
     var alignment: Alignment = .center
 
@@ -534,6 +535,7 @@ struct HistoryCardChrome<Preview: View>: View {
                 )
         }
         .frame(width: width, height: height, alignment: alignment)
+        .frame(maxWidth: width == nil ? .infinity : nil)
         .clipShape(
             RoundedRectangle(
                 cornerRadius: HistoryGridMetrics.clipboardCornerRadius,

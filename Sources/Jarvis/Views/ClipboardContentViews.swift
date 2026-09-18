@@ -387,21 +387,17 @@ struct ClipboardCard: View {
     @State private var showingSensitivePreviewConfirmation = false
     @State private var isHovered = false
     let item: ClipboardItem
-    /// 这一列的宽度（由宫格算出，比例恒为 16:9）。
-    let cardWidth: CGFloat
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
 
     init(
         item: ClipboardItem,
-        cardWidth: CGFloat = HistoryGridMetrics.clipboardCardWidth,
         isSelected: Bool = false,
         onSelect: @escaping () -> Void = {},
         onDoubleClick: @escaping () -> Void = {}
     ) {
         self.item = item
-        self.cardWidth = cardWidth
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
@@ -483,11 +479,9 @@ struct ClipboardCard: View {
                 ClipboardItemPreview(item: item)
             }
         }
-        .frame(
-            width: cardWidth,
-            height: HistoryGridLayout.cardHeight(forCardWidth: cardWidth),
-            alignment: .center
-        )
+        // 比例由视图自己保证：列宽变了，高跟着变，16:9 一点不动。
+        .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
+        .frame(maxWidth: .infinity)
         .clipShape(
             RoundedRectangle(
                 cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
@@ -586,17 +580,13 @@ struct ClipboardCard: View {
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
         }
-        .frame(
-            width: cardWidth,
-            height: HistoryGridMetrics.clipboardMetadataHeight
-        )
+        .frame(maxWidth: .infinity)
+        .frame(height: HistoryGridMetrics.clipboardMetadataHeight)
     }
 
     private var cardBody: some View {
         HistoryCardChrome(
             preview: previewArea,
-            width: cardWidth,
-            height: HistoryGridLayout.cardHeight(forCardWidth: cardWidth),
             isSelected: isSelected,
             alignment: .topLeading
         )
@@ -750,9 +740,6 @@ struct ClipboardGrid: View {
     let onSelect: (ClipboardItem) -> Void
     let onDoubleClick: (ClipboardItem) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// 宫格可用宽度（量出来才能把这一行铺满）。
-    @State private var availableWidth: CGFloat = 0
-
     init(
         items: [ClipboardItem],
         gridZoom: HistoryGridZoomLevel = .regular,
@@ -767,36 +754,16 @@ struct ClipboardGrid: View {
         self.onDoubleClick = onDoubleClick
     }
 
-    /// 实际列宽：由可用宽度和目标宽度算出来（与截图宫格同一套算法），
-    /// 卡片按它等比缩放，比例恒为 16:9。
-    private var cardWidth: CGFloat {
-        HistoryGridLayout.cardWidth(
-            availableWidth: availableWidth,
-            targetWidth: gridZoom.cardWidth,
-            spacing: HistoryGridMetrics.clipboardGridSpacing
-        )
-    }
-
     var body: some View {
-        grid
-            // 量外框，不量宫格自己：定宽列自量会得到"一张卡那么宽"，把自己锁成一列。
-            .background {
-                GeometryReader { proxy in
-                    Color.clear
-                        .onAppear { availableWidth = proxy.size.width }
-                        .onChange(of: proxy.size.width) { _, width in
-                            availableWidth = width
-                        }
-                }
-            }
-    }
-
-    private var grid: some View {
         LazyVGrid(
             columns: [GridItem(
-                // 列宽已按可用宽度算好（见 `HistoryGridLayout`）；用 adaptive（min == max）
-                // 而不是 .fixed —— 实测定宽列在滚动视图里只排得下一列。
-                .adaptive(minimum: cardWidth, maximum: cardWidth),
+                // 列数由最小宽度决定，剩余空间让列自己撑满——和截图宫格、壁纸模块
+                // 一样不量宽度、不存状态：缩放时没有滞后一帧的空档，也没有每帧
+                // 状态更新带来的闪烁与卡顿。
+                .adaptive(
+                    minimum: gridZoom.cardWidth,
+                    maximum: .infinity
+                ),
                 spacing: HistoryGridMetrics.clipboardGridSpacing
             )],
             alignment: .leading,
@@ -805,7 +772,6 @@ struct ClipboardGrid: View {
             ForEach(items) { item in
                 ClipboardCard(
                     item: item,
-                    cardWidth: cardWidth,
                     isSelected: selectedItemID == item.id,
                     onSelect: { onSelect(item) },
                     onDoubleClick: { onDoubleClick(item) }

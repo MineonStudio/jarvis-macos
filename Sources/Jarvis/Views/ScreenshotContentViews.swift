@@ -197,21 +197,38 @@ enum HistoryGridMetrics {
 /// 壁纸模块是 justified 布局（行高随图的宽高比变），这里卡片比例恒为 16:9，所以改成
 /// 让**列宽**承担"铺满"这件事：宽定下来，高就是宽 × 9/16，比例始终不变。
 enum HistoryGridLayout {
-    static func cardWidth(
-        availableWidth: CGFloat,
-        targetWidth: CGFloat,
-        spacing: CGFloat
-    ) -> CGFloat {
-        guard availableWidth > 0, targetWidth > 0 else { return targetWidth }
-        let columns = max(1, Int(((availableWidth + spacing) / (targetWidth + spacing)).rounded()))
-        let filled = (availableWidth - CGFloat(columns - 1) * spacing) / CGFloat(columns)
-        // 窗口窄到一列都放不满时按可用宽度收；上界防极端情况撑出一张巨卡。
-        return max(1, min(filled, targetWidth * 1.5))
-    }
+    /// 卡片比例（恒为 16:9）。卡片视图用 `.aspectRatio` 直接挂这个值，
+    /// 宽怎么变都走同一条约定。
+    ///
+    /// 「一行铺满」交给 `LazyVGrid` 的 `.adaptive(minimum:maximum: .infinity)`：
+    /// 列数由最小宽度（缩放档位）决定，剩余空间由列自己撑开，卡片按比例跟着长高。
+    /// 之前量宽度存 `@State` 再回算的写法在缩放时会滞后一帧（卡出空档），
+    /// 而且每帧一次状态更新——闪烁和卡顿都是它带来的。
+    static let aspectRatio: CGFloat = 16.0 / 9.0
 
     /// 卡片高度：比例恒为 16:9。
     static func cardHeight(forCardWidth width: CGFloat) -> CGFloat {
-        width * 9 / 16
+        width / aspectRatio
+    }
+}
+
+/// 宫格的列几何：贴着一行铺满，卡片按比例跟着长。给测试用，也是这条约定的成文版本。
+enum HistoryGridColumns {
+    /// 按可用宽度算这一行放几列：取最接近目标宽度的那个列数。
+    static func columns(availableWidth: CGFloat, targetWidth: CGFloat, spacing: CGFloat) -> Int {
+        guard availableWidth > 0, targetWidth > 0 else { return 1 }
+        return max(1, Int(((availableWidth + spacing) / (targetWidth + spacing)).rounded()))
+    }
+
+    /// 铺满后的列宽。
+    static func cardWidth(availableWidth: CGFloat, targetWidth: CGFloat, spacing: CGFloat) -> CGFloat {
+        guard availableWidth > 0, targetWidth > 0 else { return targetWidth }
+        let count = CGFloat(columns(
+            availableWidth: availableWidth,
+            targetWidth: targetWidth,
+            spacing: spacing
+        ))
+        return max(1, (availableWidth - (count - 1) * spacing) / count)
     }
 }
 
@@ -221,17 +238,6 @@ struct ScreenshotHistorySection: View {
     @Binding var selectedTimeFilter: ScreenshotTimeFilter
     @Binding var selectedItemID: UUID?
     let gridZoom: HistoryGridZoomLevel
-    /// 宫格可用宽度（量出来才能把这一行铺满）。
-    @State private var availableWidth: CGFloat = 0
-
-    /// 实际列宽：由可用宽度和目标宽度算出来，卡片按它等比例缩放，比例恒为 16:9。
-    private var cardWidth: CGFloat {
-        HistoryGridLayout.cardWidth(
-            availableWidth: availableWidth,
-            targetWidth: gridZoom.cardWidth,
-            spacing: HistoryGridMetrics.clipboardGridSpacing
-        )
-    }
 
     private var filteredItems: [ScreenshotHistoryItem] {
         ScreenshotTimeFilterLogic.filteredItems(
@@ -254,10 +260,13 @@ struct ScreenshotHistorySection: View {
             } else {
                 LazyVGrid(
                     columns: [GridItem(
-                        // 列宽由 `HistoryGridLayout` 按可用宽度算好，正好铺满一行；
-                        // 这里仍用 adaptive（min == max）：实测 .fixed 在滚动视图里
-                        // 只排得下一列，adaptive 才是可靠的那条路。
-                        .adaptive(minimum: cardWidth, maximum: cardWidth),
+                        // 列数由最小宽度决定，剩下的一点点空间让列自己撑满——
+                        // 这就是"一行铺满"：不量宽度、不存状态，缩放时也就没有
+                        // 滞后一帧的空档，更没有每帧状态更新带来的闪烁和卡顿。
+                        .adaptive(
+                            minimum: gridZoom.cardWidth,
+                            maximum: .infinity
+                        ),
                         spacing: HistoryGridMetrics.clipboardGridSpacing
                     )],
                     alignment: .leading,
@@ -266,7 +275,6 @@ struct ScreenshotHistorySection: View {
                     ForEach(filteredItems) { item in
                         ScreenshotHistoryCard(
                             item: item,
-                            cardWidth: cardWidth,
                             isSelected: selectedItemID == item.id,
                             onSelect: { selectedItemID = item.id },
                             onDoubleClick: { app.showScreenshotHistoryPreview(item) },
@@ -286,17 +294,6 @@ struct ScreenshotHistorySection: View {
                 )
             }
         }
-        // 量的是**外框**而不是宫格自己：宫格是定宽列，量它会量到"一张卡那么宽"，
-        // 算出来的列数永远是 1（自己把自己锁死）。
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { availableWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { _, width in
-                        availableWidth = width
-                    }
-            }
-        }
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
             value: selectedTimeFilter
@@ -310,8 +307,6 @@ struct ScreenshotHistoryCard: View {
     @State private var showingDeleteConfirmation = false
     @State private var isHovered = false
     let item: ScreenshotHistoryItem
-    /// 这一列的宽度（由宫格算出，比例恒为 16:9）。
-    let cardWidth: CGFloat
     let isSelected: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
@@ -326,8 +321,7 @@ struct ScreenshotHistoryCard: View {
             if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
                 ScreenshotHistoryThumbnail(
                     fileURL: app.screenshotHistoryFileURL(for: item),
-                    cacheKey: thumbnailCacheKey,
-                    cardWidth: cardWidth
+                    cacheKey: thumbnailCacheKey
                 )
             } else {
                 Image(systemName: "photo")
@@ -335,11 +329,10 @@ struct ScreenshotHistoryCard: View {
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
-        .frame(
-            width: cardWidth,
-            height: HistoryGridLayout.cardHeight(forCardWidth: cardWidth),
-            alignment: .center
-        )
+        // 比例由视图自己保证（不再靠外部算好的宽高）：列宽变了，高跟着变，
+        // 16:9 一点不动——量宽度存进 @State 再回算的写法在缩放时会滞后一帧。
+        .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
+        .frame(maxWidth: .infinity)
         .clipShape(
             RoundedRectangle(
                 cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
@@ -375,10 +368,8 @@ struct ScreenshotHistoryCard: View {
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .lineLimit(1)
         }
-        .frame(
-            width: cardWidth,
-            height: HistoryGridMetrics.clipboardMetadataHeight
-        )
+        .frame(maxWidth: .infinity)
+        .frame(height: HistoryGridMetrics.clipboardMetadataHeight)
     }
 
     private var copyButton: some View {
@@ -413,8 +404,6 @@ struct ScreenshotHistoryCard: View {
     private var cardBody: some View {
         HistoryCardChrome(
             preview: previewArea,
-            width: cardWidth,
-            height: HistoryGridLayout.cardHeight(forCardWidth: cardWidth),
             isSelected: isSelected
         )
         .overlay(alignment: .bottom) {
@@ -504,7 +493,6 @@ struct ScreenshotHistoryCard: View {
 struct ScreenshotHistoryThumbnail: View {
     let fileURL: URL
     let cacheKey: String
-    let cardWidth: CGFloat
     @State private var image: NSImage?
 
     var body: some View {
@@ -519,10 +507,7 @@ struct ScreenshotHistoryThumbnail: View {
                     .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
-        .frame(
-            width: cardWidth,
-            height: HistoryGridLayout.cardHeight(forCardWidth: cardWidth)
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: cacheKey) {
             image = await JarvisThumbnailCache.loadAsync(fileURL: fileURL, maxPixelSize: 640)

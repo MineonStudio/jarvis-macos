@@ -130,30 +130,17 @@ enum ClipboardFilterLogic {
     }
 }
 
+/// 时间筛选：与截图模块同一枚分组容器（见 `ScreenshotTimeFilterBar`）。
 struct ClipboardTimeFilterSelector: ToolbarContent {
     @Binding var selection: ClipboardTimeFilter
 
     var body: some ToolbarContent {
-        ToolbarItem(id: "clipboard.time.three-days", placement: .navigation) {
-            selectionButton(for: .threeDays)
-        }
-        ToolbarItem(id: "clipboard.time.seven-days", placement: .navigation) {
-            selectionButton(for: .sevenDays)
-        }
-        ToolbarItem(id: "clipboard.time.one-month", placement: .navigation) {
-            selectionButton(for: .oneMonth)
-        }
-        ToolbarItem(id: "clipboard.time.all", placement: .navigation) {
-            selectionButton(for: .all)
-        }
-    }
-
-    private func selectionButton(for filter: ClipboardTimeFilter) -> some View {
-        JarvisToolbarSelectionButton(
-            title: filter.title,
-            isSelected: selection == filter
-        ) {
-            selection = filter
+        JarvisToolbarSurface(id: "clipboard.time-filter", placement: .navigation) {
+            JarvisToolbarGroupedPicker(
+                items: ClipboardTimeFilter.allCases,
+                selection: $selection,
+                title: \.title
+            )
         }
     }
 }

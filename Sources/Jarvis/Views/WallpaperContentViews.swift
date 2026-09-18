@@ -415,33 +415,17 @@ struct WallpaperView: View {
     }
 }
 
+/// 图库来源（在线图库 / 已下载 / 我的收藏）：与截图模块同一枚分组容器。
 private struct WallpaperLibraryToolbar: ToolbarContent {
     @Binding var libraryMode: WallpaperLibraryMode
 
     var body: some ToolbarContent {
-        ToolbarItem(id: "wallpaper.library.online", placement: .primaryAction) {
-            JarvisToolbarSelectionButton(
-                title: WallpaperLibraryMode.online.title,
-                isSelected: libraryMode == .online
-            ) {
-                libraryMode = .online
-            }
-        }
-        ToolbarItem(id: "wallpaper.library.downloaded", placement: .primaryAction) {
-            JarvisToolbarSelectionButton(
-                title: WallpaperLibraryMode.downloaded.title,
-                isSelected: libraryMode == .downloaded
-            ) {
-                libraryMode = .downloaded
-            }
-        }
-        ToolbarItem(id: "wallpaper.library.favorites", placement: .primaryAction) {
-            JarvisToolbarSelectionButton(
-                title: WallpaperLibraryMode.favorites.title,
-                isSelected: libraryMode == .favorites
-            ) {
-                libraryMode = .favorites
-            }
+        JarvisToolbarSurface(id: "wallpaper.library", placement: .primaryAction) {
+            JarvisToolbarGroupedPicker(
+                items: WallpaperLibraryMode.allCases,
+                selection: $libraryMode,
+                title: \.title
+            )
         }
     }
 }

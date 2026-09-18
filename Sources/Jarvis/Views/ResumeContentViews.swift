@@ -77,33 +77,17 @@ struct ResumeContentView: View {
     }
 }
 
+/// 模板风格（全部 / 现代 / 创意 / 经典 …）：与截图模块同一枚分组容器。
 struct ResumeTemplateCategorySelector: ToolbarContent {
     @Binding var selection: ResumeTemplateCategory
 
     var body: some ToolbarContent {
-        ToolbarItem(id: "resume.category.all", placement: .navigation) {
-            selectionButton(for: .all)
-        }
-        ToolbarItem(id: "resume.category.modern", placement: .navigation) {
-            selectionButton(for: .modern)
-        }
-        ToolbarItem(id: "resume.category.creative", placement: .navigation) {
-            selectionButton(for: .creative)
-        }
-        ToolbarItem(id: "resume.category.classic", placement: .navigation) {
-            selectionButton(for: .classic)
-        }
-        ToolbarItem(id: "resume.category.professional", placement: .navigation) {
-            selectionButton(for: .professional)
-        }
-    }
-
-    private func selectionButton(for category: ResumeTemplateCategory) -> some View {
-        JarvisToolbarSelectionButton(
-            title: category.title,
-            isSelected: selection == category
-        ) {
-            selection = category
+        JarvisToolbarSurface(id: "resume.category", placement: .navigation) {
+            JarvisToolbarGroupedPicker(
+                items: ResumeTemplateCategory.allCases,
+                selection: $selection,
+                title: \.title
+            )
         }
     }
 }

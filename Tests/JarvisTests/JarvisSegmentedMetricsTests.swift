@@ -106,12 +106,14 @@ extension JarvisSegmentedMetricsTests {
                 Color.white
                 // 标题留空：选中项的字体是 semibold、未选中是 medium，带文字时
                 // 容器宽度会跟着两张图不一样，diff 里就混进了容器边缘。这里只量几何。
+                // 用 `toolbarContainer`（不带玻璃那一层）：离屏渲染看不到 glass。
                 JarvisToolbarGroupedPicker(
                     items: EntertainmentPlatform.allCases,
                     selection: .constant(selected),
                     title: { _ in "" },
                     icon: { _, _ in Color.clear.frame(width: 16, height: 16) }
                 )
+                .toolbarContainer
                 .background(containerColor, in: Capsule())
             }
             .frame(width: canvas.width, height: canvas.height)

@@ -135,3 +135,72 @@ extension ScreenshotEditorBehaviorTests {
         )
     }
 }
+
+extension ScreenshotEditorBehaviorTests {
+    /// 文本编辑：换行原样保留，不再按「输入框宽度」硬折行。
+    func testCommittedTextKeepsTheUsersLineBreaks() throws {
+        let editor = try makeEditor()
+        editor.beginTextEditing(at: CGPoint(x: 120, y: 90))
+        editor.textDraft = "第一行\n第二行\n\n第四行"
+
+        XCTAssertTrue(editor.commitTextEditing())
+
+        let annotation = try XCTUnwrap(editor.annotations.first)
+        XCTAssertEqual(annotation.kind, .text)
+        XCTAssertEqual(annotation.text, "第一行\n第二行\n\n第四行")
+        // 行数影响占位高度，多行必须比单行高。
+        XCTAssertGreaterThan(annotation.textSize.height, editor.textFontSize * 2)
+    }
+
+    /// 编辑器没有确认按钮，「换工具」就是提交时机。
+    func testSwitchingToolsCommitsTheDraft() throws {
+        let editor = try makeEditor()
+        editor.beginTextEditing(at: CGPoint(x: 60, y: 60))
+        editor.textDraft = "随手记一句"
+
+        editor.selectTool(.arrow)
+
+        XCTAssertFalse(editor.isEditingText)
+        XCTAssertEqual(editor.annotations.count, 1, "换工具时草稿应当落下去，而不是被丢掉")
+        XCTAssertEqual(editor.annotations.first?.text, "随手记一句")
+    }
+
+    /// 空草稿只是收起输入框，不留空标注。
+    func testCommittingAnEmptyDraftLeavesNoAnnotation() throws {
+        let editor = try makeEditor()
+        editor.beginTextEditing(at: CGPoint(x: 60, y: 60))
+        editor.textDraft = "   \n  "
+
+        XCTAssertFalse(editor.commitTextEditing())
+        XCTAssertTrue(editor.annotations.isEmpty)
+        XCTAssertFalse(editor.isEditingText)
+    }
+
+    /// Esc 仍然是「丢弃这次输入」。
+    func testEscapeDiscardsTheDraft() throws {
+        let editor = try makeEditor()
+        editor.beginTextEditing(at: CGPoint(x: 60, y: 60))
+        editor.textDraft = "不要这段"
+
+        XCTAssertTrue(editor.handleEscape())
+
+        XCTAssertTrue(editor.annotations.isEmpty)
+        XCTAssertFalse(editor.isEditingText)
+        XCTAssertTrue(editor.textDraft.isEmpty)
+    }
+
+    /// 编辑既有文字时按「先提交后重开」的顺序，不能把原来的文字弄丢。
+    func testReopeningAnExistingTextKeepsItsContent() throws {
+        let editor = try makeEditor()
+        editor.addText(alignedAtLeft: CGPoint(x: 40, y: 40), text: "原文")
+        let id = try XCTUnwrap(editor.annotations.first?.id)
+
+        editor.textInputAnchor = CGPoint(x: 40, y: 40)
+        editor.editingTextID = id
+        editor.textDraft = "改过的文字"
+        XCTAssertTrue(editor.commitTextEditing())
+
+        XCTAssertEqual(editor.annotations.count, 1, "应当是更新而不是新增")
+        XCTAssertEqual(editor.annotations.first?.text, "改过的文字")
+    }
+}

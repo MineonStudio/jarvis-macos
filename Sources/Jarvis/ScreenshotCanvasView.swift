@@ -24,7 +24,6 @@ struct ScreenshotCanvasView: View {
     @State private var lastDragLocation: CGPoint?
     @State private var mosaicPoints: [CGPoint] = []
     @State private var activeAnnotationID: UUID?
-    @State private var textDraft = ""
     @FocusState private var textFieldFocused: Bool
 
     var body: some View {
@@ -182,7 +181,7 @@ struct ScreenshotCanvasView: View {
                         }
                     } else if dragDistance < 8 {
                         editor.beginTextEditing(at: start)
-                        textDraft = ""
+                        editor.textDraft = ""
                         textFieldFocused = true
                     }
                 }
@@ -239,20 +238,21 @@ struct ScreenshotCanvasView: View {
         }
     }
 
-    private func inlineTextEditor(at point: CGPoint) -> some View {
+    private func inlineTextEditor(at _: CGPoint) -> some View {
         ScreenshotInlineTextEditor(
             editor: editor,
-            textDraft: $textDraft,
+            textDraft: $editor.textDraft,
             textFieldFocused: $textFieldFocused,
-            point: point,
             fieldWidth: inlineFieldWidth,
-            editorWidth: inlineEditorWidth,
-            editorHeight: inlineEditorHeight,
-            textEditorHeight: inlineTextEditorHeight,
-            showsScrollIndicator: showsTextEditorScrollIndicator,
-            onCommit: commitText,
-            onCancel: cancelText
+            textEditorHeight: inlineTextEditorHeight
         )
+    }
+
+    /// 正在输入的话先把草稿落到标注上。编辑器没有确认按钮，这些「离开输入」的
+    /// 动作就是提交时机。
+    private func commitTextIfEditing() {
+        guard editor.isEditingText else { return }
+        commitText()
     }
 
     private func beginTextEditing(id: UUID) {
@@ -262,7 +262,7 @@ struct ScreenshotCanvasView: View {
             y: annotation.start.y
         )
         editor.editingTextID = id
-        textDraft = annotation.text ?? ""
+        editor.textDraft = annotation.text ?? ""
         editor.textFontSize = annotation.fontSize
         editor.textColor = annotation.textColor
         editor.textBold = annotation.isBold
@@ -272,44 +272,30 @@ struct ScreenshotCanvasView: View {
     }
 
     private func commitText() {
-        guard let anchor = editor.textInputAnchor else { return }
-        let committedText = wrappedTextDraft
-        if let editingTextID = editor.editingTextID {
-            editor.updateText(
-                id: editingTextID,
-                text: committedText,
-                alignedAtLeft: anchor
-            )
-        } else {
-            editor.addText(alignedAtLeft: anchor, text: committedText)
-        }
-        editor.endTextEditing()
-        textDraft = ""
+        editor.commitTextEditing()
         textFieldFocused = false
     }
 
     private func cancelText() {
         editor.endTextEditing()
-        textDraft = ""
         textFieldFocused = false
     }
 
+    /// 输入区的宽度：跟着内容长，上限留到画布边。
+    ///
+    /// 原来卡在「十五个字符」宽（还带一圈胶囊底），既像输入框又逼着文字提前折行。
     private var inlineFieldWidth: CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
         let measuredWidth = inlineTextLines
             .map { ($0 as NSString).size(withAttributes: attributes).width }
             .max() ?? 0
-        let minimumFieldWidth = textWidth(for: 10, using: attributes) + 30
-        let maximumFieldWidth = textWidth(for: 15, using: attributes) + 30
-        let availableWidth = max(minimumFieldWidth, editor.canvasSize.width - 96)
-        let defaultWidth = textWidth(
-            for: defaultSingleLineCharacterCount,
-            using: attributes
-        ) + 30
-        let contentWidth = min(measuredWidth + 30, maximumFieldWidth)
-        return min(availableWidth, max(minimumFieldWidth, max(defaultWidth, contentWidth)))
+        let minimumFieldWidth = textWidth(for: 6, using: attributes) + 30
+        let availableWidth = max(minimumFieldWidth, editor.canvasSize.width - inlineFieldHorizontalMargin)
+        let contentWidth = measuredWidth + 30
+        return min(availableWidth, max(minimumFieldWidth, contentWidth))
     }
 
+    /// 输入区的高度：按实际行数长（换行靠回车，不靠自动折行）。
     private var inlineTextEditorHeight: CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
         let width = max(inlineFieldWidth - 30, 1)
@@ -318,21 +304,11 @@ struct ScreenshotCanvasView: View {
             editor.textFontSize * 1.28,
             inlineTextFont.ascender - inlineTextFont.descender + inlineTextFont.leading
         )
-        return min(180, max(40, CGFloat(totalLines) * lineHeight + 16))
+        return min(320, max(lineHeight + 16, CGFloat(totalLines) * lineHeight + 16))
     }
 
-    private var showsTextEditorScrollIndicator: Bool {
-        let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
-        let width = max(inlineFieldWidth - 30, 1)
-        return inlineTextLineCount(using: attributes, width: width) > 1
-    }
-
-    private var wrappedTextDraft: String {
-        let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
-        let width = max(inlineFieldWidth - 30, 1)
-        return inlineTextLines
-            .flatMap { wrappedLines(for: $0, width: width, using: attributes) }
-            .joined(separator: "\n")
+    private var inlineFieldHorizontalMargin: CGFloat {
+        96
     }
 
     private func inlineTextLineCount(
@@ -378,10 +354,6 @@ struct ScreenshotCanvasView: View {
         return lines
     }
 
-    private var defaultSingleLineCharacterCount: Int {
-        min(15, max(10, Int(editor.canvasSize.width / 100)))
-    }
-
     private func textWidth(
         for characterCount: Int,
         using attributes: [NSAttributedString.Key: Any]
@@ -398,7 +370,7 @@ struct ScreenshotCanvasView: View {
     }
 
     private var inlineTextLines: [String] {
-        String(textDraft.prefix(150)).components(separatedBy: "\n")
+        editor.textDraft.components(separatedBy: "\n")
     }
 
     private var inlineEditorWidth: CGFloat {
@@ -426,16 +398,16 @@ private struct ScreenshotInlineTextEditor: View {
     @ObservedObject var editor: ScreenshotEditorModel
     @Binding var textDraft: String
     @FocusState.Binding var textFieldFocused: Bool
-    let point: CGPoint
     let fieldWidth: CGFloat
-    let editorWidth: CGFloat
-    let editorHeight: CGFloat
     let textEditorHeight: CGFloat
-    let showsScrollIndicator: Bool
-    let onCommit: () -> Void
-    let onCancel: () -> Void
 
-    private var editorField: some View {
+    var body: some View {
+        // 只留光标和文字：没有输入框外观、没有确认/取消按钮。
+        //
+        // 底下仍然是一个真的 TextEditor——它承担输入法、光标位置、选区这些必须由
+        // 系统控件负责的事，只是不带任何装饰。文字与光标的位置由它的内边距决定，
+        // 那圈内边距和落盘时 `addText(alignedAtLeft:)` / 渲染端的 ±9 是配套的，
+        // 去掉就会让「正在输入的文字」和「提交后的文字」错位。
         TextEditor(text: $textDraft)
             .scrollContentBackground(.hidden)
             .font(.system(size: editor.textFontSize, weight: editor.textBold ? .semibold : .regular))
@@ -444,62 +416,10 @@ private struct ScreenshotInlineTextEditor: View {
             .foregroundStyle(editor.textColor.color)
             .tint(editor.textColor.color)
             .focused($textFieldFocused)
-            .scrollIndicators(showsScrollIndicator ? .visible : .hidden, axes: .vertical)
+            .scrollIndicators(.hidden, axes: .vertical)
             .padding(.horizontal, 15)
             .padding(.vertical, 8)
             .frame(width: fieldWidth, height: textEditorHeight)
-            .jarvisGlass(in: Capsule(), interactive: false)
-            .contentShape(Capsule())
-    }
-
-    private var actionButtons: some View {
-        HStack(spacing: 6) {
-            Button(action: onCommit) {
-                Image(systemName: "checkmark")
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-            .foregroundStyle(Color.jarvisCyan)
-            .jarvisGlass(tint: .accentColor.opacity(0.20), in: Circle(), interactive: true)
-
-            Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
-            .foregroundStyle(Color.primary.opacity(0.62))
-            .jarvisGlass(in: Circle(), interactive: true)
-        }
-        .font(.system(size: max(12, editor.textFontSize * 0.58), weight: .medium))
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            editorField
-            actionButtons
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(width: editorWidth, height: editorHeight)
-        .shadow(color: Color.black.opacity(0.14), radius: 8, y: 3)
-        .position(
-            x: point.x - 8 + editorWidth / 2,
-            y: min(
-                max(point.y + editorHeight / 2, editorHeight / 2),
-                max(editorHeight / 2, editor.canvasSize.height - editorHeight / 2)
-            )
-        )
-        .onAppear {
-            DispatchQueue.main.async {
-                textFieldFocused = true
-            }
-        }
-        .onChange(of: textDraft) { _, newValue in
-            guard newValue.count > 150 else { return }
-            textDraft = String(newValue.prefix(150))
-        }
     }
 }
 

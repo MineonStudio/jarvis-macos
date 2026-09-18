@@ -235,6 +235,11 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published var textInputAnchor: CGPoint?
     /// 正在编辑的既有文字标注 id；新建时为 nil。
     @Published var editingTextID: UUID?
+    /// 正在输入的文本。
+    ///
+    /// 放在模型里而不是视图里：编辑器没有确认按钮，「换工具 / 在别处落笔」这些
+    /// 离开输入的动作都要先把草稿提交掉，而那些动作发生在模型这一层。
+    @Published var textDraft = ""
 
     @Published private(set) var selectionRect: CGRect? {
         didSet { scheduleRenderedTranslationBlocksRefresh() }
@@ -386,10 +391,29 @@ extension ScreenshotEditorModel {
         editingTextID = nil
     }
 
-    /// 结束内联输入（提交与取消都走它）。
+    /// 结束内联输入（取消：草稿丢弃）。
     func endTextEditing() {
         textInputAnchor = nil
         editingTextID = nil
+        textDraft = ""
+    }
+
+    /// 结束内联输入并把草稿落到标注上。
+    ///
+    /// - Returns: 是否真的落下了内容（空草稿只是收起输入框）。
+    @discardableResult
+    func commitTextEditing() -> Bool {
+        guard let anchor = textInputAnchor else { return false }
+        let text = textDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let editingID = editingTextID
+        endTextEditing()
+        guard !text.isEmpty else { return false }
+        if let editingID {
+            updateText(id: editingID, text: text, alignedAtLeft: anchor)
+        } else {
+            addText(alignedAtLeft: anchor, text: text)
+        }
+        return true
     }
 
     /// Esc 的分级处理：正在输入文字就先取消这次输入；选中了标注就取消选中；
@@ -412,9 +436,10 @@ extension ScreenshotEditorModel {
     }
 
     func selectTool(_ tool: ScreenshotTool?) {
-        // 换工具时把内联输入收掉：否则锚点留在模型里，Esc 的第一步会被一个
-        // 已经不存在的「正在输入」永远吃掉。
-        endTextEditing()
+        // 换工具时把正在输入的文字落下去：编辑器没有确认按钮，换工具就是提交时机。
+        // （顺带保证锚点不会留在模型里——Esc 的第一步会被一个不存在的「正在输入」
+        // 永远吃掉。）
+        commitTextEditing()
         selectedTool = tool
         translationMode = false
         if tool != .text {

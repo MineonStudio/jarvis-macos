@@ -490,8 +490,11 @@ extension AppModel {
             NSPasteboard.general.setData(data, forType: .png)
             showToast("截图已确认并复制到剪贴板")
         case let .pin(data):
+            // 贴图和普通截图走同一条保存路径：每次写一个新文件到截图历史目录，
+            // 所以贴图不会因为关掉那个浮窗而丢。提示里说明白，否则用户以为它只是
+            // 临时贴在屏幕上的。
             finalizeScreenshot(data, historyID: editingHistoryID)
-            showToast("截图已贴在屏幕上")
+            showToast("贴图已保存到截图历史")
         case .cancel:
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"

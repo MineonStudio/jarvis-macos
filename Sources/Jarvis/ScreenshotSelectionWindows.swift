@@ -373,6 +373,8 @@ final class PinnedScreenshotContainerView: NSView {
     private let contentInset: CGFloat
     private let editor: ScreenshotEditorModel
     private let onActivate: (() -> Void)?
+    /// 右键菜单里的「关闭贴图」（由控制器接到销毁流程上）。
+    var onClose: (() -> Void)?
     var isSelected = false {
         didSet {
             needsDisplay = true
@@ -412,6 +414,54 @@ final class PinnedScreenshotContainerView: NSView {
     /// entire pin activates immediately instead of requiring a second click.
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
         true
+    }
+
+    /// 贴图原来只有拖动和 Esc：复制、找到存到哪儿去都没有入口。
+    override func menu(for _: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        let copyItem = NSMenuItem(
+            title: "复制图片",
+            action: #selector(copyImageToPasteboard),
+            keyEquivalent: ""
+        )
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        let revealItem = NSMenuItem(
+            title: "在访达中显示截图目录",
+            action: #selector(revealSavedScreenshots),
+            keyEquivalent: ""
+        )
+        revealItem.target = self
+        menu.addItem(revealItem)
+
+        menu.addItem(.separator())
+        let closeItem = NSMenuItem(title: "关闭贴图", action: #selector(closePin), keyEquivalent: "")
+        closeItem.target = self
+        menu.addItem(closeItem)
+        return menu
+    }
+
+    @objc private func copyImageToPasteboard() {
+        // 导出是异步的（渲染 + 编码在后台），菜单动作里开个任务等它。
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let data = await editor.finalPNGData()
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.setData(data, forType: .png) else { return }
+            JarvisLog.notice(category: .window, event: "screenshot.pinned.copy", result: "success")
+        }
+    }
+
+    @objc private func revealSavedScreenshots() {
+        // 贴图和普通截图存在同一个目录里，这里直接带用户过去。
+        let directory = JarvisAppDirectory.url("ScreenshotHistory")
+        NSWorkspace.shared.activateFileViewerSelecting([directory])
+    }
+
+    @objc private func closePin() {
+        onClose?()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

@@ -64,9 +64,11 @@ extension ScreenshotCaptureController {
                 guard let self, let item else { return }
                 destroyPinnedScreenshot(item)
             },
-            // 贴图上的键盘动作（⌫/⌘D/⌘Z）转给同一个 action 通道，状态栏才会更新。
-            onAction: { [weak item] action in
-                item?.onAction?(action)
+            // 贴图上的键盘动作（⌫/⌘D/⌘Z）：先作用在它自己的编辑器上，再转给上层
+            // 更新状态栏——两条路走同一条通道，提示和实际动作才不会脱节。
+            onAction: { [weak self, weak item] action in
+                guard let self, let item else { return }
+                handlePinnedCanvasAction(action, for: item)
             }
         )
         let containerView = PinnedScreenshotContainerView(
@@ -85,6 +87,10 @@ extension ScreenshotCaptureController {
             width: image.size.width,
             height: image.size.height
         )
+        containerView.onClose = { [weak self, weak item] in
+            guard let self, let item else { return }
+            destroyPinnedScreenshot(item)
+        }
         containerView.addSubview(hostingView)
         item.containerView = containerView
         item.window.contentView = containerView
@@ -173,6 +179,23 @@ extension ScreenshotCaptureController {
                 "destroyed": String(destroyed)
             ]
         )
+    }
+
+    /// 贴图画布上的键盘动作。
+    func handlePinnedCanvasAction(_ action: ScreenshotAction, for item: PinnedScreenshotItem) {
+        switch action {
+        case .undo:
+            item.editor.undo()
+        case .redo:
+            item.editor.redo()
+        case .delete:
+            item.editor.deleteSelectedAnnotation()
+        case .duplicate:
+            item.editor.duplicateSelectedAnnotation()
+        default:
+            break
+        }
+        item.onAction?(action)
     }
 
     private func destroyPinnedScreenshot(_ item: PinnedScreenshotItem) {

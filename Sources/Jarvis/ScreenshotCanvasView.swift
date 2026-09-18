@@ -30,6 +30,33 @@ struct ScreenshotCanvasView: View {
 
     static let canvasCoordinateSpace = "jarvis.screenshot.canvas"
 
+    /// 文字工具下的一次点击该做什么。
+    ///
+    /// 单独抽出来是因为「确认的那一下不再开新输入」这条规则只靠肉眼盯视图代码很容易
+    /// 漏掉（这条流程已经漏过一次），而且漏掉的表现是「一点就新开一个编辑、刚打的草稿
+    /// 还没了」。
+    enum TextToolTapOutcome: Equatable {
+        /// 先提交，然后开始编辑这段已有的文字。
+        case commitThenEditExisting(UUID)
+        /// 只提交（点到输入区以外，用来确认）。
+        case commitOnly
+        /// 开始一段新的文字。
+        case beginNew
+    }
+
+    static func textToolTapOutcome(
+        isEditing: Bool,
+        existingAnnotationID: UUID?,
+        dragDistance: CGFloat
+    ) -> TextToolTapOutcome {
+        let isTap = dragDistance < 8
+        if let existingAnnotationID {
+            return isTap ? .commitThenEditExisting(existingAnnotationID) : .commitOnly
+        }
+        // 正在编辑时的那一下点击是「确认」，不该顺手在同一处再开一段。
+        return isTap && !isEditing ? .beginNew : .commitOnly
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             Image(nsImage: editor.originalImage)
@@ -179,12 +206,23 @@ struct ScreenshotCanvasView: View {
                         : [start, end]
                     editor.addMosaic(points: points)
                 case .text:
-                    if let activeAnnotationID {
+                    // 点击输入区以外 = 确认（先把草稿落下去）；具体该做什么见
+                    // `textToolTapOutcome`。
+                    let outcome = Self.textToolTapOutcome(
+                        isEditing: editor.isEditingText,
+                        existingAnnotationID: activeAnnotationID,
+                        dragDistance: dragDistance
+                    )
+                    commitTextIfEditing()
+                    switch outcome {
+                    case let .commitThenEditExisting(id):
                         editor.endMove()
-                        if dragDistance < 8 {
-                            beginTextEditing(id: activeAnnotationID)
+                        beginTextEditing(id: id)
+                    case .commitOnly:
+                        if activeAnnotationID != nil {
+                            editor.endMove()
                         }
-                    } else if dragDistance < 8 {
+                    case .beginNew:
                         editor.beginTextEditing(at: start)
                         editor.textDraft = ""
                         textFieldFocused = true

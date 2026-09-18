@@ -279,3 +279,74 @@ extension ScreenshotEditorBehaviorTests {
         XCTAssertEqual(committed.start.x, 115 + committed.textSize.width / 2 - 9, accuracy: 0.001)
     }
 }
+
+/// 文字工具下「点一下」该做什么。
+///
+/// 这条规则已经被漏过一次：正在编辑时点别处，本该是「确认」，结果既提交了又顺手
+/// 在同一处开了新的一段，把刚打的草稿也清了。把判定抽出来钉住。
+final class ScreenshotTextToolTapTests: XCTestCase {
+    private let existingID = UUID()
+
+    func testClickingAwayWhileEditingOnlyConfirms() {
+        XCTAssertEqual(
+            ScreenshotCanvasView.textToolTapOutcome(
+                isEditing: true,
+                existingAnnotationID: nil,
+                dragDistance: 0
+            ),
+            .commitOnly,
+            "正在编辑时点别处应当是确认，而不是新开一段"
+        )
+    }
+
+    func testClickingWhenNotEditingStartsANewText() {
+        XCTAssertEqual(
+            ScreenshotCanvasView.textToolTapOutcome(
+                isEditing: false,
+                existingAnnotationID: nil,
+                dragDistance: 0
+            ),
+            .beginNew
+        )
+    }
+
+    func testTappingAnExistingTextOpensItForEditing() {
+        XCTAssertEqual(
+            ScreenshotCanvasView.textToolTapOutcome(
+                isEditing: false,
+                existingAnnotationID: existingID,
+                dragDistance: 0
+            ),
+            .commitThenEditExisting(existingID)
+        )
+        XCTAssertEqual(
+            ScreenshotCanvasView.textToolTapOutcome(
+                isEditing: true,
+                existingAnnotationID: existingID,
+                dragDistance: 0
+            ),
+            .commitThenEditExisting(existingID),
+            "在别处编辑时点到另一段文字，应当先提交再切过去"
+        )
+    }
+
+    /// 拖出去的那一下（不是点击）只提交，不开任何输入区——拖动本身是移动文字。
+    func testDraggingOnlyCommits() {
+        XCTAssertEqual(
+            ScreenshotCanvasView.textToolTapOutcome(
+                isEditing: false,
+                existingAnnotationID: nil,
+                dragDistance: 40
+            ),
+            .commitOnly
+        )
+        XCTAssertEqual(
+            ScreenshotCanvasView.textToolTapOutcome(
+                isEditing: true,
+                existingAnnotationID: existingID,
+                dragDistance: 40
+            ),
+            .commitOnly
+        )
+    }
+}

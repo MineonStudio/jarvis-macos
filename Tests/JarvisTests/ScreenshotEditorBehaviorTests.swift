@@ -347,3 +347,56 @@ final class ScreenshotTextToolTapTests: XCTestCase {
         )
     }
 }
+
+extension ScreenshotEditorBehaviorTests {
+    /// 导出要保住**逻辑尺寸**（2x 屏上就是 144dpi），不能只按像素走。
+    ///
+    /// 原始截图 PNG 是带着它的（`ScreenshotService.pngData` 设了 `representation.size`）：
+    /// 600×400 像素、300×200 点。渲染这条路上只给像素的话，读回来就变成 600×400 **点**
+    /// ——按点数建窗口的地方会照着旧尺寸开窗，图被裁掉一半。用户报的「贴图编辑完点确认，
+    /// 回来只剩一块」就是这条：编辑器把点尺寸翻了一倍。
+    func testExportKeepsTheLogicalSizeOfTheImage() async throws {
+        let pointSize = CGSize(width: 300, height: 200)
+        let pixelSize = CGSize(width: 600, height: 400)
+        let data = try makeRetinaPNG(pixelSize: pixelSize, pointSize: pointSize)
+        let image = try XCTUnwrap(NSImage(data: data))
+        XCTAssertEqual(image.size, pointSize, "前提：这份 PNG 的逻辑尺寸是 300×200")
+
+        let editor = ScreenshotEditorModel(
+            image: image,
+            data: data,
+            outputData: data,
+            canvasSize: pointSize,
+            outputRect: CGRect(origin: .zero, size: pointSize)
+        )
+        // 得有标注才走渲染那条路：没有改动时导出原样返回原始数据。
+        editor.addRectangle(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 60, y: 60))
+
+        let exported = await editor.finalPNGData()
+        let reloaded = try XCTUnwrap(NSImage(data: exported))
+        let representation = try XCTUnwrap(reloaded.representations.first)
+
+        XCTAssertEqual(reloaded.size, pointSize, "逻辑尺寸变了，贴图这类按点建窗口的地方就会被裁")
+        XCTAssertEqual(representation.pixelsWide, Int(pixelSize.width), "像素不能被重新缩放")
+        XCTAssertEqual(representation.pixelsHigh, Int(pixelSize.height))
+    }
+
+    /// 2x 屏上那种截图：像素是点数的两倍，尺寸写在 `NSBitmapImageRep.size` 里
+    /// （和 `ScreenshotService.crop` 一个做法）。
+    private func makeRetinaPNG(pixelSize: CGSize, pointSize: CGSize) throws -> Data {
+        let representation = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(pixelSize.width),
+            pixelsHigh: Int(pixelSize.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ))
+        representation.size = pointSize
+        return try XCTUnwrap(representation.representation(using: .png, properties: [:]))
+    }
+}

@@ -216,6 +216,7 @@ extension ScreenshotCaptureController {
             outputRect: session.selectionRect
         )
         activeEditor = editor
+        activeSessionAction = onAction
         activeCaptureScreenFrame = capture.screenFrame
         let presentation = ScreenshotPresentation(
             session: session,
@@ -507,9 +508,23 @@ extension ScreenshotCaptureController {
         showResult(session, onAction: onAction)
     }
 
+    /// 上层要把编辑面直接拆掉时走这里（比如删掉正在编辑的那条历史），别直接调
+    /// `dismissResult()`：编辑会话必须**以一条动作收场**，否则跟着会话走的东西收不到
+    /// 交代——编辑面没了、动作也没来，它会一直停在「编辑中」（贴图就是这样：藏在
+    /// 后面回不来，「编辑」还从此永远置灰）。
+    func cancelActiveSession() {
+        guard let onAction = activeSessionAction else {
+            dismissResult()
+            return
+        }
+        dismissResult()
+        onAction(.cancel)
+    }
+
     func dismissResult() {
         // 让在途的导出作废：它回来时会对不上号。
         resultGeneration += 1
+        activeSessionAction = nil
         captureTask?.cancel()
         captureTask = nil
         activeEditor?.cancelTranslation()

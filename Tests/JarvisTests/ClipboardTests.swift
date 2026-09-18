@@ -297,9 +297,12 @@ final class ClipboardTests: XCTestCase {
     }
 
     func testClipboardGridUsesOneUniformCardSize() {
-        XCTAssertEqual(HistoryGridMetrics.clipboardCardWidth, 211.2, accuracy: 0.001)
-        XCTAssertEqual(HistoryGridMetrics.clipboardCardHeight, 118.8, accuracy: 0.001)
-        XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHeight, 118.8, accuracy: 0.001)
+        // 基准宽度对齐壁纸模块的观感（那边一格约 282×190，换算成 16:9 是 280×158）；
+        // 剪贴板比截图再大一档（1.1×）。
+        XCTAssertEqual(HistoryGridMetrics.historyCardBaseWidth, 280, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCardWidth, 308, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardCardHeight, 173.25, accuracy: 0.001)
+        XCTAssertEqual(HistoryGridMetrics.clipboardPreviewHeight, 173.25, accuracy: 0.001)
         XCTAssertEqual(
             HistoryGridMetrics.clipboardCardHeight,
             HistoryGridMetrics.clipboardCardWidth * 9 / 16,

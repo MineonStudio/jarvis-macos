@@ -170,14 +170,31 @@ extension ScreenshotEditorModel {
         }
     }
 
+    func invalidateCachedOCR() {
+        cachedOCR = nil
+    }
+
+    private func recognizedBlocks(
+        sourceData: Data,
+        sourceRect: CGRect
+    ) async throws -> [ScreenshotOCRBlock] {
+        if let cached = cachedOCR, cached.sourceRect == sourceRect {
+            return cached.blocks
+        }
+        let service = ScreenshotTranslationService()
+        let blocks = try await service.recognizeText(in: sourceData)
+        cachedOCR = (sourceRect, blocks)
+        return blocks
+    }
+
     private func runTranslation(
         generation: Int,
         sourceData: Data,
         targetLanguage: ScreenshotTranslationLanguage
     ) async {
         do {
-            let service = ScreenshotTranslationService()
-            let ocrBlocks = try await service.recognizeText(in: sourceData)
+            let sourceRect = translationSourceRect ?? CGRect(origin: .zero, size: canvasSize)
+            let ocrBlocks = try await recognizedBlocks(sourceData: sourceData, sourceRect: sourceRect)
             try Task.checkCancellation()
             guard translationGeneration == generation else { return }
 

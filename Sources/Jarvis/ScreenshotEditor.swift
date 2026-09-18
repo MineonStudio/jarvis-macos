@@ -289,6 +289,9 @@ final class ScreenshotEditorModel: ObservableObject {
     var pendingAppleTranslationJob: ScreenshotAppleTranslationJob?
     var appleTranslationJobContinuation: CheckedContinuation<Void, Error>?
     var appleTranslationSourceBlocks: [UUID: ScreenshotOCRBlock] = [:]
+    /// OCR 结果按选区缓存：换目标语言、或上次部分失败后重试时不必重跑 Vision
+    /// （6K 图 0.5-2 秒加一次整图解码），识别结果只跟选区有关。
+    var cachedOCR: (sourceRect: CGRect, blocks: [ScreenshotOCRBlock])?
     var translationProgress: ScreenshotTranslationProgress?
     init(
         image: NSImage,
@@ -344,6 +347,8 @@ extension ScreenshotEditorModel {
         if translationSourceRect != nil || !translationBlocks.isEmpty || translationState.isRunning {
             clearTranslation()
         }
+        // 选区变了，缓存的 OCR 结果就不再对应当前画面。
+        invalidateCachedOCR()
         selectionRect = clamped
     }
 

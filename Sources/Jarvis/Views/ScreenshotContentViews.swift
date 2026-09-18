@@ -170,9 +170,9 @@ enum HistoryGridMetrics {
 
     // Both history galleries use the same 16:9 landscape panel and controls.
     //
-    // 基准宽度对齐壁纸模块的观感：那边一格约 282×190，换算成 16:9 就是 280×158。
-    // 原来 192 明显偏小（同一块面板里比壁纸那边小一圈半），宫格看着碎。
-    static let historyCardBaseWidth: CGFloat = 280
+    // 基准宽度（用户定的 200；壁纸模块那边一格约 282×190，这里比它小一档，
+    // 一屏能多放一张）。想换大小改这一个数，缩放档位按它成比例走。
+    static let historyCardBaseWidth: CGFloat = 200
     static let historyCardBasePadding: CGFloat = 10
     static let clipboardCardWidth: CGFloat = historyCardBaseWidth * 1.1
     static let clipboardCardHeight: CGFloat = clipboardCardWidth * 9 / 16

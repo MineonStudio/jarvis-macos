@@ -136,3 +136,59 @@ extension ScreenshotAnnotationPlacementTests {
         XCTAssertEqual(ink.maxY, 180, accuracy: 6, "马赛克框下边画错位置")
     }
 }
+
+extension ScreenshotAnnotationPlacementTests {
+    /// 提交后的马赛克走的是「整幅过滤图 + 遮罩」这条路径——草稿测试用的
+    /// `mosaicImage: nil` 覆盖不到它。
+    func testCommittedMosaicFillsExactlyItsRectangle() throws {
+        let annotation = makeAnnotation(
+            kind: .mosaic,
+            points: [CGPoint(x: 120, y: 90), CGPoint(x: 260, y: 180)]
+        )
+
+        // 过滤图用纯红，背景纯白：能一眼看出马赛克块落在哪、有多大。
+        let filtered = NSImage(size: canvas)
+        filtered.lockFocus()
+        NSColor.red.setFill()
+        NSRect(origin: .zero, size: canvas).fill()
+        filtered.unlockFocus()
+
+        let content = ZStack(alignment: .topLeading) {
+            Color.white
+            ScreenshotAnnotationView(
+                annotation: annotation,
+                canvasSize: canvas,
+                mosaicImage: filtered
+            )
+        }
+        .frame(width: canvas.width, height: canvas.height)
+
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2
+        let cgImage = try XCTUnwrap(renderer.cgImage, "离屏渲染失败")
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        let scale = CGFloat(cgImage.width) / canvas.width
+
+        var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
+        for y in 0 ..< rep.pixelsHigh {
+            for x in 0 ..< rep.pixelsWide {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                guard color.redComponent > 0.5, color.greenComponent < 0.5 else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        XCTAssertTrue(minX <= maxX, "马赛克完全没有画出来")
+
+        let ink = CGRect(
+            x: CGFloat(minX) / scale,
+            y: CGFloat(minY) / scale,
+            width: CGFloat(maxX - minX + 1) / scale,
+            height: CGFloat(maxY - minY + 1) / scale
+        )
+        XCTAssertEqual(ink.minX, 120, accuracy: 6, "马赛克块的左边不对")
+        XCTAssertEqual(ink.minY, 90, accuracy: 6, "马赛克块的上边不对")
+        XCTAssertEqual(ink.maxX, 260, accuracy: 6, "马赛克块的右边不对")
+        XCTAssertEqual(ink.maxY, 180, accuracy: 6, "马赛克块的下边不对")
+    }
+}

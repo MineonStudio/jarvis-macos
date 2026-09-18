@@ -66,6 +66,7 @@ struct ScreenshotAnnotationView: View {
                     canvasSize: canvasSize,
                     mosaicImage: mosaicImage,
                     origin: origin,
+                    size: bounds.size,
                     isDraft: isDraft
                 )
             case .text:
@@ -197,6 +198,8 @@ struct MosaicAnnotationView: View {
     let mosaicImage: NSImage?
     /// 这一块在画布里的原点：绘制都按局部坐标走。
     let origin: CGPoint
+    /// 这一块的尺寸。收进这个尺寸里再裁掉溢出，图层才真的只有这么大。
+    let size: CGSize
     let isDraft: Bool
 
     var body: some View {
@@ -207,6 +210,11 @@ struct MosaicAnnotationView: View {
                     .interpolation(style == .pixelate ? .none : .high)
                     .frame(width: canvasSize.width, height: canvasSize.height)
                     .offset(x: -origin.x, y: -origin.y)
+                    // 过滤图是整幅画布大小的：不把它收进这一块并裁掉溢出，整个视图
+                    // 会被撑成画布尺寸，外层的 frame 收不住，马赛克就被摆到画布
+                    // 左上角去了。
+                    .frame(width: size.width, height: size.height, alignment: .topLeading)
+                    .clipped()
                     .mask(mosaicMask.fill(.white).offset(x: -origin.x, y: -origin.y))
             } else {
                 mosaicMask
@@ -233,6 +241,7 @@ struct MosaicAnnotationView: View {
                 }
             }
         }
+        .frame(width: size.width, height: size.height)
     }
 
     private var mosaicMask: some Shape {

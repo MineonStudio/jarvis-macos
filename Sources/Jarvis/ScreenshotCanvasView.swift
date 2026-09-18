@@ -238,13 +238,23 @@ struct ScreenshotCanvasView: View {
         }
     }
 
-    private func inlineTextEditor(at _: CGPoint) -> some View {
-        ScreenshotInlineTextEditor(
+    private func inlineTextEditor(at point: CGPoint) -> some View {
+        let height = inlineTextEditorHeight
+        return ScreenshotInlineTextEditor(
             editor: editor,
             textDraft: $editor.textDraft,
             textFieldFocused: $textFieldFocused,
             fieldWidth: inlineFieldWidth,
-            textEditorHeight: inlineTextEditorHeight
+            textEditorHeight: height
+        )
+        // 输入区跟着光标走，并夹在画布内：它原来是靠 .position 定位的，重做控件时
+        // 被连着参数一起删掉了，于是光标跑到了画布左上角。
+        .position(
+            x: point.x - 8 + inlineFieldWidth / 2,
+            y: min(
+                max(point.y + height / 2, height / 2),
+                max(height / 2, editor.canvasSize.height - height / 2)
+            )
         )
     }
 

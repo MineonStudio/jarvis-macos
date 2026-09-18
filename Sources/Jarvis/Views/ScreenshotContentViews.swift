@@ -316,30 +316,38 @@ struct ScreenshotHistoryCard: View {
         "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
     }
 
+    /// 预览区：比例锁在**占位**这一层。
+    ///
+    /// `Color.clear` 是弹性的，`.aspectRatio` 才能真的按列宽定出高度；把它直接挂在
+    /// 图片上不行——图片自带固有尺寸（一张竖图就能把卡片撑成 227×680），比例会被带跑。
+    /// 内容盖在占位上面，溢出的部分裁掉。
     private var previewContent: some View {
-        Group {
-            if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
-                ScreenshotHistoryThumbnail(
-                    fileURL: app.screenshotHistoryFileURL(for: item),
-                    cacheKey: thumbnailCacheKey
+        Color.clear
+            .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay { previewLayer }
+            .clipped()
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                    style: .continuous
                 )
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 28))
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            }
-        }
-        // 比例由视图自己保证（不再靠外部算好的宽高）：列宽变了，高跟着变，
-        // 16:9 一点不动——量宽度存进 @State 再回算的写法在缩放时会滞后一帧。
-        .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
             )
-        )
-        .contentShape(Rectangle())
+            .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var previewLayer: some View {
+        if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
+            ScreenshotHistoryThumbnail(
+                fileURL: app.screenshotHistoryFileURL(for: item),
+                cacheKey: thumbnailCacheKey
+            )
+        } else {
+            Image(systemName: "photo")
+                .font(.system(size: 28))
+                .foregroundStyle(Color.jarvisTextSecondary)
+        }
     }
 
     @ViewBuilder

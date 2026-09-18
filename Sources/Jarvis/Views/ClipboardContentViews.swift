@@ -403,7 +403,23 @@ struct ClipboardCard: View {
         self.onDoubleClick = onDoubleClick
     }
 
+    /// 预览区：比例锁在占位层（见 `ScreenshotHistoryCard.previewContent` 的说明）。
     private var previewContent: some View {
+        Color.clear
+            .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay { previewLayer }
+            .clipped()
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
+                    style: .continuous
+                )
+            )
+            .contentShape(Rectangle())
+    }
+
+    private var previewLayer: some View {
         ZStack {
             if item.kind == .text {
                 VStack(spacing: 8) {
@@ -479,16 +495,6 @@ struct ClipboardCard: View {
                 ClipboardItemPreview(item: item)
             }
         }
-        // 比例由视图自己保证：列宽变了，高跟着变，16:9 一点不动。
-        .aspectRatio(HistoryGridLayout.aspectRatio, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: HistoryGridMetrics.clipboardCornerRadius,
-                style: .continuous
-            )
-        )
-        .contentShape(Rectangle())
     }
 
     private var shouldOfferTextExpansion: Bool {

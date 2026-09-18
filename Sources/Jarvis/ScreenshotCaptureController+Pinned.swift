@@ -63,6 +63,10 @@ extension ScreenshotCaptureController {
             onEscape: { [weak self, weak item] in
                 guard let self, let item else { return }
                 destroyPinnedScreenshot(item)
+            },
+            // 贴图上的键盘动作（⌫/⌘D/⌘Z）转给同一个 action 通道，状态栏才会更新。
+            onAction: { [weak item] action in
+                item?.onAction?(action)
             }
         )
         let containerView = PinnedScreenshotContainerView(

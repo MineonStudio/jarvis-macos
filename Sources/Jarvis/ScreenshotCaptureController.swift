@@ -271,6 +271,8 @@ final class ScreenshotCaptureController {
     var toolbarLayout: ScreenshotToolbarLayoutModel?
     /// 每次收起编辑界面就 +1，用来让在途的导出结果作废。
     var resultGeneration = 0
+    /// 在途的全屏采集。会话结束/退出时要取消，否则它会一直挂着。
+    var captureTask: Task<Void, Never>?
     var selectionCompletionDelivered = false
     var pinNextSelectionResult = false
     var pinnedItems: [UUID: PinnedScreenshotItem] = [:]

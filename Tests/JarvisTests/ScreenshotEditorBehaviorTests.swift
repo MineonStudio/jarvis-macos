@@ -104,3 +104,34 @@ final class ScreenshotEditorBehaviorTests: XCTestCase {
         }
     }
 }
+
+extension ScreenshotEditorBehaviorTests {
+    /// 编辑历史截图时，选区必须是**画布**坐标（缩放后的尺寸），不是原图像素尺寸。
+    ///
+    /// 原来两者混用：图比屏幕大时选区有一部分落在画布外（手柄看不到），工具栏按原图
+    /// 尺寸定位会偏出画面，中键贴图更是生成一个比屏幕还大的窗口。
+    func testHistoryEditingSelectionUsesCanvasCoordinates() {
+        let imageSize = CGSize(width: 1512, height: 982)
+        let fitted = CGSize(width: 1260, height: 818)
+        let origin = CGPoint(x: 100, y: 60)
+
+        let image = NSImage(size: imageSize)
+        let editor = ScreenshotEditorModel(
+            image: image,
+            data: Data(),
+            outputData: Data(),
+            canvasSize: fitted,
+            outputRect: CGRect(origin: .zero, size: fitted)
+        )
+
+        // 选区铺满画布。
+        XCTAssertEqual(editor.selectionRect, CGRect(origin: .zero, size: fitted))
+
+        // 它映射回屏幕时应当落在承载窗口的位置上，且尺寸是缩放过的那份。
+        let screenFrame = CGRect(origin: origin, size: fitted)
+        XCTAssertEqual(
+            editor.selectionFrame(on: screenFrame),
+            CGRect(origin: origin, size: fitted)
+        )
+    }
+}

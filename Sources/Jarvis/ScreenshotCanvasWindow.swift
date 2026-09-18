@@ -52,6 +52,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     private let onDoubleClick: (() -> Void)?
     private let onMiddleClick: (() -> Void)?
     private let onEscape: (() -> Void)?
+    private let onAction: ((ScreenshotAction) -> Void)?
     private enum ResizeHandle {
         case topLeading
         case top
@@ -81,7 +82,8 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         onActivate: (() -> Void)? = nil,
         onDoubleClick: (() -> Void)? = nil,
         onMiddleClick: (() -> Void)? = nil,
-        onEscape: (() -> Void)? = nil
+        onEscape: (() -> Void)? = nil,
+        onAction: ((ScreenshotAction) -> Void)? = nil
     ) {
         self.editor = editor
         self.allowsSelectionTransform = allowsSelectionTransform
@@ -89,6 +91,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         self.onDoubleClick = onDoubleClick
         self.onMiddleClick = onMiddleClick
         self.onEscape = onEscape
+        self.onAction = onAction
         super.init(rootView: rootView)
     }
 
@@ -100,6 +103,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         onDoubleClick = nil
         onMiddleClick = nil
         onEscape = nil
+        onAction = nil
         super.init(rootView: rootView)
     }
 
@@ -130,24 +134,22 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         let shiftPressed = event.modifierFlags.contains(.shift)
         let characters = event.charactersIgnoringModifiers?.lowercased()
 
+        // 键盘动作走和工具栏同一条 action 通道：直接改模型的话状态栏不会更新，
+        // 同一个操作用鼠标点会提示、用快捷键就没有。
         if editor.selectedAnnotationID != nil,
            event.keyCode == 51 || event.keyCode == 117
         {
-            editor.deleteSelectedAnnotation()
+            onAction?(.delete)
             return
         }
 
         if commandPressed, characters == "d" {
-            editor.duplicateSelectedAnnotation()
+            onAction?(.duplicate)
             return
         }
 
         if commandPressed, characters == "z" {
-            if shiftPressed {
-                editor.redo()
-            } else {
-                editor.undo()
-            }
+            onAction?(shiftPressed ? .redo : .undo)
             return
         }
 

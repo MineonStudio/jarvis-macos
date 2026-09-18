@@ -37,6 +37,12 @@ struct ScreenshotPresentation {
     let image: NSImage
     let editor: ScreenshotEditorModel
     let onAction: (ScreenshotAction) -> Void
+    /// 画布上拖选区手柄改裁剪的开关。截图与历史重编辑要它（那就是裁剪），
+    /// 贴图编辑面不要——用户只是想标注，贴着边拖一下就把贴图裁了。
+    let allowsSelectionTransform: Bool
+    /// 空手拖画布时窗口跟着走的开关。贴图编辑面同样不要：画布被拖走之后，
+    /// 工具栏（子窗口）还留在原地，看上去就是断的。
+    let allowsWindowDrag: Bool
 }
 
 struct ScreenshotPresentationPanels {
@@ -285,10 +291,19 @@ final class ScreenshotCaptureController {
     var pinNextSelectionResult = false
     var pinnedItems: [UUID: PinnedScreenshotItem] = [:]
     var selectedPinnedID: UUID?
+    /// 正在被「编辑」的那张贴图。编辑期间它的窗口是藏起来的，收场时要么把结果
+    /// 写回原位，要么原样放回去。
+    var editingPinnedItem: PinnedScreenshotItem?
+    /// 这场编辑里已经提交过的结果（点过「保存」）。「保存」不结束会话，所以先
+    /// 记住它，等会话真的收场再决定贴图变成什么。
+    var editingPinnedCommittedData: Data?
     /// 上一次看到的屏幕排布，用来判断「屏幕真的变了」。
     var lastKnownScreenFrames: [CGRect] = []
     var activeCaptureScreenFrame: CGRect?
     var sessionPhase: ScreenshotSessionPhase = .idle
     var activeSessionID: UUID?
+    /// 当前这场编辑的动作出口（上层接的那条）。只有 `cancelActiveSession` 用它：
+    /// 上层要把编辑面直接拆掉时，得让会话像用户按了 Esc 那样收场，而不是无声消失。
+    var activeSessionAction: ((ScreenshotAction) -> Void)?
     var didPushCrosshairCursor = false
 }

@@ -8,6 +8,14 @@ extension ScreenshotCaptureController {
         frame: CGRect,
         onAction: @escaping (ScreenshotAction) -> Void
     ) {
+        // 中键贴在**正在编辑**的这张贴图上：先把这张贴图抓到手上，编辑面拆完之后
+        // 它还在。结果要换回原位那张图，不再新开一张——旧的那张还藏着，新开就叠成
+        // 两张了。
+        //
+        // 认「正在编辑」看的是会话阶段：编辑面开着时会话必定处于编辑中，只有这时
+        // `editingPinnedItem` 才作数。否则一个陈旧的值会把编辑结束之后的普通中键
+        // 也拐到这条路上，把刚截的图写进一张看不见的旧贴图。
+        let editingItem = sessionPhase == .editing ? editingPinnedItem : nil
         sessionPhase = .pinning
         // Close the frozen editing surface immediately. Rendering the final
         // image can include annotations and should not make the middle-click
@@ -16,7 +24,11 @@ extension ScreenshotCaptureController {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let data = await editor.finalPNGData()
-            createPinnedScreenshot(data: data, frame: frame, onAction: onAction)
+            if let editingItem {
+                applyPinnedEdit(data, to: editingItem)
+            } else {
+                createPinnedScreenshot(data: data, frame: frame, onAction: onAction)
+            }
             sessionPhase = .idle
             activeSessionID = nil
             onAction(.pin(data))
@@ -26,7 +38,8 @@ extension ScreenshotCaptureController {
     private func createPinnedScreenshot(
         data: Data,
         frame: CGRect,
-        onAction: @escaping (ScreenshotAction) -> Void
+        showsShadow: Bool = true,
+        onAction: ((ScreenshotAction) -> Void)?
     ) {
         guard let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
             return
@@ -87,7 +100,15 @@ extension ScreenshotCaptureController {
             width: image.size.width,
             height: image.size.height
         )
-        containerView.onClose = { [weak self, weak item] in
+        containerView.showsShadow = showsShadow
+        containerView.canEdit = { [weak self] in
+            self?.canBeginPinnedEdit ?? false
+        }
+        containerView.onEdit = { [weak self, weak item] in
+            guard let self, let item else { return }
+            beginPinnedEdit(item)
+        }
+        containerView.onDestroy = { [weak self, weak item] in
             guard let self, let item else { return }
             destroyPinnedScreenshot(item)
         }
@@ -125,12 +146,209 @@ extension ScreenshotCaptureController {
         selected: Bool
     ) {
         item.containerView?.isSelected = selected
-        // 阴影恒开：贴图没有可以关掉它的入口，原来那层 item.showsShadow 间接
-        // 永远传 true。
-        item.containerView?.showsShadow = true
+        // 阴影归用户：右键菜单里能开关，这里不再替它决定；换图时也由调用方
+        // 把原状态带过去。
         // The visible halo is rendered by the transparent inset container;
         // keep AppKit from adding a second window-level shadow.
         item.window.hasShadow = false
+    }
+
+    // MARK: - 编辑贴图
+
+    /// 编辑会话里的一个动作，贴图该怎么收场。
+    enum PinnedEditOutcome: Equatable {
+        /// 把编辑结果写回原位。
+        case apply(Data)
+        /// 原样放回去——这场编辑什么都没存过。
+        case restore
+        /// 贴图这一刻不动。
+        case ignore
+    }
+
+    /// 「完成」当场写回；「保存」在这一刻什么都不做（它还没真的存盘，见
+    /// `notePinnedEditSaved`）；中键贴图的结果已经在 `pinScreenshot` 里换过了；
+    /// Esc 收场分两种：存过盘就用存的那份，什么都没存才原样放回去——存过盘的一次
+    /// 编辑不该因为按了 Esc 就看不见了。
+    nonisolated static func pinnedEditOutcome(
+        for action: ScreenshotAction,
+        committedData: Data?
+    ) -> PinnedEditOutcome {
+        switch action {
+        case let .confirm(data):
+            .apply(data)
+        case .cancel:
+            committedData.map(PinnedEditOutcome.apply) ?? .restore
+        default:
+            .ignore
+        }
+    }
+
+    /// 「编辑」能不能开。同时只允许一场编辑：另一张贴图的「编辑」会置灰，
+    /// 正在截图时也不能从贴图里再开一个编辑面。
+    var canBeginPinnedEdit: Bool {
+        sessionPhase == .idle && editingPinnedItem == nil
+    }
+
+    /// 右键「编辑」：把这张贴图放回编辑面，位置和大小就是它原来那张图的位置。
+    ///
+    /// 贴图在编辑期间藏起来——编辑面正好盖在它身上，不藏会看到两层。会话收场时
+    /// 要么把结果写回原位，要么原样放回去。
+    func beginPinnedEdit(_ item: PinnedScreenshotItem) {
+        guard canBeginPinnedEdit, pinnedItems[item.id] != nil else { return }
+        // 先占位：导出要几百毫秒（有标注时真的会挂起），这期间再右键一次不能再开
+        // 一场——「编辑」此刻是灰的。
+        editingPinnedItem = item
+        editingPinnedCommittedData = nil
+        Task { @MainActor [weak self, weak item] in
+            guard let self, let item, pinnedItems[item.id] != nil else { return }
+            let data = await item.editor.finalPNGData()
+            guard editingPinnedItem === item,
+                  sessionPhase == .idle,
+                  let image = NSImage(data: data),
+                  image.size.width > 0,
+                  image.size.height > 0
+            else {
+                // 只清自己的占位：这中间可能已经有别人的一场编辑开起来了，清掉就是
+                // 把人家刚开好的会话拆了（贴图会停在藏起来的状态回不来）。
+                if editingPinnedItem === item {
+                    editingPinnedItem = nil
+                    editingPinnedCommittedData = nil
+                }
+                return
+            }
+            let frame = item.imageFrame
+            let onAction = item.onAction
+            item.window.orderOut(nil)
+            JarvisLog.notice(
+                category: .window,
+                event: "screenshot.pinned.edit",
+                result: "success",
+                fields: ["phase": "begin"]
+            )
+            let opened = showPinnedEditSurface(data: data, frame: frame) { [weak self, weak item] action in
+                guard let self, let item else { return }
+                handlePinnedEditAction(action, for: item, forward: onAction)
+            }
+            if !opened {
+                // 编辑面没开起来（图读不出来之类）：贴图已经藏起来了，得放回去。
+                restorePinnedScreenshot(item)
+            }
+        }
+    }
+
+    /// 「保存」真的写到盘上了：这次编辑有了存过盘的结果，Esc 收场时用它。
+    ///
+    /// 不能拿 `.save(data)` 那个动作当提交点——它在系统保存面板弹出来**之前**就发出
+    /// 来了，用户接着在面板上点取消也一样发过。所以由 AppModel 在写盘成功之后回头
+    /// 说一声（`finishSavePanel`）。
+    func notePinnedEditSaved(_ data: Data) {
+        guard editingPinnedItem != nil else { return }
+        editingPinnedCommittedData = data
+    }
+
+    /// 编辑面按贴图在原位铺开。走的是「重新编辑历史截图」同一条路（`showResult`），
+    /// 只是承载面板落在贴图原位而不是屏幕中央——看起来就像在贴图本身上面标注。
+    ///
+    /// 这两个开关都关掉：这是**标注**这张贴图，不是重新框一次选区。开着的话贴着边
+    /// 拖一下就把贴图裁了（编辑器里还没法撤销），空手拖一下画布就跟着走、工具栏
+    /// 留在原地。
+    ///
+    /// - Returns: 编辑面有没有真的开起来。没开起来时调用方要把贴图放回去。
+    private func showPinnedEditSurface(
+        data: Data,
+        frame: CGRect,
+        onAction: @escaping (ScreenshotAction) -> Void
+    ) -> Bool {
+        let capture = ScreenshotCapture(data: data, screenFrame: frame)
+        let session = ScreenshotEditingSession(
+            id: UUID(),
+            frozenScreen: capture,
+            // 选区是画布坐标：画布就是贴在屏幕上的那块，铺满。
+            selectionRect: CGRect(origin: .zero, size: frame.size),
+            initialCapture: capture
+        )
+        activeSessionID = session.id
+        showResult(
+            session,
+            onAction: onAction,
+            allowsSelectionTransform: false,
+            allowsWindowDrag: false
+        )
+        return resultWindow != nil
+    }
+
+    /// 会话收场：按 outcome 表决定这张贴图变成什么，再把动作原样转给上层。
+    ///
+    /// 贴图**从闭包里带进来**，不在交付这一刻回头去读 `editingPinnedItem`：「完成」
+    /// 是先拆掉编辑面、渲染几百毫秒、最后才交付动作的，这中间用户完全可能去动别的
+    /// 贴图，回头再读就可能读到另一张（甚至读空），把 A 的结果写进 B。
+    private func handlePinnedEditAction(
+        _ action: ScreenshotAction,
+        for item: PinnedScreenshotItem,
+        forward: ((ScreenshotAction) -> Void)?
+    ) {
+        switch Self.pinnedEditOutcome(for: action, committedData: editingPinnedCommittedData) {
+        case let .apply(data):
+            applyPinnedEdit(data, to: item)
+        case .restore:
+            restorePinnedScreenshot(item)
+        case .ignore:
+            break
+        }
+        // 上层（AppModel）该做的事照旧：剪贴板、历史、状态栏提示。
+        forward?(action)
+    }
+
+    /// 把编辑结果写回原位：位置照旧，换一张图。
+    ///
+    /// 旧窗口连着换掉——不这么做，贴图的编辑器和画布都还指着旧的那张图。换完重新
+    /// 选中并前置，编辑面收场之后它就是眼前这张。
+    private func applyPinnedEdit(_ data: Data, to item: PinnedScreenshotItem) {
+        if editingPinnedItem === item {
+            editingPinnedItem = nil
+            editingPinnedCommittedData = nil
+        }
+        guard pinnedItems[item.id] != nil else { return }
+        // 先确认这份结果能用，再销毁旧的：`createPinnedScreenshot` 拿不到图会
+        // 静默返回，那就成了「编辑一下，贴图没了」。
+        guard let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
+            selectPinnedScreenshot(item)
+            return
+        }
+        // 尺寸认新的这张图，位置认原地：编辑面里拖选区手柄改出来的裁切会让新图变小，
+        // 窗口要是还照旧尺寸建，多出来的那圈是透明的却照样接点击——一块看不见、
+        // 点得着、还拖着贴图到处跑的死区。没裁过时两者相等，位置一个点都不动。
+        let frame = CGRect(origin: item.imageFrame.origin, size: image.size)
+        let showsShadow = item.containerView?.showsShadow ?? true
+        let onAction = item.onAction
+        destroyPinnedScreenshot(item)
+        createPinnedScreenshot(
+            data: data,
+            frame: frame,
+            showsShadow: showsShadow,
+            onAction: onAction
+        )
+        JarvisLog.notice(
+            category: .window,
+            event: "screenshot.pinned.edit",
+            result: "success",
+            fields: ["phase": "apply"]
+        )
+    }
+
+    /// 这场编辑什么都没存过：把贴图原样放回去，位置不动。
+    private func restorePinnedScreenshot(_ item: PinnedScreenshotItem) {
+        if editingPinnedItem === item {
+            editingPinnedItem = nil
+            editingPinnedCommittedData = nil
+        }
+        selectPinnedScreenshot(item)
+        JarvisLog.notice(
+            category: .window,
+            event: "screenshot.pinned.edit",
+            result: "success",
+            fields: ["phase": "restore"]
+        )
     }
 
     /// 显示器排布变化后收拾贴图：所在那块屏没了的直接销毁，否则把它收回可见范围。

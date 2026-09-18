@@ -373,14 +373,20 @@ final class PinnedScreenshotContainerView: NSView {
     private let contentInset: CGFloat
     private let editor: ScreenshotEditorModel
     private let onActivate: (() -> Void)?
-    /// 右键菜单里的「关闭贴图」（由控制器接到销毁流程上）。
-    var onClose: (() -> Void)?
+    /// 右键菜单里的「编辑」（由控制器接到编辑流程上）。
+    var onEdit: (() -> Void)?
+    /// 「编辑」当前能不能开：同时只允许一场编辑，会话进行中这一项置灰。
+    var canEdit: (() -> Bool)?
+    /// 右键菜单里的「销毁」（由控制器接到销毁流程上）。
+    var onDestroy: (() -> Void)?
     var isSelected = false {
         didSet {
             needsDisplay = true
         }
     }
 
+    /// 贴图周围那圈光晕。右键菜单里能关掉，`PinnedScreenshotItem` 换图时会
+    /// 把它带过去，所以别在这里写死。
     var showsShadow = true {
         didSet { needsDisplay = true }
     }
@@ -416,7 +422,7 @@ final class PinnedScreenshotContainerView: NSView {
         true
     }
 
-    /// 贴图原来只有拖动和 Esc：复制、找到存到哪儿去都没有入口。
+    /// 贴图原来只有拖动和 Esc：复制、编辑、找到存到哪儿去都没有入口。
     override func menu(for _: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         let copyItem = NSMenuItem(
@@ -427,18 +433,25 @@ final class PinnedScreenshotContainerView: NSView {
         copyItem.target = self
         menu.addItem(copyItem)
 
-        let revealItem = NSMenuItem(
-            title: "在访达中显示截图目录",
-            action: #selector(revealSavedScreenshots),
+        let editItem = NSMenuItem(title: "编辑", action: #selector(editPin), keyEquivalent: "")
+        editItem.target = self
+        editItem.isEnabled = canEdit?() ?? true
+        menu.addItem(editItem)
+
+        // 标题报的是**点下去会做什么**：现在有光晕就写「隐藏阴影」。
+        // 当前状态用不着写在标题里——光晕本身就看得见。
+        let shadowItem = NSMenuItem(
+            title: showsShadow ? "隐藏阴影" : "显示阴影",
+            action: #selector(toggleShadow),
             keyEquivalent: ""
         )
-        revealItem.target = self
-        menu.addItem(revealItem)
+        shadowItem.target = self
+        menu.addItem(shadowItem)
 
         menu.addItem(.separator())
-        let closeItem = NSMenuItem(title: "关闭贴图", action: #selector(closePin), keyEquivalent: "")
-        closeItem.target = self
-        menu.addItem(closeItem)
+        let destroyItem = NSMenuItem(title: "销毁", action: #selector(destroyPin), keyEquivalent: "")
+        destroyItem.target = self
+        menu.addItem(destroyItem)
         return menu
     }
 
@@ -454,14 +467,22 @@ final class PinnedScreenshotContainerView: NSView {
         }
     }
 
-    @objc private func revealSavedScreenshots() {
-        // 贴图和普通截图存在同一个目录里，这里直接带用户过去。
-        let directory = JarvisAppDirectory.url("ScreenshotHistory")
-        NSWorkspace.shared.activateFileViewerSelecting([directory])
+    @objc private func editPin() {
+        onEdit?()
     }
 
-    @objc private func closePin() {
-        onClose?()
+    @objc private func toggleShadow() {
+        showsShadow.toggle()
+        JarvisLog.notice(
+            category: .window,
+            event: "screenshot.pinned.shadow",
+            result: "success",
+            fields: ["shows": String(showsShadow)]
+        )
+    }
+
+    @objc private func destroyPin() {
+        onDestroy?()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -544,10 +565,14 @@ final class PinnedScreenshotContainerView: NSView {
             path.fill()
         }
 
-        if isSelected, showsShadow {
+        // 选中描边要画在图片**外面**：图片是子视图，压在容器上面，落在图片范围内的
+        // 描边根本看不见（原来那条就是这么没的）。关掉阴影之后光晕也没了，这圈描边
+        // 是唯一说明「这张贴图是选中的」的东西，所以它不能再跟着阴影一起消失。
+        if isSelected {
+            let selectionPath = NSBezierPath(rect: imageRect.insetBy(dx: -1, dy: -1))
             NSColor.systemBlue.withAlphaComponent(0.92).setStroke()
-            path.lineWidth = 2
-            path.stroke()
+            selectionPath.lineWidth = 2
+            selectionPath.stroke()
         }
     }
 

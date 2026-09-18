@@ -602,6 +602,9 @@ extension AppModel {
         }
         do {
             try request.data.write(to: url, options: .atomic)
+            // 真存下盘了才叫「存过」。保存面板点取消会直接 return 到这里之前，
+            // 贴图那场编辑不该因为弹过一次面板就认定自己存过东西。
+            screenshotController.notePinnedEditSaved(request.data)
             if request.finalizesHistory {
                 finalizeScreenshot(
                     request.data,
@@ -764,7 +767,9 @@ extension AppModel {
 
     func deleteScreenshotHistory(_ item: ScreenshotHistoryItem) {
         if editingHistoryID == item.id {
-            screenshotController.dismissResult()
+            // 走「取消」那条路，而不是直接把编辑面拆掉：会话以为自己是被人关掉的，
+            // 跟着它走的东西（比如贴图）就收不到交代。
+            screenshotController.cancelActiveSession()
             editingHistoryID = nil
         }
         let deletedData = screenshotHistoryStore.data(for: item)

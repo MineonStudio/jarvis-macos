@@ -56,6 +56,7 @@ final class ScreenshotImagePanel: NSPanel {
 final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     private let editor: ScreenshotEditorModel
     private let allowsSelectionTransform: Bool
+    private let allowsWindowDrag: Bool
     private let onActivate: (() -> Void)?
     private let onDoubleClick: (() -> Void)?
     private let onMiddleClick: (() -> Void)?
@@ -87,6 +88,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         rootView: ScreenshotCanvasView,
         editor: ScreenshotEditorModel,
         allowsSelectionTransform: Bool = true,
+        allowsWindowDrag: Bool = true,
         onActivate: (() -> Void)? = nil,
         onDoubleClick: (() -> Void)? = nil,
         onMiddleClick: (() -> Void)? = nil,
@@ -95,6 +97,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     ) {
         self.editor = editor
         self.allowsSelectionTransform = allowsSelectionTransform
+        self.allowsWindowDrag = allowsWindowDrag
         self.onActivate = onActivate
         self.onDoubleClick = onDoubleClick
         self.onMiddleClick = onMiddleClick
@@ -107,6 +110,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     required init(rootView: ScreenshotCanvasView) {
         editor = rootView.editor
         allowsSelectionTransform = true
+        allowsWindowDrag = true
         onActivate = nil
         onDoubleClick = nil
         onMiddleClick = nil
@@ -187,6 +191,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
 
         guard editor.selectedTool == nil,
               allowsSelectionTransform ? editor.editingRect == nil : true,
+              allowsWindowDrag,
               let window
         else {
             super.mouseDown(with: event)
@@ -226,6 +231,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
 
         guard editor.selectedTool == nil,
               editor.editingRect == nil,
+              allowsWindowDrag,
               let window,
               let initialWindowOrigin,
               let initialMouseLocation

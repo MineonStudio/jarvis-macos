@@ -753,14 +753,14 @@ extension ScreenshotEditorModel {
                 return nil
             }
             guard let outputRect else {
-                return Self.pngData(from: rendered)
+                return Self.pngData(from: rendered, logicalSize: canvasSize)
             }
             // 只裁需要的区域：直接在渲染好的位图上切，不再把整幅编码成 PNG、解码
             // 回来、裁剪、再编码一次。6K 画布上那三步是秒级的无用功。
             guard let cropped = Self.crop(rendered, toOutputRect: outputRect, canvasSize: canvasSize) else {
                 return nil
             }
-            return Self.pngData(from: cropped)
+            return Self.pngData(from: cropped, logicalSize: outputRect.size)
         }.value
     }
 
@@ -795,8 +795,16 @@ extension ScreenshotEditorModel {
         return image.cropping(to: pixelRect)
     }
 
-    private nonisolated static func pngData(from image: CGImage) -> Data? {
-        NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+    /// 把渲染结果编码成 PNG，并且**写回它的逻辑尺寸**（2x 屏上就是 144dpi）。
+    ///
+    /// 截图原始那份 PNG 是带着这个尺寸的（`ScreenshotService.pngData` 同样设了
+    /// `representation.size`：像素 600×400、点 300×200）。渲染这条路上只给像素的话，
+    /// 读回来点尺寸就翻了一倍——按点数建窗口的地方会照着旧尺寸开窗，图被裁掉一半
+    /// （贴图就是这样：编辑完点确认，回来的贴图只剩左下角一块）。
+    private nonisolated static func pngData(from image: CGImage, logicalSize: CGSize) -> Data? {
+        let representation = NSBitmapImageRep(cgImage: image)
+        representation.size = logicalSize
+        return representation.representation(using: .png, properties: [:])
     }
 
     private func append(_ annotation: ScreenshotAnnotation) {

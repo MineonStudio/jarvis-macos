@@ -33,26 +33,17 @@ struct ScreenshotSingleLineTextInput: NSViewRepresentable {
         return textView
     }
 
-    func updateNSView(_ textView: ScreenshotTextInputTextView, context: Context) {
+    func updateNSView(_ textView: ScreenshotTextInputTextView, context _: Context) {
         textView.onCommit = onCommit
         textView.onMove = onMove
         if textView.string != text {
             textView.string = text
         }
         applyStyle(to: textView)
-        // 出现时取一次焦点（输入区在的时候它就是输入口）。只在第一次抢：每次
-        // SwiftUI 更新都抢的话，用户点开到别的控件会被又拽回来。
-        if !context.coordinator.hasTakenFocusOnce,
-           let window = textView.window,
-           window.firstResponder !== textView
-        {
-            context.coordinator.hasTakenFocusOnce = true
-            window.makeFirstResponder(textView)
-        }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onCommit: onCommit)
+        Coordinator(text: $text)
     }
 
     private func applyStyle(to textView: ScreenshotTextInputTextView) {
@@ -76,13 +67,10 @@ struct ScreenshotSingleLineTextInput: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var hasTakenFocusOnce = false
         private let text: Binding<String>
-        private let onCommit: () -> Void
 
-        init(text: Binding<String>, onCommit: @escaping () -> Void) {
+        init(text: Binding<String>) {
             self.text = text
-            self.onCommit = onCommit
         }
 
         func textDidChange(_ notification: Notification) {
@@ -100,13 +88,6 @@ struct ScreenshotSingleLineTextInput: NSViewRepresentable {
             }
             text.wrappedValue = flattened
         }
-
-        /// 回车即确认：单行输入不插换行。
-        func textView(_: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            onCommit()
-            return true
-        }
     }
 }
 
@@ -118,7 +99,7 @@ final class ScreenshotTextInputTextView: NSTextView {
 
     private var dragOrigin: NSPoint?
 
-    // NSTextView 的指定初始化器必须都接上：`init(frame:)` 内部会调
+    // `NSTextView` 的指定初始化器都要接上：`init(frame:)` 内部会调
     // `init(frame:textContainer:)`，少写一个，AppKit 一调就撞上 Swift 生成的
     // 「未实现」thunk 直接崩（线上崩过一次）。
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
@@ -136,22 +117,20 @@ final class ScreenshotTextInputTextView: NSTextView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func configureForSingleLineEditing() {
-        isRichText = false
-        isFieldEditor = false
-        drawsBackground = false
-        isVerticallyResizable = false
-        isHorizontallyResizable = false
-        allowsUndo = true
-        // 单行、不滚动：它是裸的 NSTextView，没有外层滚动视图，也就没有滚动条。
-        textContainerInset = .zero
-        textContainer?.lineFragmentPadding = 0
-        textContainer?.maximumNumberOfLines = 1
-        textContainer?.widthTracksTextView = false
-        isAutomaticQuoteSubstitutionEnabled = false
-        isAutomaticDashSubstitutionEnabled = false
-        isAutomaticTextReplacementEnabled = false
-        focusRingType = .none
+    /// 进入视图层级时取得焦点。
+    ///
+    /// 这件事必须在控件自己身上做：`updateNSView` 跑的时候视图往往还没插进窗口
+    /// （`window` 是 nil），而它之后不一定再被调用——结果是输入框出现了却没人接收
+    /// 键盘，用户得再点一下才打得进字。
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, window.firstResponder !== self else { return }
+        window.makeFirstResponder(self)
+    }
+
+    /// 窗口还没激活时，第一次点击就该落进来（和截图界面的其它部分一致）。
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+        true
     }
 
     /// 回车即确认：单行输入不插换行。
@@ -192,5 +171,23 @@ final class ScreenshotTextInputTextView: NSTextView {
     override func mouseUp(with event: NSEvent) {
         dragOrigin = nil
         super.mouseUp(with: event)
+    }
+
+    private func configureForSingleLineEditing() {
+        isRichText = false
+        isFieldEditor = false
+        drawsBackground = false
+        isVerticallyResizable = false
+        isHorizontallyResizable = false
+        allowsUndo = true
+        // 单行、不滚动：它是裸的 NSTextView，没有外层滚动视图，也就没有滚动条。
+        textContainerInset = .zero
+        textContainer?.lineFragmentPadding = 0
+        textContainer?.maximumNumberOfLines = 1
+        textContainer?.widthTracksTextView = false
+        isAutomaticQuoteSubstitutionEnabled = false
+        isAutomaticDashSubstitutionEnabled = false
+        isAutomaticTextReplacementEnabled = false
+        focusRingType = .none
     }
 }

@@ -56,7 +56,10 @@ private extension View {
 }
 
 /// 二级行里的可选项（马赛克的模式/效果、文字的粗体/斜体/删除线）。
-/// 选中态是与全局一致的胶囊药丸，同 `JarvisToolbarSelectionButton`。
+///
+/// 选中态走全局那一套 `jarvisSelectionPill`（恒为胶囊 + accent 实心），和
+/// `JarvisToolbarSelectionButton`、分组选择器是同一份实现；它到行胶囊两端的距离
+/// 由 `ScreenshotToolbarMetrics.secondaryRowHorizontalPadding` 给出，和上下同值。
 struct ScreenshotToolbarOptionButton: View {
     let icon: String
     var title: String?
@@ -80,14 +83,7 @@ struct ScreenshotToolbarOptionButton: View {
             .foregroundStyle(selected ? Color.white : Color.jarvisTextSecondary)
             .padding(.horizontal, title == nil ? 0 : 9)
             .frame(width: title == nil ? 28 : nil, height: ScreenshotToolbarMetrics.secondaryControlHeight)
-            .background {
-                Capsule()
-                    .fill(
-                        selected
-                            ? JarvisMotion.selectionPillTint
-                            : (isHovered ? JarvisMotion.hoverPillTint : .clear)
-                    )
-            }
+            .jarvisSelectionPill(isSelected: selected, isHovered: isHovered)
             .contentShape(Capsule())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
@@ -183,6 +179,11 @@ struct ScreenshotToolbar: View {
     @ObservedObject var layout: ScreenshotToolbarLayoutModel
     let onAction: (ScreenshotAction) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 悬停中的一级工具 / 翻译按钮 / 行内动作按钮：同一时刻只会悬停在其中之一，
+    /// 一排按钮共用一组状态就够了。
+    @State private var hoveredTool: ScreenshotTool?
+    @State private var isHoveringTranslation = false
+    @State private var hoveredAction: String?
 }
 
 extension ScreenshotToolbar {
@@ -302,8 +303,10 @@ extension ScreenshotToolbar {
                             )
                         )
                 } else if tool == .mosaic {
+                    // 自绘图标不吃外层的 foregroundStyle，得自己跟上：选中的底色就是
+                    // accent，图标再用 accent 画就整个糊在一起了。
                     MosaicToolIcon(
-                        color: editor.selectedTool == tool ? Color.accentColor : Color.secondary
+                        color: editor.selectedTool == tool ? Color.white : Color.secondary
                     )
                 } else {
                     Image(systemName: tool.icon)
@@ -315,7 +318,11 @@ extension ScreenshotToolbar {
                         )
                 }
             }
-            .foregroundStyle(editor.selectedTool == tool ? Color.accentColor : Color.secondary)
+            // 选中就是胶囊，和二级行、别的模块的分段控件同一套（`jarvisSelectionPill`）：
+            // 42 高的胶囊嵌在 64 高的行里，四边各让出 11——正好是行高减按钮高的一半，
+            // 圆头和行胶囊同心。原来只把图标染成 accent、没有胶囊，「选中了哪个」在
+            // 一排图标里要靠颜色去猜。
+            .foregroundStyle(editor.selectedTool == tool ? Color.white : Color.secondary)
             .frame(
                 width: ScreenshotToolbarIconMetrics.box,
                 height: ScreenshotToolbarIconMetrics.box
@@ -324,11 +331,33 @@ extension ScreenshotToolbar {
                 width: ScreenshotToolbarMetrics.mainButtonSize,
                 height: ScreenshotToolbarMetrics.mainButtonSize
             )
+            .jarvisSelectionPill(
+                isSelected: editor.selectedTool == tool,
+                isHovered: hoveredTool == tool
+            )
+            // 命中区仍是整块 42×42：胶囊只管观感。改成 Capsule 会把这颗按钮四角
+            // 约两成面积变成点不动的死区，同一行里别的按钮却还是矩形。
             .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: hoveredTool
+        )
+        .onHover { isHovering in
+            withAnimation(
+                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
+            ) {
+                if isHovering {
+                    hoveredTool = tool
+                } else if hoveredTool == tool {
+                    hoveredTool = nil
+                }
+            }
+        }
         .help(tool.title)
         .accessibilityLabel(tool.title)
+        .accessibilityAddTraits(editor.selectedTool == tool ? .isSelected : [])
         .disabled(editor.translationState.isRunning)
     }
 
@@ -343,17 +372,29 @@ extension ScreenshotToolbar {
                 ProgressView()
                     .controlSize(.small)
             } else {
-                ScreenshotTranslationIcon(isSelected: editor.translationMode)
+                ScreenshotTranslationIcon(
+                    isSelected: editor.translationMode,
+                    selectedColor: .white
+                )
             }
         }
         .frame(
             width: ScreenshotToolbarMetrics.mainButtonSize,
             height: ScreenshotToolbarMetrics.mainButtonSize
         )
+        // 翻译按钮和四个工具按钮同在一个容器里，选中态就得是同一枚胶囊；
+        // 只给图标染色的话，这一排里就剩它一个「选了没选要靠猜」。
+        .jarvisSelectionPill(isSelected: editor.translationMode, isHovered: isHoveringTranslation)
         .contentShape(Rectangle())
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: isHoveringTranslation
+        )
+        .onHover { isHoveringTranslation = $0 }
         .help(translationRetryHelp)
         .accessibilityLabel("截图翻译")
+        .accessibilityAddTraits(editor.translationMode ? .isSelected : [])
         .disabled(editor.translationState.isRunning)
     }
 
@@ -667,7 +708,8 @@ extension ScreenshotToolbar {
         enabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let actionKind = help
+        return Button(action: action) {
             Image(systemName: icon)
                 .font(
                     .system(
@@ -684,9 +726,25 @@ extension ScreenshotToolbar {
                     width: ScreenshotToolbarMetrics.mainButtonSize,
                     height: ScreenshotToolbarMetrics.mainButtonSize
                 )
+                .jarvisSelectionPill(isSelected: false, isHovered: hoveredAction == actionKind)
                 .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.94, pressedOpacity: 0.76))
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: hoveredAction
+        )
+        .onHover { isHovering in
+            withAnimation(
+                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
+            ) {
+                if isHovering {
+                    hoveredAction = actionKind
+                } else if hoveredAction == actionKind {
+                    hoveredAction = nil
+                }
+            }
+        }
         .help(help)
         .accessibilityLabel(help)
         .disabled(!enabled)

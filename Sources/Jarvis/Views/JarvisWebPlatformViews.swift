@@ -9,7 +9,7 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
     let icon: (Item, Bool) -> Icon
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: JarvisSegmentedMetrics.itemSpacing) {
             ForEach(items) { item in
                 let isSelected = selection == item
                 Button {
@@ -23,12 +23,8 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                             .foregroundStyle(isSelected ? Color.white : Color.secondary)
                     }
                     .padding(.horizontal, 8)
-                    .frame(height: 26)
-                    .background {
-                        Capsule()
-                            .fill(JarvisMotion.selectionPillTint)
-                            .opacity(isSelected ? 1 : 0)
-                    }
+                    .frame(height: JarvisSegmentedMetrics.compactItemHeight)
+                    .jarvisSelectionPill(isSelected: isSelected)
                     .overlay {
                         Capsule()
                             .strokeBorder(
@@ -45,7 +41,7 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(3)
+        .padding(JarvisSegmentedMetrics.toolbarGroupPadding)
         .frame(height: JarvisToolbarMetrics.controlSize)
         // The enclosing ToolbarItem supplies the native toolbar group surface.
         // Do not add a second custom glass capsule inside it.
@@ -91,7 +87,7 @@ struct JarvisWebPlatformActionCluster<DownloadPopover: View>: View {
                 popover: downloadPopover
             )
         }
-        .padding(3)
+        .padding(JarvisToolbarMetrics.iconClusterPadding)
         .frame(height: JarvisToolbarMetrics.controlSize)
         // The enclosing ToolbarItem supplies the native toolbar group surface.
         // Do not add a second custom glass capsule inside it.

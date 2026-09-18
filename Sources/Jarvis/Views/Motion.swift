@@ -140,6 +140,12 @@ private struct JarvisSegmentedItemFramePreferenceKey: PreferenceKey {
     }
 }
 
+/// 通用分段控件：一层胶囊容器 + 一枚跟着选中项走的胶囊。
+///
+/// 容器高度是内容撑出来的（选项 + `segmentedControlPadding` ×2），所以"四边等宽"
+/// 按构造成立：内边距既是上下留白，也是左右留白，选中胶囊与容器同心。别的分段容器
+/// 若容器高度是写死的，去 `JarvisSegmentedMetrics.padding(containerHeight:itemHeight:)`
+/// 取内边距，别再手写一个数。
 struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View {
     let items: [Item]
     @Binding var selection: Item

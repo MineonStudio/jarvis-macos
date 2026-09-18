@@ -149,9 +149,17 @@ enum ScreenshotToolbarMetrics {
     /// 最外侧按钮的图标切掉。下限由 `minimumCapsuleInset` 推出，
     /// `ScreenshotToolbarCapsuleTests` 钉着这个约束。
     static let mainRowHorizontalPadding: CGFloat = 11
-    /// 二级行的左右内缩。**含**各控件自己的内边距——一处内缩只有一个来源，
-    /// 否则测试算的是胶囊内缩、实际生效的是它加上控件内边距。
-    static let secondaryRowHorizontalPadding: CGFloat = 20
+    /// 二级行的左右内缩 = 行高减控件高的一半，和上下内缩**同一个数**：选中胶囊的
+    /// 圆头圆心才会和行胶囊的圆头圆心重合，看上去是"嵌"进去的。原来写死 20，横向
+    /// 比纵向（(40−26)/2 = 7）宽出一大截，选中药丸在圆头上明显偏内。
+    ///
+    /// 下限由 `minimumCapsuleInset` 推出，`ScreenshotToolbarCapsuleTests` 钉着。
+    static var secondaryRowHorizontalPadding: CGFloat {
+        JarvisSegmentedMetrics.padding(
+            containerHeight: secondaryRowHeight,
+            itemHeight: secondaryControlHeight
+        )
+    }
 
     /// 主按钮行的内容宽度：10 颗按钮，加 3 组分隔线（1pt 线 + 两侧各 8pt 留白）。
     /// 它和面板的固定宽度一起决定内缩的**上界**——内缩不是越大越好。

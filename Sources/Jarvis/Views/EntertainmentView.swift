@@ -77,7 +77,9 @@ struct EntertainmentPlatformIcon: View {
                     .foregroundStyle(Color.secondary)
             }
         }
-        .frame(width: 16, height: 16)
+        // 与 AI 聚合的提供商图标同一套：墨迹最大边 = inkSize。
+        .padding(JarvisBrandIconMetrics.inset)
+        .frame(width: JarvisBrandIconMetrics.box, height: JarvisBrandIconMetrics.box)
         .accessibilityHidden(true)
     }
 
@@ -90,6 +92,6 @@ struct EntertainmentPlatformIcon: View {
             return nil
         }
         image.isTemplate = false
-        return image
+        return JarvisBrandIconMetrics.trimmed(image, cacheKey: "entertainment.\(platform.rawValue)")
     }
 }

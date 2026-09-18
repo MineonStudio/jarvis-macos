@@ -568,6 +568,16 @@ struct ClipboardCard: View {
         }
     }
 
+    /// 读屏用的「时间戳，选中状态」。
+    ///
+    /// 别把它写回卡片 body 里那一长串修饰符中间的内联三元插值：release 构建下
+    /// （CI 那台机器的编译器）整条表达式的类型检查会超时——`the compiler is unable
+    /// to type-check this expression in reasonable time`，1.3.6 的发布就是这么红的。
+    private var selectionDescription: String {
+        let selection = isSelected ? "已选中" : "未选中"
+        return "\(item.shortTimestamp)，\(selection)"
+    }
+
     private var metadataRow: some View {
         HStack(spacing: 6) {
             Label(item.kind.title, systemImage: item.kind.icon)
@@ -659,7 +669,7 @@ struct ClipboardCard: View {
                 ? "\(item.kind.title)，敏感内容"
                 : "\(item.kind.title)，剪贴板内容"
         )
-        .accessibilityValue("\(item.shortTimestamp)，\(isSelected ? "已选中" : "未选中")")
+        .accessibilityValue(selectionDescription)
         .accessibilityHint("点击选择，双击打开预览；悬停后可复制")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "复制") {

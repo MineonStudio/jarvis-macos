@@ -99,13 +99,13 @@ final class ScreenshotPinnedMenuTests: XCTestCase {
     func testEditIsDisabledWhileAnotherEditIsOpen() throws {
         let busy = makeContainer(canEdit: false)
         let editItem = try XCTUnwrap(
-            actionableItems(try menu(of: busy)).first { $0.title == "编辑" }
+            try actionableItems(menu(of: busy)).first { $0.title == "编辑" }
         )
         XCTAssertFalse(editItem.isEnabled)
 
         let free = makeContainer(canEdit: true)
         let enabledItem = try XCTUnwrap(
-            actionableItems(try menu(of: free)).first { $0.title == "编辑" }
+            try actionableItems(menu(of: free)).first { $0.title == "编辑" }
         )
         XCTAssertTrue(enabledItem.isEnabled)
     }
@@ -121,8 +121,8 @@ final class ScreenshotPinnedMenuTests: XCTestCase {
         let menu = try menu(of: view)
         let editItem = try XCTUnwrap(actionableItems(menu).first { $0.title == "编辑" })
         let destroyItem = try XCTUnwrap(actionableItems(menu).first { $0.title == "销毁" })
-        _ = view.perform(try XCTUnwrap(editItem.action), with: editItem)
-        _ = view.perform(try XCTUnwrap(destroyItem.action), with: destroyItem)
+        _ = try view.perform(XCTUnwrap(editItem.action), with: editItem)
+        _ = try view.perform(XCTUnwrap(destroyItem.action), with: destroyItem)
 
         XCTAssertEqual(editCount, 1)
         XCTAssertEqual(destroyCount, 1)
@@ -133,13 +133,13 @@ final class ScreenshotPinnedMenuTests: XCTestCase {
         let view = makeContainer()
         XCTAssertTrue(view.showsShadow)
         XCTAssertEqual(
-            actionableItems(try menu(of: view)).first { $0.title.contains("阴影") }?.title,
+            try actionableItems(menu(of: view)).first { $0.title.contains("阴影") }?.title,
             "隐藏阴影"
         )
 
         view.showsShadow = false
         XCTAssertEqual(
-            actionableItems(try menu(of: view)).first { $0.title.contains("阴影") }?.title,
+            try actionableItems(menu(of: view)).first { $0.title.contains("阴影") }?.title,
             "显示阴影"
         )
     }
@@ -270,8 +270,9 @@ extension ScreenshotPinnedMenuTests {
     /// `imageFrame` 把那一圈减回去。编辑完按这个矩形重建，图就还在原地。
     func testAPinReportsTheImageFrameOfItsWindow() throws {
         let frame = CGRect(x: 300, y: 240, width: 160, height: 120)
+        let data = try XCTUnwrap(pngData(size: imageSize))
         let item = PinnedScreenshotItem(
-            data: try XCTUnwrap(pngData(size: imageSize)),
+            data: data,
             image: NSImage(size: imageSize),
             frame: frame
         )
@@ -285,9 +286,8 @@ extension ScreenshotPinnedMenuTests {
         NSColor.white.setFill()
         NSRect(origin: .zero, size: size).fill()
         image.unlockFocus()
-        let rep = try XCTUnwrap(
-            NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation))
-        )
+        let tiff = try XCTUnwrap(image.tiffRepresentation)
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: tiff))
         return rep.representation(using: .png, properties: [:])
     }
 }

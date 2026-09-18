@@ -9,10 +9,16 @@ import Foundation
 /// 的年份数字，文件名跟着乱。
 enum ScreenshotSaveName {
     static func defaultName(at date: Date = Date(), timeZone: TimeZone = .current) -> String {
+        "\(makeFormatter(timeZone: timeZone).string(from: date)).png"
+    }
+
+    /// 单独拿出来是为了能被测试检查配置：区域必须钉死。进程的当前区域在测试里换不掉，
+    /// 只断言输出形状的话，把 `en_US_POSIX` 这行删掉测试也不会红。
+    static func makeFormatter(timeZone: TimeZone) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return "\(formatter.string(from: date)).png"
+        return formatter
     }
 }

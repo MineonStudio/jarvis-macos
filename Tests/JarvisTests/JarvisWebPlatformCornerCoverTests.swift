@@ -10,12 +10,37 @@ import XCTest
 /// 圆角就完全看不出来，面板像个直角矩形。描边是让它"看得出圆角"的那一笔。
 @MainActor
 final class JarvisWebPlatformCornerCoverTests: XCTestCase {
+    /// 把一个 64×64 的圆角盖板画进一张 1x 离屏位图。
+    ///
+    /// 两个坑：
+    /// - 不走 `cacheDisplay`：这个视图是 layer-backed 的，没挂窗口时缓存出来可能是
+    ///   空的（本地碰巧过得去，CI 上暗色那一轮就什么都没画）。
+    /// - 位图固定 1x（`rep.size` 就是像素数）：采样落在确定的像素网格上，不随机器的
+    ///   屏幕缩放变，判据里的计数才有可比性。
     private func coverPixels(_ appearance: NSAppearance) throws -> NSBitmapImageRep {
-        let cover = JarvisWebPlatformCornerCoverView(frame: NSRect(x: 0, y: 0, width: 64, height: 64))
+        let size = NSSize(width: 64, height: 64)
+        let cover = JarvisWebPlatformCornerCoverView(frame: NSRect(origin: .zero, size: size))
         cover.cornerRadius = JarvisMetrics.panelRadius
         cover.appearance = appearance
-        let rep = try XCTUnwrap(cover.bitmapImageRepForCachingDisplay(in: cover.bounds))
-        cover.cacheDisplay(in: cover.bounds, to: rep)
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 64,
+            pixelsHigh: 64,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ))
+        rep.size = size
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        cover.draw(cover.bounds)
+        context.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
         return rep
     }
 
@@ -26,24 +51,37 @@ final class JarvisWebPlatformCornerCoverTests: XCTestCase {
             // 角落最外一格是纯填色（三角区），拿它当基准。
             let fill = try XCTUnwrap(rep.colorAt(x: 0, y: 0)?.usingColorSpace(.deviceRGB))
 
-            // 沿对角线往里扫：不透明像素里出现"和填色不同"的，就是那圈描边。
+            // 在圆角那一块里找"和填色反差很大"的像素：描边用的是 `labelColor`
+            // （浅色下近黑、深色下近白），而填色自己的抗锯齿边缘只会保持填色本身，
+            // 所以反差大的只可能是描边。
+            //
+            // 原来沿对角线逐点扫是量不到的：描边在 45° 上只覆盖采样点的一小部分，
+            // 整像素不透明度约 0.016，被"不透明"那道门槛滤掉；真正被判成描边的是
+            // 填色自己的边缘像素——它和角落填色的差在浅色下勉强过线、深色下没有，
+            // 于是同一条测试在 CI 的暗色那轮报 0。
             var outlinePixels = 0
-            for step in 0 ..< 48 {
-                guard let color = rep.colorAt(x: step, y: step)?.usingColorSpace(.deviceRGB),
-                      color.alphaComponent > 0.15
-                else {
-                    continue // 圆角以内是透空的（露出网页），不算
-                }
-                let differs = abs(color.redComponent - fill.redComponent) > 0.01
-                    || abs(color.greenComponent - fill.greenComponent) > 0.01
-                    || abs(color.blueComponent - fill.blueComponent) > 0.01
-                if differs {
-                    outlinePixels += 1
+            for y in 0 ..< 24 {
+                for x in 0 ..< 24 {
+                    guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                          color.alphaComponent > 0.02
+                    else {
+                        continue // 圆角以内是透空的（露出网页），不算
+                    }
+                    let difference = max(
+                        max(
+                            abs(color.redComponent - fill.redComponent),
+                            abs(color.greenComponent - fill.greenComponent)
+                        ),
+                        abs(color.blueComponent - fill.blueComponent)
+                    )
+                    if difference > 0.3 {
+                        outlinePixels += 1
+                    }
                 }
             }
 
             XCTAssertGreaterThan(outlinePixels, 0, "\(appearanceName.rawValue)：圆角上没有描边，浅色模式下看不出圆角")
-            XCTAssertLessThan(outlinePixels, 20, "\(appearanceName.rawValue)：描边过粗，像是把整个角都涂了")
+            XCTAssertLessThan(outlinePixels, 80, "\(appearanceName.rawValue)：描边过粗，像是把整个角都涂了")
         }
     }
 

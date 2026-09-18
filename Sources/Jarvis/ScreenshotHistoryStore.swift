@@ -5,6 +5,15 @@ struct ScreenshotHistoryItem: Codable, Identifiable, Equatable, Sendable {
     let createdAt: Date
     var updatedAt: Date
     let fileName: String
+
+    /// 拖到别处（Finder、聊天窗口）时落盘用的名字。
+    ///
+    /// `fileName` 是内部名（`screenshot-<uuid>.png`，索引照它找文件），用户不该看见
+    /// 一串 UUID。时间取 `updatedAt`：界面里显示的是它，文件内容也是那一次写进去的
+    /// （改过再存的截图，`createdAt` 会是更早的时刻）。
+    var suggestedFileName: String {
+        ScreenshotFileName.timestamped(at: updatedAt)
+    }
 }
 
 /// Stores screenshot history as PNG files plus a small JSON index. Keeping the

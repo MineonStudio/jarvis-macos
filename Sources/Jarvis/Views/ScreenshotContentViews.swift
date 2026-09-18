@@ -311,10 +311,7 @@ struct ScreenshotHistoryCard: View {
                     guard let data = app.screenshotHistoryData(for: item) else {
                         return NSItemProvider()
                     }
-                    return ScreenshotSharing.itemProvider(
-                        data: data,
-                        suggestedName: item.fileName
-                    )
+                    return ScreenshotSharing.itemProvider(for: item, data: data)
                 }
         } else {
             previewContent

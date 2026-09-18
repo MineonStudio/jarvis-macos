@@ -587,7 +587,9 @@ final class ClipboardService: @unchecked Sendable {
                 createdAt: createdAt,
                 kind: .image,
                 imagePath: path,
-                fileName: "图片.png",
+                // 图片项不留名字：拖出去时按「复制时间」现取（`ClipboardSharing`）。
+                // 存一个固定的 `图片.png` 只会让每次拖拽都撞名。
+                fileName: nil,
                 fileSize: Int64(data.count),
                 fileUTI: UTType.png.identifier,
                 fingerprintValue: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),

@@ -555,7 +555,7 @@ extension AppModel {
         presentingWindow: NSWindow? = nil
     ) {
         let savePanel = NSSavePanel()
-        savePanel.nameFieldStringValue = ScreenshotSaveName.defaultName()
+        savePanel.nameFieldStringValue = ScreenshotFileName.timestamped()
         savePanel.canCreateDirectories = true
         if let presentingWindow {
             // The history preview is a high-level panel. Present the native

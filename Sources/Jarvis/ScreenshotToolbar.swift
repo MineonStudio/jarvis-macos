@@ -206,10 +206,6 @@ extension ScreenshotToolbar {
                 ? ScreenshotToolbarMetrics.expandedHeight
                 : ScreenshotToolbarMetrics.compactHeight
         )
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: editor.secondaryBarVisible
-        )
         .translationTask(editor.appleTranslationConfiguration) { @Sendable session in
             await editor.consumeAppleTranslationSession(session)
         }
@@ -233,7 +229,6 @@ extension ScreenshotToolbar {
                 .frame(height: ScreenshotToolbarMetrics.secondaryRowHeight)
                 .padding(.horizontal, ScreenshotToolbarMetrics.secondaryRowHorizontalPadding)
                 .screenshotToolbarPill()
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
         }
     }
 

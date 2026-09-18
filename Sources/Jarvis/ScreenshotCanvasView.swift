@@ -6,7 +6,6 @@ struct ScreenshotCanvasView: View {
     @ObservedObject var editor: ScreenshotEditorModel
     let interactive: Bool
     let showsSelectionOverlay: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         image: NSImage,
@@ -37,7 +36,6 @@ struct ScreenshotCanvasView: View {
 
             ForEach(editor.renderedTranslationBlocks) { block in
                 ScreenshotTranslationBlockView(block: block)
-                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             ForEach(editor.annotations) { annotation in
@@ -70,7 +68,6 @@ struct ScreenshotCanvasView: View {
                             }
                         }
                 }
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             if let draftAnnotation {
@@ -82,7 +79,6 @@ struct ScreenshotCanvasView: View {
                         : nil,
                     isDraft: true
                 )
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
 
             if interactive {
@@ -102,18 +98,12 @@ struct ScreenshotCanvasView: View {
             if interactive, showsSelectionOverlay {
                 if editor.selectionRect != nil {
                     ScreenshotSelectionOverlay(editor: editor)
-                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                 } else {
                     Rectangle()
                         .stroke(Color.blue.opacity(0.48), lineWidth: 1)
-                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                 }
             }
         }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: editor.annotations.count
-        )
     }
 
     private var canvasGesture: some Gesture {

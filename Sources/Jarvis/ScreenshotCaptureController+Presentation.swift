@@ -316,6 +316,10 @@ extension ScreenshotCaptureController {
             screenshotPanel.onDoubleClick = quickCopyAndClose
             screenshotPanel.onMiddleClick = pasteToScreen
             screenshotPanel.onEscape = cancelEditing
+            screenshotPanel.onResignKey = { [weak editor = presentation.editor] in
+                // 点出窗口也算「离开输入」。
+                editor?.commitTextEditing()
+            }
             screenshotPanel.onEscapeIntercept = { [weak editor = presentation.editor] in
                 editor?.handleEscape() ?? false
             }

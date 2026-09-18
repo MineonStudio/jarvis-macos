@@ -25,6 +25,10 @@ struct ScreenshotCanvasView: View {
     @State private var mosaicPoints: [CGPoint] = []
     @State private var activeAnnotationID: UUID?
     @FocusState private var textFieldFocused: Bool
+    /// 拖动文字时的上一帧位置（`DragGesture` 给的是累计位移）。
+    @State private var textDragLocation: CGPoint?
+
+    static let canvasCoordinateSpace = "jarvis.screenshot.canvas"
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -93,6 +97,7 @@ struct ScreenshotCanvasView: View {
             }
         }
         .frame(width: editor.canvasSize.width, height: editor.canvasSize.height)
+        .coordinateSpace(name: Self.canvasCoordinateSpace)
         .overlay {
             if interactive, showsSelectionOverlay {
                 if editor.selectionRect != nil {
@@ -246,6 +251,26 @@ struct ScreenshotCanvasView: View {
             textFieldFocused: $textFieldFocused,
             fieldWidth: inlineFieldWidth,
             textEditorHeight: height
+        )
+        // 按住输入区拖动 = 移动这段文字（无论是否已有标注）。
+        //
+        // 用高优先级手势：拖动被它接走，于是不会变成「框选文字」；而单击（位移小于
+        // 3pt）不进这个手势，仍然落到 TextEditor 上完成定位光标与开始输入。
+        .highPriorityGesture(
+            // 坐标系必须钉在画布上：手势挂在输入区上，而输入区本身会跟着移动，
+            // 用它自己的局部坐标算位移会自我反馈、抖起来。
+            DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.canvasCoordinateSpace))
+                .onChanged { value in
+                    let previous = textDragLocation ?? value.startLocation
+                    let delta = CGPoint(
+                        x: value.location.x - previous.x,
+                        y: value.location.y - previous.y
+                    )
+                    textDragLocation = value.location
+                    guard delta != .zero else { return }
+                    editor.moveTextEditing(by: delta)
+                }
+                .onEnded { _ in textDragLocation = nil }
         )
         // 输入区跟着光标走，并夹在画布内：它原来是靠 .position 定位的，重做控件时
         // 被连着参数一起删掉了，于是光标跑到了画布左上角。

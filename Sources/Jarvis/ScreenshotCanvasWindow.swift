@@ -7,6 +7,9 @@ final class ScreenshotImagePanel: NSPanel {
     var onDoubleClick: (() -> Void)?
     var onMiddleClick: (() -> Void)?
     var onEscape: (() -> Void)?
+    /// 面板失去键盘焦点（点到了窗口外面）。编辑器据此把草稿落下去——「点输入区
+    /// 以外就确认」里的「以外」也包括窗口之外。
+    var onResignKey: (() -> Void)?
     /// Esc 的第一道处理：返回 true 表示这次 Esc 已被消化（正在输入文字、或者
     /// 只想取消标注选中），不必再结束整场截图。
     var onEscapeIntercept: (() -> Bool)?
@@ -17,6 +20,11 @@ final class ScreenshotImagePanel: NSPanel {
 
     override var canBecomeMain: Bool {
         false
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
     }
 
     override func sendEvent(_ event: NSEvent) {

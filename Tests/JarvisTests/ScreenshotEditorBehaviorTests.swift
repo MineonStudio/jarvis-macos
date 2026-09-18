@@ -236,3 +236,46 @@ extension ScreenshotEditorBehaviorTests {
         XCTAssertEqual(moved.start.y, originalStart.y + 25, accuracy: 0.001)
     }
 }
+
+extension ScreenshotEditorBehaviorTests {
+    /// 编辑状态下按住文字拖动：已有的标注跟着走。
+    func testDraggingWhileEditingMovesTheExistingText() throws {
+        let editor = try makeEditor()
+        editor.addText(alignedAtLeft: CGPoint(x: 70, y: 50), text: "拖我")
+        let id = try XCTUnwrap(editor.annotations.first?.id)
+        let originalStart = try XCTUnwrap(editor.annotations.first?.start)
+
+        // 进入编辑态（锚点按反推公式还原）。
+        editor.textInputAnchor = CGPoint(
+            x: originalStart.x - editor.annotations[0].textSize.width / 2 + 9,
+            y: originalStart.y
+        )
+        editor.editingTextID = id
+        let anchorBefore = try XCTUnwrap(editor.textInputAnchor)
+
+        editor.moveTextEditing(by: CGPoint(x: 30, y: -20))
+
+        XCTAssertEqual(editor.annotations[0].start.x, originalStart.x + 30, accuracy: 0.001)
+        XCTAssertEqual(editor.annotations[0].start.y, originalStart.y - 20, accuracy: 0.001)
+        XCTAssertEqual(editor.textInputAnchor?.x ?? 0, anchorBefore.x + 30, accuracy: 0.001)
+        XCTAssertEqual(editor.textInputAnchor?.y ?? 0, anchorBefore.y - 20, accuracy: 0.001)
+    }
+
+    /// 新建文字还没落盘时拖动：拖的是输入框本身（锚点），不留空标注。
+    func testDraggingWhileTypingMovesTheAnchorOnly() throws {
+        let editor = try makeEditor()
+        editor.beginTextEditing(at: CGPoint(x: 100, y: 60))
+        editor.textDraft = "正在打"
+
+        editor.moveTextEditing(by: CGPoint(x: 15, y: 12))
+
+        XCTAssertEqual(editor.textInputAnchor?.x ?? 0, 115, accuracy: 0.001)
+        XCTAssertEqual(editor.textInputAnchor?.y ?? 0, 72, accuracy: 0.001)
+        XCTAssertTrue(editor.annotations.isEmpty)
+
+        // 拖到哪儿就在哪儿落盘。
+        XCTAssertTrue(editor.commitTextEditing())
+        let committed = try XCTUnwrap(editor.annotations.first)
+        XCTAssertEqual(committed.start.x, 115 + committed.textSize.width / 2 - 9, accuracy: 0.001)
+    }
+}

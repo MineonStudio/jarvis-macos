@@ -398,6 +398,18 @@ extension ScreenshotEditorModel {
         textDraft = ""
     }
 
+    /// 按住正在编辑的文字拖动：已有的标注跟着走，输入框的锚点也一起走（新建时
+    /// 只有锚点）。编辑器允许这么拖，是因为拖动被优先识别成「移动这段文字」，
+    /// 而不是框选文字。
+    func moveTextEditing(by delta: CGPoint) {
+        if let editingTextID, annotations.contains(where: { $0.id == editingTextID }) {
+            // 内部会把锚点一起同步过去。
+            moveAnnotation(id: editingTextID, by: delta)
+        } else if let anchor = textInputAnchor {
+            textInputAnchor = CGPoint(x: anchor.x + delta.x, y: anchor.y + delta.y)
+        }
+    }
+
     /// 结束内联输入并把草稿落到标注上。
     ///
     /// - Returns: 是否真的落下了内容（空草稿只是收起输入框）。

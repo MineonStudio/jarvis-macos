@@ -24,7 +24,7 @@ struct ScreenshotSingleLineTextInput: NSViewRepresentable {
     let onMove: (CGPoint) -> Void
 
     func makeNSView(context: Context) -> ScreenshotTextInputTextView {
-        let textView = ScreenshotTextInputTextView()
+        let textView = ScreenshotTextInputTextView(frame: .zero)
         textView.delegate = context.coordinator
         textView.onCommit = onCommit
         textView.onMove = onMove
@@ -33,15 +33,20 @@ struct ScreenshotSingleLineTextInput: NSViewRepresentable {
         return textView
     }
 
-    func updateNSView(_ textView: ScreenshotTextInputTextView, context _: Context) {
+    func updateNSView(_ textView: ScreenshotTextInputTextView, context: Context) {
         textView.onCommit = onCommit
         textView.onMove = onMove
         if textView.string != text {
             textView.string = text
         }
         applyStyle(to: textView)
-        // 输入区在的时候它就是唯一的输入口：出现即取得焦点。
-        if let window = textView.window, window.firstResponder !== textView {
+        // 出现时取一次焦点（输入区在的时候它就是输入口）。只在第一次抢：每次
+        // SwiftUI 更新都抢的话，用户点开到别的控件会被又拽回来。
+        if !context.coordinator.hasTakenFocusOnce,
+           let window = textView.window,
+           window.firstResponder !== textView
+        {
+            context.coordinator.hasTakenFocusOnce = true
             window.makeFirstResponder(textView)
         }
     }
@@ -71,6 +76,7 @@ struct ScreenshotSingleLineTextInput: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
+        var hasTakenFocusOnce = false
         private let text: Binding<String>
         private let onCommit: () -> Void
 
@@ -112,8 +118,25 @@ final class ScreenshotTextInputTextView: NSTextView {
 
     private var dragOrigin: NSPoint?
 
-    init() {
-        super.init(frame: .zero)
+    // NSTextView 的指定初始化器必须都接上：`init(frame:)` 内部会调
+    // `init(frame:textContainer:)`，少写一个，AppKit 一调就撞上 Swift 生成的
+    // 「未实现」thunk 直接崩（线上崩过一次）。
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        configureForSingleLineEditing()
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureForSingleLineEditing()
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func configureForSingleLineEditing() {
         isRichText = false
         isFieldEditor = false
         drawsBackground = false
@@ -131,9 +154,13 @@ final class ScreenshotTextInputTextView: NSTextView {
         focusRingType = .none
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    /// 回车即确认：单行输入不插换行。
+    override func doCommand(by selector: Selector) {
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            onCommit?()
+            return
+        }
+        super.doCommand(by: selector)
     }
 
     /// 把整段文字的删除线状态同步成参数说的那样（逐字改样式）。

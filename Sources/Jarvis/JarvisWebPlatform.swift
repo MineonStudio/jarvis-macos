@@ -210,6 +210,20 @@ final class JarvisWebPlatformCornerCoverView: NSView {
             // corners do not show as light-gray squares.
             NSColor.controlBackgroundColor.setFill()
             path.fill()
+
+            // 再描一圈圆角。填色用的是面板底色，和网页底色同色时（浅色模式下两边
+            // 都是白的）整个圆角就看不出来了，面板看上去是个直角矩形；而面板自己
+            // 那圈描边画在网页视图**底下**，被盖住了。这里补上，和
+            // `JarvisFloatingPanelModifier` 的描边同一口径（`Color.primary` 8%、
+            // 0.75pt，向内描）。
+            let border = NSBezierPath(
+                roundedRect: bounds.insetBy(dx: 0.375, dy: 0.375),
+                xRadius: cornerRadius - 0.375,
+                yRadius: cornerRadius - 0.375
+            )
+            border.lineWidth = 0.75
+            NSColor.labelColor.withAlphaComponent(0.08).setStroke()
+            border.stroke()
         }
     }
 }

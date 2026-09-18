@@ -314,7 +314,9 @@ struct ScreenshotCanvasView: View {
             editor.textFontSize * 1.28,
             inlineTextFont.ascender - inlineTextFont.descender + inlineTextFont.leading
         )
-        return min(320, max(lineHeight + 16, CGFloat(totalLines) * lineHeight + 16))
+        // 不封顶：内容多高输入区就多高，这样它永远不需要滚动，滚动条也就不会出现。
+        // 多出来的 16pt 是给 TextEditor 自己的内容内边距留的余量。
+        return max(lineHeight + 16, CGFloat(totalLines) * lineHeight + 16)
     }
 
     private var inlineFieldHorizontalMargin: CGFloat {

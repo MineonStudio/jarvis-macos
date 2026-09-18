@@ -192,3 +192,54 @@ extension ScreenshotAnnotationPlacementTests {
         XCTAssertEqual(ink.maxY, 180, accuracy: 6, "马赛克块的下边不对")
     }
 }
+
+extension ScreenshotAnnotationPlacementTests {
+    /// 多行文字：换行必须真的渲染成两行，而不是被压成一行或者跑到别处。
+    func testMultiLineTextRendersEveryLineAtTheRightPlace() throws {
+        let editor = ScreenshotEditorModel(
+            image: NSImage(size: canvas),
+            data: Data(),
+            outputData: Data(),
+            canvasSize: canvas
+        )
+        editor.textFontSize = 20
+        editor.addText(alignedAtLeft: CGPoint(x: 60, y: 40), text: "第一行\n第二行")
+        let annotation = try XCTUnwrap(editor.annotations.first)
+
+        let ink = try inkBounds(of: annotation)
+
+        // 渲染端把文字画在 start - size/2 + 9 处，行高由字号决定。
+        let expected = annotation.textSize
+        let left = annotation.start.x - expected.width / 2 + 9
+        let top = annotation.start.y - expected.height / 2 + 9
+        XCTAssertEqual(ink.minX, left, accuracy: 8, "文字左边不对")
+        XCTAssertEqual(ink.minY, top, accuracy: 8, "文字上边不对")
+        XCTAssertGreaterThan(
+            ink.height,
+            annotation.fontSize * 1.4,
+            "两行文字的高度不该只有一行"
+        )
+    }
+
+    /// 二次编辑：从既有标注反推出来的输入锚点，必须能原样还原它的位置。
+    func testReeditingAnchorRoundTrips() throws {
+        let editor = ScreenshotEditorModel(
+            image: NSImage(size: canvas),
+            data: Data(),
+            outputData: Data(),
+            canvasSize: canvas
+        )
+        let anchor = CGPoint(x: 120, y: 80)
+        editor.addText(alignedAtLeft: anchor, text: "原文")
+        let annotation = try XCTUnwrap(editor.annotations.first)
+
+        // 这三行与画布视图里 `beginTextEditing(id:)` 的反推公式一致。
+        let reconstructed = CGPoint(
+            x: annotation.start.x - annotation.textSize.width / 2 + 9,
+            y: annotation.start.y
+        )
+
+        XCTAssertEqual(reconstructed.x, anchor.x, accuracy: 0.001, "二次编辑的锚点偏了")
+        XCTAssertEqual(reconstructed.y, anchor.y, accuracy: 0.001)
+    }
+}

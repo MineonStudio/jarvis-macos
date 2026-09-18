@@ -128,7 +128,17 @@ struct TextAnnotationView: View {
             .foregroundStyle(annotation.textColor.color.opacity(isDraft ? 0.62 : 1))
             .multilineTextAlignment(.leading)
             .lineLimit(nil)
-            .frame(width: annotation.textSize.width, height: annotation.textSize.height)
+            // 与渲染端一致：文字从左上角起排、内缩 9pt。
+            //
+            // 原来是默认居中：多行时每行各自居中，而导出端是左对齐——预览里排得好好的
+            // 两行，导出来是另一个样子。`textSize` 里那 18pt 的横向余量就是这 9pt 的两侧。
+            .padding(.leading, 9)
+            .padding(.top, 5)
+            .frame(
+                width: annotation.textSize.width,
+                height: annotation.textSize.height,
+                alignment: .topLeading
+            )
             .position(
                 x: annotation.start.x - origin.x,
                 y: annotation.start.y - origin.y

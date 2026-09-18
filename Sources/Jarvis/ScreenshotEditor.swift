@@ -548,6 +548,15 @@ extension ScreenshotEditorModel {
         annotations[index].points = annotations[index].points.map {
             CGPoint(x: $0.x + adjustedDelta.x, y: $0.y + adjustedDelta.y)
         }
+        // 正在编辑的那段文字被拖走时，输入框的锚点要跟着走：否则提交时
+        // `updateText(alignedAtLeft:)` 会拿旧锚点把它拽回原位——看起来就是
+        // 「拖了，然后又弹回去了」。
+        if editingTextID == id, let anchor = textInputAnchor {
+            textInputAnchor = CGPoint(
+                x: anchor.x + adjustedDelta.x,
+                y: anchor.y + adjustedDelta.y
+            )
+        }
     }
 
     func endMove() {

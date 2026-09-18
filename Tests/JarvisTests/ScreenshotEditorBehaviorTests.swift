@@ -204,3 +204,35 @@ extension ScreenshotEditorBehaviorTests {
         XCTAssertEqual(editor.annotations.first?.text, "改过的文字")
     }
 }
+
+extension ScreenshotEditorBehaviorTests {
+    /// 拖动正在编辑的文字之后，提交不能把它拽回原位。
+    ///
+    /// `updateText(alignedAtLeft:)` 用的是输入框那个锚点；锚点不跟着拖动走的话，
+    /// 提交时会把文字放回拖动前的位置——用户看到的是「拖了，然后又弹回去了」。
+    func testMovingTheTextWhileEditingKeepsTheNewPosition() throws {
+        let editor = try makeEditor()
+        editor.addText(alignedAtLeft: CGPoint(x: 80, y: 70), text: "原位")
+        let id = try XCTUnwrap(editor.annotations.first?.id)
+        let originalStart = try XCTUnwrap(editor.annotations.first?.start)
+
+        // 重新进入编辑，再把它拖走。
+        editor.textInputAnchor = CGPoint(x: 80, y: 70)
+        editor.editingTextID = id
+        editor.textDraft = "原位"
+        let anchorBefore = try XCTUnwrap(editor.textInputAnchor)
+
+        editor.beginMove(id: id)
+        editor.moveAnnotation(id: id, by: CGPoint(x: 40, y: 25))
+        editor.endMove()
+
+        // 锚点必须跟标注一起走。
+        XCTAssertEqual(editor.textInputAnchor?.x ?? 0, anchorBefore.x + 40, accuracy: 0.001)
+        XCTAssertEqual(editor.textInputAnchor?.y ?? 0, anchorBefore.y + 25, accuracy: 0.001)
+
+        XCTAssertTrue(editor.commitTextEditing())
+        let moved = try XCTUnwrap(editor.annotations.first)
+        XCTAssertEqual(moved.start.x, originalStart.x + 40, accuracy: 0.001, "提交把文字拽回了原位")
+        XCTAssertEqual(moved.start.y, originalStart.y + 25, accuracy: 0.001)
+    }
+}

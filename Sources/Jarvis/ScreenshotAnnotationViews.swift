@@ -6,47 +6,76 @@ struct ScreenshotAnnotationView: View {
     let mosaicImage: NSImage?
     var isDraft = false
 
-    var body: some View {
-        switch annotation.kind {
-        case .arrow:
-            ArrowAnnotationView(
-                start: annotation.start,
-                end: annotation.end,
-                color: annotation.color.color,
-                lineWidth: annotation.lineWidth,
-                headSize: annotation.arrowHeadSize,
-                headStyle: annotation.arrowHeadStyle,
-                isDraft: isDraft
-            )
-            .frame(width: canvasSize.width, height: canvasSize.height)
-            .allowsHitTesting(false)
-        case .rectangle:
-            RectangleAnnotationView(
-                start: annotation.start,
-                end: annotation.end,
-                color: annotation.color.color,
-                lineWidth: annotation.lineWidth,
-                lineStyle: annotation.lineStyle,
-                isDraft: isDraft
-            )
-            .frame(width: canvasSize.width, height: canvasSize.height)
-            .allowsHitTesting(false)
-        case .mosaic:
-            MosaicAnnotationView(
-                points: annotation.points,
-                brushSize: annotation.brushSize,
-                mode: annotation.mosaicMode,
-                style: annotation.mosaicStyle,
-                canvasSize: canvasSize,
-                mosaicImage: mosaicImage,
-                isDraft: isDraft
-            )
-            .allowsHitTesting(false)
+    /// 标注自己的外接矩形（画布坐标，含线宽/箭头/笔触的余量）。
+    ///
+    /// 每个标注原来都铺满整个画布：6K 画布下一个马赛克框的 mask 就是 81MB，几个框
+    /// 叠起来几百 MB。收窄到自己那一块之后，占用只跟标注本身的大小有关。
+    var scopedBounds: CGRect {
+        let canvas = CGRect(origin: .zero, size: canvasSize)
+        // 余量按种类取：马赛克看笔触宽度，箭头还要留出箭头本身，其余就是线宽。
+        let margin = (annotation.kind == .mosaic ? annotation.brushSize : annotation.lineWidth)
+            + (annotation.kind == .arrow ? annotation.arrowHeadSize / 2 : 0)
+            + 8
+        let content: CGRect = switch annotation.kind {
         case .text:
-            TextAnnotationView(annotation: annotation, isDraft: isDraft)
-                .frame(width: canvasSize.width, height: canvasSize.height)
-                .allowsHitTesting(false)
+            CGRect(
+                x: annotation.start.x - annotation.textSize.width / 2,
+                y: annotation.start.y - annotation.textSize.height / 2,
+                width: annotation.textSize.width,
+                height: annotation.textSize.height
+            )
+        case .arrow, .rectangle, .mosaic:
+            annotation.canvasBounds
         }
+        return content.insetBy(dx: -margin, dy: -margin).intersection(canvas)
+    }
+
+    var body: some View {
+        let bounds = scopedBounds
+        let origin = bounds.origin
+
+        Group {
+            switch annotation.kind {
+            case .arrow:
+                ArrowAnnotationView(
+                    start: annotation.start,
+                    end: annotation.end,
+                    color: annotation.color.color,
+                    lineWidth: annotation.lineWidth,
+                    headSize: annotation.arrowHeadSize,
+                    headStyle: annotation.arrowHeadStyle,
+                    origin: origin,
+                    isDraft: isDraft
+                )
+            case .rectangle:
+                RectangleAnnotationView(
+                    start: annotation.start,
+                    end: annotation.end,
+                    color: annotation.color.color,
+                    lineWidth: annotation.lineWidth,
+                    lineStyle: annotation.lineStyle,
+                    origin: origin,
+                    isDraft: isDraft
+                )
+            case .mosaic:
+                MosaicAnnotationView(
+                    points: annotation.points,
+                    brushSize: annotation.brushSize,
+                    mode: annotation.mosaicMode,
+                    style: annotation.mosaicStyle,
+                    canvasSize: canvasSize,
+                    mosaicImage: mosaicImage,
+                    origin: origin,
+                    isDraft: isDraft
+                )
+            case .text:
+                TextAnnotationView(annotation: annotation, origin: origin, isDraft: isDraft)
+            }
+        }
+        // 图层只有标注那么大，再平移回它在画布上的位置（ZStack 是左上对齐）。
+        .frame(width: bounds.width, height: bounds.height)
+        .offset(x: origin.x, y: origin.y)
+        .allowsHitTesting(false)
     }
 }
 
@@ -56,10 +85,13 @@ struct RectangleAnnotationView: View {
     let color: Color
     let lineWidth: CGFloat
     let lineStyle: ScreenshotLineStyle
+    /// 这一块在画布里的原点：绘制都按局部坐标走。
+    let origin: CGPoint
     let isDraft: Bool
 
     var body: some View {
         Canvas { context, _ in
+            context.translateBy(x: -origin.x, y: -origin.y)
             let rect = CGRect(
                 x: min(start.x, end.x),
                 y: min(start.y, end.y),
@@ -83,6 +115,8 @@ struct RectangleAnnotationView: View {
 
 struct TextAnnotationView: View {
     let annotation: ScreenshotAnnotation
+    /// 这一块在画布里的原点：绘制都按局部坐标走。
+    let origin: CGPoint
     let isDraft: Bool
 
     var body: some View {
@@ -94,7 +128,10 @@ struct TextAnnotationView: View {
             .multilineTextAlignment(.leading)
             .lineLimit(nil)
             .frame(width: annotation.textSize.width, height: annotation.textSize.height)
-            .position(x: annotation.start.x, y: annotation.start.y)
+            .position(
+                x: annotation.start.x - origin.x,
+                y: annotation.start.y - origin.y
+            )
     }
 }
 
@@ -105,10 +142,13 @@ struct ArrowAnnotationView: View {
     let lineWidth: CGFloat
     let headSize: CGFloat
     let headStyle: ScreenshotArrowHeadStyle
+    /// 这一块在画布里的原点：绘制都按局部坐标走。
+    let origin: CGPoint
     let isDraft: Bool
 
     var body: some View {
         Canvas { context, _ in
+            context.translateBy(x: -origin.x, y: -origin.y)
             let strokeColor = color.opacity(isDraft ? 0.58 : 0.96)
             let angle = atan2(end.y - start.y, end.x - start.x)
             let headLength = max(headSize, lineWidth * 2.6)
@@ -155,6 +195,8 @@ struct MosaicAnnotationView: View {
     let style: ScreenshotMosaicStyle
     let canvasSize: CGSize
     let mosaicImage: NSImage?
+    /// 这一块在画布里的原点：绘制都按局部坐标走。
+    let origin: CGPoint
     let isDraft: Bool
 
     var body: some View {
@@ -164,10 +206,12 @@ struct MosaicAnnotationView: View {
                     .resizable()
                     .interpolation(style == .pixelate ? .none : .high)
                     .frame(width: canvasSize.width, height: canvasSize.height)
-                    .mask(mosaicMask.fill(.white))
+                    .offset(x: -origin.x, y: -origin.y)
+                    .mask(mosaicMask.fill(.white).offset(x: -origin.x, y: -origin.y))
             } else {
                 mosaicMask
                     .fill(Color.black.opacity(isDraft ? 0.2 : 0.62))
+                    .offset(x: -origin.x, y: -origin.y)
             }
 
             if isDraft {
@@ -181,13 +225,14 @@ struct MosaicAnnotationView: View {
                                 lineJoin: .round
                             )
                         )
+                        .offset(x: -origin.x, y: -origin.y)
                 } else {
                     mosaicMask
                         .stroke(Color.jarvisCyan.opacity(0.92), style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+                        .offset(x: -origin.x, y: -origin.y)
                 }
             }
         }
-        .frame(width: canvasSize.width, height: canvasSize.height)
     }
 
     private var mosaicMask: some Shape {

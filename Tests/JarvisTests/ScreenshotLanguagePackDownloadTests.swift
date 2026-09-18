@@ -323,4 +323,23 @@ final class ScreenshotLanguagePackDownloadTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(model.phase, .downloading, "tearDown 后旧任务不得再写状态")
     }
+
+    /// tearDown 之后（例如切走设置页）这一行不能永远停在「下载中…」：
+    /// 刷新要能重新探测、回到可用状态。
+    func testRefreshRecoversAfterTearDownLeavesTheRowDownloading() async {
+        let service = FakeLanguagePackService()
+        let model = await supportedModel(service: service)
+        let handler = FakeSessionHandler(behavior: .gate)
+
+        let running = await startGatedDownload(model: model, handler: handler)
+        model.tearDown()
+        XCTAssertEqual(model.phase, .downloading)
+
+        service.statusResult = .installed
+        await model.refresh()
+
+        XCTAssertEqual(model.phase, .installed, "句柄没了就该允许重新探测")
+        handler.release()
+        await running.value
+    }
 }

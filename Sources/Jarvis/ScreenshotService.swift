@@ -1,6 +1,8 @@
 import AppKit
 import CoreGraphics
+import Darwin
 import Foundation
+import ImageIO
 import ScreenCaptureKit
 
 final class ScreenshotService {
@@ -44,6 +46,19 @@ final class ScreenshotService {
         }
     }
 
+    /// Synchronous display snapshot used to freeze the screen on the same
+    /// run-loop turn as F1. ScreenCaptureKit stays as the fallback because
+    /// Quartz can return nil when a display is mid-reconfigure.
+    @MainActor
+    func captureFullScreensImmediately(screenFrames: [CGRect]) throws -> [ScreenshotCapture] {
+        guard !screenFrames.isEmpty else {
+            throw ScreenshotError.noDisplays
+        }
+        return try screenFrames.map { screenFrame in
+            try Self.captureImmediately(screenRect: screenFrame)
+        }
+    }
+
     /// Captures one display-sized rectangle while retaining every visible
     /// window, including Jarvis's own main window and pinned screenshots.
     /// The direct rectangle API can omit the caller's own surfaces, so use an
@@ -55,10 +70,7 @@ final class ScreenshotService {
 
         do {
             let image = try await captureDisplayFilter(for: screenRect)
-            guard let data = Self.pngData(from: image, logicalSize: screenRect.size) else {
-                throw ScreenshotError.captureFailed("无法将屏幕图像编码为 PNG")
-            }
-            return ScreenshotCapture(data: data, screenFrame: screenRect)
+            return ScreenshotCapture(cgImage: image, screenFrame: screenRect)
         } catch let error as ScreenshotError {
             throw error
         } catch let error as NSError {
@@ -71,6 +83,20 @@ final class ScreenshotService {
                 "ScreenCaptureKit 无法读取当前显示器：\(error.localizedDescription)"
             )
         }
+    }
+
+    private static func captureImmediately(screenRect: CGRect) throws -> ScreenshotCapture {
+        guard !screenRect.isEmpty else {
+            throw ScreenshotError.captureFailed("无法识别要截图的显示器")
+        }
+        guard let displayID = displayID(for: screenRect) else {
+            throw ScreenshotError.captureFailed("无法识别要截图的显示器")
+        }
+
+        guard let cgImage = QuartzDisplaySnapshot.image(for: displayID) else {
+            throw ScreenshotError.captureFailed("无法快速冻结屏幕")
+        }
+        return ScreenshotCapture(cgImage: cgImage, screenFrame: screenRect)
     }
 
     private static func captureDisplayFilter(for screenRect: CGRect) async throws -> CGImage {
@@ -112,7 +138,7 @@ final class ScreenshotService {
         return CGDirectDisplayID(number.uint32Value)
     }
 
-    private static func pngData(from image: CGImage, logicalSize: CGSize) -> Data? {
+    static func pngData(from image: CGImage, logicalSize: CGSize) -> Data? {
         let representation = NSBitmapImageRep(cgImage: image)
         representation.size = logicalSize
         return representation.representation(using: .png, properties: [:])
@@ -200,9 +226,127 @@ final class ScreenshotService {
     }
 }
 
+/// The SDK has marked `CGDisplayCreateImage` unavailable in favor of
+/// ScreenCaptureKit, but SCK is asynchronous and too slow for an F1 freeze.
+/// The CoreGraphics symbols still exist; look them up at runtime so F1 can
+/// snapshot every display on the same run-loop turn.
+private enum QuartzDisplaySnapshot {
+    static func image(for displayID: CGDirectDisplayID) -> CGImage? {
+        displayCreateImage(displayID) ?? windowListImage(for: displayID)
+    }
+
+    private static func displayCreateImage(_ displayID: CGDirectDisplayID) -> CGImage? {
+        guard let function = load(
+            "CGDisplayCreateImage",
+            as: (@convention(c) (CGDirectDisplayID) -> Unmanaged<CGImage>?).self
+        ) else {
+            return nil
+        }
+        return function(displayID)?.takeRetainedValue()
+    }
+
+    private static func windowListImage(for displayID: CGDirectDisplayID) -> CGImage? {
+        typealias CreateImage = @convention(c) (
+            CGRect,
+            CGWindowListOption,
+            CGWindowID,
+            CGWindowImageOption
+        ) -> Unmanaged<CGImage>?
+        guard let function = load("CGWindowListCreateImage", as: CreateImage.self) else {
+            return nil
+        }
+        return function(
+            CGDisplayBounds(displayID),
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution, .boundsIgnoreFraming]
+        )?.takeRetainedValue()
+    }
+
+    private static func load<T>(_ name: String, as _: T.Type) -> T? {
+        guard let handle = dlopen(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+            RTLD_NOW
+        ), let symbol = dlsym(handle, name) else {
+            return nil
+        }
+        return unsafeBitCast(symbol, to: T.self)
+    }
+}
+
 struct ScreenshotCapture: Sendable {
-    let data: Data
     let screenFrame: CGRect
+    let cgImage: CGImage?
+    private let pngCache: PNGCache
+
+    var data: Data {
+        pngCache.getOrEncode {
+            guard let cgImage else { return nil }
+            return ScreenshotService.pngData(from: cgImage, logicalSize: screenFrame.size)
+        }
+    }
+
+    var hasImage: Bool {
+        cgImage != nil || pngCache.hasData
+    }
+
+    init(data: Data, screenFrame: CGRect, cgImage: CGImage? = nil) {
+        self.screenFrame = screenFrame
+        self.cgImage = cgImage ?? Self.makeCGImage(from: data)
+        pngCache = PNGCache(data)
+    }
+
+    init(cgImage: CGImage, screenFrame: CGRect) {
+        self.cgImage = cgImage
+        self.screenFrame = screenFrame
+        pngCache = PNGCache(nil)
+    }
+
+    private static func makeCGImage(from data: Data) -> CGImage? {
+        guard !data.isEmpty,
+              let source = CGImageSourceCreateWithData(data as CFData, nil)
+        else {
+            return nil
+        }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+}
+
+/// Encodes the freeze-frame PNG on first use so F1 can show the overlay
+/// before a 5K/6K encode finishes.
+private final class PNGCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Data?
+
+    init(_ value: Data?) {
+        stored = value
+    }
+
+    var hasData: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let stored, !stored.isEmpty {
+            return true
+        }
+        return false
+    }
+
+    func getOrEncode(_ encode: () -> Data?) -> Data {
+        lock.lock()
+        if let stored, !stored.isEmpty {
+            lock.unlock()
+            return stored
+        }
+        lock.unlock()
+        let encoded = encode() ?? Data()
+        lock.lock()
+        if stored == nil || stored?.isEmpty == true {
+            stored = encoded
+        }
+        let result = stored ?? encoded
+        lock.unlock()
+        return result
+    }
 }
 
 enum ScreenshotError: LocalizedError {

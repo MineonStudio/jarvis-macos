@@ -439,9 +439,9 @@ extension AppModel {
             return
         }
 
-        // Capture the desktop before showing the nonactivating overlay. The
-        // custom overlay is shown only after ScreenCaptureKit has returned
-        // frozen pixels, so the host window is never included in the screenshot.
+        // Freeze every display on this run-loop turn, then show the overlay
+        // on those pixels. The overlay is created after the snapshot, so it
+        // is never included in the screenshot.
         isCapturing = true
         statusMessage = "请在屏幕上框选区域"
 

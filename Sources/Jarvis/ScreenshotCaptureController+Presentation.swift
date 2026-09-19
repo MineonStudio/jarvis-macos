@@ -37,6 +37,23 @@ extension ScreenshotCaptureController {
         // 屏幕被别的采集程序占着、显示器正在重配时 SCK 会长时间不返回，应用就停在
         // 「请在屏幕上框选区域」，没有任何窗口能接 Esc，再按热键还会被"请先完成
         // 当前截图操作"拦下，只能重启。
+        // Freeze on this run-loop turn so F1 doesn't wait on ScreenCaptureKit
+        // or a full-screen PNG encode. Quartz can fail while a display is
+        // reconfiguring; SCK remains the fallback for that case.
+        do {
+            let frozenScreens = try screenshotService.captureFullScreensImmediately(
+                screenFrames: NSScreen.screens.map(\.frame)
+            )
+            presentSelection(
+                frozenScreens: frozenScreens,
+                sessionID: sessionID,
+                completion: completion
+            )
+            return
+        } catch {
+            // Fall through to ScreenCaptureKit.
+        }
+
         captureTask?.cancel()
         captureTask = Task { [weak self] in
             guard let self else { return }
@@ -126,6 +143,15 @@ extension ScreenshotCaptureController {
             completion(.failure(ScreenshotError.captureFailed("无法创建截图选区窗口")))
             return
         }
+
+        // Encode PNG off the overlay's critical path so the first crop does
+        // not stall after the user finishes the selection.
+        let capturesToEncode = frozenScreens
+        Task.detached(priority: .utility) {
+            for capture in capturesToEncode {
+                _ = capture.data
+            }
+        }
     }
 
     private func makeSelectionWindow(
@@ -135,7 +161,7 @@ extension ScreenshotCaptureController {
         sessionID: UUID,
         completion: @escaping (Result<ScreenshotEditingSession, Error>) -> Void
     ) -> SelectionOverlayWindow? {
-        guard !frozenScreen.data.isEmpty else { return nil }
+        guard frozenScreen.hasImage else { return nil }
 
         let window = SelectionOverlayWindow(
             contentRect: screen.frame,
@@ -145,8 +171,8 @@ extension ScreenshotCaptureController {
             screen: screen
         )
         window.level = .screenSaver
-        window.backgroundColor = .clear
-        window.isOpaque = false
+        window.backgroundColor = .black
+        window.isOpaque = true
         window.hasShadow = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hidesOnDeactivate = false
@@ -158,6 +184,7 @@ extension ScreenshotCaptureController {
 
         let selectionView = SelectionOverlayView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
+            frozenCGImage: frozenScreen.cgImage,
             windowCandidates: candidates
         )
         selectionView.onFinish = { [weak self] localRect in

@@ -25,6 +25,7 @@ final class SelectionOverlayView: NSView {
     var onCancel: (() -> Void)?
     var onPin: ((CGRect) -> Void)?
 
+    private let frozenCGImage: CGImage?
     private let windowCandidates: [WindowSelectionCandidate]
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
@@ -37,10 +38,13 @@ final class SelectionOverlayView: NSView {
 
     init(
         frame frameRect: NSRect,
+        frozenCGImage: CGImage?,
         windowCandidates: [WindowSelectionCandidate]
     ) {
+        self.frozenCGImage = frozenCGImage
         self.windowCandidates = windowCandidates
         super.init(frame: frameRect)
+        wantsLayer = true
         updateTrackingArea()
     }
 
@@ -200,23 +204,40 @@ final class SelectionOverlayView: NSView {
         return candidate
     }
 
+    override var isOpaque: Bool {
+        frozenCGImage != nil
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        // Keep the live desktop underneath the panel. The frozen capture is
-        // used for the final crop, but drawing it back into a full-screen view
-        // introduces a Retina resampling step that looks like edge zooming.
+        // Draw the freeze-frame at the view's point size with nearest-neighbor
+        // sampling. The previous path used NSImage.cgImage(forProposedRect:)
+        // which rasterized at 1x and looked like edge zooming on Retina.
+        context.interpolationQuality = .none
+        context.setShouldAntialias(false)
+        if let frozenCGImage {
+            context.draw(frozenCGImage, in: bounds)
+        } else {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(dirtyRect)
+        }
+
+        // Dim the frozen pixels with an even-odd path so the selection hole
+        // still shows the freeze-frame, not the live desktop underneath.
+        let dimPath = CGMutablePath()
+        dimPath.addRect(bounds)
+        if let selectionRect {
+            dimPath.addRect(selectionRect)
+        }
+        context.saveGState()
+        context.addPath(dimPath)
         context.setFillColor(NSColor.black.withAlphaComponent(0.46).cgColor)
-        context.fill(bounds)
+        context.fillPath(using: .evenOdd)
+        context.restoreGState()
 
         if let selectionRect {
-            context.saveGState()
-            context.setBlendMode(.clear)
-            context.fill(selectionRect)
-            context.restoreGState()
-
-            context.setBlendMode(.normal)
             context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.95).cgColor)
             context.setLineWidth(2)
             context.stroke(selectionRect)

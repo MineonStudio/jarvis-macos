@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 @testable import Jarvis
 import XCTest
 
@@ -83,5 +84,22 @@ final class ScreenshotSelectionBehaviorTests: XCTestCase {
             )
         )
         return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+    }
+}
+
+extension ScreenshotSelectionBehaviorTests {
+    func testScreenshotCaptureFromCGImageHasPixelsBeforePNGEncode() throws {
+        let png = try makePNGData(size: CGSize(width: 8, height: 6))
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let capture = ScreenshotCapture(
+            cgImage: image,
+            screenFrame: CGRect(x: 0, y: 0, width: 8, height: 6)
+        )
+
+        XCTAssertTrue(capture.hasImage)
+        XCTAssertNotNil(capture.cgImage)
+        XCTAssertFalse(capture.data.isEmpty)
+        XCTAssertNotNil(NSImage(data: capture.data))
     }
 }

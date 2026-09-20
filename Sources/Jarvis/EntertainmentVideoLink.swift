@@ -25,6 +25,9 @@ enum EntertainmentVideoLink {
         if isTwitchHost(host), isTwitchPath(url) {
             return .twitch
         }
+        if isBilibiliHost(host), isBilibiliPath(url) {
+            return .bilibili
+        }
         return nil
     }
 
@@ -144,5 +147,35 @@ enum EntertainmentVideoLink {
             "drops", "prime", "p", "search", "downloads", "jobs", "store"
         ]
         return !reserved.contains(first)
+    }
+
+    private static func isBilibiliHost(_ host: String) -> Bool {
+        host == "bilibili.com" || host.hasSuffix(".bilibili.com")
+            || host == "b23.tv" || host.hasSuffix(".b23.tv")
+    }
+
+    private static func isBilibiliPath(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        let path = url.path.lowercased()
+        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if host == "b23.tv" || host.hasSuffix(".b23.tv") {
+            return !trimmed.isEmpty
+        }
+        if path.contains("/video/")
+            || path.contains("/bangumi/play/")
+            || path.contains("/cheese/play/")
+        {
+            return true
+        }
+        if host == "live.bilibili.com" || host.hasSuffix(".live.bilibili.com") {
+            guard let first = trimmed.split(separator: "/").first.map(String.init),
+                  !first.isEmpty
+            else {
+                return false
+            }
+            let reserved = ["p", "h5", "lottery", "activity", "blanc", "pages"]
+            return !reserved.contains(first)
+        }
+        return false
     }
 }

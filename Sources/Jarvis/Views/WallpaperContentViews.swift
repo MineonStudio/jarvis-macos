@@ -402,7 +402,7 @@ struct WallpaperView: View {
                     previewController.show(
                         imageURL: model.localURL(for: item) ?? item.originalURL,
                         itemID: item.id,
-                        onFailure: { app.showToast("原图加载失败") }
+                        onFailure: { app.showToast(JarvisFeedbackCopy.originalImageLoadFailed) }
                     )
                 },
                 onSet: setWallpaper,
@@ -476,13 +476,19 @@ struct WallpaperView: View {
     }
 
     private func toggleFavorite(_ item: WallpaperItem) {
-        guard let updatedItem = model.toggleFavorite(item) else { return }
-        app.showToast(updatedItem.isFavorite ? "收藏成功" : "已取消收藏")
+        guard let updatedItem = model.toggleFavorite(item) else {
+            app.showToast(JarvisFeedbackCopy.favoriteFailed)
+            return
+        }
+        app.showToast(updatedItem.isFavorite ? JarvisFeedbackCopy.favorited : JarvisFeedbackCopy.unfavorited)
     }
 
     private func deleteWallpaper(_ item: WallpaperItem) {
-        guard model.delete(item) else { return }
-        app.showToast("删除成功")
+        guard model.delete(item) else {
+            app.showToast(JarvisFeedbackCopy.deleteFailed)
+            return
+        }
+        app.showToast(JarvisFeedbackCopy.deleted)
     }
 }
 

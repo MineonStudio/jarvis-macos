@@ -379,6 +379,8 @@ final class PinnedScreenshotContainerView: NSView {
     var canEdit: (() -> Bool)?
     /// 右键菜单里的「销毁」（由控制器接到销毁流程上）。
     var onDestroy: (() -> Void)?
+    /// 右键「复制图片」写入剪贴板之后。
+    var onCopied: (() -> Void)?
     var isSelected = false {
         didSet {
             needsDisplay = true
@@ -464,6 +466,7 @@ final class PinnedScreenshotContainerView: NSView {
             pasteboard.clearContents()
             guard pasteboard.setData(data, forType: .png) else { return }
             JarvisLog.notice(category: .window, event: "screenshot.pinned.copy", result: "success")
+            onCopied?()
         }
     }
 

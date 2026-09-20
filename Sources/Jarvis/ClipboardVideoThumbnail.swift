@@ -3,8 +3,20 @@ import AVFoundation
 import Foundation
 
 enum ClipboardVideoThumbnailGenerator {
+    static func makeCGImage(
+        for url: URL,
+        maxPixelSize: Int = 640
+    ) async -> CGImage? {
+        await withCheckedContinuation { continuation in
+            makeCGImageAsync(for: url, maxPixelSize: maxPixelSize) { image in
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
     static func makeCGImageAsync(
         for url: URL,
+        maxPixelSize: Int = 640,
         completion: @escaping @MainActor @Sendable (CGImage?) -> Void
     ) {
         DispatchQueue.global(qos: .utility).async {
@@ -16,7 +28,8 @@ enum ClipboardVideoThumbnailGenerator {
             let asset = AVURLAsset(url: url)
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 640, height: 640)
+            let pixelSize = CGFloat(max(160, maxPixelSize))
+            generator.maximumSize = CGSize(width: pixelSize, height: pixelSize)
 
             // Prefer a frame shortly after the start so a fade-in does not
             // leave every card black, then fall back to the first frame for

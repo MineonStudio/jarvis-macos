@@ -638,7 +638,7 @@ final class WallpaperTests: XCTestCase {
     }
 
     /// 写盘失败必须让视图模型知道：`toggleFavorite` 只靠 catch 决定要不要提示
-    /// 「收藏状态保存失败」，静默报告成功会让星星闪一下又弹回去。
+    /// 「收藏失败」，静默报告成功会让星星闪一下又弹回去。
     func testWallpaperStoreReportsFailedSaves() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-wallpaper-readonly-\(UUID().uuidString)", isDirectory: true)

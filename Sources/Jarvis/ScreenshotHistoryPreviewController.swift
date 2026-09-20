@@ -5,12 +5,13 @@ import SwiftUI
 final class ScreenshotHistoryPreviewController {
     private let previewController = FullscreenMediaPreviewController()
 
-    func show(data: Data) {
+    @discardableResult
+    func show(data: Data) -> Bool {
         guard let image = NSImage(data: data),
               image.size.width > 0,
               image.size.height > 0
         else {
-            return
+            return false
         }
 
         let maximumImageSize = PreviewWindowSupport.maximumContentSize(
@@ -31,6 +32,7 @@ final class ScreenshotHistoryPreviewController {
                 .resizable()
                 .scaledToFit()
         }
+        return true
     }
 
     func dismiss() {

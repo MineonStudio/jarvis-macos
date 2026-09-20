@@ -32,15 +32,8 @@ struct ContentView: View {
                 .id(loadedSection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .overlay(alignment: .bottom) {
-            JarvisToastHost(message: app.toastMessage)
-                .padding(.bottom, 26)
-        }
+        .jarvisToastOverlay(app.toastMessage)
         .tint(.accentColor)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: app.toastMessage
-        )
         .onChange(of: app.selectedSection) { _, newSection in
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar immediately;
@@ -158,20 +151,40 @@ struct ContentView: View {
 }
 
 struct JarvisToastHost: View {
+    static let capsuleIdentity = "jarvis.toast"
+
+    static func shouldAnimatePresence(from previous: String?, to next: String?) -> Bool {
+        (previous == nil) != (next == nil)
+    }
+
     let message: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if let message {
+                // Stable identity so a new action replaces the text in place
+                // instead of playing the previous toast back out.
                 JarvisToast(message: message)
+                    .id(Self.capsuleIdentity)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(
             JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: message
+            value: message != nil
         )
+    }
+}
+
+extension View {
+    func jarvisToastOverlay(_ message: String?) -> some View {
+        overlay(alignment: .bottom) {
+            JarvisToastHost(message: message)
+                .padding(.bottom, 26)
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+        }
     }
 }
 

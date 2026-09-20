@@ -6,16 +6,16 @@ extension AppModel {
     // MARK: - Shared UI state
 
     func showToast(_ message: String) {
-        statusMessage = message
         toastDismissTask?.cancel()
         toastMessage = message
         toastDismissTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 2_400_000_000)
+                try await Task.sleep(nanoseconds: JarvisFeedbackCopy.displayDurationNanoseconds)
             } catch {
                 return
             }
             guard !Task.isCancelled else { return }
+            guard self?.toastMessage == message else { return }
             self?.toastMessage = nil
             self?.toastDismissTask = nil
         }
@@ -41,13 +41,13 @@ extension AppModel {
             }
         } catch {
             launchAtLoginEnabled = previousValue
-            showToast(enabled ? "开机自启添加失败：\(error.localizedDescription)" : "开机自启关闭失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.launchAtLoginFailed)
             return
         }
 
         launchAtLoginEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: JarvisLaunchAtLoginPreference.key)
-        showToast(enabled ? "已开启开机自启" : "已关闭开机自启")
+        showToast(enabled ? JarvisFeedbackCopy.launchAtLoginOn : JarvisFeedbackCopy.launchAtLoginOff)
     }
 
     // MARK: - Shared AI API
@@ -71,7 +71,7 @@ extension AppModel {
         applyProviderConfiguration(provider)
     }
 
-    private func handleAIAPISettingsLoadFailure(_ message: String) {
+    private func handleAIAPISettingsLoadFailure(_: String) {
         aiAPIKeyConfigured = false
         aiAPIKeyMask = ""
         aiSettingsLocked = false
@@ -79,7 +79,7 @@ extension AppModel {
         providerEndpoint = AIAPIConfiguration.defaultEndpoint
         providerModel = AIAPIConfiguration.defaultModel
         clearAIModels()
-        showToast("读取 API Key 失败：\(message)")
+        showToast(JarvisFeedbackCopy.apiKeyReadFailed)
     }
 
     @discardableResult
@@ -98,7 +98,7 @@ extension AppModel {
             let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
             let effectiveModel = trimmedModel
             guard !effectiveModel.isEmpty else {
-                showToast("请先刷新并选择模型")
+                showToast(JarvisFeedbackCopy.selectModelFirst)
                 return false
             }
 
@@ -106,7 +106,7 @@ extension AppModel {
             let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
             let resolvedAPIKey = trimmedAPIKey.isEmpty ? storedAPIKey : trimmedAPIKey
             guard !resolvedAPIKey.isEmpty else {
-                showToast("请输入 API Key")
+                showToast(JarvisFeedbackCopy.apiKeyRequired)
                 return false
             }
 
@@ -116,7 +116,7 @@ extension AppModel {
             )?
                 .absoluteString
             else {
-                showToast("接口地址需要是 HTTPS 地址")
+                showToast(JarvisFeedbackCopy.httpsRequired)
                 return false
             }
             let configuration = AIAPIConfiguration(
@@ -130,11 +130,11 @@ extension AppModel {
                 writeKeychain: !trimmedAPIKey.isEmpty
             )
             if announce {
-                showToast("API 配置已保存")
+                showToast(JarvisFeedbackCopy.saved)
             }
             return true
         } catch {
-            showToast("保存 API 配置失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.saveFailed)
             return false
         }
     }
@@ -152,10 +152,10 @@ extension AppModel {
             aiAPIKeyConfigured = false
             aiAPIKeyMask = ""
             aiSettingsLocked = false
-            showToast("API 配置已删除")
+            showToast(JarvisFeedbackCopy.deleted)
             return true
         } catch {
-            showToast("删除 API 配置失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.deleteFailed)
             return false
         }
     }
@@ -212,7 +212,7 @@ extension AppModel {
         aiModelsLoading = false
         availableAIModels = models
         aiModelsRefreshError = nil
-        showToast("已刷新 \(models.count) 个模型")
+        showToast(JarvisFeedbackCopy.refreshedModels(models.count))
     }
 
     private func failAIModelsRefresh(_ message: String) {
@@ -266,16 +266,16 @@ extension AppModel {
                 providerID: provider.rawValue
             )
             guard configuration.isConfigured else {
-                showToast("请先填写接口地址、模型和 API Key")
+                showToast(JarvisFeedbackCopy.fillAPIFields)
                 return
             }
 
             aiConnectionTesting = true
             defer { aiConnectionTesting = false }
             try await aiAPIConnectionTester.testConnection(configuration: configuration)
-            showToast("API 连接成功")
+            showToast(JarvisFeedbackCopy.connectionSucceeded)
         } catch {
-            showToast("API 连接失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.connectionFailed)
         }
     }
 
@@ -364,20 +364,18 @@ extension AppModel {
     func updateScreenshotShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
         let previous = screenshotShortcut
         guard let manager = screenshotShortcutManager else {
-            statusMessage = "快捷键服务尚未就绪"
+            showToast(JarvisFeedbackCopy.shortcutServiceUnavailable)
             return false
         }
         let validation = manager.validate(shortcut)
         guard validation == .available else {
             screenshotShortcutConflictMessage = validation.message
-            statusMessage = validation.message
             return false
         }
         guard manager.update(shortcut) else {
             _ = manager.update(previous)
             screenshotShortcut = previous
             screenshotShortcutConflictMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
-            statusMessage = screenshotShortcutConflictMessage
             return false
         }
 
@@ -386,7 +384,7 @@ extension AppModel {
         if let data = try? JSONEncoder().encode(shortcut) {
             UserDefaults.standard.set(data, forKey: screenshotShortcutKey)
         }
-        statusMessage = "截图快捷键已更新为 \(shortcut.displayString)"
+        showToast(JarvisFeedbackCopy.shortcutUpdated)
         return true
     }
 
@@ -405,20 +403,18 @@ extension AppModel {
     func updateClipboardShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
         let previous = clipboardShortcut
         guard let manager = clipboardShortcutManager else {
-            statusMessage = "快捷键服务尚未就绪"
+            showToast(JarvisFeedbackCopy.shortcutServiceUnavailable)
             return false
         }
         let validation = manager.validate(shortcut)
         guard validation == .available else {
             clipboardShortcutConflictMessage = validation.message
-            statusMessage = validation.message
             return false
         }
         guard manager.update(shortcut) else {
             _ = manager.update(previous)
             clipboardShortcut = previous
             clipboardShortcutConflictMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
-            statusMessage = clipboardShortcutConflictMessage
             return false
         }
 
@@ -427,7 +423,7 @@ extension AppModel {
         if let data = try? JSONEncoder().encode(shortcut) {
             UserDefaults.standard.set(data, forKey: clipboardShortcutKey)
         }
-        statusMessage = "剪贴板快捷键已更新为 \(shortcut.displayString)"
+        showToast(JarvisFeedbackCopy.shortcutUpdated)
         return true
     }
 
@@ -446,20 +442,18 @@ extension AppModel {
     func updateMeetingShortcut(_ shortcut: ScreenshotShortcut) -> Bool {
         let previous = meetingShortcut
         guard let manager = meetingShortcutManager else {
-            statusMessage = "快捷键服务尚未就绪"
+            showToast(JarvisFeedbackCopy.shortcutServiceUnavailable)
             return false
         }
         let validation = manager.validate(shortcut)
         guard validation == .available else {
             meetingShortcutConflictMessage = validation.message
-            statusMessage = validation.message
             return false
         }
         guard manager.update(shortcut) else {
             _ = manager.update(previous)
             meetingShortcut = previous
             meetingShortcutConflictMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
-            statusMessage = meetingShortcutConflictMessage
             return false
         }
 
@@ -468,7 +462,7 @@ extension AppModel {
         if let data = try? JSONEncoder().encode(shortcut) {
             UserDefaults.standard.set(data, forKey: meetingShortcutKey)
         }
-        statusMessage = "录音快捷键已更新为 \(shortcut.displayString)"
+        showToast(JarvisFeedbackCopy.shortcutUpdated)
         return true
     }
 

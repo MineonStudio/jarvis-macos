@@ -123,7 +123,7 @@ extension JarvisSegmentedMetricsTests {
         }
 
         let first = try render(selected: .x)
-        let last = try render(selected: .twitch)
+        let last = try render(selected: .bilibili)
         let scale = CGFloat(first.pixelsWide) / canvas.width
 
         // 选中色是**用户的**系统强调色（`selectionPillTint` = accentColor），不能按

@@ -49,6 +49,26 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
             EntertainmentVideoLink.match("https://clips.twitch.tv/FunnyClip")?.platform,
             .twitch
         )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://www.bilibili.com/video/BV1xx411c7mD")?.platform,
+            .bilibili
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://m.bilibili.com/video/av170001")?.platform,
+            .bilibili
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://www.bilibili.com/bangumi/play/ep100000")?.platform,
+            .bilibili
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://b23.tv/BV1xx411c7mD")?.platform,
+            .bilibili
+        )
+        XCTAssertEqual(
+            EntertainmentVideoLink.match("https://live.bilibili.com/6")?.platform,
+            .bilibili
+        )
     }
 
     func testLinkMatcherExtractsURLFromCopiedTextAndRejectsUnrelatedSites() {
@@ -64,10 +84,12 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         XCTAssertNil(EntertainmentVideoLink.match("not a url"))
         XCTAssertNil(EntertainmentVideoLink.match("https://www.twitch.tv/"))
         XCTAssertNil(EntertainmentVideoLink.match("https://www.twitch.tv/directory/game/Art"))
-        XCTAssertNil(EntertainmentVideoLink.match("https://www.bilibili.com/video/BV1xx411c7mD"))
+        XCTAssertNil(EntertainmentVideoLink.match("https://www.bilibili.com/"))
+        XCTAssertNil(EntertainmentVideoLink.match("https://space.bilibili.com/2"))
+        XCTAssertNil(EntertainmentVideoLink.match("https://search.bilibili.com/all?keyword=test"))
         XCTAssertEqual(
             EntertainmentVideoDownloadError.invalidLink.errorDescription,
-            "请粘贴 YouTube、X、TikTok 或 Twitch 的视频链接"
+            "请粘贴 YouTube、X、TikTok、Twitch 或哔哩哔哩的视频链接"
         )
     }
 
@@ -286,6 +308,18 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         let tiktok = try XCTUnwrap(URL(string: "https://www.tiktok.com/@u/video/1"))
         XCTAssertTrue(NetscapeCookieFile.isRelevant(cookie, to: youtube))
         XCTAssertFalse(NetscapeCookieFile.isRelevant(cookie, to: tiktok))
+
+        let biliCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: ".bilibili.com",
+            .path: "/",
+            .name: "SESSDATA",
+            .value: "token"
+        ]))
+        let biliVideo = try XCTUnwrap(URL(string: "https://www.bilibili.com/video/BV1xx411c7mD"))
+        let biliShort = try XCTUnwrap(URL(string: "https://b23.tv/abcdef"))
+        XCTAssertTrue(NetscapeCookieFile.isRelevant(biliCookie, to: biliVideo))
+        XCTAssertTrue(NetscapeCookieFile.isRelevant(biliCookie, to: biliShort))
+        XCTAssertFalse(NetscapeCookieFile.isRelevant(biliCookie, to: youtube))
     }
 
     func testYTDLPErrorPrefersERRORLineAndMapsYouTubeBotCheck() {

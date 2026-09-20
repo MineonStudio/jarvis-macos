@@ -163,12 +163,12 @@ struct ResumeInspector: View {
                 )
                 guard !Task.isCancelled, draft.id == documentID else { return }
                 let count = append(content)
-                app.showToast("已生成 \(count) 条\(section.title)")
+                app.showToast(JarvisFeedbackCopy.generatedResumeItems(count, section: section.title))
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled, draft.id == documentID else { return }
-                app.showToast(error.localizedDescription)
+                app.showToast(JarvisFeedbackCopy.processingFailed)
             }
         }
     }

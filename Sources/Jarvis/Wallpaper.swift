@@ -1838,7 +1838,7 @@ final class WallpaperViewModel: ObservableObject {
             refreshLibrary()
             return updated
         } catch {
-            errorMessage = "收藏状态保存失败：\(error.localizedDescription)"
+            errorMessage = JarvisFeedbackCopy.favoriteFailed
             return nil
         }
     }
@@ -1850,7 +1850,7 @@ final class WallpaperViewModel: ObservableObject {
             refreshLibrary()
             return true
         } catch {
-            errorMessage = "删除壁纸失败：\(error.localizedDescription)"
+            errorMessage = JarvisFeedbackCopy.deleteFailed
             return false
         }
     }
@@ -1871,7 +1871,7 @@ final class WallpaperViewModel: ObservableObject {
         _ item: WallpaperItem,
         target: WallpaperSettingTarget
     ) async -> String {
-        guard !downloadingIDs.contains(item.id) else { return "正在处理这张壁纸…" }
+        guard !downloadingIDs.contains(item.id) else { return JarvisFeedbackCopy.wallpaperBusy }
 
         downloadingIDs.insert(item.id)
         defer { downloadingIDs.remove(item.id) }
@@ -1887,14 +1887,14 @@ final class WallpaperViewModel: ObservableObject {
             }
 
             guard let localURL = store.localURL(for: savedItem) else {
-                return "壁纸已下载，但本地文件不可用"
+                return JarvisFeedbackCopy.wallpaperFileUnavailable
             }
             try wallpaperSystemService.apply(imageURL: localURL, target: target)
             appliedWallpaperID = savedItem.id
             refreshLibrary()
-            return "设置成功"
+            return JarvisFeedbackCopy.applied
         } catch {
-            return error.localizedDescription
+            return JarvisFeedbackCopy.applyFailed
         }
     }
 

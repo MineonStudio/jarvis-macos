@@ -18,10 +18,12 @@ final class ScreenshotPinnedMenuTests: XCTestCase {
         NSColor.white.setFill()
         NSRect(origin: .zero, size: canvas).fill()
         image.unlockFocus()
+        let png = NSBitmapImageRep(data: image.tiffRepresentation ?? Data())?
+            .representation(using: .png, properties: [:]) ?? Data()
         return ScreenshotEditorModel(
             image: image,
-            data: Data(),
-            outputData: Data(),
+            data: png,
+            outputData: png,
             canvasSize: canvas,
             outputRect: CGRect(origin: .zero, size: canvas)
         )
@@ -126,6 +128,18 @@ final class ScreenshotPinnedMenuTests: XCTestCase {
 
         XCTAssertEqual(editCount, 1)
         XCTAssertEqual(destroyCount, 1)
+    }
+
+    func testCopyingAPinReportsSuccess() async throws {
+        let view = makeContainer()
+        let copied = expectation(description: "pin copied")
+        view.onCopied = { copied.fulfill() }
+
+        let menu = try menu(of: view)
+        let copyItem = try XCTUnwrap(actionableItems(menu).first { $0.title == "复制图片" })
+        _ = try view.perform(XCTUnwrap(copyItem.action), with: copyItem)
+
+        await fulfillment(of: [copied], timeout: 2)
     }
 
     /// 标题报的是点下去会做什么，所以它跟着当前状态翻。

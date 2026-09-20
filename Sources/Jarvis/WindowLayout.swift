@@ -347,17 +347,17 @@ final class WindowLayoutController {
 
     func apply(_ layout: WindowLayout) {
         guard isAccessibilityTrusted else {
-            statusHandler("请先在系统设置中允许贾维斯控制电脑")
+            statusHandler(JarvisFeedbackCopy.accessibilityRequired)
             return
         }
 
         guard let target = focusedWindowOfFrontmostApplication() else {
-            statusHandler("没有找到可调整的前台窗口")
+            statusHandler(JarvisFeedbackCopy.noAdjustableWindow)
             return
         }
 
         guard let geometry = windowGeometry(for: target.window) else {
-            statusHandler("无法读取当前窗口的位置和大小")
+            statusHandler(JarvisFeedbackCopy.cannotReadWindow)
             return
         }
 
@@ -366,11 +366,11 @@ final class WindowLayoutController {
             in: WindowLayoutScreenArea.visibleFrame(for: geometry.screen)
         )
         guard setFrame(targetFrame, on: target.window, using: geometry.screen) else {
-            statusHandler("当前窗口不允许调整大小或位置")
+            statusHandler(JarvisFeedbackCopy.windowNotResizable)
             return
         }
 
-        statusHandler("已将 \(target.application.localizedName ?? "当前窗口") 调整为\(layout.shortTitle)")
+        statusHandler(JarvisFeedbackCopy.windowAdjusted(layout.shortTitle))
     }
 
     private struct FocusedWindow {

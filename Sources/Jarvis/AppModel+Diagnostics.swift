@@ -22,14 +22,14 @@ extension AppModel {
                 autoCleanupEnabled: clipboardCacheAutoCleanupEnabled,
                 outputURL: url
             )
-            showToast("诊断日志已导出")
+            showToast(JarvisFeedbackCopy.exported)
         } catch {
             JarvisLog.error(
                 category: .storage,
                 event: "diagnostics.export.failed",
                 error: error
             )
-            showToast("诊断日志导出失败")
+            showToast(JarvisFeedbackCopy.exportFailed)
         }
     }
 }

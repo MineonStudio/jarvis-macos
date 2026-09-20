@@ -5,6 +5,7 @@ enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable, Codabl
     case youtube
     case tiktok
     case twitch
+    case bilibili
 
     var id: String {
         rawValue
@@ -16,6 +17,7 @@ enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable, Codabl
         case .youtube: "YouTube"
         case .tiktok: "TikTok"
         case .twitch: "Twitch"
+        case .bilibili: "哔哩哔哩"
         }
     }
 
@@ -33,6 +35,7 @@ enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable, Codabl
         case .youtube: "play.rectangle.fill"
         case .tiktok: "music.note"
         case .twitch: "video.fill"
+        case .bilibili: "tv.fill"
         }
     }
 
@@ -46,6 +49,8 @@ enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable, Codabl
             URL(string: "https://www.tiktok.com/")!
         case .twitch:
             URL(string: "https://www.twitch.tv/")!
+        case .bilibili:
+            URL(string: "https://www.bilibili.com/")!
         }
     }
 
@@ -59,6 +64,8 @@ enum EntertainmentPlatform: String, CaseIterable, Hashable, Identifiable, Codabl
             ["tiktok.com", "tiktokv.com"]
         case .twitch:
             ["twitch.tv"]
+        case .bilibili:
+            ["bilibili.com", "b23.tv"]
         }
     }
 

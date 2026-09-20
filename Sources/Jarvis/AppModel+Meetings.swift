@@ -53,7 +53,7 @@ extension AppModel {
         guard meetingCurrentRecordingID != nil || requireAllPermissions() else { return }
         guard meetingModelsReady else {
             meetingProcessingState = .idle
-            showToast("首次使用会议记录需要下载识别模型，请到设置中下载")
+            showToast(JarvisFeedbackCopy.downloadModelsFirst)
             return
         }
         if meetingCurrentRecordingID != nil {
@@ -70,13 +70,14 @@ extension AppModel {
 
         guard meetingModelsReady else {
             meetingProcessingState = .idle
-            showToast("首次使用会议记录需要下载识别模型，请到设置中下载")
+            showToast(JarvisFeedbackCopy.downloadModelsFirst)
             return
         }
 
         guard await microphoneAccessForMeeting() else {
             meetingProcessingState = .failed("请在系统设置中允许贾维斯访问麦克风")
             refreshPermissionStatus()
+            showToast(JarvisFeedbackCopy.microphoneRequired)
             return
         }
 
@@ -87,7 +88,7 @@ extension AppModel {
         let recordingsUsage = meetingRepository.recordingsUsageBytes()
         if recordingsUsage >= MeetingRepository.recordingsWarningBytes {
             let gigabytes = Double(recordingsUsage) / (1024 * 1024 * 1024)
-            showToast(String(format: "会议录音已占用约 %.1f GB，可删除旧会议释放空间", gigabytes))
+            showToast(JarvisFeedbackCopy.recordingsUsageWarning(gigabytes))
         }
 
         do {
@@ -125,14 +126,15 @@ extension AppModel {
                     self.updateMeetingMenuBarState()
                 }
             }
-            if let systemAudioErrorMessage = sources.systemAudioErrorMessage {
-                showToast("已开始录音；系统音频未采集：\(systemAudioErrorMessage)")
+            if sources.systemAudioErrorMessage != nil {
+                showToast(JarvisFeedbackCopy.recordingStartedWithoutSystemAudio)
             } else {
-                showToast("已开始录音")
+                showToast(JarvisFeedbackCopy.recordingStarted)
             }
         } catch {
             await meetingRecorder.cancel()
             meetingProcessingState = .failed("开始录音失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.recordingStartFailed)
         }
     }
 
@@ -163,7 +165,7 @@ extension AppModel {
 
     func handleUnexpectedMeetingStop() {
         guard meetingCurrentRecordingID != nil else { return }
-        showToast("录音因输入设备中断而结束，将处理已写入的音频")
+        showToast(JarvisFeedbackCopy.recordingInterrupted)
         stopMeetingRecording()
     }
 
@@ -234,19 +236,19 @@ extension AppModel {
         ensureMeetingDetailLoaded(record.id)
         guard let current = meetingRecords.first(where: { $0.id == record.id }) else { return }
         guard !current.transcript.isEmpty || current.summary != nil else {
-            showToast("还没有可复制的会议内容")
+            showToast(JarvisFeedbackCopy.nothingToCopy)
             return
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(current.markdownDocument(), forType: .string)
-        showToast("会议纪要已复制")
+        showToast(JarvisFeedbackCopy.copied)
     }
 
     func exportMeetingMarkdown(_ record: MeetingRecord) {
         ensureMeetingDetailLoaded(record.id)
         guard let current = meetingRecords.first(where: { $0.id == record.id }) else { return }
         guard !current.transcript.isEmpty || current.summary != nil else {
-            showToast("还没有可导出的会议内容")
+            showToast(JarvisFeedbackCopy.nothingToExport)
             return
         }
         let savePanel = NSSavePanel()
@@ -257,16 +259,16 @@ extension AppModel {
             guard response == .OK, let url = savePanel.url else { return }
             do {
                 try current.markdownDocument().write(to: url, atomically: true, encoding: .utf8)
-                self?.showToast("会议纪要已导出")
+                self?.showToast(JarvisFeedbackCopy.exported)
             } catch {
-                self?.showToast("导出失败：\(error.localizedDescription)")
+                self?.showToast(JarvisFeedbackCopy.exportFailed)
             }
         }
     }
 
     func deleteMeeting(_ record: MeetingRecord) {
         guard meetingCurrentRecordingID != record.id else {
-            showToast("请先结束当前录音，再删除这条会议")
+            showToast(JarvisFeedbackCopy.finishRecordingFirst)
             return
         }
         meetingProcessingQueue.removeAll { $0.recordID == record.id }
@@ -284,7 +286,7 @@ extension AppModel {
                 meetingProcessingState = .idle
             }
         } catch {
-            showToast("删除会议失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.deleteFailed)
         }
     }
 
@@ -378,7 +380,7 @@ extension AppModel {
                     meetingRecords[currentIndex] = updatedRecord
                     persistMeeting(updatedRecord)
                     meetingProcessingState = .failed(updatedRecord.errorMessage ?? "")
-                    showToast("会议处理失败：\(updatedRecord.errorMessage ?? "")")
+                    showToast(JarvisFeedbackCopy.processingFailed)
                     return
                 }
 
@@ -389,7 +391,7 @@ extension AppModel {
                 let configuration = AIAPIConfiguration.load()
                 guard configuration.isConfigured else {
                     meetingProcessingState = .awaitingConfiguration
-                    showToast("逐字稿已保存，请先配置 AI 服务再生成总结")
+                    showToast(JarvisFeedbackCopy.configureAIFirst)
                     return
                 }
                 try await performSummarize(updatedRecord, configuration: configuration)
@@ -412,7 +414,7 @@ extension AppModel {
         }
         guard configuration.isConfigured else {
             meetingProcessingState = .awaitingConfiguration
-            showToast("请先在设置中配置 AI 服务")
+            showToast(JarvisFeedbackCopy.configureAIFirst)
             startNextMeetingProcessingIfNeeded()
             return
         }
@@ -500,7 +502,7 @@ extension AppModel {
             ]
         )
         meetingProcessingState = .ready
-        showToast("会议总结已生成")
+        showToast(JarvisFeedbackCopy.summaryReady)
     }
 
     private func completeActiveMeetingProcessing(for recordID: UUID) {
@@ -579,8 +581,8 @@ extension AppModel {
         }
         meetingRecords[index] = record
         persistMeeting(record)
-        if let systemError = result.systemAudioErrorMessage, result.systemAudioStarted {
-            showToast(systemError)
+        if result.systemAudioErrorMessage != nil, result.systemAudioStarted {
+            showToast(JarvisFeedbackCopy.recordingStartedWithoutSystemAudio)
         }
         if processAfterStop {
             enqueueMeetingProcessing(recordID: record.id, kind: .transcribeAndSummarize)
@@ -613,8 +615,8 @@ extension AppModel {
         meetingProcessingState = .failed(message)
         showToast(
             hasTranscript
-                ? "会议纪要生成失败：\(message)"
-                : "会议处理失败：\(message)"
+                ? JarvisFeedbackCopy.summaryFailed
+                : JarvisFeedbackCopy.processingFailed
         )
     }
 
@@ -622,7 +624,7 @@ extension AppModel {
         do {
             try meetingRepository.save(record)
         } catch {
-            showToast("保存会议记录失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.saveFailed)
         }
     }
 

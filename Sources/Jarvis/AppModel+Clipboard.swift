@@ -126,7 +126,7 @@ extension AppModel {
             self.clipboardHistoryRevision += 1
             let revision = self.clipboardHistoryRevision
             guard await clipboardHistoryWriter.save(self.clipboardItems, revision: revision) else {
-                self.showToast("剪贴板历史保存失败")
+                self.showToast(JarvisFeedbackCopy.saveFailed)
                 return
             }
         }
@@ -140,7 +140,7 @@ extension AppModel {
                 result: "contentUnavailable",
                 fields: ["kind": item.kind.rawValue]
             )
-            showToast("内容已不可用，可能已被移动或删除")
+            showToast(JarvisFeedbackCopy.contentUnavailable)
             return
         }
         JarvisLog.info(
@@ -150,7 +150,7 @@ extension AppModel {
             fields: ["kind": item.kind.rawValue]
         )
         clipboardService.markCurrentPasteboardAsHandled()
-        showToast(item.isSensitive ? "已复制敏感内容" : "已复制 \(item.preview)")
+        showToast(JarvisFeedbackCopy.copied)
     }
 
     func showClipboardMediaPreview(_ item: ClipboardItem) {
@@ -165,7 +165,7 @@ extension AppModel {
                 copyClipboard(item)
                 return
             }
-            showToast(item.kind == .text ? "文本已不可用" : "媒体文件已不可用")
+            showToast(item.kind == .text ? JarvisFeedbackCopy.textUnavailable : JarvisFeedbackCopy.mediaUnavailable)
             return
         }
         clipboardMediaPreviewController.show(item: item)
@@ -188,12 +188,12 @@ extension AppModel {
             ]
         )
         guard persistClipboardHistory() else {
-            showToast("剪贴板收藏状态保存失败")
+            showToast(JarvisFeedbackCopy.saveFailed)
             return
         }
         showToast(clipboardItems.first(where: { $0.id == item.id })?.isPinned == true
-            ? "已收藏剪贴板内容"
-            : "已取消收藏")
+            ? JarvisFeedbackCopy.favorited
+            : JarvisFeedbackCopy.unfavorited)
     }
 
     @discardableResult
@@ -233,7 +233,7 @@ extension AppModel {
         _ = clipboardCacheStore.removeManagedFiles(for: [item], reason: "userDelete")
         clipboardItems.removeAll { $0.id == item.id }
         if !persistClipboardHistory() {
-            showToast("剪贴板历史保存失败")
+            showToast(JarvisFeedbackCopy.saveFailed)
             return
         }
         refreshClipboardCacheUsage()
@@ -243,7 +243,7 @@ extension AppModel {
             result: "success",
             fields: ["recordCount": String(clipboardItems.count)]
         )
-        showToast("已删除剪贴板记录")
+        showToast(JarvisFeedbackCopy.deleted)
     }
 
     func refreshClipboardCacheUsage() {
@@ -269,7 +269,7 @@ extension AppModel {
                     "usedBytes": String(usage.usedBytes)
                 ]
             )
-            showToast("缓存空间上限不能低于当前占用 \(cacheSizeDescription(usage.usedBytes))")
+            showToast(JarvisFeedbackCopy.cacheMinimumTooLow(cacheSizeDescription(usage.usedBytes)))
             clipboardCacheUsage = usage
             return
         }
@@ -320,7 +320,7 @@ extension AppModel {
         )
         guard category != .favorites else {
             if !automatically {
-                showToast("已收藏内容只能在剪贴板模块中手动清理")
+                showToast(JarvisFeedbackCopy.pinnedCacheManual)
             }
             return 0
         }
@@ -360,9 +360,9 @@ extension AppModel {
 
         guard didChange else {
             if !automatically, failedCount > 0 {
-                showToast("有 \(failedCount) 条缓存无法清理，请检查文件权限或占用情况")
+                showToast(JarvisFeedbackCopy.cacheCleanupFailed(failedCount))
             } else if !automatically {
-                showToast("没有符合条件的缓存")
+                showToast(JarvisFeedbackCopy.noMatchingCache)
             }
             JarvisLog.info(
                 category: .clipboard,
@@ -378,14 +378,17 @@ extension AppModel {
         }
 
         if !persistClipboardHistory() {
-            showToast("缓存清理后历史记录保存失败")
+            showToast(JarvisFeedbackCopy.saveFailed)
         }
         refreshClipboardCacheUsage()
         if !automatically {
             if failedCount > 0 {
-                showToast("已清理 \(removedIDs.count) 条缓存，\(failedCount) 条无法清理")
+                showToast(JarvisFeedbackCopy.cleanedCachePartial(
+                    removed: removedIDs.count,
+                    failed: failedCount
+                ))
             } else {
-                showToast("已清理 \(removedIDs.count) 条缓存")
+                showToast(JarvisFeedbackCopy.cleanedCache(removedIDs.count))
             }
         }
         JarvisLog.info(
@@ -431,13 +434,13 @@ extension AppModel {
                     )
                     clipboardCacheDirectoryURL = clipboardCacheStore.currentDirectoryURL
                 }
-                showToast("缓存目录已切换，但历史记录保存失败")
+                showToast(JarvisFeedbackCopy.saveFailed)
             } else {
                 clipboardCacheStore.removeLegacyFiles(
                     atPaths: migration.legacyPaths,
                     reason: "cacheDirectoryMigrationComplete"
                 )
-                showToast("剪贴板缓存目录已更新")
+                showToast(JarvisFeedbackCopy.cacheDirectoryUpdated)
             }
             trimClipboardCacheIfNeeded()
             refreshClipboardCacheUsage()
@@ -447,7 +450,7 @@ extension AppModel {
                 event: "cache.directoryChange.failed",
                 error: error
             )
-            showToast("缓存目录切换失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.cacheDirectorySwitchFailed)
         }
     }
 
@@ -508,7 +511,7 @@ extension AppModel {
                 event: "history.saveAfterTrim.failed",
                 fields: ["recordCount": String(clipboardItems.count)]
             )
-            showToast("剪贴板历史保存失败")
+            showToast(JarvisFeedbackCopy.saveFailed)
         }
         if changed {
             JarvisLog.info(

@@ -4,16 +4,38 @@ import ImageIO
 
 enum JarvisThumbnailCache {
     private static let imageCache = JarvisThreadSafeImageCache(
-        countLimit: 256,
-        totalCostLimit: 64 * 1024 * 1024
+        countLimit: 384,
+        totalCostLimit: 96 * 1024 * 1024
     )
+    private static let loadGate = JarvisThumbnailLoadGate(limit: 4)
 
-    static func loadAsync(fileURL: URL, maxPixelSize: Int) async -> NSImage? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let image = load(fileURL: fileURL, maxPixelSize: maxPixelSize)
-                DispatchQueue.main.async {
-                    continuation.resume(returning: image)
+    static func cached(fileURL: URL, maxPixelSize: Int, token: String = "") -> NSImage? {
+        imageCache.object(forKey: cacheKey(for: fileURL, maxPixelSize: maxPixelSize, token: token))
+    }
+
+    static func loadAsync(
+        fileURL: URL,
+        maxPixelSize: Int,
+        token: String = ""
+    ) async -> NSImage? {
+        if let cached = cached(fileURL: fileURL, maxPixelSize: maxPixelSize, token: token) {
+            return cached
+        }
+        guard !Task.isCancelled else { return nil }
+        return await loadGate.withPermit {
+            if let cached = cached(fileURL: fileURL, maxPixelSize: maxPixelSize, token: token) {
+                return cached
+            }
+            guard !Task.isCancelled else { return nil }
+            return await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(
+                        returning: load(
+                            fileURL: fileURL,
+                            maxPixelSize: maxPixelSize,
+                            token: token
+                        )
+                    )
                 }
             }
         }
@@ -23,8 +45,8 @@ enum JarvisThumbnailCache {
         imageCache.removeAllObjects()
     }
 
-    private static func load(fileURL: URL, maxPixelSize: Int) -> NSImage? {
-        let key = cacheKey(for: fileURL, maxPixelSize: maxPixelSize)
+    private static func load(fileURL: URL, maxPixelSize: Int, token: String) -> NSImage? {
+        let key = cacheKey(for: fileURL, maxPixelSize: maxPixelSize, token: token)
         if let cached = imageCache.object(forKey: key) {
             return cached
         }
@@ -50,17 +72,50 @@ enum JarvisThumbnailCache {
             cgImage: cgImage,
             size: NSSize(width: cgImage.width, height: cgImage.height)
         )
-        imageCache.setObject(image, forKey: key, cost: cgImage.width * cgImage.height)
+        imageCache.setObject(
+            image,
+            forKey: key,
+            cost: max(1, cgImage.bytesPerRow * cgImage.height)
+        )
         return image
     }
 
-    private static func cacheKey(for fileURL: URL, maxPixelSize: Int) -> NSString {
-        let values = try? fileURL.resourceValues(
-            forKeys: [.contentModificationDateKey, .fileSizeKey]
-        )
-        let modificationDate = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
-        let fileSize = values?.fileSize ?? 0
-        return "\(fileURL.path)|\(fileSize)|\(modificationDate)|\(maxPixelSize)" as NSString
+    private static func cacheKey(for fileURL: URL, maxPixelSize: Int, token: String) -> NSString {
+        "\(fileURL.path)|\(token)|\(maxPixelSize)" as NSString
+    }
+}
+
+/// Caps in-flight ImageIO work so scrolling a dense grid cannot start dozens
+/// of thumbnail decodes at once.
+actor JarvisThumbnailLoadGate {
+    private let limit: Int
+    private var running = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    func withPermit<T>(_ work: () async -> T) async -> T {
+        await acquire()
+        defer { release() }
+        return await work()
+    }
+
+    private func acquire() async {
+        if running < limit {
+            running += 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func release() {
+        if waiters.isEmpty {
+            running = max(0, running - 1)
+            return
+        }
+        waiters.removeFirst().resume()
     }
 }
 

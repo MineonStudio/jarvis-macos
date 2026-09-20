@@ -516,6 +516,8 @@ struct HistoryCardChrome<Preview: View>: View {
     var height: CGFloat?
     let isSelected: Bool
     var alignment: Alignment = .center
+    /// 宫格缩到最小时一屏几十张卡，悬停放大每张都要离屏合成，滚动会跟着卡。
+    var enablesHoverZoom: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
@@ -525,12 +527,14 @@ struct HistoryCardChrome<Preview: View>: View {
             preview
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .scaleEffect(
-                    isHovered && !reduceMotion
+                    enablesHoverZoom && isHovered && !reduceMotion
                         ? HistoryGridMetrics.clipboardPreviewHoverScale
                         : 1
                 )
                 .animation(
-                    JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                    enablesHoverZoom
+                        ? JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
+                        : nil,
                     value: isHovered
                 )
         }

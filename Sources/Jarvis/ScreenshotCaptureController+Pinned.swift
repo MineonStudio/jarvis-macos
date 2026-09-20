@@ -112,6 +112,9 @@ extension ScreenshotCaptureController {
             guard let self, let item else { return }
             destroyPinnedScreenshot(item)
         }
+        containerView.onCopied = { [weak item] in
+            item?.onAction?(.copiedToClipboard)
+        }
         containerView.addSubview(hostingView)
         item.containerView = containerView
         item.window.contentView = containerView

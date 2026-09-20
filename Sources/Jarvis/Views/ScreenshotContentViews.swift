@@ -131,6 +131,15 @@ enum HistoryGridZoomLevel: Int, CaseIterable, Sendable {
         cardWidth * 9 / 16
     }
 
+    /// 2× 屏上刚好盖住卡片；最小值一屏格子多，用更小的解码尺寸。
+    var thumbnailPixelSize: Int {
+        Int(min(512, max(160, (cardWidth * 2).rounded())))
+    }
+
+    var enablesHoverZoom: Bool {
+        rawValue >= Self.regular.rawValue
+    }
+
     var canZoomOut: Bool {
         rawValue > Self.compact.rawValue
     }
@@ -275,23 +284,23 @@ struct ScreenshotHistorySection: View {
                     ForEach(filteredItems) { item in
                         ScreenshotHistoryCard(
                             item: item,
+                            fileURL: app.screenshotHistoryFileURL(for: item),
                             isSelected: selectedItemID == item.id,
+                            maxPixelSize: gridZoom.thumbnailPixelSize,
+                            enablesHoverZoom: gridZoom.enablesHoverZoom,
                             onSelect: { selectedItemID = item.id },
                             onDoubleClick: { app.showScreenshotHistoryPreview(item) },
+                            onCopy: { app.copyScreenshotHistory(item) },
+                            onPreview: { app.showScreenshotHistoryPreview(item) },
+                            onEdit: { app.editScreenshotHistory(item) },
+                            onDelete: { app.deleteScreenshotHistory(item) },
+                            onDragData: { app.screenshotHistoryData(for: item) },
                             onClearSelection: { selectedItemID = nil }
                         )
-                        .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+                        .equatable()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-                    value: filteredItems.map(\.id)
-                )
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-                    value: gridZoom
-                )
             }
         }
         .animation(
@@ -301,19 +310,34 @@ struct ScreenshotHistorySection: View {
     }
 }
 
-struct ScreenshotHistoryCard: View {
-    @Environment(AppModel.self) private var app
+struct ScreenshotHistoryCard: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDeleteConfirmation = false
     @State private var isHovered = false
     let item: ScreenshotHistoryItem
+    let fileURL: URL
     let isSelected: Bool
+    let maxPixelSize: Int
+    let enablesHoverZoom: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
+    let onCopy: () -> Void
+    let onPreview: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onDragData: () -> Data?
     let onClearSelection: () -> Void
 
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item
+            && lhs.fileURL == rhs.fileURL
+            && lhs.isSelected == rhs.isSelected
+            && lhs.maxPixelSize == rhs.maxPixelSize
+            && lhs.enablesHoverZoom == rhs.enablesHoverZoom
+    }
+
     private var thumbnailCacheKey: String {
-        "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)"
+        "\(item.id.uuidString)|\(item.updatedAt.timeIntervalSince1970)|\(maxPixelSize)"
     }
 
     /// 预览区：比例锁在**占位**这一层。
@@ -336,33 +360,22 @@ struct ScreenshotHistoryCard: View {
             .contentShape(Rectangle())
     }
 
-    @ViewBuilder
     private var previewLayer: some View {
-        if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
-            ScreenshotHistoryThumbnail(
-                fileURL: app.screenshotHistoryFileURL(for: item),
-                cacheKey: thumbnailCacheKey
-            )
-        } else {
-            Image(systemName: "photo")
-                .font(.system(size: 28))
-                .foregroundStyle(Color.jarvisTextSecondary)
-        }
+        ScreenshotHistoryThumbnail(
+            fileURL: fileURL,
+            cacheKey: thumbnailCacheKey,
+            maxPixelSize: maxPixelSize
+        )
     }
 
-    @ViewBuilder
     private var previewArea: some View {
-        if FileManager.default.fileExists(atPath: app.screenshotHistoryFileURL(for: item).path) {
-            previewContent
-                .onDrag {
-                    guard let data = app.screenshotHistoryData(for: item) else {
-                        return NSItemProvider()
-                    }
-                    return ScreenshotSharing.itemProvider(for: item, data: data)
+        previewContent
+            .onDrag {
+                guard let data = onDragData() else {
+                    return NSItemProvider()
                 }
-        } else {
-            previewContent
-        }
+                return ScreenshotSharing.itemProvider(for: item, data: data)
+            }
     }
 
     private var metadataRow: some View {
@@ -382,7 +395,7 @@ struct ScreenshotHistoryCard: View {
 
     private var copyButton: some View {
         Button {
-            app.copyScreenshotHistory(item)
+            onCopy()
         } label: {
             Text("复制")
                 .lineLimit(1)
@@ -412,7 +425,8 @@ struct ScreenshotHistoryCard: View {
     private var cardBody: some View {
         HistoryCardChrome(
             preview: previewArea,
-            isSelected: isSelected
+            isSelected: isSelected,
+            enablesHoverZoom: enablesHoverZoom
         )
         .overlay(alignment: .bottom) {
             copyActionOverlay
@@ -455,21 +469,21 @@ struct ScreenshotHistoryCard: View {
         .accessibilityHint("点击选择，双击预览；可以拖到 Finder 或其他应用导出 PNG")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "复制") {
-            app.copyScreenshotHistory(item)
+            onCopy()
         }
         .contextMenu {
             Button {
-                app.showScreenshotHistoryPreview(item)
+                onPreview()
             } label: {
                 Label("查看", systemImage: "eye")
             }
             Button {
-                app.editScreenshotHistory(item)
+                onEdit()
             } label: {
                 Label("编辑", systemImage: "pencil")
             }
             Button {
-                app.copyScreenshotHistory(item)
+                onCopy()
             } label: {
                 Label("复制", systemImage: "doc.on.doc")
             }
@@ -486,7 +500,7 @@ struct ScreenshotHistoryCard: View {
             titleVisibility: .visible
         ) {
             Button("删除", role: .destructive) {
-                app.deleteScreenshotHistory(item)
+                onDelete()
                 if isSelected {
                     onClearSelection()
                 }
@@ -501,12 +515,14 @@ struct ScreenshotHistoryCard: View {
 struct ScreenshotHistoryThumbnail: View {
     let fileURL: URL
     let cacheKey: String
+    let maxPixelSize: Int
     @State private var image: NSImage?
 
     var body: some View {
         Group {
             if let image {
                 Image(nsImage: image)
+                    .interpolation(.medium)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -518,7 +534,20 @@ struct ScreenshotHistoryThumbnail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: cacheKey) {
-            image = await JarvisThumbnailCache.loadAsync(fileURL: fileURL, maxPixelSize: 640)
+            if image == nil {
+                image = JarvisThumbnailCache.cached(
+                    fileURL: fileURL,
+                    maxPixelSize: maxPixelSize,
+                    token: cacheKey
+                )
+            }
+            let loaded = await JarvisThumbnailCache.loadAsync(
+                fileURL: fileURL,
+                maxPixelSize: maxPixelSize,
+                token: cacheKey
+            )
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }

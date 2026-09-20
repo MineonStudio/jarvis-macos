@@ -8,6 +8,7 @@ enum ScreenshotAction {
     case save(Data)
     case confirm(Data)
     case pin(Data)
+    case copiedToClipboard
     case cancel
     case tool(ScreenshotTool)
     case undo

@@ -240,7 +240,11 @@ struct ClipboardView: View {
                                 onDoubleClick: { item in
                                     guard item.canFullscreenPreview else { return }
                                     app.showClipboardMediaPreview(item)
-                                }
+                                },
+                                onCopy: { app.copyClipboard($0) },
+                                onPreview: { app.showClipboardMediaPreview($0) },
+                                onPin: { app.toggleClipboardPin($0) },
+                                onDelete: { app.deleteClipboardItem($0) }
                             )
                             .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                         }
@@ -377,9 +381,8 @@ struct ClipboardEmptyState: View {
     }
 }
 
-struct ClipboardCard: View {
+struct ClipboardCard: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(AppModel.self) private var app
     @State private var isSensitiveRevealed = false
     @State private var isTextExpanded = false
     @State private var showingDeleteConfirmation = false
@@ -388,19 +391,44 @@ struct ClipboardCard: View {
     @State private var isHovered = false
     let item: ClipboardItem
     let isSelected: Bool
+    let maxPixelSize: Int
+    let enablesHoverZoom: Bool
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
+    let onCopy: () -> Void
+    let onPreview: () -> Void
+    let onPin: () -> Void
+    let onDelete: () -> Void
 
     init(
         item: ClipboardItem,
         isSelected: Bool = false,
+        maxPixelSize: Int = HistoryGridZoomLevel.regular.thumbnailPixelSize,
+        enablesHoverZoom: Bool = true,
         onSelect: @escaping () -> Void = {},
-        onDoubleClick: @escaping () -> Void = {}
+        onDoubleClick: @escaping () -> Void = {},
+        onCopy: @escaping () -> Void = {},
+        onPreview: @escaping () -> Void = {},
+        onPin: @escaping () -> Void = {},
+        onDelete: @escaping () -> Void = {}
     ) {
         self.item = item
         self.isSelected = isSelected
+        self.maxPixelSize = maxPixelSize
+        self.enablesHoverZoom = enablesHoverZoom
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
+        self.onCopy = onCopy
+        self.onPreview = onPreview
+        self.onPin = onPin
+        self.onDelete = onDelete
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item
+            && lhs.isSelected == rhs.isSelected
+            && lhs.maxPixelSize == rhs.maxPixelSize
+            && lhs.enablesHoverZoom == rhs.enablesHoverZoom
     }
 
     /// 预览区：比例锁在占位层（见 `ScreenshotHistoryCard.previewContent` 的说明）。
@@ -492,7 +520,7 @@ struct ClipboardCard: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
-                ClipboardItemPreview(item: item)
+                ClipboardItemPreview(item: item, maxPixelSize: maxPixelSize)
             }
         }
     }
@@ -537,7 +565,7 @@ struct ClipboardCard: View {
         if item.isSensitive {
             showingSensitiveCopyConfirmation = true
         } else {
-            app.copyClipboard(item)
+            onCopy()
         }
     }
 
@@ -604,7 +632,8 @@ struct ClipboardCard: View {
         HistoryCardChrome(
             preview: previewArea,
             isSelected: isSelected,
-            alignment: .topLeading
+            alignment: .topLeading,
+            enablesHoverZoom: enablesHoverZoom
         )
         .overlay(alignment: .bottom) {
             copyActionOverlay
@@ -651,18 +680,6 @@ struct ClipboardCard: View {
             isSensitiveRevealed = false
             isTextExpanded = false
         }
-        .onChange(of: item) { _, _ in
-            isSensitiveRevealed = false
-            isTextExpanded = false
-        }
-        .onAppear {
-            isSensitiveRevealed = false
-            isTextExpanded = false
-        }
-        .onDisappear {
-            isSensitiveRevealed = false
-            isTextExpanded = false
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             item.isSensitive
@@ -680,7 +697,7 @@ struct ClipboardCard: View {
                 if item.isSensitive {
                     showingSensitivePreviewConfirmation = true
                 } else {
-                    app.showClipboardMediaPreview(item)
+                    onPreview()
                 }
             } label: {
                 Label("查看", systemImage: "eye")
@@ -694,7 +711,7 @@ struct ClipboardCard: View {
             }
 
             Button {
-                app.toggleClipboardPin(item)
+                onPin()
             } label: {
                 Label(
                     item.isPinned ? "取消收藏" : "收藏",
@@ -716,7 +733,7 @@ struct ClipboardCard: View {
             titleVisibility: .visible
         ) {
             Button("删除", role: .destructive) {
-                app.deleteClipboardItem(item)
+                onDelete()
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -728,7 +745,7 @@ struct ClipboardCard: View {
             titleVisibility: .visible
         ) {
             Button("显示并复制") {
-                app.copyClipboard(item)
+                onCopy()
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -740,7 +757,7 @@ struct ClipboardCard: View {
             titleVisibility: .visible
         ) {
             Button("显示并查看") {
-                app.showClipboardMediaPreview(item)
+                onPreview()
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -755,19 +772,31 @@ struct ClipboardGrid: View {
     let selectedItemID: UUID?
     let onSelect: (ClipboardItem) -> Void
     let onDoubleClick: (ClipboardItem) -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let onCopy: (ClipboardItem) -> Void
+    let onPreview: (ClipboardItem) -> Void
+    let onPin: (ClipboardItem) -> Void
+    let onDelete: (ClipboardItem) -> Void
+
     init(
         items: [ClipboardItem],
         gridZoom: HistoryGridZoomLevel = .regular,
         selectedItemID: UUID? = nil,
         onSelect: @escaping (ClipboardItem) -> Void = { _ in },
-        onDoubleClick: @escaping (ClipboardItem) -> Void = { _ in }
+        onDoubleClick: @escaping (ClipboardItem) -> Void = { _ in },
+        onCopy: @escaping (ClipboardItem) -> Void = { _ in },
+        onPreview: @escaping (ClipboardItem) -> Void = { _ in },
+        onPin: @escaping (ClipboardItem) -> Void = { _ in },
+        onDelete: @escaping (ClipboardItem) -> Void = { _ in }
     ) {
         self.items = items
         self.gridZoom = gridZoom
         self.selectedItemID = selectedItemID
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
+        self.onCopy = onCopy
+        self.onPreview = onPreview
+        self.onPin = onPin
+        self.onDelete = onDelete
     }
 
     var body: some View {
@@ -789,21 +818,19 @@ struct ClipboardGrid: View {
                 ClipboardCard(
                     item: item,
                     isSelected: selectedItemID == item.id,
+                    maxPixelSize: gridZoom.thumbnailPixelSize,
+                    enablesHoverZoom: gridZoom.enablesHoverZoom,
                     onSelect: { onSelect(item) },
-                    onDoubleClick: { onDoubleClick(item) }
+                    onDoubleClick: { onDoubleClick(item) },
+                    onCopy: { onCopy(item) },
+                    onPreview: { onPreview(item) },
+                    onPin: { onPin(item) },
+                    onDelete: { onDelete(item) }
                 )
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+                .equatable()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: items.map(\.id)
-        )
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: gridZoom
-        )
     }
 }
 
@@ -820,5 +847,6 @@ struct ClipboardPanelView: View {
                 app.themePreference,
                 systemColorScheme: app.systemColorScheme
             )
+            .jarvisToastOverlay(app.toastMessage)
     }
 }

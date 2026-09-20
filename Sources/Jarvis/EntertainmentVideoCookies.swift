@@ -27,11 +27,17 @@ enum NetscapeCookieFile {
             return true
         }
         let isYouTube = host.contains("youtube") || host == "youtu.be" || host.hasSuffix(".youtu.be")
-        guard isYouTube else { return false }
-        return domain.hasSuffix("youtube.com")
-            || domain.hasSuffix("youtu.be")
-            || domain.hasSuffix("google.com")
-            || domain.hasSuffix("googleusercontent.com")
+        if isYouTube {
+            return domain.hasSuffix("youtube.com")
+                || domain.hasSuffix("youtu.be")
+                || domain.hasSuffix("google.com")
+                || domain.hasSuffix("googleusercontent.com")
+        }
+        let isBilibili = host.contains("bilibili") || host == "b23.tv" || host.hasSuffix(".b23.tv")
+        guard isBilibili else { return false }
+        return domain.hasSuffix("bilibili.com")
+            || domain.hasSuffix("b23.tv")
+            || domain.hasSuffix("hdslb.com")
     }
 }
 

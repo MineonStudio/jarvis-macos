@@ -325,6 +325,14 @@ final class ClipboardTests: XCTestCase {
             XCTAssertEqual(level.cardHeight, level.cardWidth * 9 / 16, accuracy: 0.001)
         }
 
+        XCTAssertLessThan(
+            HistoryGridZoomLevel.compact.thumbnailPixelSize,
+            HistoryGridZoomLevel.extraLarge.thumbnailPixelSize
+        )
+        XCTAssertLessThanOrEqual(HistoryGridZoomLevel.compact.thumbnailPixelSize, 320)
+        XCTAssertFalse(HistoryGridZoomLevel.compact.enablesHoverZoom)
+        XCTAssertTrue(HistoryGridZoomLevel.regular.enablesHoverZoom)
+
         XCTAssertFalse(HistoryGridZoomLevel.compact.canZoomOut)
         XCTAssertTrue(HistoryGridZoomLevel.compact.canZoomIn)
         XCTAssertEqual(HistoryGridZoomLevel.regular.zoomedOut, .small)

@@ -14,6 +14,7 @@ struct ClipboardItemPreview: View {
     }
 
     let item: ClipboardItem
+    var maxPixelSize: Int = HistoryGridZoomLevel.regular.thumbnailPixelSize
     @State private var image: NSImage?
     @State private var videoThumbnail: NSImage?
 
@@ -41,8 +42,6 @@ struct ClipboardItemPreview: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: thumbnailTaskID) {
-            image = nil
-            videoThumbnail = nil
             let operationID = JarvisLog.operationID()
 
             switch item.kind {
@@ -57,10 +56,18 @@ struct ClipboardItemPreview: View {
                     )
                     return
                 }
+                let fileURL = URL(fileURLWithPath: path)
+                if image == nil {
+                    image = JarvisThumbnailCache.cached(
+                        fileURL: fileURL,
+                        maxPixelSize: maxPixelSize
+                    )
+                }
                 guard let loadedImage = await JarvisThumbnailCache.loadAsync(
-                    fileURL: URL(fileURLWithPath: path),
-                    maxPixelSize: 640
+                    fileURL: fileURL,
+                    maxPixelSize: maxPixelSize
                 ) else {
+                    guard !Task.isCancelled else { return }
                     JarvisLog.error(
                         category: .clipboard,
                         event: "preview.read.failed",
@@ -73,6 +80,7 @@ struct ClipboardItemPreview: View {
                     )
                     return
                 }
+                guard !Task.isCancelled else { return }
                 image = loadedImage
             case .video:
                 guard let videoPath = item.filePath else {
@@ -86,7 +94,7 @@ struct ClipboardItemPreview: View {
                     return
                 }
 
-                let cacheKey = (item.thumbnailPath ?? videoPath) as NSString
+                let cacheKey = "\(item.thumbnailPath ?? videoPath)|\(maxPixelSize)" as NSString
                 if let cached = Self.videoThumbnailCache.object(forKey: cacheKey) {
                     videoThumbnail = cached
                     JarvisLog.debug(
@@ -102,9 +110,10 @@ struct ClipboardItemPreview: View {
                 if let thumbnailPath = item.thumbnailPath,
                    let thumbnail = await JarvisThumbnailCache.loadAsync(
                        fileURL: URL(fileURLWithPath: thumbnailPath),
-                       maxPixelSize: 640
+                       maxPixelSize: maxPixelSize
                    )
                 {
+                    guard !Task.isCancelled else { return }
                     Self.videoThumbnailCache.setObject(
                         thumbnail,
                         forKey: cacheKey,
@@ -114,31 +123,34 @@ struct ClipboardItemPreview: View {
                     return
                 }
 
-                ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: videoPath)) { image in
-                    guard let image else {
-                        JarvisLog.error(
-                            category: .clipboard,
-                            event: "preview.read.failed",
-                            operationID: operationID,
-                            result: "unreadable",
-                            fields: [
-                                "kind": item.kind.rawValue,
-                                "pathExists": String(FileManager.default.fileExists(atPath: videoPath))
-                            ]
-                        )
-                        return
-                    }
-                    let thumbnail = NSImage(
-                        cgImage: image,
-                        size: NSSize(width: image.width, height: image.height)
+                let generated = await ClipboardVideoThumbnailGenerator.makeCGImage(
+                    for: URL(fileURLWithPath: videoPath),
+                    maxPixelSize: maxPixelSize
+                )
+                guard !Task.isCancelled else { return }
+                guard let generated else {
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "preview.read.failed",
+                        operationID: operationID,
+                        result: "unreadable",
+                        fields: [
+                            "kind": item.kind.rawValue,
+                            "pathExists": String(FileManager.default.fileExists(atPath: videoPath))
+                        ]
                     )
-                    Self.videoThumbnailCache.setObject(
-                        thumbnail,
-                        forKey: cacheKey,
-                        cost: max(1, image.width * image.height)
-                    )
-                    videoThumbnail = thumbnail
+                    return
                 }
+                let thumbnail = NSImage(
+                    cgImage: generated,
+                    size: NSSize(width: generated.width, height: generated.height)
+                )
+                Self.videoThumbnailCache.setObject(
+                    thumbnail,
+                    forKey: cacheKey,
+                    cost: max(1, generated.width * generated.height)
+                )
+                videoThumbnail = thumbnail
             case .file, .text:
                 break
             }
@@ -150,12 +162,14 @@ struct ClipboardItemPreview: View {
             item.id.uuidString,
             item.imagePath ?? "",
             item.thumbnailPath ?? "",
-            item.filePath ?? ""
+            item.filePath ?? "",
+            String(maxPixelSize)
         ].joined(separator: "|")
     }
 
     private func mediaImage(_ image: NSImage) -> some View {
         Image(nsImage: image)
+            .interpolation(.medium)
             .resizable()
             .scaledToFill()
             .frame(maxWidth: .infinity, maxHeight: .infinity)

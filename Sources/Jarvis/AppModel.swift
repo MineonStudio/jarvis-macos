@@ -428,7 +428,7 @@ extension AppModel {
     func captureScreenshot() {
         guard requireAllPermissions() else { return }
         guard screenshotController.sessionPhase == .idle else {
-            showToast("请先完成当前截图操作")
+            showToast(JarvisFeedbackCopy.finishScreenshotFirst)
             return
         }
 
@@ -464,8 +464,12 @@ extension AppModel {
                     // Keep normal cancellation and native permission failures
                     // from pulling the Jarvis host window in front of the user.
                     break
+                case ScreenshotError.invalidSelection:
+                    showToast(JarvisFeedbackCopy.recapture)
+                case ScreenshotError.noDisplays:
+                    showToast(JarvisFeedbackCopy.noDisplays)
                 default:
-                    showToast(error.localizedDescription)
+                    showToast(JarvisFeedbackCopy.captureFailed)
                 }
             }
         }
@@ -488,13 +492,12 @@ extension AppModel {
             finalizeScreenshot(data, historyID: editingHistoryID)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setData(data, forType: .png)
-            showToast("截图已确认并复制到剪贴板")
+            showToast(JarvisFeedbackCopy.copied)
         case let .pin(data):
-            // 贴图和普通截图走同一条保存路径：每次写一个新文件到截图历史目录，
-            // 所以贴图不会因为关掉那个浮窗而丢。提示里说明白，否则用户以为它只是
-            // 临时贴在屏幕上的。
             finalizeScreenshot(data, historyID: editingHistoryID)
-            showToast("贴图已保存到截图历史")
+            showToast(JarvisFeedbackCopy.saved)
+        case .copiedToClipboard:
+            showToast(JarvisFeedbackCopy.copied)
         case .cancel:
             editingHistoryID = nil
             statusMessage = "已取消截图编辑，未执行任何操作"
@@ -530,20 +533,20 @@ extension AppModel {
             historyID: historyID,
             finalizesHistory: true,
             endsSession: false,
-            successMessage: "截图已保存",
+            successMessage: JarvisFeedbackCopy.saved,
             presentingWindow: presentingWindow
         )
     }
 
     func copyScreenshotHistory(_ item: ScreenshotHistoryItem) {
         guard let data = screenshotHistoryStore.data(for: item) else {
-            showToast("历史截图文件不存在")
+            showToast(JarvisFeedbackCopy.fileMissing)
             reloadScreenshotHistory()
             return
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(data, forType: .png)
-        showToast("截图已复制到剪贴板")
+        showToast(JarvisFeedbackCopy.copied)
     }
 
     private func presentSavePanel(
@@ -614,7 +617,7 @@ extension AppModel {
             }
             showToast(request.successMessage)
         } catch {
-            showToast("保存失败：\(error.localizedDescription)")
+            showToast(JarvisFeedbackCopy.saveFailed)
         }
     }
 
@@ -631,10 +634,11 @@ extension AppModel {
                 )
                 updateState = hasNewVersion ? .available(release) : .upToDate
                 if !hasNewVersion {
-                    showToast("当前已是最新版本")
+                    showToast(JarvisFeedbackCopy.latestVersion)
                 }
             } catch {
                 updateState = .failed(message: error.localizedDescription)
+                showToast(JarvisFeedbackCopy.updateCheckFailed)
             }
         }
     }
@@ -646,7 +650,12 @@ extension AppModel {
         // `JarvisUpdateService.downloadAndInstall`. Installations that carry
         // the local signing identity keep theirs.
         if !JarvisLocalSigning.isAvailable {
-            showToast("更新会清除屏幕录制和辅助功能授权，安装后需要重新允许")
+            let alert = NSAlert()
+            alert.messageText = "安装后需要重新授权"
+            alert.informativeText = "这次更新会清除屏幕录制和辅助功能授权。"
+            alert.addButton(withTitle: "继续")
+            alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
@@ -661,6 +670,7 @@ extension AppModel {
                 NSApp.terminate(nil)
             } catch {
                 updateState = .failed(message: error.localizedDescription)
+                showToast(JarvisFeedbackCopy.updateFailed)
             }
         }
     }
@@ -669,7 +679,7 @@ extension AppModel {
     private func setLatestScreenshot(_ data: Data) -> Bool {
         latestScreenshotData = data
         guard screenshotCacheStore.save(data) else {
-            showToast("截图缓存保存失败")
+            showToast(JarvisFeedbackCopy.cacheSaveFailed)
             return false
         }
         return true
@@ -717,7 +727,7 @@ extension AppModel {
                     current: self.editingHistoryID
                 )
                 if !cacheSaved || resolvedID == nil {
-                    self.showToast("截图已完成，但历史记录保存失败")
+                    self.showToast(JarvisFeedbackCopy.historySaveFailed)
                 }
             }
         }
@@ -733,24 +743,27 @@ extension AppModel {
 
     func showScreenshotHistoryPreview(_ item: ScreenshotHistoryItem) {
         guard screenshotController.sessionPhase == .idle else {
-            showToast("请先完成当前截图操作")
+            showToast(JarvisFeedbackCopy.finishScreenshotFirst)
             return
         }
         guard let data = screenshotHistoryStore.data(for: item) else {
-            showToast("历史截图文件不存在")
+            showToast(JarvisFeedbackCopy.fileMissing)
             reloadScreenshotHistory()
             return
         }
-        screenshotHistoryPreviewController.show(data: data)
+        guard screenshotHistoryPreviewController.show(data: data) else {
+            showToast(JarvisFeedbackCopy.cannotPreview)
+            return
+        }
     }
 
     func editScreenshotHistory(_ item: ScreenshotHistoryItem) {
         guard screenshotController.sessionPhase == .idle else {
-            showToast("请先完成当前截图操作")
+            showToast(JarvisFeedbackCopy.finishScreenshotFirst)
             return
         }
         guard let data = screenshotHistoryStore.data(for: item) else {
-            showToast("历史截图文件不存在")
+            showToast(JarvisFeedbackCopy.fileMissing)
             reloadScreenshotHistory()
             return
         }
@@ -774,7 +787,7 @@ extension AppModel {
         }
         let deletedData = screenshotHistoryStore.data(for: item)
         guard screenshotHistoryStore.delete(item) else {
-            showToast("历史截图删除失败")
+            showToast(JarvisFeedbackCopy.deleteFailed)
             reloadScreenshotHistory()
             return
         }
@@ -787,13 +800,13 @@ extension AppModel {
                 guard setLatestScreenshot(replacementData) else { return }
             } else {
                 guard screenshotCacheStore.clear() else {
-                    showToast("截图缓存清除失败")
+                    showToast(JarvisFeedbackCopy.cacheClearFailed)
                     return
                 }
                 latestScreenshotData = nil
             }
         }
-        showToast("已删除历史截图")
+        showToast(JarvisFeedbackCopy.deleted)
     }
 
     private func reloadScreenshotHistory() {

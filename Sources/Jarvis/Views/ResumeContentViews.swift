@@ -371,7 +371,7 @@ private extension ResumeContentView {
         expandedSection = .basicInfo
         selectedProjectID = nil
         selectedBulletIndex = 0
-        app.showToast("已新建空白简历")
+        app.showToast(JarvisFeedbackCopy.created)
     }
 
     func requestNewResume() {
@@ -412,10 +412,10 @@ private extension ResumeContentView {
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try data.write(to: url, options: .atomic)
             workspace.markSaved(to: url)
-            app.showToast("已保存为 \(format.title)")
+            app.showToast(JarvisFeedbackCopy.resumeSaved(as: format.title))
             afterSave?()
         } catch {
-            app.showToast("保存失败：\(error.localizedDescription)")
+            app.showToast(JarvisFeedbackCopy.saveFailed)
         }
     }
 
@@ -433,9 +433,9 @@ private extension ResumeContentView {
             expandedSection = .basicInfo
             selectedProjectID = importedDocument.projects.first?.id
             selectedBulletIndex = 0
-            app.showToast("已打开 JSON 简历：\(importedDocument.title)")
+            app.showToast(JarvisFeedbackCopy.opened)
         } catch {
-            app.showToast("打开失败：JSON 文件格式无效")
+            app.showToast(JarvisFeedbackCopy.invalidJSON)
         }
     }
 }

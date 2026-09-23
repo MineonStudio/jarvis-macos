@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct AIAPISettingsCard: View {
@@ -28,15 +29,6 @@ struct AIAPISettingsCard: View {
                 provider: provider
             ) != nil
             && !effectiveModel.isEmpty
-    }
-
-    private var canRefreshModels: Bool {
-        (app.aiAPIKeyConfigured
-            || !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            && OpenAICompatibleAPIClient.normalizedModelsURL(
-                from: effectiveBaseURL,
-                provider: provider
-            ) != nil
     }
 
     private var modelOptions: [String] {
@@ -91,52 +83,54 @@ struct AIAPISettingsCard: View {
 
     private var fieldsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            apiField(title: "提供商") {
-                apiControl {
-                    apiMenu(
-                        title: "提供商",
-                        selection: Binding(
-                            get: { provider.title },
-                            set: { selectedTitle in
-                                guard let selectedProvider = AIAPIProvider.allCases.first(where: {
-                                    $0.title == selectedTitle
-                                }) else {
-                                    return
-                                }
-                                provider = selectedProvider
-                            }
-                        ),
-                        options: AIAPIProvider.allCases.map(\.title),
-                        isDisabled: isLocked
-                    )
+            VStack(alignment: .leading, spacing: 8) {
+                Text("提供商")
+                    .font(JarvisTypography.control)
+
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
+                    spacing: 8
+                ) {
+                    ForEach(AIAPIProvider.allCases) { option in
+                        AIAPIProviderCapsule(
+                            provider: option,
+                            isSelected: provider == option,
+                            isEnabled: !isLocked
+                        ) {
+                            provider = option
+                        }
+                    }
                 }
             }
 
-            apiField(title: "base_url") {
+            apiField(title: "接口地址") {
                 apiControl {
                     if isLocked {
-                        apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容 base_url")
+                        apiReadOnlyValue(baseURL, placeholder: "输入 OpenAI 兼容接口地址")
                     } else {
-                        TextField("输入 OpenAI 兼容 base_url", text: $baseURL)
+                        TextField("输入 OpenAI 兼容接口地址", text: $baseURL)
                             .textFieldStyle(.plain)
                     }
                 }
             }
 
-            apiField(title: "模型") {
-                HStack(spacing: 8) {
-                    apiControl {
-                        apiMenu(
-                            title: "模型",
-                            selection: $model,
-                            options: modelOptions,
-                            emptyTitle: "未选择模型",
-                            isDisabled: isLocked || app.aiModelsLoading
-                        )
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center) {
+                    Text("模型")
+                        .font(JarvisTypography.control)
+                    Spacer(minLength: 8)
                     refreshModelsButton
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                apiControl {
+                    apiMenu(
+                        title: "模型",
+                        selection: $model,
+                        options: modelOptions,
+                        emptyTitle: "未选择模型",
+                        isDisabled: isLocked || app.aiModelsLoading
+                    )
+                }
             }
 
             apiField(title: "Key") {
@@ -159,29 +153,22 @@ struct AIAPISettingsCard: View {
     }
 
     private var refreshModelsButton: some View {
-        Button(action: refreshModels) {
-            HStack(spacing: 6) {
-                if app.aiModelsLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text("获取模型")
-            }
-        }
-        .buttonStyle(JarvisSecondaryButtonStyle())
-        .disabled(isLocked || app.aiModelsLoading || !canRefreshModels)
+        Button("获取模型", action: refreshModels)
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .disabled(app.aiModelsLoading)
+            .help("从当前接口地址获取可用模型列表")
     }
 
     private func errorRow(_ error: String) -> some View {
         Text(error)
             .font(JarvisTypography.caption)
             .foregroundStyle(.red)
-            .padding(.leading, 82)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var actionsRow: some View {
         HStack(spacing: 8) {
-            Spacer(minLength: 82)
+            Spacer()
 
             if isLocked {
                 Button("编辑配置", action: beginEditing)
@@ -230,10 +217,9 @@ struct AIAPISettingsCard: View {
         title: String,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(JarvisTypography.control)
-                .frame(width: 72, alignment: .leading)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -329,7 +315,6 @@ struct AIAPISettingsCard: View {
     }
 
     private func refreshModels() {
-        guard canRefreshModels else { return }
         app.refreshAIModels(
             provider: provider,
             baseURL: effectiveBaseURL,
@@ -348,5 +333,86 @@ struct AIAPISettingsCard: View {
             return
         }
         apiKey = ""
+    }
+}
+
+private struct AIAPIProviderCapsule: View {
+    let provider: AIAPIProvider
+    let isSelected: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                providerIcon
+
+                Text(provider.title)
+                    .font(JarvisTypography.control)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.jarvisAccent)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .background(
+                isSelected ? Color.jarvisAccent.opacity(0.12) : Color.jarvisPanel.opacity(0.55),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        isSelected ? Color.jarvisAccent.opacity(0.55) : Color.primary.opacity(0.09),
+                        lineWidth: 1
+                    )
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.65)
+        .accessibilityLabel("\(provider.title)，\(isSelected ? "已选择" : "选择提供商")")
+        .help(provider.title)
+    }
+
+    @ViewBuilder
+    private var providerIcon: some View {
+        if provider == .custom {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(isSelected ? Color.jarvisAccent : Color.jarvisTextSecondary)
+                .frame(width: 16, height: 16)
+        } else if let image = Self.brandImage(for: provider) {
+            Image(nsImage: image)
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+        }
+    }
+
+    private static func brandImage(for provider: AIAPIProvider) -> NSImage? {
+        guard let resource = provider.brandIconResource,
+              let url = Bundle.main.url(
+                  forResource: resource.name,
+                  withExtension: resource.fileExtension,
+                  subdirectory: "AIProviderIcons"
+              ),
+              let image = NSImage(contentsOf: url)
+        else {
+            return nil
+        }
+
+        image.isTemplate = false
+        return JarvisBrandIconMetrics.trimmed(image, cacheKey: "api.\(resource.name)")
     }
 }

@@ -66,14 +66,14 @@ struct ResumeInspector: View {
                         .font(JarvisTypography.captionEmphasis)
                         .foregroundStyle(
                             section == .basicInfo
-                                ? Color.accentColor
+                                ? Color.jarvisAccent
                                 : Color.jarvisTextSecondary
                         )
                     Spacer(minLength: 0)
                     Image(systemName: expandedSection == section ? "chevron.up" : "chevron.down")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .foregroundStyle(expandedSection == section ? Color.accentColor : Color.primary)
+                .foregroundStyle(expandedSection == section ? Color.jarvisAccent : Color.primary)
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
                 .contentShape(Rectangle())
@@ -92,7 +92,7 @@ struct ResumeInspector: View {
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(
-                    expandedSection == section ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06),
+                    expandedSection == section ? Color.jarvisAccent.opacity(0.22) : Color.primary.opacity(0.06),
                     lineWidth: 0.75
                 )
         }
@@ -243,7 +243,7 @@ private struct ResumeAIGenerateButton: View {
         Button(action: action) {
             Label(isGenerating ? "生成中…" : "AI 生成", systemImage: "sparkles")
         }
-        .buttonStyle(ResumeAddButtonStyle(tint: .accentColor))
+        .buttonStyle(ResumeAddButtonStyle(tint: Color.jarvisAccent))
         .disabled(!isEnabled)
         .accessibilityHint(helpText)
     }
@@ -275,7 +275,7 @@ private struct ResumeProjectGenerationSheet: View {
                 Button("取消", action: onCancel)
                     .buttonStyle(ResumeAddButtonStyle())
                 Button("生成", action: onGenerate)
-                    .buttonStyle(ResumeAddButtonStyle(tint: .accentColor))
+                    .buttonStyle(ResumeAddButtonStyle(tint: Color.jarvisAccent))
                     .disabled(domain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
@@ -533,7 +533,7 @@ private struct ResumeBulletEditor: View {
                     .font(JarvisTypography.control)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.jarvisAccent)
         }
     }
 

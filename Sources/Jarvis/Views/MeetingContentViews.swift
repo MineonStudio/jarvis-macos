@@ -130,9 +130,9 @@ private struct MeetingEmptyState: View {
         VStack(spacing: 20) {
             Image(systemName: "waveform.and.person.filled")
                 .font(.system(size: 42, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.jarvisAccent)
                 .frame(width: 76, height: 76)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 22))
+                .background(Color.jarvisAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 22))
 
             VStack(spacing: 8) {
                 Text("把一次会议，变成可执行的结论")
@@ -177,7 +177,7 @@ private struct MeetingModelDownloadPrompt: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down.circle")
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.jarvisAccent)
                     Text("首次使用需要下载本地识别模型")
                         .font(JarvisTypography.bodyEmphasis)
                 }
@@ -188,7 +188,7 @@ private struct MeetingModelDownloadPrompt: View {
                 if case let .downloading(stage, progress) = app.meetingModelState {
                     HStack(spacing: 8) {
                         ProgressView(value: progress)
-                            .tint(Color.accentColor)
+                            .tint(Color.jarvisAccent)
                         Text("\(stage.title) \(Int(progress * 100))%")
                             .font(JarvisTypography.caption)
                             .foregroundStyle(Color.jarvisTextSecondary)
@@ -379,7 +379,7 @@ private struct MeetingHistoryRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(
-                isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
+                isSelected ? Color.jarvisAccent.opacity(0.14) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -917,7 +917,7 @@ private struct MeetingProcessingCard: View {
                 }
                 if case let .processing(_, progress) = state {
                     ProgressView(value: progress)
-                        .tint(Color.accentColor)
+                        .tint(Color.jarvisAccent)
                 }
                 Text("原始音频文件会保留在本机；只有你主动删除会议时才会删除。")
                     .font(JarvisTypography.caption)
@@ -966,7 +966,7 @@ private struct MeetingNeedsSummaryCard: View {
         JarvisCard {
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("转写已完成")
                         .font(JarvisTypography.bodyEmphasis)
@@ -1016,7 +1016,7 @@ private struct MeetingSummarySection: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
-                            .fill(Color.accentColor)
+                            .fill(Color.jarvisAccent)
                             .frame(width: 5, height: 5)
                             .padding(.top, 8)
                         Text(item)
@@ -1174,8 +1174,9 @@ private func formatMeetingTimestamp(_ time: TimeInterval) -> String {
     MeetingRecordingStyle.formatTimestamp(time)
 }
 
+@MainActor
 private func speakerColor(_ index: Int) -> Color {
-    [Color.accentColor, .purple, .orange, .green, .pink, .indigo][index % 6]
+    [Color.jarvisAccent, .purple, .orange, .green, .pink, .indigo][index % 6]
 }
 
 private struct MeetingChipFlowLayout: Layout {

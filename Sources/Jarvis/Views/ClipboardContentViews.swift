@@ -483,7 +483,7 @@ struct ClipboardCard: View {
                 VStack(spacing: 10) {
                     Image(systemName: item.kind.icon)
                         .font(.system(size: 38, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.jarvisAccent)
                     Text(item.preview)
                         .font(JarvisTypography.secondary)
                         .lineLimit(3)
@@ -515,7 +515,7 @@ struct ClipboardCard: View {
         }
         .buttonStyle(.borderless)
         .font(JarvisTypography.captionEmphasis)
-        .foregroundStyle(Color.accentColor)
+        .foregroundStyle(Color.jarvisAccent)
         .accessibilityLabel(isTextExpanded ? "收起长文本" : "展开长文本")
     }
 

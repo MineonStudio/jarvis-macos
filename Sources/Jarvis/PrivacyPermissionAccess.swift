@@ -3,7 +3,7 @@ import ApplicationServices
 import AVFoundation
 import CoreGraphics
 
-enum JarvisPrivacyPermission: Equatable {
+enum JarvisPrivacyPermission: Hashable {
     case screenCapture
     case accessibility
     case microphone
@@ -79,39 +79,17 @@ enum JarvisPrivacyPermissionAccess {
     }
 
     static func requestMediaAccess(for mediaType: AVMediaType) async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: mediaType) {
-        case .authorized:
-            return true
-        case .notDetermined:
-            return await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: mediaType) { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-        case .denied, .restricted:
-            return false
-        @unknown default:
-            return false
-        }
+        await AVCaptureDevice.requestAccess(for: mediaType)
     }
 
     static func requestMediaAccess(
         for mediaType: AVMediaType,
         completion: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
-        switch AVCaptureDevice.authorizationStatus(for: mediaType) {
-        case .authorized:
-            Task { @MainActor in completion(true) }
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: mediaType) { granted in
-                Task { @MainActor in
-                    completion(granted)
-                }
+        AVCaptureDevice.requestAccess(for: mediaType) { granted in
+            Task { @MainActor in
+                completion(granted)
             }
-        case .denied, .restricted:
-            Task { @MainActor in completion(false) }
-        @unknown default:
-            Task { @MainActor in completion(false) }
         }
     }
 

@@ -335,7 +335,7 @@ private struct JarvisDropdownPillButtonStyle: ButtonStyle {
                 // moves between options. Changing a glass tint on every
                 // hover asks macOS to rebuild the material and briefly
                 // exposes the transparent intermediate state.
-                tint: isSelected ? .accentColor : nil,
+                tint: isSelected ? Color.jarvisAccent : nil,
                 in: Capsule(),
                 interactive: false
             )
@@ -486,7 +486,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
                     }
                 }
             )
-            let hostingView = NSHostingView(rootView: menu)
+            let hostingView = NSHostingView(rootView: menu.jarvisAccentAware())
             let fittingSize = hostingView.fittingSize
             hostingView.frame = NSRect(origin: .zero, size: fittingSize)
 

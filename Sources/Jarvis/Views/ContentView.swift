@@ -33,15 +33,7 @@ struct ContentView: View {
                 .id(loadedSection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .overlay(alignment: .bottom) {
-            JarvisToastHost(message: app.toastMessage)
-                .padding(.bottom, 26)
-        }
-        .tint(.accentColor)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-            value: app.toastMessage
-        )
+        .tint(app.accentColorPreference.resolvedColor)
         .onChange(of: app.selectedSection) { _, newSection in
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar immediately;

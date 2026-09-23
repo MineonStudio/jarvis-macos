@@ -10,7 +10,11 @@ enum JarvisMotion {
     static let content = Animation.spring(response: 0.34, dampingFraction: 0.86, blendDuration: 0.03)
     static let accordion = Animation.easeInOut(duration: 0.22)
     static let feedback = Animation.spring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.03)
-    static let selectionPillTint = Color.accentColor.opacity(0.82)
+    @MainActor
+    static var selectionPillTint: Color {
+        Color.jarvisAccent.opacity(0.82)
+    }
+
     static let hoverPillTint = Color.primary.opacity(0.10)
 
     static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation? {

@@ -123,14 +123,25 @@ struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
     }
 }
 
-enum MeetingModelPreparationStage: String, Sendable {
+enum MeetingModelPreparationStage: String, CaseIterable, Identifiable, Sendable {
     case speakerDiarization
     case chineseTranscription
 
+    var id: Self {
+        self
+    }
+
     var title: String {
         switch self {
-        case .speakerDiarization: "准备说话人识别模型"
-        case .chineseTranscription: "准备中文转写模型"
+        case .speakerDiarization: "说话人识别"
+        case .chineseTranscription: "中文语音转写"
+        }
+    }
+
+    var modelName: String {
+        switch self {
+        case .speakerDiarization: "pyannote/speaker-diarization-community-1 · Core ML"
+        case .chineseTranscription: "Paraformer-large-zh · INT8"
         }
     }
 }
@@ -142,14 +153,27 @@ struct MeetingModelAvailability: Equatable, Sendable {
     var isReady: Bool {
         speakerDiarizationReady && chineseTranscriptionReady
     }
+
+    func isReady(for stage: MeetingModelPreparationStage) -> Bool {
+        switch stage {
+        case .speakerDiarization: speakerDiarizationReady
+        case .chineseTranscription: chineseTranscriptionReady
+        }
+    }
+}
+
+enum MeetingModelOperation: Equatable, Sendable {
+    case download
+    case remove
 }
 
 enum MeetingModelPreparationState: Equatable, Sendable {
     case checking
     case notReady(MeetingModelAvailability)
     case downloading(stage: MeetingModelPreparationStage, progress: Double)
+    case removing(MeetingModelPreparationStage)
     case ready
-    case failed(String)
+    case failed(stage: MeetingModelPreparationStage?, operation: MeetingModelOperation, message: String)
 
     var isReady: Bool {
         if case .ready = self {

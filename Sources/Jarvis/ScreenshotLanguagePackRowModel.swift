@@ -31,10 +31,6 @@ final class LanguagePackRowModel: ObservableObject {
         self.service = service
     }
 
-    var isBusy: Bool {
-        phase == .checking || phase == .downloading
-    }
-
     private var canStartDownload: Bool {
         switch phase {
         case .supported, .failed:

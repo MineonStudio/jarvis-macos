@@ -15,6 +15,7 @@ struct JarvisSidebarNavigation<
     let headerTitle: String
     let showsHeaderOrb: Bool
 
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var highlightedItemID: Item.ID?
     @State private var isFooterHighlighted = false
@@ -46,6 +47,8 @@ struct JarvisSidebarNavigation<
     }
 
     var body: some View {
+        let accentColor = app.accentColorPreference.resolvedColor
+
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 if showsHeaderOrb {
@@ -90,7 +93,7 @@ struct JarvisSidebarNavigation<
                             .foregroundStyle(
                                 footerIsSelected
                                     ? Color.white
-                                    : Color.accentColor.opacity(0.78)
+                                    : accentColor.opacity(0.78)
                             )
                         Text(footerTitle)
                             .font(footerIsSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
@@ -106,7 +109,7 @@ struct JarvisSidebarNavigation<
                         Capsule()
                             .fill(
                                 footerIsSelected
-                                    ? JarvisMotion.selectionPillTint
+                                    ? accentColor.opacity(0.82)
                                     : (isFooterHighlighted ? JarvisMotion.hoverPillTint : .clear)
                             )
                             .scaleEffect(
@@ -155,6 +158,7 @@ struct JarvisSidebarNavigation<
     private func primaryRow(_ item: Item) -> some View {
         let isSelected = selection == item
         let isHighlighted = highlightedItemID == item.id
+        let accentColor = app.accentColorPreference.resolvedColor
 
         return Button {
             withAnimation(
@@ -170,7 +174,7 @@ struct JarvisSidebarNavigation<
                     .foregroundStyle(
                         isSelected
                             ? Color.white
-                            : Color.accentColor.opacity(0.78)
+                            : accentColor.opacity(0.78)
                     )
                 Text(title(item))
                     .font(isSelected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
@@ -186,7 +190,7 @@ struct JarvisSidebarNavigation<
                 Capsule()
                     .fill(
                         isSelected
-                            ? JarvisMotion.selectionPillTint
+                            ? accentColor.opacity(0.82)
                             : (isHighlighted ? JarvisMotion.hoverPillTint : .clear)
                     )
                     .scaleEffect(isSelected || isHighlighted ? 1 : 0.96)

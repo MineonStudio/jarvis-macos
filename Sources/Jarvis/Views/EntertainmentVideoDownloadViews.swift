@@ -59,7 +59,7 @@ struct EntertainmentVideoDownloadView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.down.circle.fill")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.jarvisAccent)
             Text("视频下载")
                 .font(JarvisTypography.cardTitle)
             Spacer()
@@ -159,7 +159,7 @@ struct EntertainmentVideoDownloadView: View {
                     }
                     .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
                     .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                 }
             }
             .padding(.horizontal, 16)
@@ -195,7 +195,7 @@ struct EntertainmentVideoDownloadView: View {
                     .font(JarvisTypography.control)
             }
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.jarvisAccent)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -321,7 +321,7 @@ private struct EntertainmentVideoDownloadRow: View {
         case .completed: .green
         case .failed: .red
         case .cancelled: .secondary
-        case .queued, .downloading: .accentColor
+        case .queued, .downloading: Color.jarvisAccent
         }
     }
 }
@@ -407,7 +407,7 @@ private struct EntertainmentVideoHistoryRow: View {
         case .completed: return .green
         case .failed: return .red
         case .cancelled: return .secondary
-        case .queued, .downloading: return .accentColor
+        case .queued, .downloading: return Color.jarvisAccent
         }
     }
 }

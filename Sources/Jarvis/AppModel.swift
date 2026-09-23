@@ -87,7 +87,13 @@ final class AppModel {
     var meetingShortcutConflictMessage = ""
     var windowLayoutShortcuts: [WindowLayout: ScreenshotShortcut] = [:]
     var themePreference: JarvisTheme = .system
+    var appIconAppearance: JarvisAppIconAppearance = .system
+    var accentColorPreference: JarvisAccentColor = .system
     var systemColorScheme: ColorScheme = .light
+    var activeColorScheme: ColorScheme {
+        themePreference.resolvedColorScheme(system: systemColorScheme)
+    }
+
     var updateState: JarvisUpdateState = .idle
     var selectedAIProvider: AIConversationProvider = .deepSeek
     var selectedEntertainmentPlatform: EntertainmentPlatform = .x
@@ -106,6 +112,25 @@ final class AppModel {
     var meetingProcessingState: MeetingProcessingState = .idle
     var meetingElapsed: TimeInterval = 0
     var meetingModelState: MeetingModelPreparationState = .checking
+    var meetingModelAvailability = MeetingModelAvailability(
+        speakerDiarizationReady: false,
+        chineseTranscriptionReady: false
+    )
+    var canManageMeetingModels: Bool {
+        guard meetingModelPreparationTask == nil,
+              meetingCurrentRecordingID == nil,
+              !isStartingMeetingRecording
+        else {
+            return false
+        }
+        switch meetingProcessingState {
+        case .recording, .processing:
+            return false
+        default:
+            return true
+        }
+    }
+
     var meetingStorageError: String?
     var screenCapturePermissionGranted = false
     var accessibilityPermissionGranted = false
@@ -176,6 +201,8 @@ final class AppModel {
     @ObservationIgnored let meetingShortcutKey = "jarvis.meeting.shortcut"
     @ObservationIgnored let windowLayoutShortcutKeyPrefix = "jarvis.window-layout.shortcut."
     @ObservationIgnored let themePreferenceKey = "jarvis.theme.preference"
+    @ObservationIgnored let appIconAppearanceKey = "jarvis.app-icon.appearance"
+    @ObservationIgnored let accentColorPreferenceKey = "jarvis.accent-color.preference"
     @ObservationIgnored let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     @ObservationIgnored let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
     @ObservationIgnored let selectedAIProviderKey = "jarvis.web.ai-provider"
@@ -247,6 +274,7 @@ final class AppModel {
             self?.handleUnexpectedMeetingStop()
         }
         let modelAvailability = MeetingModelStorage.availability()
+        meetingModelAvailability = modelAvailability
         meetingModelState = modelAvailability.isReady ? .ready : .notReady(modelAvailability)
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
@@ -255,6 +283,8 @@ final class AppModel {
         loadWindowLayoutShortcuts()
         loadAIAPISettings()
         loadThemePreference()
+        loadAppIconAppearance()
+        loadAccentColorPreference()
         loadLaunchAtLoginPreference()
         refreshSystemColorScheme()
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in

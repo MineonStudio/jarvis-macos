@@ -22,4 +22,28 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(JarvisTheme.light.resolvedColorScheme(system: .dark), .light)
         XCTAssertEqual(JarvisTheme.dark.resolvedColorScheme(system: .light), .dark)
     }
+
+    func testAppIconAppearanceResolvesSystemVariant() {
+        XCTAssertEqual(
+            JarvisAppIconAppearance.allCases.map(\.rawValue),
+            ["system", "light", "dark"]
+        )
+        XCTAssertEqual(
+            JarvisAppIconAppearance.system.resolvedVariant(isSystemDark: true),
+            .dark
+        )
+        XCTAssertEqual(
+            JarvisAppIconAppearance.system.resolvedVariant(isSystemDark: false),
+            .light
+        )
+    }
+
+    func testAccentColorPreferencesExposeRequestedPalette() {
+        XCTAssertEqual(
+            JarvisAccentColor.allCases.map(\.rawValue),
+            ["system", "blue", "purple", "pink", "red", "orange", "yellow", "green", "graphite"]
+        )
+        XCTAssertEqual(JarvisAccentColor.system.title, "跟随系统")
+        XCTAssertEqual(JarvisAccentColor.graphite.title, "石墨色")
+    }
 }

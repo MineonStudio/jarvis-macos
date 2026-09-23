@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Translation
 
@@ -25,6 +26,16 @@ protocol LanguagePackService: Sendable {
 }
 
 struct SystemLanguagePackService: LanguagePackService {
+    @MainActor
+    static func openLanguageSettings() -> Bool {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.Localization-Settings.extension"
+        ) else {
+            return false
+        }
+        return NSWorkspace.shared.open(url)
+    }
+
     func status(for target: ScreenshotTranslationLanguage) async -> LanguagePackSupport {
         let probe = ScreenshotLanguagePackProbe(target: target)
         let status = await ScreenshotAppleTranslation.availability(
@@ -93,7 +104,7 @@ final class SystemLanguagePackSessionHandler: LanguagePackSessionHandling, @unch
             try Task.checkCancellation()
             try? await Task.sleep(for: .seconds(2))
         }
-        throw LanguagePackDownloadIssue(message: "语言包仍在后台安装，稍后可在设置里刷新查看")
+        throw LanguagePackDownloadIssue(message: "语言包仍在后台安装，稍后重新打开设置即可更新状态")
     }
 
     func cancel() {

@@ -49,7 +49,7 @@ struct JarvisToolbarGroupedPicker<Item: Identifiable & Hashable, Icon: View>: Vi
                     .overlay {
                         Capsule()
                             .strokeBorder(
-                                Color.accentColor.opacity(isSelected ? 0.42 : 0),
+                                Color.jarvisAccent.opacity(isSelected ? 0.42 : 0),
                                 lineWidth: 0.75
                             )
                     }
@@ -142,7 +142,7 @@ struct JarvisWebPlatformDownloadButton<Popover: View>: View {
                         .font(JarvisTypography.badge)
                         .foregroundStyle(.white)
                         .frame(minWidth: 14, minHeight: 14)
-                        .background(Color.accentColor, in: Circle())
+                        .background(Color.jarvisAccent, in: Circle())
                         .offset(x: 4, y: -4)
                         .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
                 }
@@ -170,7 +170,7 @@ struct JarvisWebPlatformDownloadManagerView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                 Text("下载管理")
                     .font(JarvisTypography.cardTitle)
                 Spacer()
@@ -179,7 +179,7 @@ struct JarvisWebPlatformDownloadManagerView: View {
                         manager.clearFinished()
                     }
                     .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                     .font(JarvisTypography.control)
                 }
             }
@@ -227,7 +227,7 @@ struct JarvisWebPlatformDownloadManagerView: View {
                     .font(JarvisTypography.control)
             }
             .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.jarvisAccent)
             .padding(.top, 10)
         }
         .padding(16)
@@ -304,7 +304,7 @@ private struct JarvisWebPlatformDownloadRow: View {
         case .completed: .green
         case .failed: .red
         case .cancelled: .secondary
-        case .queued, .downloading: .accentColor
+        case .queued, .downloading: Color.jarvisAccent
         }
     }
 }
@@ -350,7 +350,7 @@ private struct JarvisWebPlatformPageStatusOverlay: View {
                 VStack(spacing: 12) {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.system(size: 28, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.jarvisAccent)
                     Text("\(controller.platform.title) 页面加载失败")
                         .font(JarvisTypography.cardTitle)
                     Text(loadError)

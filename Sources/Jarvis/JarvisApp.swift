@@ -69,7 +69,8 @@ private struct JarvisRootView: View {
         ContentView(isSettingsPresented: $isSettingsPresented)
             .environment(appModel)
             .environmentObject(appModel.resumeWorkspace)
-            .tint(.accentColor)
+            .tint(appModel.accentColorPreference.resolvedColor)
+            .accentColor(appModel.accentColorPreference.resolvedColor)
             .jarvisTheme(
                 appModel.themePreference,
                 systemColorScheme: appModel.systemColorScheme
@@ -79,16 +80,21 @@ private struct JarvisRootView: View {
                 minHeight: JarvisMainWindowController.minimumWindowSize.height
             )
             .overlay {
-                if !appModel.hasAllRequiredPermissions {
+                if !appModel.hasAllRequiredPermissions, !isSettingsPresented {
                     JarvisPermissionGateOverlay()
                         .environment(appModel)
                 }
             }
             .overlay {
-                if appModel.hasAllRequiredPermissions, isSettingsPresented {
+                if isSettingsPresented {
                     SettingsModalOverlay(isPresented: $isSettingsPresented)
                         .environment(appModel)
                 }
+            }
+            .overlay(alignment: .bottom) {
+                JarvisToastHost(message: appModel.toastMessage)
+                    .padding(.bottom, 26)
+                    .allowsHitTesting(false)
             }
             .animation(.easeInOut(duration: 0.2), value: appModel.hasAllRequiredPermissions)
             .animation(.easeInOut(duration: 0.2), value: isSettingsPresented)

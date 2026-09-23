@@ -227,6 +227,9 @@ final class AIAPIConfigurationTests: XCTestCase {
         XCTAssertTrue(AIAPIProvider.allCases.contains(.googleGemini))
         XCTAssertTrue(AIAPIProvider.allCases.contains(.doubao))
         XCTAssertTrue(AIAPIProvider.allCases.contains(.custom))
+        for provider in AIAPIProvider.allCases where provider != .custom {
+            XCTAssertNotNil(provider.brandIconResource, "Missing brand icon for \(provider.title)")
+        }
         XCTAssertEqual(AIAPIProvider.dashScope.baseURLs.count, 3)
         XCTAssertEqual(AIAPIProvider.zhipu.baseURLs.count, 2)
         XCTAssertEqual(AIAPIProvider.deepSeek.defaultBaseURL, "https://api.deepseek.com")

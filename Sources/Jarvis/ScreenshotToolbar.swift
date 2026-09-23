@@ -210,6 +210,7 @@ extension ScreenshotToolbar {
         .translationTask(editor.appleTranslationConfiguration) { @Sendable session in
             await editor.consumeAppleTranslationSession(session)
         }
+        .jarvisAccentAware()
     }
 
     /// 主按钮行：撑满窗口宽度（面板按固定宽度摆位，胶囊收窄就会留下看得见截图、
@@ -691,7 +692,7 @@ extension ScreenshotToolbar {
                         .overlay {
                             Circle()
                                 .stroke(
-                                    selected == color ? Color.accentColor : Color.primary.opacity(0.2),
+                                    selected == color ? Color.jarvisAccent : Color.primary.opacity(0.2),
                                     lineWidth: selected == color ? 2 : 1
                                 )
                         }

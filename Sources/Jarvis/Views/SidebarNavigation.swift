@@ -12,6 +12,8 @@ struct JarvisSidebarNavigation<
     let footerIcon: String?
     let footerIsSelected: Bool
     let footerAction: (() -> Void)?
+    let headerTitle: String
+    let showsHeaderOrb: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var highlightedItemID: Item.ID?
@@ -26,7 +28,9 @@ struct JarvisSidebarNavigation<
         footerTitle: String? = nil,
         footerIcon: String? = nil,
         footerIsSelected: Bool = false,
-        footerAction: (() -> Void)? = nil
+        footerAction: (() -> Void)? = nil,
+        headerTitle: String = "JARVIS",
+        showsHeaderOrb: Bool = true
     ) {
         self.topItems = topItems
         self.bottomItems = bottomItems
@@ -37,16 +41,20 @@ struct JarvisSidebarNavigation<
         self.footerIcon = footerIcon
         self.footerIsSelected = footerIsSelected
         self.footerAction = footerAction
+        self.headerTitle = headerTitle
+        self.showsHeaderOrb = showsHeaderOrb
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
-                JarvisOrbMark(diameter: 24)
+                if showsHeaderOrb {
+                    JarvisOrbMark(diameter: 24)
+                }
 
-                Text("JARVIS")
+                Text(headerTitle)
                     .font(JarvisTypography.pageTitle)
-                    .tracking(2.4)
+                    .tracking(showsHeaderOrb ? 2.4 : 0)
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 14)

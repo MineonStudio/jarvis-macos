@@ -6,6 +6,7 @@ struct ScreenshotCanvasView: View {
     @ObservedObject var editor: ScreenshotEditorModel
     let interactive: Bool
     let showsSelectionOverlay: Bool
+    var canvasScale: CGFloat = 1
 
     init(
         image: NSImage,
@@ -140,6 +141,12 @@ struct ScreenshotCanvasView: View {
                 }
             }
         }
+        .scaleEffect(canvasScale, anchor: .topLeading)
+        .frame(
+            width: editor.canvasSize.width * canvasScale,
+            height: editor.canvasSize.height * canvasScale,
+            alignment: .topLeading
+        )
     }
 
     private var canvasGesture: some Gesture {

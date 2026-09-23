@@ -63,9 +63,10 @@ private struct JarvisRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     @StateObject private var mainWindowController = JarvisMainWindowController()
+    @State private var isSettingsPresented = false
 
     var body: some View {
-        ContentView()
+        ContentView(isSettingsPresented: $isSettingsPresented)
             .environment(appModel)
             .environmentObject(appModel.resumeWorkspace)
             .tint(.accentColor)
@@ -83,7 +84,14 @@ private struct JarvisRootView: View {
                         .environment(appModel)
                 }
             }
+            .overlay {
+                if appModel.hasAllRequiredPermissions, isSettingsPresented {
+                    SettingsModalOverlay(isPresented: $isSettingsPresented)
+                        .environment(appModel)
+                }
+            }
             .animation(.easeInOut(duration: 0.2), value: appModel.hasAllRequiredPermissions)
+            .animation(.easeInOut(duration: 0.2), value: isSettingsPresented)
             // Keep the system title-bar region and its native window controls.
             // Apple recommends removing only the title and toolbar background
             // when content should extend beneath that region.

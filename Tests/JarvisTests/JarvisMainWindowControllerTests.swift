@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class JarvisMainWindowControllerTests: XCTestCase {
+    func testSettingsModalUsesFixedCenteredLayoutSize() {
+        XCTAssertEqual(
+            SettingsLayout.modalSize,
+            CGSize(width: 1_040, height: 680)
+        )
+    }
+
+    func testSettingsSectionsExposeStableSidebarOrder() {
+        XCTAssertEqual(
+            SettingsSection.allCases,
+            [.general, .appearance, .shortcuts, .model, .diagnostics, .about]
+        )
+        XCTAssertEqual(
+            SettingsSection.allCases.map(\.title),
+            ["常规", "外观", "快捷键", "模型", "诊断", "关于"]
+        )
+        XCTAssertTrue(SettingsSection.allCases.allSatisfy { !$0.icon.isEmpty })
+    }
+
     func testMinimumWindowSizeKeepsTheMainInterfaceUsable() {
         XCTAssertEqual(
             JarvisMainWindowController.minimumWindowSize.width,

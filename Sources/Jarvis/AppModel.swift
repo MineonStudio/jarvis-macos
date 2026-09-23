@@ -9,7 +9,6 @@ enum AppSection: Hashable, Identifiable {
     case aiConversation
     case entertainment
     case skill(SkillID)
-    case settings
 
     var id: String {
         switch self {
@@ -17,7 +16,6 @@ enum AppSection: Hashable, Identifiable {
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
         case let .skill(skill): "skill.\(skill.id)"
-        case .settings: "settings"
         }
     }
 
@@ -27,7 +25,6 @@ enum AppSection: Hashable, Identifiable {
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
         case let .skill(skill): skill.title
-        case .settings: "设置"
         }
     }
 
@@ -42,7 +39,6 @@ enum AppSection: Hashable, Identifiable {
         case .skill(.resume): "简历制作"
         case .skill(.wallpaper): "桌面壁纸"
         case .skill(.meetingNotes): "会议记录"
-        case .settings: "设置"
         }
     }
 
@@ -52,7 +48,6 @@ enum AppSection: Hashable, Identifiable {
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
         case let .skill(skill): skill.icon
-        case .settings: "gearshape"
         }
     }
 
@@ -90,6 +85,7 @@ final class AppModel {
     var clipboardShortcutConflictMessage = ""
     var meetingShortcut = ScreenshotShortcut.meetingDefault
     var meetingShortcutConflictMessage = ""
+    var windowLayoutShortcuts: [WindowLayout: ScreenshotShortcut] = [:]
     var themePreference: JarvisTheme = .system
     var systemColorScheme: ColorScheme = .light
     var updateState: JarvisUpdateState = .idle
@@ -178,6 +174,7 @@ final class AppModel {
     @ObservationIgnored let screenshotShortcutDefaultMigrationKey = "jarvis.screenshot.shortcut.f1.migrated"
     @ObservationIgnored let clipboardShortcutKey = "jarvis.clipboard.shortcut"
     @ObservationIgnored let meetingShortcutKey = "jarvis.meeting.shortcut"
+    @ObservationIgnored let windowLayoutShortcutKeyPrefix = "jarvis.window-layout.shortcut."
     @ObservationIgnored let themePreferenceKey = "jarvis.theme.preference"
     @ObservationIgnored let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     @ObservationIgnored let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
@@ -255,6 +252,7 @@ final class AppModel {
         loadScreenshotShortcut()
         loadClipboardShortcut()
         loadMeetingShortcut()
+        loadWindowLayoutShortcuts()
         loadAIAPISettings()
         loadThemePreference()
         loadLaunchAtLoginPreference()
@@ -294,7 +292,7 @@ final class AppModel {
         }
         for (index, layout) in WindowLayout.allCases.enumerated() {
             windowLayoutShortcutManagers[layout] = ScreenshotShortcutManager(
-                binding: layout.shortcut,
+                binding: windowLayoutShortcut(for: layout),
                 hotKeyID: UInt32(index + 3)
             ) { [weak self] in
                 Task { @MainActor [weak self] in

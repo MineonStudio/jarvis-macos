@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
+    @Binding var isSettingsPresented: Bool
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationSelection: TopLevelSection = .home
@@ -18,8 +19,8 @@ struct ContentView: View {
                 icon: { $0.icon },
                 footerTitle: "设置",
                 footerIcon: "gearshape",
-                footerIsSelected: navigationSelection == .settings,
-                footerAction: { selectSection(.settings) }
+                footerIsSelected: false,
+                footerAction: { isSettingsPresented = true }
             )
             .background(Color.jarvisBackground)
             .navigationSplitViewColumnWidth(
@@ -54,8 +55,6 @@ struct ContentView: View {
                 navigationSelection = .aiConversation
             case .entertainment:
                 navigationSelection = .entertainment
-            case .settings:
-                navigationSelection = .settings
             }
         }
         .task(id: navigationTargetID) {
@@ -115,8 +114,6 @@ struct ContentView: View {
             "ai-conversation|\(app.selectedAIProvider.id)"
         case .entertainment:
             "entertainment|\(app.selectedEntertainmentPlatform.id)"
-        case .settings:
-            "settings"
         }
     }
 
@@ -130,8 +127,6 @@ struct ContentView: View {
             .aiConversation
         case .entertainment:
             .entertainment
-        case .settings:
-            .settings
         }
     }
 
@@ -147,7 +142,6 @@ struct ContentView: View {
         case .skill(.resume): ResumeContentView()
         case .skill(.wallpaper): WallpaperView()
         case .skill(.meetingNotes): MeetingView()
-        case .settings: SettingsView()
         }
     }
 
@@ -180,7 +174,6 @@ private enum TopLevelSection: Hashable, Identifiable {
     case skill(SkillID)
     case aiConversation
     case entertainment
-    case settings
 
     var id: String {
         switch self {
@@ -188,7 +181,6 @@ private enum TopLevelSection: Hashable, Identifiable {
         case let .skill(skill): "skill.\(skill.id)"
         case .aiConversation: "ai-conversation"
         case .entertainment: "entertainment"
-        case .settings: "settings"
         }
     }
 
@@ -198,7 +190,6 @@ private enum TopLevelSection: Hashable, Identifiable {
         case let .skill(skill): skill.navigationTitle
         case .aiConversation: "AI聚合"
         case .entertainment: "娱乐广场"
-        case .settings: "设置"
         }
     }
 
@@ -208,7 +199,6 @@ private enum TopLevelSection: Hashable, Identifiable {
         case let .skill(skill): skill.icon
         case .aiConversation: "sparkles"
         case .entertainment: "play.rectangle"
-        case .settings: "gearshape"
         }
     }
 
@@ -218,7 +208,6 @@ private enum TopLevelSection: Hashable, Identifiable {
         case let .skill(skill): .skill(skill)
         case .aiConversation: .aiConversation
         case .entertainment: .entertainment
-        case .settings: .settings
         }
     }
 }

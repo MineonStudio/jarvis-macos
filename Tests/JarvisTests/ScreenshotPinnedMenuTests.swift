@@ -146,6 +146,55 @@ final class ScreenshotPinnedMenuTests: XCTestCase {
 }
 
 extension ScreenshotPinnedMenuTests {
+    func testScrollZoomRequiresAnActivePinWindow() {
+        XCTAssertNil(
+            PinnedScreenshotZoom.scrollDelta(
+                scrollingDeltaY: 1,
+                isWindowKey: false
+            )
+        )
+        XCTAssertEqual(
+            PinnedScreenshotZoom.scrollDelta(
+                scrollingDeltaY: 1,
+                isWindowKey: true
+            ),
+            PinnedScreenshotZoom.step
+        )
+        XCTAssertEqual(
+            PinnedScreenshotZoom.scrollDelta(
+                scrollingDeltaY: -1,
+                isWindowKey: true
+            ),
+            -PinnedScreenshotZoom.step
+        )
+    }
+
+    func testScrollZoomClampsToSupportedBounds() {
+        XCTAssertEqual(
+            PinnedScreenshotZoom.adjustedZoom(
+                from: PinnedScreenshotZoom.minimum,
+                scrollingDeltaY: -1,
+                isWindowKey: true
+            ),
+            PinnedScreenshotZoom.minimum
+        )
+        XCTAssertEqual(
+            PinnedScreenshotZoom.adjustedZoom(
+                from: PinnedScreenshotZoom.maximum,
+                scrollingDeltaY: 1,
+                isWindowKey: true
+            ),
+            PinnedScreenshotZoom.maximum
+        )
+        XCTAssertNil(
+            PinnedScreenshotZoom.adjustedZoom(
+                from: 1,
+                scrollingDeltaY: 1,
+                isWindowKey: false
+            )
+        )
+    }
+
     /// 图片**外面**哪里采样。
     private enum SampleRegion {
         /// 离图片边缘 8pt 开外：光晕铺开的地方。

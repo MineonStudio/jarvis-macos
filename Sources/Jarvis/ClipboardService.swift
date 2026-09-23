@@ -350,6 +350,15 @@ final class ClipboardService: @unchecked Sendable {
         self.timer = timer
     }
 
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        onChange = nil
+        prepareCacheSpace = nil
+        lastChangeCount = NSPasteboard.general.changeCount
+        JarvisLog.info(category: .clipboard, event: "service.stop")
+    }
+
     func markCurrentPasteboardAsHandled() {
         lastChangeCount = NSPasteboard.general.changeCount
         JarvisLog.debug(

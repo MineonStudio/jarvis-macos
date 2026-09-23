@@ -7,8 +7,7 @@ enum WallpaperSource: String, CaseIterable, Codable, Hashable, Identifiable {
     case qihoo
     /// Kept for decoding older local-library records.
     case wikimedia
-    /// Kept for decoding older local-library records. New wallpapers are sourced
-    /// from Wallhaven, with 360 wallpaper as a fallback when that host is down.
+    /// Kept for decoding older local-library records.
     case local
 
     var id: String {

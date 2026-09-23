@@ -306,7 +306,7 @@ struct WallpaperView: View {
                 items: model.library,
                 availableWidth: availableWidth,
                 emptyTitle: "还没有已下载壁纸",
-                emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
+                emptyMessage: "从在线图库下载壁纸后，会在这里长期保留。",
                 showsDelete: true,
                 onDelete: { deleteItem = $0 }
             )

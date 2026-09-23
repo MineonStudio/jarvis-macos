@@ -9,11 +9,22 @@ extension AppModel {
     }
 
     func refreshMeetingModelState() {
-        guard meetingModelPreparationTask == nil else { return }
-        let availability = MeetingModelStorage.availability()
-        meetingModelAvailability = availability
-        meetingModelState = availability.isReady ? .ready : .notReady(availability)
-        updateMeetingMenuBarState()
+        guard meetingModelPreparationTask == nil,
+              meetingModelAvailabilityTask == nil
+        else { return }
+        meetingModelAvailabilityTask = Task { @MainActor [weak self] in
+            let availability = await Task.detached(priority: .utility) {
+                MeetingModelStorage.availability()
+            }.value
+            guard let self,
+                  !Task.isCancelled,
+                  meetingModelPreparationTask == nil
+            else { return }
+            meetingModelAvailabilityTask = nil
+            meetingModelAvailability = availability
+            meetingModelState = availability.isReady ? .ready : .notReady(availability)
+            updateMeetingMenuBarState()
+        }
     }
 
     func prepareMeetingModels() {
@@ -27,6 +38,8 @@ extension AppModel {
     private func startMeetingModelPreparation(for stages: [MeetingModelPreparationStage]) {
         guard canManageMeetingModels else { return }
 
+        meetingModelAvailabilityTask?.cancel()
+        meetingModelAvailabilityTask = nil
         meetingModelPreparationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for stage in stages {
@@ -42,17 +55,12 @@ extension AppModel {
                                 return
                             }
                             meetingModelState = .downloading(stage: stage, progress: progress)
-                            if progress >= 1 {
-                                meetingModelAvailability = MeetingModelStorage.availability()
-                            }
                         }
                     }
                     guard !Task.isCancelled else { break }
-                    meetingModelAvailability = MeetingModelStorage.availability()
                 } catch is CancellationError {
                     break
                 } catch {
-                    meetingModelAvailability = MeetingModelStorage.availability()
                     meetingModelPreparationTask = nil
                     meetingModelState = .failed(
                         stage: stage,
@@ -64,6 +72,7 @@ extension AppModel {
             }
 
             meetingModelPreparationTask = nil
+            meetingModelState = .checking
             refreshMeetingModelState()
         }
     }
@@ -77,9 +86,9 @@ extension AppModel {
             do {
                 try await meetingTranscriptionService.removeModel(stage)
                 meetingModelPreparationTask = nil
+                meetingModelState = .checking
                 refreshMeetingModelState()
             } catch {
-                meetingModelAvailability = MeetingModelStorage.availability()
                 meetingModelPreparationTask = nil
                 meetingModelState = .failed(
                     stage: stage,
@@ -94,13 +103,24 @@ extension AppModel {
         guard case .downloading = meetingModelState else { return }
         meetingModelPreparationTask?.cancel()
         meetingModelState = .checking
+        refreshMeetingModelState()
     }
 
     func toggleMeetingRecording() {
-        guard meetingCurrentRecordingID != nil || requireAllPermissions() else { return }
+        if meetingCurrentRecordingID == nil {
+            refreshPermissionStatus()
+            guard microphonePermissionGranted else {
+                promptForTaskPermission(.microphone)
+                return
+            }
+        }
         guard meetingModelsReady else {
             meetingProcessingState = .idle
-            showToast(JarvisFeedbackCopy.downloadModelsFirst)
+            if case .checking = meetingModelState {
+                showToast("正在检查会议识别模型，请稍后再试")
+            } else {
+                showToast(JarvisFeedbackCopy.downloadModelsFirst)
+            }
             return
         }
         if meetingCurrentRecordingID != nil {

@@ -66,16 +66,8 @@ struct ScreenshotLanguagePackSettingsCard: View {
 
     var body: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) {
-                    Image(systemName: "character.bubble")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color.secondary)
-                        .frame(width: 24, height: 24)
-                    Text("截图翻译语言包")
-                        .font(JarvisTypography.bodyEmphasis)
-                    Spacer()
-                }
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+                SettingsCardHeader(title: "截图翻译语言包", systemImage: "character.bubble")
 
                 VStack(spacing: 8) {
                     ForEach(ScreenshotTranslationLanguage.packTargets) { target in
@@ -103,7 +95,7 @@ private struct LanguagePackRowView: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(model.target.title)
-                .font(JarvisTypography.body)
+                .font(SettingsTypography.itemTitle)
                 .foregroundStyle(Color.primary)
             Spacer()
             statusView

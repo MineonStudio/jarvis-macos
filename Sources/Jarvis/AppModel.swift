@@ -140,7 +140,10 @@ final class AppModel {
     var clipboardCacheDirectoryURL: URL
     var clipboardCacheMaximumBytes: Int64
     var clipboardCacheAutoCleanupEnabled = false
-    var clipboardCacheAutoCleanupPeriod: ClipboardCacheCleanupPeriod = .sevenDays
+    var clipboardCacheAutoCleanupPeriod: ClipboardCacheCleanupPeriod = .never
+    var automaticClipboardRecordingEnabled = true
+    var hideSensitiveClipboardContent = true
+    var taskPermissionPrompt: JarvisTaskPermissionPrompt?
     var clipboardCacheUsage = ClipboardCacheUsage(
         usedBytes: 0,
         capacityBytes: ClipboardCacheStore.defaultMaximumBytes,
@@ -188,6 +191,7 @@ final class AppModel {
     @ObservationIgnored var meetingRecordingTimer: Task<Void, Never>?
     @ObservationIgnored var meetingProcessingTask: Task<Void, Never>?
     @ObservationIgnored var meetingModelPreparationTask: Task<Void, Never>?
+    @ObservationIgnored var meetingModelAvailabilityTask: Task<Void, Never>?
     @ObservationIgnored var meetingCurrentRecordingID: UUID?
     @ObservationIgnored var isStartingMeetingRecording = false
     @ObservationIgnored var meetingProcessingQueue: [MeetingProcessingJob] = []
@@ -205,6 +209,8 @@ final class AppModel {
     @ObservationIgnored let accentColorPreferenceKey = "jarvis.accent-color.preference"
     @ObservationIgnored let clipboardCacheAutoCleanupEnabledKey = "jarvis.clipboard.cache.auto-cleanup.enabled"
     @ObservationIgnored let clipboardCacheAutoCleanupPeriodKey = "jarvis.clipboard.cache.auto-cleanup.period"
+    @ObservationIgnored let clipboardRecordingEnabledKey = "jarvis.clipboard.recording.enabled"
+    @ObservationIgnored let hideSensitiveClipboardContentKey = "jarvis.clipboard.hide-sensitive"
     @ObservationIgnored let selectedAIProviderKey = "jarvis.web.ai-provider"
     @ObservationIgnored let selectedEntertainmentPlatformKey = "jarvis.entertainment.platform"
     @ObservationIgnored var toastDismissTask: Task<Void, Never>?
@@ -273,9 +279,6 @@ final class AppModel {
         meetingRecorder.onUnexpectedStop = { [weak self] in
             self?.handleUnexpectedMeetingStop()
         }
-        let modelAvailability = MeetingModelStorage.availability()
-        meetingModelAvailability = modelAvailability
-        meetingModelState = modelAvailability.isReady ? .ready : .notReady(modelAvailability)
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
         loadClipboardShortcut()
@@ -334,6 +337,7 @@ final class AppModel {
         loadSelectedEntertainmentPlatform()
         refreshPermissionStatus()
         synchronizeLaunchAtLogin()
+        refreshMeetingModelState()
         startDeferredStartup()
         JarvisLog.info(
             category: .lifecycle,
@@ -408,17 +412,7 @@ final class AppModel {
 
         trimClipboardCacheIfNeeded()
         migrateClipboardTextCache()
-        clipboardService.start(
-            onChange: { [weak self] item in
-                Task { @MainActor [weak self] in
-                    self?.receiveClipboardItem(item)
-                }
-            },
-            // ClipboardCacheStore enforces the hard byte limit atomically.
-            // History cleanup runs on the main actor after the item arrives,
-            // so the capture worker never synchronously hops into AppModel.
-            prepareCacheSpace: { _ in }
-        )
+        configureClipboardRecording()
         configureClipboardCacheAutoCleanup()
         if latestScreenshotData != nil {
             statusMessage = "已恢复上次缓存的截图"
@@ -443,6 +437,7 @@ final class AppModel {
         meetingRecordingTimer?.cancel()
         meetingProcessingTask?.cancel()
         meetingModelPreparationTask?.cancel()
+        meetingModelAvailabilityTask?.cancel()
     }
 }
 
@@ -454,19 +449,17 @@ extension AppModel {
     /// inside the main window can select the screenshot tab themselves before
     /// invoking this method.
     func captureScreenshot() {
-        guard requireAllPermissions() else { return }
+        refreshPermissionStatus()
+        guard screenCapturePermissionGranted else {
+            promptForTaskPermission(.screenCapture)
+            return
+        }
         guard screenshotController.sessionPhase == .idle else {
             showToast(JarvisFeedbackCopy.finishScreenshotFirst)
             return
         }
 
         editingHistoryID = nil
-        guard requestScreenCapturePermission() else {
-            isCapturing = false
-            statusMessage = "等待 macOS 屏幕录制权限"
-            return
-        }
-
         // Freeze every display on this run-loop turn, then show the overlay
         // on those pixels. The overlay is created after the snapshot, so it
         // is never included in the screenshot.

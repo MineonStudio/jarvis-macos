@@ -343,9 +343,39 @@ enum WindowSelectionDetector {
     }
 }
 
+enum PinnedScreenshotZoom {
+    static let step: CGFloat = 0.1
+    static let minimum: CGFloat = 0.2
+    static let maximum: CGFloat = 4
+
+    static func scrollDelta(
+        scrollingDeltaY: CGFloat,
+        isWindowKey: Bool
+    ) -> CGFloat? {
+        guard isWindowKey, abs(scrollingDeltaY) > 0.01 else { return nil }
+        return scrollingDeltaY > 0 ? step : -step
+    }
+
+    static func adjustedZoom(
+        from current: CGFloat,
+        scrollingDeltaY: CGFloat,
+        isWindowKey: Bool
+    ) -> CGFloat? {
+        guard let delta = scrollDelta(
+            scrollingDeltaY: scrollingDeltaY,
+            isWindowKey: isWindowKey
+        ) else {
+            return nil
+        }
+        let stepped = (current / step).rounded() * step + delta
+        return min(max(stepped, minimum), maximum)
+    }
+}
+
 final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     var onEscape: (() -> Void)?
     var onDidResignKey: (() -> Void)?
+    var onScrollZoom: ((CGFloat) -> Void)?
 
     override var canBecomeKey: Bool {
         true
@@ -358,6 +388,17 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53 {
             onEscape?()
+            return
+        }
+        if event.type == .scrollWheel {
+            guard let delta = PinnedScreenshotZoom.scrollDelta(
+                scrollingDeltaY: event.scrollingDeltaY,
+                isWindowKey: isKeyWindow
+            ) else {
+                super.sendEvent(event)
+                return
+            }
+            onScrollZoom?(delta)
             return
         }
         super.sendEvent(event)
@@ -395,6 +436,7 @@ final class PinnedScreenshotContainerView: NSView {
 
     private var initialWindowOrigin: NSPoint?
     private var initialMouseLocation: NSPoint?
+    private(set) var zoom: CGFloat = 1
 
     init(
         frame frameRect: NSRect,
@@ -424,7 +466,7 @@ final class PinnedScreenshotContainerView: NSView {
         true
     }
 
-    /// 贴图原来只有拖动和 Esc：复制、编辑、找到存到哪儿去都没有入口。
+    /// 复制、编辑、找到存到哪儿去都没有入口。
     override func menu(for _: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         let copyItem = NSMenuItem(
@@ -535,6 +577,25 @@ final class PinnedScreenshotContainerView: NSView {
         }
     }
 
+    func updateZoom(_ zoom: CGFloat) {
+        self.zoom = zoom
+        setFrameSize(containerSize)
+        needsDisplay = true
+        layoutSubtreeIfNeeded()
+    }
+
+    override func layout() {
+        super.layout()
+        guard let canvasView = subviews.first as? ScreenshotCanvasHostingView else { return }
+        canvasView.updateCanvasScale(zoom)
+        canvasView.frame = NSRect(
+            x: contentInset,
+            y: contentInset,
+            width: imageSize.width * zoom,
+            height: imageSize.height * zoom
+        )
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -542,8 +603,8 @@ final class PinnedScreenshotContainerView: NSView {
         let imageRect = CGRect(
             x: contentInset,
             y: contentInset,
-            width: imageSize.width,
-            height: imageSize.height
+            width: imageSize.width * zoom,
+            height: imageSize.height * zoom
         ).insetBy(dx: 1, dy: 1)
         let cornerRadius: CGFloat = 8
         let path = NSBezierPath(
@@ -584,8 +645,8 @@ final class PinnedScreenshotContainerView: NSView {
         let imageRect = CGRect(
             x: contentInset,
             y: contentInset,
-            width: imageSize.width,
-            height: imageSize.height
+            width: imageSize.width * zoom,
+            height: imageSize.height * zoom
         ).insetBy(dx: 1, dy: 1)
         layer.shadowPath = CGPath(
             roundedRect: imageRect,
@@ -601,6 +662,13 @@ final class PinnedScreenshotContainerView: NSView {
         layer.shadowOffset = .zero
         layer.masksToBounds = false
     }
+
+    private var containerSize: CGSize {
+        CGSize(
+            width: imageSize.width * zoom + contentInset * 2,
+            height: imageSize.height * zoom + contentInset * 2
+        )
+    }
 }
 
 @MainActor
@@ -615,14 +683,42 @@ final class PinnedScreenshotItem {
     let contentInset: CGFloat = 40
     var containerView: PinnedScreenshotContainerView?
     var onAction: ((ScreenshotAction) -> Void)?
+    private(set) var zoom: CGFloat = 1
 
     var imageFrame: CGRect {
         CGRect(
             x: window.frame.minX + contentInset,
             y: window.frame.minY + contentInset,
-            width: imageSize.width,
-            height: imageSize.height
+            width: imageSize.width * zoom,
+            height: imageSize.height * zoom
         )
+    }
+
+    func adjustZoom(by scrollingDeltaY: CGFloat) {
+        guard let nextZoom = PinnedScreenshotZoom.adjustedZoom(
+            from: zoom,
+            scrollingDeltaY: scrollingDeltaY,
+            isWindowKey: window.isKeyWindow
+        ), nextZoom != zoom else {
+            return
+        }
+
+        let center = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        zoom = nextZoom
+        let size = CGSize(
+            width: imageSize.width * zoom + contentInset * 2,
+            height: imageSize.height * zoom + contentInset * 2
+        )
+        window.setFrame(
+            NSRect(
+                x: center.x - size.width / 2,
+                y: center.y - size.height / 2,
+                width: size.width,
+                height: size.height
+            ),
+            display: true
+        )
+        containerView?.updateZoom(zoom)
     }
 
     init(data: Data, image: NSImage, frame: CGRect) {

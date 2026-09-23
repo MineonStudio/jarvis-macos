@@ -29,6 +29,8 @@ enum WindowLayoutDisplayMetrics {
 }
 
 struct WindowLayoutView: View {
+    @Environment(AppModel.self) private var app
+
     private let layouts: [WindowLayout] = [
         .halfLeft,
         .halfRight,
@@ -101,7 +103,10 @@ struct WindowLayoutView: View {
             spacing: WindowLayoutDisplayMetrics.gridSpacing
         ) {
             ForEach(layouts) { layout in
-                WindowLayoutDisplayCard(layout: layout)
+                WindowLayoutDisplayCard(
+                    layout: layout,
+                    shortcut: app.windowLayoutShortcut(for: layout)
+                )
             }
         }
     }
@@ -109,6 +114,7 @@ struct WindowLayoutView: View {
 
 private struct WindowLayoutDisplayCard: View {
     let layout: WindowLayout
+    let shortcut: ScreenshotShortcut
 
     var body: some View {
         HStack(spacing: 12) {
@@ -116,7 +122,7 @@ private struct WindowLayoutDisplayCard: View {
             Text(layout.title)
                 .font(JarvisTypography.bodyEmphasis)
             Spacer(minLength: 0)
-            WindowLayoutShortcutLabel(layout: layout)
+            WindowLayoutShortcutLabel(shortcut: shortcut)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -128,11 +134,11 @@ private struct WindowLayoutDisplayCard: View {
 }
 
 private struct WindowLayoutShortcutLabel: View {
-    let layout: WindowLayout
+    let shortcut: ScreenshotShortcut
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(Array(layout.shortcutDisplayParts.enumerated()), id: \.offset) { _, part in
+            ForEach(Array(shortcut.displayString.map(String.init)), id: \.self) { part in
                 Text(part)
                     .font(JarvisTypography.monospaced)
                     .frame(minWidth: 13)

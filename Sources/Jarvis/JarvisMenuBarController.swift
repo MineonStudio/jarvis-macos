@@ -123,6 +123,14 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         configureMenuShortcut(clipboardMenuItem, with: app.clipboardShortcut)
         updateMeetingMenuItem()
         configureMenuShortcut(meetingMenuItem, with: app.meetingShortcut)
+        for item in menu.items {
+            guard let rawValue = item.representedObject as? String,
+                  let layout = WindowLayout(rawValue: rawValue)
+            else {
+                continue
+            }
+            configureMenuShortcut(item, with: app.windowLayoutShortcut(for: layout))
+        }
         let allowed = app.hasAllRequiredPermissions
         for item in menu.items where !item.isSeparatorItem {
             if item.action == #selector(openMainWindow) || item.action == #selector(terminate) {
@@ -151,12 +159,13 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         for layout in WindowLayout.allCases {
+            let shortcut = app?.windowLayoutShortcut(for: layout) ?? layout.defaultShortcut
             let item = NSMenuItem(
                 title: layout.title,
                 action: #selector(applyWindowLayout(_:)),
-                keyEquivalent: layout.menuKeyEquivalent
+                keyEquivalent: shortcut.menuKeyEquivalent
             )
-            item.keyEquivalentModifierMask = layout.shortcut.modifierFlags
+            item.keyEquivalentModifierMask = shortcut.modifierFlags
             item.representedObject = layout.rawValue
             item.image = layout.menuIcon
             addMenuItem(item)

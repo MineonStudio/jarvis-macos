@@ -132,6 +132,10 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         true
     }
 
+    func updateCanvasScale(_ scale: CGFloat) {
+        rootView.canvasScale = scale
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             // 与面板的 sendEvent 保持一致：先让编辑器决定，没人接手才结束整场。

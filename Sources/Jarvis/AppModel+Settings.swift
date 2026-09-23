@@ -477,6 +477,50 @@ extension AppModel {
         return validation == .available
     }
 
+    func windowLayoutShortcut(for layout: WindowLayout) -> ScreenshotShortcut {
+        windowLayoutShortcuts[layout] ?? layout.defaultShortcut
+    }
+
+    func validateWindowLayoutShortcut(
+        _ layout: WindowLayout,
+        _ shortcut: ScreenshotShortcut
+    ) -> ScreenshotShortcutValidation {
+        windowLayoutShortcutManagers[layout]?.validate(shortcut) ?? .unavailable
+    }
+
+    @discardableResult
+    func updateWindowLayoutShortcut(
+        _ layout: WindowLayout,
+        _ shortcut: ScreenshotShortcut
+    ) -> Bool {
+        let previous = windowLayoutShortcut(for: layout)
+        guard let manager = windowLayoutShortcutManagers[layout] else {
+            statusMessage = "快捷键服务尚未就绪"
+            return false
+        }
+
+        let validation = manager.validate(shortcut)
+        guard validation == .available else {
+            statusMessage = validation.message
+            return false
+        }
+        guard manager.update(shortcut) else {
+            _ = manager.update(previous)
+            statusMessage = "快捷键注册失败，可能与其他应用或系统快捷键冲突"
+            return false
+        }
+
+        windowLayoutShortcuts[layout] = shortcut
+        if let data = try? JSONEncoder().encode(shortcut) {
+            UserDefaults.standard.set(
+                data,
+                forKey: windowLayoutShortcutKeyPrefix + layout.rawValue
+            )
+        }
+        statusMessage = "\(layout.title)快捷键已更新为 \(shortcut.displayString)"
+        return true
+    }
+
     // MARK: - UserDefaults loading
 
     func loadScreenshotShortcut() {
@@ -533,5 +577,23 @@ extension AppModel {
             return
         }
         meetingShortcut = shortcut
+    }
+
+    func loadWindowLayoutShortcuts() {
+        var loaded: [WindowLayout: ScreenshotShortcut] = [:]
+        for layout in WindowLayout.allCases {
+            guard let data = UserDefaults.standard.data(
+                forKey: windowLayoutShortcutKeyPrefix + layout.rawValue
+            ),
+                let shortcut = try? JSONDecoder().decode(
+                    ScreenshotShortcut.self,
+                    from: data
+                )
+            else {
+                continue
+            }
+            loaded[layout] = shortcut
+        }
+        windowLayoutShortcuts = loaded
     }
 }

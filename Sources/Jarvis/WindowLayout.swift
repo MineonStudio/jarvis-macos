@@ -107,13 +107,19 @@ enum WindowLayout: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    /// The menu bar and global shortcut manager share this binding so the
-    /// shortcut shown in the cards always matches the actual action.
-    var shortcut: ScreenshotShortcut {
+    /// The built-in shortcut used for first launch and as the restore-default
+    /// value in Settings. User overrides are stored by AppModel.
+    var defaultShortcut: ScreenshotShortcut {
         ScreenshotShortcut(
             keyCode: keyCode,
             modifiers: Self.menuShortcutModifierFlags.rawValue
         )
+    }
+
+    /// Kept as the default-facing API for menu and layout tests. Runtime code
+    /// should ask AppModel for the user's configured shortcut.
+    var shortcut: ScreenshotShortcut {
+        defaultShortcut
     }
 
     private var keyCode: UInt16 {

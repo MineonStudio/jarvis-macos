@@ -59,6 +59,9 @@ extension ScreenshotCaptureController {
             // briefly move key-window status to it, so keep the pin selected.
             deselectPinnedScreenshot(item)
         }
+        item.window.onScrollZoom = { [weak item] delta in
+            item?.adjustZoom(by: delta)
+        }
 
         let hostingView = ScreenshotCanvasHostingView(
             rootView: ScreenshotCanvasView(
@@ -424,6 +427,7 @@ extension ScreenshotCaptureController {
         item.editor.cancelTranslation()
         item.window.onEscape = nil
         item.window.onDidResignKey = nil
+        item.window.onScrollZoom = nil
         item.window.orderOut(nil)
         item.window.close()
         if selectedPinnedID == item.id {

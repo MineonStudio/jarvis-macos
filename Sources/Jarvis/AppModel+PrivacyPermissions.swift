@@ -1,4 +1,5 @@
 import AVFoundation
+import Foundation
 
 extension AppModel {
     var hasAllRequiredPermissions: Bool {
@@ -55,6 +56,9 @@ extension AppModel {
         refreshPermissionStatus()
         if !granted {
             screenshotController.openScreenCaptureSettings()
+            showToast("请在系统设置的屏幕录制中开启贾维斯")
+        } else {
+            showToast("屏幕录制权限已开启")
         }
         return granted
     }
@@ -65,6 +69,7 @@ extension AppModel {
         statusMessage = granted
             ? "辅助功能权限已开启"
             : "请在系统设置的辅助功能中开启贾维斯"
+        showToast(statusMessage)
     }
 
     func requestMicrophonePermission() {
@@ -79,18 +84,6 @@ extension AppModel {
         for mediaType: AVMediaType,
         privacyPermission: JarvisPrivacyPermission
     ) {
-        guard !JarvisPrivacyPermissionAccess.isMediaAccessGranted(for: mediaType) else {
-            refreshPermissionStatus()
-            return
-        }
-
-        if AVCaptureDevice.authorizationStatus(for: mediaType) == .denied
-            || AVCaptureDevice.authorizationStatus(for: mediaType) == .restricted
-        {
-            JarvisPrivacyPermissionAccess.openSettings(for: privacyPermission)
-            return
-        }
-
         JarvisPrivacyPermissionAccess.requestMediaAccess(for: mediaType) { [weak self] granted in
             guard let self else { return }
             let mediaName = privacyPermission == .microphone ? "麦克风" : "摄像头"
@@ -98,6 +91,10 @@ extension AppModel {
             statusMessage = granted
                 ? "\(mediaName)权限已开启"
                 : "请在系统设置中开启\(mediaName)权限"
+            showToast(statusMessage)
+            if !granted {
+                JarvisPrivacyPermissionAccess.openSettings(for: privacyPermission)
+            }
         }
     }
 }

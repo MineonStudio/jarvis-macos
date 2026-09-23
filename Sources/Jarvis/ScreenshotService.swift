@@ -11,10 +11,7 @@ final class ScreenshotService {
     }
 
     func requestScreenCaptureAccess() -> Bool {
-        if hasScreenCaptureAccess {
-            return true
-        }
-        return CGRequestScreenCaptureAccess()
+        CGRequestScreenCaptureAccess()
     }
 
     @MainActor

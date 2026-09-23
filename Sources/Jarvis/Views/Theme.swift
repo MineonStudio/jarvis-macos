@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 
 // MARK: - Jarvis visual language
@@ -41,6 +42,109 @@ enum JarvisTheme: String, CaseIterable, Identifiable {
     }
 }
 
+enum JarvisAppIconAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .system: "跟随系统"
+        case .light: "浅色"
+        case .dark: "深色"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
+    func resolvedVariant(isSystemDark: Bool) -> JarvisAppIconAppearance {
+        switch self {
+        case .system:
+            isSystemDark ? .dark : .light
+        case .light, .dark:
+            self
+        }
+    }
+}
+
+enum JarvisAccentColor: String, CaseIterable, Identifiable {
+    case system
+    case blue
+    case purple
+    case pink
+    case red
+    case orange
+    case yellow
+    case green
+    case graphite
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .system: "跟随系统"
+        case .blue: "蓝色"
+        case .purple: "紫色"
+        case .pink: "粉色"
+        case .red: "红色"
+        case .orange: "橙色"
+        case .yellow: "黄色"
+        case .green: "绿色"
+        case .graphite: "石墨色"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .system: Color(nsColor: .controlAccentColor)
+        case .blue: .blue
+        case .purple: .purple
+        case .pink: .pink
+        case .red: .red
+        case .orange: .orange
+        case .yellow: .yellow
+        case .green: .green
+        case .graphite: Color(nsColor: .systemGray)
+        }
+    }
+
+    var resolvedColor: Color {
+        color
+    }
+}
+
+/// AppModel owns the preference; this observable mirror keeps custom colors
+/// reactive even in SwiftUI views hosted outside the main window hierarchy.
+@MainActor
+@Observable
+final class JarvisAccentColorStore {
+    static let shared = JarvisAccentColorStore()
+
+    private(set) var preference: JarvisAccentColor = .system
+
+    var color: Color {
+        preference.color
+    }
+
+    private init() {}
+
+    func update(_ preference: JarvisAccentColor) {
+        self.preference = preference
+    }
+}
+
 enum JarvisTypography {
     static let pageTitle = Font.system(size: 26, weight: .semibold, design: .rounded)
     static let cardTitle = Font.system(size: 16, weight: .semibold)
@@ -75,12 +179,27 @@ private struct JarvisThemeModifier: ViewModifier {
     }
 }
 
+private struct JarvisAccentTintModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.tint(Color.jarvisAccent)
+    }
+}
+
 extension Color {
-    // Keep these names stable for the rest of the app, but use semantic system
-    // colors instead of a fixed dark palette so the window follows macOS.
+    // Keep these names stable for the rest of the app. Surfaces use semantic
+    // macOS colors; custom accent drawing reads the observable palette below.
     static let jarvisBackground = Color(nsColor: .textBackgroundColor)
     static let jarvisPanel = Color(nsColor: .controlBackgroundColor)
-    static let jarvisCyan = Color.accentColor
+    @MainActor
+    static var jarvisAccent: Color {
+        JarvisAccentColorStore.shared.color
+    }
+
+    @MainActor
+    static var jarvisCyan: Color {
+        jarvisAccent
+    }
+
     static let jarvisTextSecondary = Color.secondary
     /// 嵌在卡片里的区域（设置行、手风琴、权限行）的底色：比卡片表面更淡，
     /// 靠明度差而不是描边来分层。
@@ -305,15 +424,15 @@ struct JarvisEmptyState: View {
         VStack(spacing: 11) {
             Image(systemName: icon)
                 .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.jarvisAccent)
                 .frame(width: 56, height: 56)
                 .background(
-                    Color.accentColor.opacity(0.12),
+                    Color.jarvisAccent.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.75)
+                        .strokeBorder(Color.jarvisAccent.opacity(0.18), lineWidth: 0.75)
                 }
             Text(title)
                 .font(JarvisTypography.cardTitle)
@@ -462,6 +581,10 @@ struct JarvisFloatingPanelModifier: ViewModifier {
 }
 
 extension View {
+    func jarvisAccentAware() -> some View {
+        modifier(JarvisAccentTintModifier())
+    }
+
     func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {
         modifier(JarvisThemeModifier(theme: theme, systemColorScheme: systemColorScheme))
     }
@@ -494,7 +617,7 @@ extension View {
     /// throughout the pages. Full-strength accent tint makes these bubbles
     /// read as solid dark badges instead of translucent glass.
     func jarvisIconGlass(
-        tint: Color = .accentColor,
+        tint: Color = Color.jarvisAccent,
         in shape: some Shape,
         interactive: Bool = false
     ) -> some View {
@@ -553,7 +676,7 @@ struct HistoryCardChrome<Preview: View>: View {
                 style: .continuous
             )
             .stroke(
-                isSelected ? Color.accentColor : .clear,
+                isSelected ? Color.jarvisAccent : .clear,
                 lineWidth: isSelected ? 2 : 0
             )
             .allowsHitTesting(false)
@@ -588,7 +711,7 @@ struct JarvisPrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 8)
             .opacity(configuration.isPressed ? 0.78 : (isEnabled ? 1 : 0.78))
             .jarvisGlass(
-                tint: isEnabled ? .accentColor : Color.primary.opacity(0.12),
+                tint: isEnabled ? Color.jarvisAccent : Color.primary.opacity(0.12),
                 cornerRadius: JarvisMetrics.controlRadius
             )
             .contentShape(RoundedRectangle(cornerRadius: JarvisMetrics.controlRadius, style: .continuous))

@@ -37,7 +37,7 @@ struct ClipboardItemPreview: View {
             } else {
                 Image(systemName: item.kind.icon)
                     .font(.system(size: 42, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

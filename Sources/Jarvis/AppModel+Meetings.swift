@@ -11,42 +11,89 @@ extension AppModel {
     func refreshMeetingModelState() {
         guard meetingModelPreparationTask == nil else { return }
         let availability = MeetingModelStorage.availability()
+        meetingModelAvailability = availability
         meetingModelState = availability.isReady ? .ready : .notReady(availability)
         updateMeetingMenuBarState()
     }
 
     func prepareMeetingModels() {
-        guard meetingModelPreparationTask == nil else { return }
+        startMeetingModelPreparation(for: MeetingModelPreparationStage.allCases)
+    }
 
-        meetingModelState = .downloading(stage: .speakerDiarization, progress: 0.01)
+    func prepareMeetingModel(_ stage: MeetingModelPreparationStage) {
+        startMeetingModelPreparation(for: [stage])
+    }
+
+    private func startMeetingModelPreparation(for stages: [MeetingModelPreparationStage]) {
+        guard canManageMeetingModels else { return }
+
+        meetingModelPreparationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for stage in stages {
+                guard !Task.isCancelled else { break }
+                meetingModelState = .downloading(stage: stage, progress: 0.01)
+                do {
+                    try await meetingTranscriptionService.prepareModel(stage) { [weak self] progress in
+                        Task { @MainActor [weak self] in
+                            guard let self,
+                                  case let .downloading(activeStage, _) = meetingModelState,
+                                  activeStage == stage
+                            else {
+                                return
+                            }
+                            meetingModelState = .downloading(stage: stage, progress: progress)
+                            if progress >= 1 {
+                                meetingModelAvailability = MeetingModelStorage.availability()
+                            }
+                        }
+                    }
+                    guard !Task.isCancelled else { break }
+                    meetingModelAvailability = MeetingModelStorage.availability()
+                } catch is CancellationError {
+                    break
+                } catch {
+                    meetingModelAvailability = MeetingModelStorage.availability()
+                    meetingModelPreparationTask = nil
+                    meetingModelState = .failed(
+                        stage: stage,
+                        operation: .download,
+                        message: error.localizedDescription
+                    )
+                    return
+                }
+            }
+
+            meetingModelPreparationTask = nil
+            refreshMeetingModelState()
+        }
+    }
+
+    func removeMeetingModel(_ stage: MeetingModelPreparationStage) {
+        guard canManageMeetingModels else { return }
+
+        meetingModelState = .removing(stage)
         meetingModelPreparationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await meetingTranscriptionService.prepareModels { [weak self] stage, progress in
-                    Task { @MainActor [weak self] in
-                        self?.meetingModelState = .downloading(stage: stage, progress: progress)
-                    }
-                }
-                guard !Task.isCancelled else { return }
-                meetingModelState = .ready
-                updateMeetingMenuBarState()
-            } catch is CancellationError {
+                try await meetingTranscriptionService.removeModel(stage)
                 meetingModelPreparationTask = nil
                 refreshMeetingModelState()
             } catch {
-                meetingModelState = .failed(error.localizedDescription)
+                meetingModelAvailability = MeetingModelStorage.availability()
                 meetingModelPreparationTask = nil
-            }
-            if meetingModelPreparationTask != nil {
-                meetingModelPreparationTask = nil
+                meetingModelState = .failed(
+                    stage: stage,
+                    operation: .remove,
+                    message: error.localizedDescription
+                )
             }
         }
     }
 
     func cancelMeetingModelPreparation() {
+        guard case .downloading = meetingModelState else { return }
         meetingModelPreparationTask?.cancel()
-        meetingModelPreparationTask = nil
-        refreshMeetingModelState()
+        meetingModelState = .checking
     }
 
     func toggleMeetingRecording() {

@@ -346,6 +346,8 @@ struct SettingsView: View {
             permissionSettingsCard
         case .appearance:
             themeSettingsCard
+            appIconSettingsCard
+            accentColorSettingsCard
         case .shortcuts:
             ShortcutSettingsCard()
             WindowLayoutShortcutSettingsCard()
@@ -380,20 +382,20 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Text(displayVersion(release.version))
                     .font(JarvisTypography.monospaced)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                     .lineLimit(1)
-                Button("下载新版本") {
+                Button("下载更新") {
                     app.downloadAndInstallUpdate()
                 }
                 .buttonStyle(JarvisPrimaryButtonStyle())
-                .accessibilityLabel("下载新版本 \(displayVersion(release.version))")
+                .accessibilityLabel("下载更新 \(displayVersion(release.version))")
             }
         case .checking:
             HStack(spacing: 8) {
                 versionLabel
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("正在检查更新")
+                Button("检查中…") {}
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(true)
             }
         case let .downloading(version):
             HStack(spacing: 8) {
@@ -401,9 +403,9 @@ struct SettingsView: View {
                     .font(JarvisTypography.monospaced)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(1)
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("正在下载更新")
+                Button("下载中…") {}
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(true)
             }
         case let .installing(version):
             HStack(spacing: 8) {
@@ -411,24 +413,26 @@ struct SettingsView: View {
                     .font(JarvisTypography.monospaced)
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(1)
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("正在安装更新")
+                Button("安装中…") {}
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .disabled(true)
+            }
+        case let .failed(message):
+            HStack(spacing: 10) {
+                versionLabel
+                Button("重试") {
+                    app.checkForUpdates()
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .help("更新操作失败：\(message)")
             }
         default:
             HStack(spacing: 10) {
                 versionLabel
-                Button {
+                Button("检查更新") {
                     app.checkForUpdates()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 24, height: 24)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.jarvisTextSecondary)
-                .contentShape(Circle())
-                .accessibilityLabel("检查更新")
+                .buttonStyle(JarvisSecondaryButtonStyle())
             }
         }
     }
@@ -457,6 +461,30 @@ struct SettingsView: View {
         }
     }
 
+    private var appIconSettingsCard: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsCardHeader(title: "应用图标", systemImage: "square.grid.2x2.fill")
+                JarvisAppIconPicker(selection: Binding(
+                    get: { app.appIconAppearance },
+                    set: { app.updateAppIconAppearance($0) }
+                ))
+            }
+        }
+    }
+
+    private var accentColorSettingsCard: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsCardHeader(title: "强调色", systemImage: "paintpalette")
+                JarvisAccentColorPicker(selection: Binding(
+                    get: { app.accentColorPreference },
+                    set: { app.updateAccentColorPreference($0) }
+                ))
+            }
+        }
+    }
+
     private var launchAtLoginSettingsCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
@@ -479,10 +507,16 @@ struct SettingsView: View {
     private var sourceRepositoryCard: some View {
         JarvisCard {
             HStack(spacing: 14) {
-                SettingsCardHeader(
-                    title: "开源仓库",
-                    systemImage: "chevron.left.forwardslash.chevron.right"
-                )
+                VStack(alignment: .leading, spacing: 4) {
+                    SettingsCardHeader(
+                        title: "开源仓库",
+                        systemImage: "chevron.left.forwardslash.chevron.right"
+                    )
+                    Text("github.com/MineonStudio/jarvis-macos")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .textSelection(.enabled)
+                }
                 Spacer(minLength: 8)
                 Button {
                     guard let url = URL(string: "https://github.com/MineonStudio/jarvis-macos") else {
@@ -490,7 +524,7 @@ struct SettingsView: View {
                     }
                     NSWorkspace.shared.open(url)
                 } label: {
-                    Label("访问 GitHub", systemImage: "arrow.up.right")
+                    Text("前往GitHub")
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())
             }
@@ -501,26 +535,9 @@ struct SettingsView: View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 10) {
                 SettingsCardHeader(title: "权限", systemImage: "lock.shield")
-                HStack {
-                    Text(permissionSummary)
-                        .font(JarvisTypography.captionEmphasis)
-                        .foregroundStyle(permissionSummaryColor)
-                    Spacer(minLength: 8)
-                }
-                JarvisPermissionList(cornerRadius: 12)
+                JarvisPermissionList(cornerRadius: 12, mode: .settings)
             }
         }
-    }
-
-    private var permissionSummary: String {
-        let grantedCount = JarvisRequiredPermission.allCases.count {
-            app.isRequiredPermissionGranted($0)
-        }
-        return "已获取 \(grantedCount)/\(JarvisRequiredPermission.allCases.count)"
-    }
-
-    private var permissionSummaryColor: Color {
-        app.hasAllRequiredPermissions ? .green : .orange
     }
 }
 
@@ -606,73 +623,132 @@ struct MeetingModelSettingsCard: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person.filled")
-                Spacer(minLength: 8)
-                modelStatusLabel
-                modelAction
-            }
+            SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person.filled")
 
-            if case let .downloading(stage, progress) = app.meetingModelState {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(stage.title)
-                        Spacer()
-                        Text("\(Int(progress * 100))%")
-                            .font(JarvisTypography.monospaced)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                    }
-                    .font(JarvisTypography.caption)
-                    ProgressView(value: progress)
-                        .tint(Color.accentColor)
+            ForEach(Array(MeetingModelPreparationStage.allCases.enumerated()), id: \.element.id) { index, stage in
+                MeetingModelSettingsRow(stage: stage)
+                if index < MeetingModelPreparationStage.allCases.count - 1 {
+                    Divider().overlay(Color.primary.opacity(0.12))
                 }
             }
 
-            if case let .failed(message) = app.meetingModelState {
+            if case let .failed(nil, _, message) = app.meetingModelState {
                 Text(message)
                     .font(JarvisTypography.caption)
                     .foregroundStyle(.red)
             }
         }
     }
+}
 
-    private var modelStatusLabel: some View {
-        Group {
-            switch app.meetingModelState {
-            case .checking:
-                Label("检查中", systemImage: "arrow.triangle.2.circlepath")
-            case .notReady:
-                Label("待下载", systemImage: "arrow.down.circle")
-                    .foregroundStyle(Color.jarvisTextSecondary)
-            case .downloading:
-                Label("下载中", systemImage: "arrow.down.circle")
-                    .foregroundStyle(Color.accentColor)
-            case .ready:
-                Label("已就绪", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            case .failed:
-                Label("未就绪", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+private struct MeetingModelSettingsRow: View {
+    @Environment(AppModel.self) private var app
+    let stage: MeetingModelPreparationStage
+
+    private var isReady: Bool {
+        app.meetingModelAvailability.isReady(for: stage)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(stage.title)
+                        .font(JarvisTypography.bodyEmphasis)
+                    Text(stage.modelName)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .lineLimit(1)
+                        .textSelection(.enabled)
+                }
+
+                Spacer(minLength: 8)
+                action
+            }
+
+            if case let .downloading(activeStage, progress) = app.meetingModelState,
+               activeStage == stage
+            {
+                HStack(spacing: 8) {
+                    ProgressView(value: progress)
+                        .tint(Color.jarvisAccent)
+                    Text("下载中 · \(Int(progress * 100))%")
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
+            }
+
+            if case let .failed(failedStage, operation, message) = app.meetingModelState,
+               failedStage == stage
+            {
+                Text("\(operation == .remove ? "移除失败" : "下载失败")：\(message)")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(JarvisTypography.bodyEmphasis)
+        .padding(.vertical, 3)
     }
 
     @ViewBuilder
-    private var modelAction: some View {
+    private var action: some View {
         switch app.meetingModelState {
-        case .checking, .ready:
-            EmptyView()
-        case .downloading:
-            Button("取消") {
-                app.cancelMeetingModelPreparation()
+        case .checking:
+            Button("检查中") {}
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .disabled(true)
+        case let .downloading(activeStage, _):
+            if activeStage == stage {
+                Button("取消") { app.cancelMeetingModelPreparation() }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+            } else {
+                availabilityAction
             }
-            .buttonStyle(JarvisSecondaryButtonStyle())
-        case .notReady, .failed:
-            Button("下载模型") {
-                app.prepareMeetingModels()
+        case let .removing(activeStage):
+            if activeStage == stage {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("移除中")
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
+            } else {
+                availabilityAction
+            }
+        case let .failed(failedStage, operation, _) where failedStage == stage:
+            if operation == .remove {
+                Button("重试移除", role: .destructive) {
+                    app.removeMeetingModel(stage)
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
+                .disabled(!app.canManageMeetingModels)
+            } else {
+                Button("重试下载") {
+                    app.prepareMeetingModel(stage)
+                }
+                .buttonStyle(JarvisPrimaryButtonStyle())
+                .disabled(!app.canManageMeetingModels)
+            }
+        default:
+            availabilityAction
+        }
+    }
+
+    @ViewBuilder
+    private var availabilityAction: some View {
+        if isReady {
+            Button("移除", role: .destructive) {
+                app.removeMeetingModel(stage)
+            }
+            .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
+            .disabled(!app.canManageMeetingModels)
+            .help("移除本机下载的 \(stage.title) 模型")
+        } else {
+            Button("下载") {
+                app.prepareMeetingModel(stage)
             }
             .buttonStyle(JarvisPrimaryButtonStyle())
+            .disabled(!app.canManageMeetingModels)
         }
     }
 }
@@ -693,6 +769,119 @@ struct JarvisThemePicker: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
                 .contentShape(Capsule())
+        }
+    }
+}
+
+struct JarvisAppIconPicker: View {
+    @Binding var selection: JarvisAppIconAppearance
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        let isSystemDark = app.activeColorScheme == .dark
+
+        HStack(spacing: 10) {
+            ForEach(JarvisAppIconAppearance.allCases) { appearance in
+                let resolvedPreview = appearance.resolvedVariant(isSystemDark: isSystemDark)
+
+                Button {
+                    selection = appearance
+                } label: {
+                    VStack(spacing: 8) {
+                        JarvisAppIconPreview(
+                            appearance: appearance,
+                            isSystemDark: isSystemDark
+                        )
+                        .id(resolvedPreview)
+                        Text(appearance.title)
+                            .font(JarvisTypography.controlEmphasis)
+                            .foregroundStyle(selection == appearance ? Color.primary : Color.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        selection == appearance
+                            ? Color.jarvisAccent.opacity(0.12)
+                            : Color.primary.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                selection == appearance
+                                    ? Color.jarvisAccent.opacity(0.65)
+                                    : Color.primary.opacity(0.08),
+                                lineWidth: selection == appearance ? 1.2 : 0.75
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("应用图标：\(appearance.title)")
+                .accessibilityAddTraits(selection == appearance ? .isSelected : [])
+            }
+        }
+    }
+}
+
+private struct JarvisAppIconPreview: View {
+    let appearance: JarvisAppIconAppearance
+    let isSystemDark: Bool
+
+    var body: some View {
+        Group {
+            if let image = JarvisDockIconController.shared.previewImage(
+                for: appearance,
+                isSystemDark: isSystemDark
+            ) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Image(systemName: appearance.icon)
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(Color.jarvisAccent)
+            }
+        }
+        .frame(width: 68, height: 68)
+        .accessibilityHidden(true)
+    }
+}
+
+struct JarvisAccentColorPicker: View {
+    @Binding var selection: JarvisAccentColor
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(JarvisAccentColor.allCases) { accent in
+                Button {
+                    selection = accent
+                } label: {
+                    VStack(spacing: 6) {
+                        Circle()
+                            .fill(accent.color)
+                            .frame(width: 24, height: 24)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.7)
+                            }
+                        Text(accent.title)
+                            .font(JarvisTypography.micro)
+                            .foregroundStyle(selection == accent ? Color.primary : Color.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        selection == accent
+                            ? Color.jarvisAccent.opacity(0.12)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("强调色：\(accent.title)")
+                .accessibilityAddTraits(selection == accent ? .isSelected : [])
+            }
         }
     }
 }

@@ -34,7 +34,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .jarvisToastOverlay(app.toastMessage)
-        .tint(.accentColor)
+        .tint(app.accentColorPreference.resolvedColor)
         .onChange(of: app.selectedSection) { _, newSection in
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar immediately;

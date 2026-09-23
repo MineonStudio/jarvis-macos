@@ -71,7 +71,7 @@ struct WindowLayoutView: View {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "macwindow.on.rectangle")
                     .font(.system(size: 21, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                     .frame(width: 36, height: 36)
                     .jarvisIconGlass(in: Circle())
 
@@ -179,7 +179,7 @@ private struct WindowLayoutDiagram: View {
             ZStack(alignment: fillAlignment) {
                 Color.clear
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.9))
+                    .fill(Color.jarvisAccent.opacity(0.9))
                     .frame(width: width / 2, height: height * fillHeightRatio)
             }
             .padding(inset)

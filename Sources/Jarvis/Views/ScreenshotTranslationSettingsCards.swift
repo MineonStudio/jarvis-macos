@@ -1,13 +1,13 @@
-import AppKit
 import Combine
 import SwiftUI
 import Translation
 
-/// Forwards row `objectWillChange` so `busyCount` updates the parent card.
+/// Forwards row `objectWillChange` so each row updates while its system status changes.
 @MainActor
 final class LanguagePackSettingsStore: ObservableObject {
     private let models: [ScreenshotTranslationLanguage: LanguagePackRowModel]
     private var cancellables: Set<AnyCancellable> = []
+    private var isWaitingForSystemSettingsReturn = false
 
     init(service: any LanguagePackService = SystemLanguagePackService()) {
         var models: [ScreenshotTranslationLanguage: LanguagePackRowModel] = [:]
@@ -24,17 +24,33 @@ final class LanguagePackSettingsStore: ObservableObject {
         }
     }
 
-    var busyCount: Int {
-        models.values.filter(\.isBusy).count
-    }
-
     func model(for target: ScreenshotTranslationLanguage) -> LanguagePackRowModel {
         models[target]!
     }
 
-    func refreshAll() async {
+    func checkAll() async {
         for model in models.values {
             await model.refresh()
+        }
+    }
+
+    func openLanguageSettings() -> Bool {
+        isWaitingForSystemSettingsReturn = true
+        let didOpen = SystemLanguagePackService.openLanguageSettings()
+        if !didOpen {
+            isWaitingForSystemSettingsReturn = false
+        }
+        return didOpen
+    }
+
+    func refreshAfterSystemSettingsReturn() {
+        guard isWaitingForSystemSettingsReturn else {
+            return
+        }
+        isWaitingForSystemSettingsReturn = false
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            await self?.checkAll()
         }
     }
 
@@ -47,12 +63,6 @@ final class LanguagePackSettingsStore: ObservableObject {
 
 struct ScreenshotLanguagePackSettingsCard: View {
     @StateObject private var store = LanguagePackSettingsStore()
-    @AppStorage(ScreenshotTranslationConfiguration.targetLanguageKey)
-    private var defaultTargetRaw = ScreenshotTranslationLanguage.simplifiedChinese.rawValue
-
-    private var defaultTarget: ScreenshotTranslationLanguage {
-        ScreenshotTranslationLanguage(rawValue: defaultTargetRaw) ?? .simplifiedChinese
-    }
 
     var body: some View {
         JarvisCard {
@@ -65,51 +75,38 @@ struct ScreenshotLanguagePackSettingsCard: View {
                     Text("截图翻译语言包")
                         .font(JarvisTypography.bodyEmphasis)
                     Spacer()
-                    Button {
-                        Task { await store.refreshAll() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(store.busyCount > 0)
                 }
 
                 VStack(spacing: 8) {
                     ForEach(ScreenshotTranslationLanguage.packTargets) { target in
                         LanguagePackRowView(
                             model: store.model(for: target),
-                            isDefaultTarget: defaultTarget == target
+                            openLanguageSettings: store.openLanguageSettings
                         )
                     }
                 }
             }
         }
-        .task { await store.refreshAll() }
+        .task { await store.checkAll() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            store.refreshAfterSystemSettingsReturn()
+        }
         .onDisappear { store.tearDownAll() }
     }
 }
 
 private struct LanguagePackRowView: View {
     @ObservedObject var model: LanguagePackRowModel
-    let isDefaultTarget: Bool
+    let openLanguageSettings: () -> Bool
+    @State private var showingSettingsOpenFailure = false
 
     var body: some View {
         HStack(spacing: 10) {
             Text(model.target.title)
                 .font(JarvisTypography.body)
-                .foregroundStyle(isDefaultTarget ? Color.primary : Color.secondary)
-            if isDefaultTarget {
-                Text("当前默认")
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(Color.accentColor)
-            }
+                .foregroundStyle(Color.primary)
             Spacer()
             statusView
-            if model.phase == .installed {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color.green)
-            }
         }
         .padding(.horizontal, 10)
         .frame(minHeight: 30)
@@ -120,6 +117,11 @@ private struct LanguagePackRowView: View {
                 SystemLanguagePackSessionHandler(target: model.target, session: session)
             )
         }
+        .alert("无法打开系统设置", isPresented: $showingSettingsOpenFailure) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("无法打开“系统设置”的“语言与地区”页面，请稍后重试。")
+        }
         .id("language-pack-\(model.target.rawValue)-\(model.channelGeneration)")
     }
 
@@ -127,10 +129,14 @@ private struct LanguagePackRowView: View {
     private var statusView: some View {
         switch model.phase {
         case .checking:
-            ProgressView().controlSize(.small)
             Text("检测中").font(JarvisTypography.control).foregroundStyle(Color.secondary)
         case .installed:
-            EmptyView()
+            Button("移除") {
+                showingSettingsOpenFailure = !openLanguageSettings()
+            }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .accessibilityLabel("在系统设置中移除\(model.target.title)语言包")
+            .help("打开系统设置的语言与地区页面管理翻译语言包")
         case .supported:
             Button("下载") { model.startDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())

@@ -2,9 +2,16 @@ import FluidAudio
 import Foundation
 
 protocol MeetingTranscribing: Sendable {
+    func prepareModel(
+        _ stage: MeetingModelPreparationStage,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws
+
     func prepareModels(
         progress: @escaping @Sendable (MeetingModelPreparationStage, Double) -> Void
     ) async throws
+
+    func removeModel(_ stage: MeetingModelPreparationStage) async throws
 
     func transcribe(
         audioURL: URL,
@@ -26,19 +33,44 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
     func prepareModels(
         progress: @escaping @Sendable (MeetingModelPreparationStage, Double) -> Void
     ) async throws {
-        if offlineDiarizer == nil {
-            progress(.speakerDiarization, 0.02)
-            let manager = SendableOfflineDiarizer()
-            try await manager.prepareModels()
-            offlineDiarizer = manager
+        for stage in MeetingModelPreparationStage.allCases {
+            try await prepareModel(stage) { value in
+                progress(stage, value)
+            }
         }
-        progress(.speakerDiarization, 0.5)
+    }
 
-        if chineseASR == nil {
-            progress(.chineseTranscription, 0.52)
-            chineseASR = try await ParaformerManager.load(precision: .int8)
+    func prepareModel(
+        _ stage: MeetingModelPreparationStage,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
+        switch stage {
+        case .speakerDiarization:
+            if offlineDiarizer == nil {
+                progress(0.02)
+                let manager = SendableOfflineDiarizer()
+                try await manager.prepareModels()
+                offlineDiarizer = manager
+            }
+        case .chineseTranscription:
+            if chineseASR == nil {
+                progress(0.02)
+                chineseASR = try await ParaformerManager.load(precision: .int8)
+            }
         }
-        progress(.chineseTranscription, 1)
+        progress(1)
+    }
+
+    func removeModel(_ stage: MeetingModelPreparationStage) async throws {
+        switch stage {
+        case .speakerDiarization:
+            offlineDiarizer = nil
+        case .chineseTranscription:
+            chineseASR = nil
+        }
+        try await Task.detached(priority: .utility) {
+            try MeetingModelStorage.removeModel(for: stage)
+        }.value
     }
 
     func transcribe(

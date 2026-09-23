@@ -40,9 +40,9 @@ private struct ResumeTemplateCard: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: template.icon)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.jarvisAccent)
                         .frame(width: 32, height: 32)
-                        .background(Color.accentColor.opacity(0.12), in: Circle())
+                        .background(Color.jarvisAccent.opacity(0.12), in: Circle())
 
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
@@ -51,10 +51,10 @@ private struct ResumeTemplateCard: View {
                             if template == .defaultTemplate {
                                 Text("默认")
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(Color.jarvisAccent)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 3)
-                                    .background(Color.accentColor.opacity(0.11), in: Capsule())
+                                    .background(Color.jarvisAccent.opacity(0.11), in: Capsule())
                             }
                         }
                     }

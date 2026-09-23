@@ -91,7 +91,7 @@ struct JarvisPermissionGateView: View {
             HStack(spacing: 8) {
                 Image(systemName: "signature")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.jarvisAccent)
                 Text("让以后的更新不再重新授权")
                     .font(JarvisTypography.bodyEmphasis)
             }
@@ -128,7 +128,7 @@ struct JarvisPermissionGateView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.jarvisAccent.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func startAdoption() {
@@ -148,26 +148,84 @@ struct JarvisPermissionGateView: View {
     }
 }
 
+enum JarvisPermissionListMode: Equatable {
+    case gate
+    case settings
+}
+
 /// The four required permissions with their current state. The gate cannot be
 /// dismissed, so this is the only place grants are requested.
 struct JarvisPermissionList: View {
     var cornerRadius: CGFloat = 16
+    var mode: JarvisPermissionListMode = .gate
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(JarvisRequiredPermission.allCases.enumerated()), id: \.element.id) { index, permission in
-                JarvisPermissionRow(permission: permission)
-                if index < JarvisRequiredPermission.allCases.count - 1 {
-                    Divider()
-                        .opacity(0.45)
-                        .padding(.leading, 50)
+        if mode == .settings {
+            HStack(spacing: 8) {
+                ForEach(JarvisRequiredPermission.allCases) { permission in
+                    JarvisPermissionStatusCapsule(permission: permission)
                 }
             }
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(JarvisRequiredPermission.allCases.enumerated()), id: \.element.id) { index, permission in
+                    JarvisPermissionRow(permission: permission)
+                    if index < JarvisRequiredPermission.allCases.count - 1 {
+                        Divider()
+                            .opacity(0.45)
+                            .padding(.leading, 50)
+                    }
+                }
+            }
+            .background(
+                Color.jarvisInsetSurface,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
         }
+    }
+}
+
+private struct JarvisPermissionStatusCapsule: View {
+    @Environment(AppModel.self) private var app
+    let permission: JarvisRequiredPermission
+
+    var body: some View {
+        let isGranted = app.isRequiredPermissionGranted(permission)
+        return HStack(spacing: 7) {
+            Image(systemName: isGranted ? "checkmark.circle.fill" : permission.systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isGranted ? Color.green : Color.jarvisTextSecondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(permission.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(isGranted ? "已授权" : "未授权")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(isGranted ? Color.green : Color.jarvisTextSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Color.jarvisInsetSurface,
-            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            isGranted ? Color.green.opacity(0.08) : Color.jarvisInsetSurface,
+            in: Capsule()
         )
+        .overlay {
+            Capsule()
+                .strokeBorder(
+                    isGranted ? Color.green.opacity(0.2) : Color.primary.opacity(0.07),
+                    lineWidth: 1
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(permission.title)，\(isGranted ? "已授权" : "未授权")")
+        .animation(JarvisMotion.selection, value: isGranted)
     }
 }
 
@@ -180,10 +238,10 @@ private struct JarvisPermissionRow: View {
         return HStack(spacing: 12) {
             Image(systemName: permission.systemImage)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(isGranted ? Color.green : Color.accentColor)
+                .foregroundStyle(isGranted ? Color.green : Color.jarvisAccent)
                 .frame(width: 30, height: 30)
                 .background(
-                    (isGranted ? Color.green : Color.accentColor).opacity(0.12),
+                    (isGranted ? Color.green : Color.jarvisAccent).opacity(0.12),
                     in: Circle()
                 )
 

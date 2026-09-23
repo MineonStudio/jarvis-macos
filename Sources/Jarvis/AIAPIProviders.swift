@@ -55,6 +55,26 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
         }
     }
 
+    var brandIconResource: (name: String, fileExtension: String)? {
+        switch self {
+        case .openAI: ("gpt", "svg")
+        case .deepSeek: ("deepseek", "svg")
+        case .googleGemini: ("google-gemini", "png")
+        case .openRouter: ("openrouter", "svg")
+        case .moonshot: ("kimi", "png")
+        case .zhipu: ("zai", "svg")
+        case .dashScope: ("alibabacloud", "png")
+        case .doubao: ("doubao", "png")
+        case .siliconFlow: ("siliconflow", "png")
+        case .groq: ("groq", "png")
+        case .mistral: ("mistral", "png")
+        case .xAI: ("xai", "png")
+        case .together: ("together", "svg")
+        case .fireworks: ("fireworks", "png")
+        case .custom: nil
+        }
+    }
+
     var baseURLs: [AIAPIBaseURL] {
         switch self {
         case .openAI:

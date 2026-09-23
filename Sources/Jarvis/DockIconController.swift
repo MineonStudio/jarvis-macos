@@ -5,20 +5,25 @@ import Foundation
 final class JarvisDockIconController {
     static let shared = JarvisDockIconController()
 
-    private var imageCache: [JarvisTheme: NSImage] = [:]
+    private var imageCache: [JarvisAppIconAppearance: NSImage] = [:]
 
-    func apply(theme: JarvisTheme, isSystemDark: Bool) {
-        switch theme {
-        case .system:
-            applyBundledIcon(
-                for: isSystemDark ? .dark : .light,
-                resourceName: isSystemDark ? "jarvis-dark" : "jarvis-light"
-            )
-        case .light:
-            applyBundledIcon(for: .light, resourceName: "jarvis-light")
-        case .dark:
-            applyBundledIcon(for: .dark, resourceName: "jarvis-dark")
-        }
+    func apply(appearance: JarvisAppIconAppearance, isSystemDark: Bool) {
+        let resolvedAppearance = appearance.resolvedVariant(isSystemDark: isSystemDark)
+        applyBundledIcon(
+            for: resolvedAppearance,
+            resourceName: resolvedAppearance == .dark ? "jarvis-dark" : "jarvis-light"
+        )
+    }
+
+    func previewImage(
+        for appearance: JarvisAppIconAppearance,
+        isSystemDark: Bool
+    ) -> NSImage? {
+        let resolvedAppearance = appearance.resolvedVariant(isSystemDark: isSystemDark)
+        return image(
+            for: resolvedAppearance,
+            resourceName: resolvedAppearance == .dark ? "jarvis-dark" : "jarvis-light"
+        )
     }
 
     private func restoreSystemIcon() {
@@ -28,8 +33,11 @@ final class JarvisDockIconController {
         NSApp.dockTile.display()
     }
 
-    private func applyBundledIcon(for theme: JarvisTheme, resourceName: String) {
-        guard let image = image(for: theme, resourceName: resourceName) else {
+    private func applyBundledIcon(
+        for appearance: JarvisAppIconAppearance,
+        resourceName: String
+    ) {
+        guard let image = image(for: appearance, resourceName: resourceName) else {
             // Never leave an icon from a previous preference active when a
             // production bundle is missing its runtime icon resources.
             restoreSystemIcon()
@@ -41,8 +49,11 @@ final class JarvisDockIconController {
         NSApp.dockTile.display()
     }
 
-    private func image(for theme: JarvisTheme, resourceName: String) -> NSImage? {
-        if let cachedImage = imageCache[theme] {
+    private func image(
+        for appearance: JarvisAppIconAppearance,
+        resourceName: String
+    ) -> NSImage? {
+        if let cachedImage = imageCache[appearance] {
             return cachedImage
         }
 
@@ -59,7 +70,7 @@ final class JarvisDockIconController {
             return nil
         }
 
-        imageCache[theme] = image
+        imageCache[appearance] = image
         return image
     }
 }

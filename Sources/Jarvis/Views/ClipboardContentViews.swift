@@ -423,7 +423,9 @@ struct ClipboardCard: View {
         ZStack {
             if item.kind == .text {
                 VStack(spacing: 8) {
-                    if let presentation = item.sensitivePresentation(revealed: isSensitiveRevealed) {
+                    if let presentation = item.sensitivePresentation(
+                        revealed: isSensitiveRevealed || !app.hideSensitiveClipboardContent
+                    ) {
                         Text(presentation.displayText)
                             .font(
                                 presentation.requiresReveal
@@ -441,7 +443,9 @@ struct ClipboardCard: View {
                                     : (isTextExpanded ? nil : 6)
                             )
                             .multilineTextAlignment(.center)
-                            .accessibilityLabel(presentation.accessibilityText)
+                            .accessibilityLabel(
+                                isSensitiveRevealed ? presentation.accessibilityText : item.preview
+                            )
 
                         if presentation.requiresReveal {
                             Button("显示一次") {
@@ -457,7 +461,9 @@ struct ClipboardCard: View {
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                             .accessibilityHint("仅临时显示，离开卡片后会重新隐藏")
-                        } else if presentation.sensitivity != nil {
+                        } else if presentation.sensitivity != nil,
+                                  isSensitiveRevealed
+                        {
                             Label("已临时显示", systemImage: "eye")
                                 .font(JarvisTypography.caption)
                                 .foregroundStyle(Color.jarvisTextSecondary)

@@ -1,6 +1,81 @@
 import AppKit
 import SwiftUI
 
+struct JarvisTaskPermissionOverlay: View {
+    @Environment(AppModel.self) private var app
+    let prompt: JarvisTaskPermissionPrompt
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Color.black.opacity(0.16))
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+
+            VStack(spacing: 18) {
+                Image(systemName: prompt.permission.systemImage)
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(Color.jarvisAccent)
+                    .frame(width: 108, height: 84)
+                    .background(Color.jarvisAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
+
+                VStack(spacing: 8) {
+                    Text(prompt.title)
+                        .font(JarvisTypography.pageTitle)
+                        .multilineTextAlignment(.center)
+                    Text(prompt.message)
+                        .font(JarvisTypography.secondary)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 10) {
+                    Button("获取权限") {
+                        app.handleTaskPermissionPromptAction()
+                    }
+                    .buttonStyle(PermissionCapsuleButtonStyle(isPrimary: true))
+                    .frame(maxWidth: .infinity)
+
+                    Button("暂不") {
+                        app.taskPermissionPrompt = nil
+                    }
+                    .buttonStyle(PermissionCapsuleButtonStyle(isPrimary: false))
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(28)
+            .frame(width: 440)
+            .jarvisGlass(cornerRadius: 24, interactive: false)
+            .shadow(color: Color.black.opacity(0.16), radius: 32, y: 14)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(prompt.title)
+    }
+}
+
+private struct PermissionCapsuleButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(JarvisTypography.bodyEmphasis)
+            .foregroundStyle(isPrimary ? Color.white : Color.primary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(isPrimary ? Color.jarvisAccent : Color.jarvisInsetSurface)
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(isPrimary ? Color.clear : Color.primary.opacity(0.08), lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.82 : 1)
+    }
+}
+
 struct JarvisPermissionGateOverlay: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

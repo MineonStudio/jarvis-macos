@@ -14,6 +14,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     case appearance
     case shortcuts
     case model
+    case privacyCache
     case diagnostics
     case about
 
@@ -24,6 +25,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .general: "常规"
+        case .privacyCache: "隐私与缓存"
         case .appearance: "外观"
         case .shortcuts: "快捷键"
         case .model: "模型"
@@ -35,6 +37,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     var icon: String {
         switch self {
         case .general: "gearshape"
+        case .privacyCache: "lock.shield"
         case .appearance: "paintbrush"
         case .shortcuts: "keyboard"
         case .model: "cube"
@@ -44,6 +47,21 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum SettingsTypography {
+    static let pageTitle = Font.system(size: 22, weight: .semibold)
+    static let cardTitle = Font.system(size: 16, weight: .semibold)
+    static let itemTitle = Font.system(size: 13, weight: .semibold)
+    static let itemSubtitle = Font.system(size: 12)
+}
+
+enum SettingsFormMetrics {
+    static let cardContentSpacing: CGFloat = 14
+    static let sectionSpacing: CGFloat = 16
+    static let labelSpacing: CGFloat = 8
+    static let controlHeight: CGFloat = 34
+    static let disabledControlOpacity = 0.82
+}
+
 struct SettingsCardHeader: View {
     let title: String
     let systemImage: String
@@ -51,11 +69,11 @@ struct SettingsCardHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Color.secondary)
-                .frame(width: 24, height: 24)
+                .frame(width: 22, height: 22)
             Text(title)
-                .font(JarvisTypography.bodyEmphasis)
+                .font(SettingsTypography.cardTitle)
         }
     }
 }
@@ -105,7 +123,7 @@ struct ShortcutSettingsCard: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
             SettingsCardHeader(title: "快捷键", systemImage: "keyboard")
 
             shortcutRow(
@@ -165,7 +183,7 @@ struct ShortcutSettingsCard: View {
     ) -> some View {
         HStack(spacing: 14) {
             Text(title)
-                .font(JarvisTypography.bodyEmphasis)
+                .font(SettingsTypography.itemTitle)
             Spacer(minLength: 8)
             ShortcutRecorderControl(
                 shortcut: shortcut,
@@ -190,7 +208,7 @@ struct WindowLayoutShortcutSettingsCard: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
             SettingsCardHeader(
                 title: "窗口布局快捷键",
                 systemImage: "macwindow.on.rectangle"
@@ -218,7 +236,7 @@ private struct WindowLayoutShortcutRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Text(layout.title)
-                .font(JarvisTypography.bodyEmphasis)
+                .font(SettingsTypography.itemTitle)
             Spacer(minLength: 8)
             ShortcutRecorderControl(
                 shortcut: $shortcut,
@@ -299,7 +317,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         Text(selection.title)
-                            .font(.system(size: 22, weight: .semibold))
+                            .font(SettingsTypography.pageTitle)
                             .foregroundStyle(.primary)
 
                         detailContent
@@ -341,7 +359,6 @@ struct SettingsView: View {
         switch selection {
         case .general:
             launchAtLoginSettingsCard
-            ClipboardCacheSettingsCard()
             ScreenshotLanguagePackSettingsCard()
             permissionSettingsCard
         case .appearance:
@@ -354,6 +371,8 @@ struct SettingsView: View {
         case .model:
             AIAPISettingsCard()
             MeetingModelSettingsCard()
+        case .privacyCache:
+            ClipboardCacheSettingsCard()
         case .diagnostics:
             DiagnosticsSettingsCard()
         case .about:
@@ -364,13 +383,24 @@ struct SettingsView: View {
 
     private var versionAndUpdateCard: some View {
         JarvisCard {
-            HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
                 SettingsCardHeader(
                     title: "版本与更新",
                     systemImage: "arrow.triangle.2.circlepath"
                 )
-                Spacer(minLength: 8)
-                updateControls
+
+                HStack(alignment: .center, spacing: 14) {
+                    HStack(spacing: 8) {
+                        Text("当前版本")
+                            .font(SettingsTypography.itemSubtitle)
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                        Text("Jarvis \(JarvisAppVersion.shortVersion)")
+                            .font(SettingsTypography.itemSubtitle)
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                    }
+                    Spacer(minLength: 8)
+                    updateControls
+                }
             }
         }
     }
@@ -391,12 +421,9 @@ struct SettingsView: View {
                 .accessibilityLabel("下载更新 \(displayVersion(release.version))")
             }
         case .checking:
-            HStack(spacing: 8) {
-                versionLabel
-                Button("检查中…") {}
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(true)
-            }
+            Button("检查中…") {}
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .disabled(true)
         case let .downloading(version):
             HStack(spacing: 8) {
                 Text(displayVersion(version))
@@ -418,30 +445,17 @@ struct SettingsView: View {
                     .disabled(true)
             }
         case let .failed(message):
-            HStack(spacing: 10) {
-                versionLabel
-                Button("重试") {
-                    app.checkForUpdates()
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-                .help("更新操作失败：\(message)")
+            Button("重试") {
+                app.checkForUpdates()
             }
+            .buttonStyle(JarvisSecondaryButtonStyle())
+            .help("更新操作失败：\(message)")
         default:
-            HStack(spacing: 10) {
-                versionLabel
-                Button("检查更新") {
-                    app.checkForUpdates()
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
+            Button("检查更新") {
+                app.checkForUpdates()
             }
+            .buttonStyle(JarvisSecondaryButtonStyle())
         }
-    }
-
-    private var versionLabel: some View {
-        Text("v\(JarvisAppVersion.shortVersion)")
-            .font(JarvisTypography.monospaced)
-            .foregroundStyle(Color.jarvisTextSecondary)
-            .lineLimit(1)
     }
 
     private func displayVersion(_ version: String) -> String {
@@ -463,7 +477,7 @@ struct SettingsView: View {
 
     private var appIconSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
                 SettingsCardHeader(title: "应用图标", systemImage: "square.grid.2x2.fill")
                 JarvisAppIconPicker(selection: Binding(
                     get: { app.appIconAppearance },
@@ -475,7 +489,7 @@ struct SettingsView: View {
 
     private var accentColorSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
                 SettingsCardHeader(title: "强调色", systemImage: "paintpalette")
                 JarvisAccentColorPicker(selection: Binding(
                     get: { app.accentColorPreference },
@@ -506,27 +520,27 @@ struct SettingsView: View {
 
     private var sourceRepositoryCard: some View {
         JarvisCard {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    SettingsCardHeader(
-                        title: "开源仓库",
-                        systemImage: "chevron.left.forwardslash.chevron.right"
-                    )
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+                SettingsCardHeader(
+                    title: "开源仓库",
+                    systemImage: "chevron.left.forwardslash.chevron.right"
+                )
+                HStack(spacing: 14) {
                     Text("github.com/MineonStudio/jarvis-macos")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(JarvisTypography.monospacedSmall)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .textSelection(.enabled)
-                }
-                Spacer(minLength: 8)
-                Button {
-                    guard let url = URL(string: "https://github.com/MineonStudio/jarvis-macos") else {
-                        return
+                    Spacer(minLength: 8)
+                    Button {
+                        guard let url = URL(string: "https://github.com/MineonStudio/jarvis-macos") else {
+                            return
+                        }
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Text("前往GitHub")
                     }
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Text("前往GitHub")
+                    .buttonStyle(JarvisSecondaryButtonStyle())
                 }
-                .buttonStyle(JarvisSecondaryButtonStyle())
             }
         }
     }
@@ -588,7 +602,7 @@ struct DiagnosticsSettingsCard: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
             HStack(spacing: 14) {
                 SettingsCardHeader(title: "诊断日志", systemImage: "waveform.path.ecg")
                 Spacer(minLength: 8)
@@ -596,14 +610,6 @@ struct DiagnosticsSettingsCard: View {
                     app.exportDiagnostics()
                 }
                 .buttonStyle(JarvisSecondaryButtonStyle())
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("导出最近的脱敏运行日志和剪贴板缓存统计")
-                    .font(.system(size: 12, weight: .medium))
-                Text("不包含剪贴板正文、凭据或完整外部文件路径")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.jarvisTextSecondary)
             }
         }
     }
@@ -622,7 +628,7 @@ struct MeetingModelSettingsCard: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
             SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person.filled")
 
             ForEach(Array(MeetingModelPreparationStage.allCases.enumerated()), id: \.element.id) { index, stage in
@@ -652,11 +658,11 @@ private struct MeetingModelSettingsRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: SettingsFormMetrics.labelSpacing) {
                     Text(stage.title)
-                        .font(JarvisTypography.bodyEmphasis)
+                        .font(SettingsTypography.itemTitle)
                     Text(stage.modelName)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(JarvisTypography.monospacedSmall)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .lineLimit(1)
                         .textSelection(.enabled)
@@ -687,7 +693,7 @@ private struct MeetingModelSettingsRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder

@@ -131,15 +131,8 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
             }
             configureMenuShortcut(item, with: app.windowLayoutShortcut(for: layout))
         }
-        let allowed = app.hasAllRequiredPermissions
         for item in menu.items where !item.isSeparatorItem {
-            if item.action == #selector(openMainWindow) || item.action == #selector(terminate) {
-                item.isEnabled = true
-            } else if item.action == #selector(toggleMeetingRecording) {
-                item.isEnabled = allowed || isMeetingRecording
-            } else {
-                item.isEnabled = allowed
-            }
+            item.isEnabled = true
         }
     }
 

@@ -47,6 +47,7 @@ enum ClipboardCacheCategory: String, CaseIterable, Identifiable {
 }
 
 enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
+    case never
     case threeDays
     case sevenDays
     case oneMonth
@@ -58,6 +59,7 @@ enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .never: "不自动清理"
         case .threeDays: "超过 3 天"
         case .sevenDays: "超过 7 天"
         case .oneMonth: "超过 1 个月"
@@ -67,6 +69,7 @@ enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
 
     var interval: TimeInterval {
         switch self {
+        case .never: .infinity
         case .threeDays: 3 * 24 * 60 * 60
         case .sevenDays: 7 * 24 * 60 * 60
         case .oneMonth: 30 * 24 * 60 * 60
@@ -74,8 +77,9 @@ enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
         }
     }
 
-    var cutoffDate: Date {
-        Date().addingTimeInterval(-interval)
+    var cutoffDate: Date? {
+        guard self != .never else { return nil }
+        return Date().addingTimeInterval(-interval)
     }
 }
 

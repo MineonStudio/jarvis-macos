@@ -15,15 +15,31 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.0</string>
+	<string>1.4.1</string>
 	<key>CFBundleVersion</key>
-	<string>338</string>
+	<string>339</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>贾维斯在会议记录中采集系统播放音频，以便识别耳机中远程参会者的发言；原始音频保存在本机。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>贾维斯需要使用摄像头，让聊天网页支持视频和拍照功能。</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>wallpaper.apc.360.cn</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>wp.birdpaper.com.cn</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

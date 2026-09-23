@@ -3,13 +3,27 @@ import SwiftUI
 struct ClipboardCacheSettingsCard: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     private let capacityOptions = ClipboardCacheStore.supportedMaximumBytes
 
     var body: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 14) {
-                header
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+                preferenceRow(
+                    title: "自动记录剪贴板",
+                    isOn: Binding(
+                        get: { app.automaticClipboardRecordingEnabled },
+                        set: { app.updateAutomaticClipboardRecordingEnabled($0) }
+                    )
+                )
+                divider
+                preferenceRow(
+                    title: "敏感内容默认隐藏",
+                    isOn: Binding(
+                        get: { app.hideSensitiveClipboardContent },
+                        set: { app.updateHideSensitiveClipboardContent($0) }
+                    )
+                )
+                divider
                 folderRow
                 divider
                 capacitySection
@@ -23,30 +37,29 @@ struct ClipboardCacheSettingsCard: View {
         }
         .animation(
             JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: app.clipboardCacheAutoCleanupEnabled
+            value: app.clipboardCacheAutoCleanupPeriod
         )
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "externaldrive")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(Color.secondary)
-                .frame(width: 24, height: 24)
-            Text("剪贴板缓存")
-                .font(JarvisTypography.bodyEmphasis)
-        }
     }
 
     private var divider: some View {
         Divider().overlay(Color.primary.opacity(0.12))
     }
 
+    private func preferenceRow(title: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 16) {
+            Text(title).font(SettingsTypography.itemTitle)
+            Spacer(minLength: 8)
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+    }
+
     private var folderRow: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("缓存文件夹")
-                    .font(JarvisTypography.sectionLabel)
+                    .font(SettingsTypography.itemTitle)
                 Text(app.clipboardCacheDirectoryURL.path)
                     .font(JarvisTypography.microMonospaced)
                     .foregroundStyle(Color.jarvisTextSecondary)
@@ -65,7 +78,7 @@ struct ClipboardCacheSettingsCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("缓存空间上限")
-                    .font(JarvisTypography.sectionLabel)
+                    .font(SettingsTypography.itemTitle)
                 Spacer()
                 Text(ClipboardCacheFormatting.capacityDescription(app.clipboardCacheMaximumBytes))
                     .font(JarvisTypography.monospacedSmall)
@@ -105,9 +118,9 @@ struct ClipboardCacheSettingsCard: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text("当前占用")
-                    .font(JarvisTypography.sectionLabel)
+                    .font(SettingsTypography.itemTitle)
                 Spacer()
-                Text(usageSummary)
+                Text("\(usageSummary) · \(app.clipboardCacheUsage.fileCount) 个文件")
                     .font(JarvisTypography.monospacedSmall)
             }
             GeometryReader { proxy in
@@ -129,14 +142,6 @@ struct ClipboardCacheSettingsCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
             .frame(height: 8)
-            Text("已保存 \(app.clipboardCacheUsage.fileCount) 个缓存文件")
-                .font(JarvisTypography.micro)
-                .foregroundStyle(Color.jarvisTextSecondary)
-                .contentTransition(.numericText())
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.feedback, reduceMotion: reduceMotion),
-                    value: app.clipboardCacheUsage.fileCount
-                )
         }
     }
 
@@ -146,34 +151,25 @@ struct ClipboardCacheSettingsCard: View {
     }
 
     private var cleanupSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                Text("开启自动清理")
-                    .font(JarvisTypography.sectionLabel)
-                Spacer()
-                JarvisDropdownMenu(
-                    title: app.clipboardCacheAutoCleanupPeriod.title,
-                    options: ClipboardCacheCleanupPeriod.allCases.map {
-                        JarvisDropdownOption(id: $0.id, title: $0.title)
-                    },
-                    selectionID: app.clipboardCacheAutoCleanupPeriod.id,
-                    accessibilityLabel: "自动清理周期",
-                    help: "选择自动清理周期",
-                    onSelect: { id in
-                        guard let period = ClipboardCacheCleanupPeriod(rawValue: id) else { return }
-                        app.updateClipboardCacheAutoCleanupPeriod(period)
-                    }
-                )
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { app.clipboardCacheAutoCleanupEnabled },
-                        set: { app.updateClipboardCacheAutoCleanupEnabled($0) }
-                    )
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("自动清理")
+                    .font(SettingsTypography.itemTitle)
             }
+            Spacer(minLength: 8)
+            JarvisDropdownMenu(
+                title: app.clipboardCacheAutoCleanupPeriod.title,
+                options: ClipboardCacheCleanupPeriod.allCases.map {
+                    JarvisDropdownOption(id: $0.id, title: $0.title)
+                },
+                selectionID: app.clipboardCacheAutoCleanupPeriod.id,
+                accessibilityLabel: "自动清理",
+                help: "选择自动清理周期",
+                onSelect: { id in
+                    guard let period = ClipboardCacheCleanupPeriod(rawValue: id) else { return }
+                    app.updateClipboardCacheAutoCleanupPeriod(period)
+                }
+            )
         }
     }
 

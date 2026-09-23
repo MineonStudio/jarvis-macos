@@ -4,8 +4,10 @@ import ImageIO
 
 enum WallpaperSource: String, CaseIterable, Codable, Hashable, Identifiable {
     case wallhaven
-    /// Kept for decoding older local-library records. New wallpapers are sourced
-    /// exclusively from Wallhaven.
+    case qihoo
+    /// Retained so existing library entries still decode.
+    case wikimedia
+    /// Kept for decoding older local-library records.
     case local
 
     var id: String {
@@ -15,6 +17,8 @@ enum WallpaperSource: String, CaseIterable, Codable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .wallhaven: "Wallhaven"
+        case .qihoo: "360壁纸"
+        case .wikimedia: "Wikimedia"
         case .local: "本地"
         }
     }
@@ -22,8 +26,14 @@ enum WallpaperSource: String, CaseIterable, Codable, Hashable, Identifiable {
     var icon: String {
         switch self {
         case .wallhaven: "photo.on.rectangle.angled"
+        case .qihoo: "photo.stack"
+        case .wikimedia: "globe"
         case .local: "folder"
         }
+    }
+
+    static var onlineGalleryCases: [WallpaperSource] {
+        [.wallhaven, .qihoo]
     }
 }
 
@@ -219,11 +229,92 @@ enum WallpaperTags {
     ]
 }
 
+enum WallpaperQihooCategory: String, CaseIterable, Identifiable {
+    case all
+    case fourK = "36"
+    case girls = "6"
+    case scenery = "9"
+    case anime = "26"
+    case games = "5"
+    case cars = "12"
+    case cool = "10"
+    case fresh = "15"
+    case stars = "11"
+    case pets = "14"
+    case romance = "30"
+    case movies = "7"
+    case festival = "13"
+    case military = "22"
+    case sports = "16"
+    case calendar = "29"
+    case typography = "35"
+    case baby = "18"
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .all: "全部分类"
+        case .fourK: "4K专区"
+        case .girls: "美女模特"
+        case .scenery: "风景大片"
+        case .anime: "动漫卡通"
+        case .games: "游戏壁纸"
+        case .cars: "汽车天下"
+        case .cool: "炫酷时尚"
+        case .fresh: "小清新"
+        case .stars: "明星风尚"
+        case .pets: "萌宠动物"
+        case .romance: "爱情美图"
+        case .movies: "影视剧照"
+        case .festival: "节日美图"
+        case .military: "军事天地"
+        case .sports: "劲爆体育"
+        case .calendar: "月历壁纸"
+        case .typography: "文字控"
+        case .baby: "BABY秀"
+        }
+    }
+
+    var cid: String? {
+        self == .all ? nil : rawValue
+    }
+}
+
+enum WallpaperQihooResolution: String, CaseIterable, Identifiable {
+    case any
+    case fullHD = "1920x1080"
+    case wuxga = "1920x1200"
+    case qHD = "2560x1440"
+    case wqxga = "2560x1600"
+    case retina = "2880x1800"
+    case uhd = "3840x2160"
+    case dci4K = "4096x2304"
+    case fiveK = "5120x2880"
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        guard let size = QihooWallpaperSource.parseResolution(rawValue) else { return "不限分辨率" }
+        return "\(size.width) × \(size.height)"
+    }
+
+    var size: (width: Int, height: Int)? {
+        QihooWallpaperSource.parseResolution(rawValue)
+    }
+}
+
 struct WallpaperSearchFilters: Equatable {
     var resolution: WallpaperResolution = .any
     var ratio: WallpaperRatio = .any
     var sorting: WallpaperSorting = .dateAdded
     var tag: String = ""
+    var qihooCategory: WallpaperQihooCategory = .all
+    var qihooResolution: WallpaperQihooResolution = .any
 }
 
 enum WallpaperSettingTarget: String, CaseIterable, Codable, Hashable, Identifiable {
@@ -302,7 +393,7 @@ enum WallpaperAPIError: LocalizedError, Equatable {
     }
 }
 
-protocol WallpaperSourceProviding {
+protocol WallpaperSourceProviding: Sendable {
     var source: WallpaperSource { get }
 
     func search(page: Int, filters: WallpaperSearchFilters) async throws -> WallpaperPage
@@ -446,6 +537,377 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Senda
 
     private struct Uploader: Decodable {
         let username: String?
+    }
+}
+
+final class QihooWallpaperSource: WallpaperSourceProviding, @unchecked Sendable {
+    let source: WallpaperSource = .qihoo
+    private let session: URLSession
+
+    static let pageSize = 36
+
+    enum Route: Equatable {
+        case mixed
+        case category(String)
+        case search(String)
+    }
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func search(page: Int, filters: WallpaperSearchFilters) async throws -> WallpaperPage {
+        switch Self.route(for: filters) {
+        case .mixed:
+            try await fetchOrder(page: max(1, page), filters: filters)
+        case let .category(cid):
+            try await fetchCategory(
+                cid,
+                page: max(1, page),
+                count: Self.pageSize,
+                filters: filters
+            )
+        case let .search(query):
+            try await fetchSearch(query, page: max(1, page), filters: filters)
+        }
+    }
+
+    static func route(for filters: WallpaperSearchFilters) -> Route {
+        let tag = filters.tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tag.isEmpty {
+            return .search(tag)
+        }
+        if let cid = filters.qihooCategory.cid {
+            return .category(cid)
+        }
+        return .mixed
+    }
+
+    static func orderURL(page: Int, count: Int) throws -> URL {
+        var components = URLComponents(string: "http://wallpaper.apc.360.cn/index.php")
+        let start = max(0, (page - 1) * count)
+        components?.queryItems = [
+            URLQueryItem(name: "c", value: "WallPaper"),
+            URLQueryItem(name: "a", value: "getAppsByOrder"),
+            URLQueryItem(name: "order", value: "create_time"),
+            URLQueryItem(name: "start", value: "\(start)"),
+            URLQueryItem(name: "count", value: "\(count)"),
+            URLQueryItem(name: "from", value: "360chrome")
+        ]
+        guard let url = components?.url else {
+            throw WallpaperAPIError.invalidURL
+        }
+        return url
+    }
+
+    static func categoryURL(cid: String, page: Int, count: Int) throws -> URL {
+        var components = URLComponents(string: "http://wallpaper.apc.360.cn/index.php")
+        let start = max(0, (page - 1) * count)
+        components?.queryItems = [
+            URLQueryItem(name: "c", value: "WallPaper"),
+            URLQueryItem(name: "a", value: "getAppsByCategory"),
+            URLQueryItem(name: "cid", value: cid),
+            URLQueryItem(name: "start", value: "\(start)"),
+            URLQueryItem(name: "count", value: "\(count)"),
+            URLQueryItem(name: "from", value: "360chrome")
+        ]
+        guard let url = components?.url else {
+            throw WallpaperAPIError.invalidURL
+        }
+        return url
+    }
+
+    static func searchURL(query: String, page: Int, count: Int = 24) throws -> URL {
+        var components = URLComponents(string: "http://wp.birdpaper.com.cn/intf/search")
+        components?.queryItems = [
+            URLQueryItem(name: "content", value: query),
+            URLQueryItem(name: "pageno", value: "\(max(1, page))"),
+            URLQueryItem(name: "count", value: "\(count)")
+        ]
+        guard let url = components?.url else {
+            throw WallpaperAPIError.invalidURL
+        }
+        return url
+    }
+
+    static func httpsURL(from url: URL) -> URL {
+        guard url.scheme?.lowercased() == "http",
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            return url
+        }
+        components.scheme = "https"
+        return components.url ?? url
+    }
+
+    /// 360's `img_1600_900` is a 16:9 crop. Ask qhimg for a thumbnail that
+    /// keeps the wallpaper's real pixel ratio, like Wallhaven's original thumb.
+    static func previewURL(from original: URL, width: Int, height: Int) -> URL {
+        let source = httpsURL(from: original)
+        guard width > 0, height > 0 else { return source }
+        let filename = source.lastPathComponent
+        guard !filename.isEmpty else { return source }
+        let maxEdge = 720
+        let scale = min(1, CGFloat(maxEdge) / CGFloat(max(width, height)))
+        let previewWidth = max(1, Int((CGFloat(width) * scale).rounded()))
+        let previewHeight = max(1, Int((CGFloat(height) * scale).rounded()))
+        guard var components = URLComponents(url: source, resolvingAgainstBaseURL: false) else {
+            return source
+        }
+        components.scheme = "https"
+        components.path = "/bdm/\(previewWidth)_\(previewHeight)_85/\(filename)"
+        return components.url ?? source
+    }
+
+    static func decodeCategory(data: Data, page: Int, count: Int, filters: WallpaperSearchFilters) throws -> WallpaperPage {
+        let response: CategoryResponse
+        do {
+            response = try JSONDecoder().decode(CategoryResponse.self, from: data)
+        } catch {
+            throw WallpaperAPIError.invalidPayload
+        }
+        guard response.errno.value == "0" else {
+            throw WallpaperAPIError.invalidPayload
+        }
+        let items = (response.data ?? []).compactMap { remote -> WallpaperItem? in
+            item(from: remote, filters: filters)
+        }
+        let total = response.total?.intValue ?? 0
+        let start = max(0, (page - 1) * count)
+        return WallpaperPage(
+            items: items,
+            page: page,
+            hasNextPage: start + count < total
+        )
+    }
+
+    static func decodeSearch(data: Data, page: Int, filters: WallpaperSearchFilters) throws -> WallpaperPage {
+        let response: SearchResponse
+        do {
+            response = try JSONDecoder().decode(SearchResponse.self, from: data)
+        } catch {
+            throw WallpaperAPIError.invalidPayload
+        }
+        guard response.errno == 0 else {
+            throw WallpaperAPIError.invalidPayload
+        }
+        let items = (response.data?.list ?? []).compactMap { remote -> WallpaperItem? in
+            item(from: remote, filters: filters)
+        }
+        let totalPage = response.data?.totalPage ?? 0
+        return WallpaperPage(
+            items: items,
+            page: page,
+            hasNextPage: page < totalPage
+        )
+    }
+
+    static func matches(_ item: WallpaperItem, filters: WallpaperSearchFilters) -> Bool {
+        if item.width <= 0 || item.height <= 0 {
+            return filters.qihooResolution == .any
+        }
+        guard let size = filters.qihooResolution.size else {
+            return true
+        }
+        return item.width == size.width && item.height == size.height
+    }
+
+    private func fetchOrder(page: Int, filters: WallpaperSearchFilters) async throws -> WallpaperPage {
+        let url = try Self.orderURL(page: page, count: Self.pageSize)
+        let data = try await Self.data(from: url, session: session)
+        return try Self.decodeCategory(data: data, page: page, count: Self.pageSize, filters: filters)
+    }
+
+    private func fetchCategory(
+        _ cid: String,
+        page: Int,
+        count: Int,
+        filters: WallpaperSearchFilters
+    ) async throws -> WallpaperPage {
+        try await Self.loadCategory(cid, page: page, count: count, filters: filters, session: session)
+    }
+
+    private func fetchSearch(
+        _ query: String,
+        page: Int,
+        filters: WallpaperSearchFilters
+    ) async throws -> WallpaperPage {
+        let url = try Self.searchURL(query: query, page: page, count: Self.pageSize)
+        let data = try await Self.data(from: url, session: session)
+        return try Self.decodeSearch(data: data, page: page, filters: filters)
+    }
+
+    private static func loadCategory(
+        _ cid: String,
+        page: Int,
+        count: Int,
+        filters: WallpaperSearchFilters,
+        session: URLSession
+    ) async throws -> WallpaperPage {
+        let url = try categoryURL(cid: cid, page: page, count: count)
+        let data = try await data(from: url, session: session)
+        return try decodeCategory(data: data, page: page, count: count, filters: filters)
+    }
+
+    private static func data(from url: URL, session: URLSession) async throws -> Data {
+        var lastError: Error?
+        for _ in 0 ..< 2 {
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 8
+                request.setValue(
+                    "Mozilla/5.0 Jarvis/\(JarvisAppVersion.shortVersion)",
+                    forHTTPHeaderField: "User-Agent"
+                )
+                return try await WallpaperHTTP.data(for: request, session: session)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                throw error
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? WallpaperAPIError.invalidResponse
+    }
+
+    private static func item(from remote: CategoryItem, filters: WallpaperSearchFilters) -> WallpaperItem? {
+        let originalURL = httpsURL(from: remote.url)
+        let dimensions = parseResolution(remote.resolution)
+        let previewURL = previewURL(
+            from: originalURL,
+            width: dimensions?.width ?? 0,
+            height: dimensions?.height ?? 0
+        )
+        let item = WallpaperItem(
+            id: "qihoo:\(remote.id.value)",
+            source: .qihoo,
+            sourceID: remote.id.value,
+            title: title(utag: remote.utag, tag: remote.tag, fallback: remote.id.value),
+            previewURL: previewURL,
+            originalURL: originalURL,
+            sourcePageURL: nil,
+            authorName: nil,
+            authorURL: nil,
+            width: dimensions?.width ?? 0,
+            height: dimensions?.height ?? 0,
+            fileExtension: originalURL.pathExtension.isEmpty ? "jpg" : originalURL.pathExtension,
+            licenseName: "版权以原作者页面为准",
+            licenseURL: nil,
+            isFavorite: false,
+            localFileName: nil
+        )
+        return matches(item, filters: filters) ? item : nil
+    }
+
+    private static func item(from remote: SearchItem, filters: WallpaperSearchFilters) -> WallpaperItem? {
+        let originalURL = httpsURL(from: remote.url)
+        let item = WallpaperItem(
+            id: "qihoo:\(remote.id)",
+            source: .qihoo,
+            sourceID: remote.id,
+            title: title(utag: remote.tag, tag: remote.category, fallback: remote.id),
+            previewURL: originalURL,
+            originalURL: originalURL,
+            sourcePageURL: nil,
+            authorName: remote.author,
+            authorURL: nil,
+            width: 0,
+            height: 0,
+            fileExtension: originalURL.pathExtension.isEmpty ? "jpg" : originalURL.pathExtension,
+            licenseName: "版权以原作者页面为准",
+            licenseURL: nil,
+            isFavorite: false,
+            localFileName: nil
+        )
+        return matches(item, filters: filters) ? item : nil
+    }
+
+    private static func title(utag: String?, tag: String?, fallback: String) -> String {
+        let cleanedUtag = utag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !cleanedUtag.isEmpty {
+            return cleanedUtag
+        }
+        let cleanedTag = tag?
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !cleanedTag.isEmpty {
+            return cleanedTag
+        }
+        return "壁纸 \(fallback)"
+    }
+
+    static func parseResolution(_ value: String?) -> (width: Int, height: Int)? {
+        guard let value else { return nil }
+        let parts = value.lowercased().split(separator: "x")
+        guard parts.count == 2,
+              let width = Int(parts[0]),
+              let height = Int(parts[1]),
+              width > 0,
+              height > 0
+        else {
+            return nil
+        }
+        return (width, height)
+    }
+
+    private struct CategoryResponse: Decodable {
+        let errno: FlexibleString
+        let total: FlexibleString?
+        let data: [CategoryItem]?
+    }
+
+    private struct CategoryItem: Decodable {
+        let id: FlexibleString
+        let url: URL
+        let resolution: String?
+        let tag: String?
+        let utag: String?
+    }
+
+    private struct SearchResponse: Decodable {
+        let errno: Int
+        let data: SearchData?
+    }
+
+    private struct SearchData: Decodable {
+        let list: [SearchItem]?
+        let totalPage: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case list
+            case totalPage = "total_page"
+        }
+    }
+
+    private struct SearchItem: Decodable {
+        let id: String
+        let author: String?
+        let category: String?
+        let tag: String?
+        let url: URL
+    }
+
+    struct FlexibleString: Decodable {
+        let value: String
+
+        var intValue: Int {
+            Int(value) ?? 0
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let string = try? container.decode(String.self) {
+                value = string
+            } else if let int = try? container.decode(Int.self) {
+                value = String(int)
+            } else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Expected string or int"
+                )
+            }
+        }
     }
 }
 
@@ -630,7 +1092,11 @@ final class WallpaperDownloadService: @unchecked Sendable {
         guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else {
             return false
         }
-        return host == "wallhaven.cc" || host.hasSuffix(".wallhaven.cc")
+        return host == "wallhaven.cc"
+            || host.hasSuffix(".wallhaven.cc")
+            || host == "qhimg.com"
+            || host.hasSuffix(".qhimg.com")
+            || host.hasSuffix(".shanhutech.cn")
     }
 
     func download(from url: URL) async throws -> URL {
@@ -1173,9 +1639,12 @@ final class WallpaperViewModel: ObservableObject {
     static let initialDisplayCount = 36
     private static let loadMoreDisplayCount = 24
 
+    @Published var selectedSource: WallpaperSource = .wallhaven
     @Published var selectedResolution: WallpaperResolution = .any
     @Published var selectedRatio: WallpaperRatio = .any
     @Published var selectedSorting: WallpaperSorting = .dateAdded
+    @Published var selectedQihooCategory: WallpaperQihooCategory = .all
+    @Published var selectedQihooResolution: WallpaperQihooResolution = .any
     @Published var selectedTag = ""
     @Published private(set) var items: [WallpaperItem] = []
     @Published private(set) var library: [WallpaperItem] = []
@@ -1190,7 +1659,8 @@ final class WallpaperViewModel: ObservableObject {
 
     private var searchGeneration = 0
     let store: WallpaperStore
-    private let wallhavenSource: WallhavenWallpaperSource
+    private let wallhavenSource: any WallpaperSourceProviding
+    private let qihooSource: any WallpaperSourceProviding
     private let downloader: WallpaperDownloadService
     private let wallpaperSystemService: WallpaperSystemService
     private var currentPage = 1
@@ -1200,13 +1670,15 @@ final class WallpaperViewModel: ObservableObject {
 
     init(
         store: WallpaperStore = WallpaperStore(),
-        wallhavenSource: WallhavenWallpaperSource = WallhavenWallpaperSource(),
+        wallhavenSource: any WallpaperSourceProviding = WallhavenWallpaperSource(),
+        qihooSource: any WallpaperSourceProviding = QihooWallpaperSource(),
         downloader: WallpaperDownloadService = WallpaperDownloadService(),
         desktopWallpaperService: DesktopWallpaperService? = nil,
         wallpaperSystemService: WallpaperSystemService? = nil
     ) {
         self.store = store
         self.wallhavenSource = wallhavenSource
+        self.qihooSource = qihooSource
         self.downloader = downloader
         let desktopService = desktopWallpaperService ?? DesktopWallpaperService()
         self.wallpaperSystemService = wallpaperSystemService ?? WallpaperSystemService(
@@ -1228,21 +1700,16 @@ final class WallpaperViewModel: ObservableObject {
         errorMessage = nil
         loadMoreErrorMessage = nil
         currentPage = 1
-        currentFilters = WallpaperSearchFilters(
-            resolution: selectedResolution,
-            ratio: selectedRatio,
-            sorting: selectedSorting,
-            tag: selectedTag
-        )
+        currentFilters = currentSearchFilters
         defer { isLoading = false }
 
         do {
-            var page = try await wallhavenSource.search(page: 1, filters: currentFilters)
+            var page = try await fetchPage(page: 1, filters: currentFilters)
             var loadedItems = mergeWithSavedItems(page.items)
 
             while loadedItems.count < Self.initialDisplayCount, page.hasNextPage {
                 guard generation == searchGeneration else { return }
-                page = try await wallhavenSource.search(page: page.page + 1, filters: currentFilters)
+                page = try await fetchPage(page: page.page + 1, filters: currentFilters)
                 loadedItems.append(contentsOf: mergeWithSavedItems(page.items))
             }
 
@@ -1276,7 +1743,7 @@ final class WallpaperViewModel: ObservableObject {
             var nextCanFetchMorePages = canFetchMorePages
 
             while nextItems.count < Self.loadMoreDisplayCount, nextCanFetchMorePages {
-                let page = try await wallhavenSource.search(
+                let page = try await fetchPage(
                     page: nextPage + 1,
                     filters: currentFilters
                 )
@@ -1379,6 +1846,27 @@ final class WallpaperViewModel: ObservableObject {
         } catch {
             return error.localizedDescription
         }
+    }
+
+    private var currentSearchFilters: WallpaperSearchFilters {
+        WallpaperSearchFilters(
+            resolution: selectedResolution,
+            ratio: selectedRatio,
+            sorting: selectedSorting,
+            tag: selectedTag,
+            qihooCategory: selectedQihooCategory,
+            qihooResolution: selectedQihooResolution
+        )
+    }
+
+    private func fetchPage(page: Int, filters: WallpaperSearchFilters) async throws -> WallpaperPage {
+        let source: any WallpaperSourceProviding = switch selectedSource {
+        case .qihoo:
+            qihooSource
+        case .wallhaven, .wikimedia, .local:
+            wallhavenSource
+        }
+        return try await source.search(page: page, filters: filters)
     }
 
     private func mergeWithSavedItems(_ incoming: [WallpaperItem]) -> [WallpaperItem] {

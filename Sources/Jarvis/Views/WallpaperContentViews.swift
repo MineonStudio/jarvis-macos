@@ -35,11 +35,19 @@ struct WallpaperView: View {
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
-                resolutionFilterItem
+                sourceFilterItem
                 ToolbarSpacer(.fixed, placement: .automatic)
-                ratioFilterItem
-                ToolbarSpacer(.fixed, placement: .automatic)
-                sortingFilterItem
+                if model.selectedSource == .qihoo {
+                    qihooCategoryFilterItem
+                    ToolbarSpacer(.fixed, placement: .automatic)
+                    qihooResolutionFilterItem
+                } else {
+                    resolutionFilterItem
+                    ToolbarSpacer(.fixed, placement: .automatic)
+                    ratioFilterItem
+                    ToolbarSpacer(.fixed, placement: .automatic)
+                    sortingFilterItem
+                }
             },
             trailingToolbar: {
                 WallpaperLibraryToolbar(libraryMode: $libraryMode)
@@ -47,11 +55,13 @@ struct WallpaperView: View {
                 ToolbarItem(id: "wallpaper.tag-search", placement: .primaryAction) {
                     ClipboardSearchField(
                         text: $tagInput,
-                        placeholder: "搜索标签",
+                        placeholder: model.selectedSource == .qihoo ? "搜索壁纸" : "搜索标签",
                         onSubmit: submitTag,
                         onClear: clearTag,
-                        help: "按标签搜索 Wallhaven",
-                        accessibilityTitle: "搜索标签"
+                        help: model.selectedSource == .qihoo
+                            ? "按关键词搜索 360 壁纸"
+                            : "按标签搜索 Wallhaven",
+                        accessibilityTitle: model.selectedSource == .qihoo ? "搜索壁纸" : "搜索标签"
                     )
                 }
             },
@@ -90,6 +100,11 @@ struct WallpaperView: View {
                 model.refreshLibrary()
             }
         }
+        .onChange(of: model.selectedSource) { _, _ in
+            tagInput = ""
+            model.selectedTag = ""
+            applyOnlineFilters()
+        }
         .onDisappear {
             previewController.dismiss()
         }
@@ -117,6 +132,62 @@ struct WallpaperView: View {
                 onSelect: onSelect
             )
             .id(selectionID)
+        }
+    }
+
+    private var sourceFilterItem: some ToolbarContent {
+        filterItem(
+            id: "wallpaper.filter.source",
+            title: model.selectedSource.title,
+            options: WallpaperSource.onlineGalleryCases.map {
+                JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+            },
+            selectionID: model.selectedSource.rawValue,
+            accessibilityLabel: "壁纸源",
+            help: "选择在线壁纸源"
+        ) { rawValue in
+            guard let source = WallpaperSource(rawValue: rawValue),
+                  WallpaperSource.onlineGalleryCases.contains(source)
+            else {
+                return
+            }
+            model.selectedSource = source
+        }
+    }
+
+    private var qihooCategoryFilterItem: some ToolbarContent {
+        filterItem(
+            id: "wallpaper.filter.qihoo-category",
+            title: model.selectedQihooCategory.title,
+            options: WallpaperQihooCategory.allCases.map {
+                JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+            },
+            selectionID: model.selectedQihooCategory.rawValue,
+            accessibilityLabel: "360 壁纸分类",
+            help: "按 360 壁纸分类筛选"
+        ) { rawValue in
+            guard let category = WallpaperQihooCategory(rawValue: rawValue) else { return }
+            model.selectedQihooCategory = category
+            tagInput = ""
+            model.selectedTag = ""
+            applyOnlineFilters()
+        }
+    }
+
+    private var qihooResolutionFilterItem: some ToolbarContent {
+        filterItem(
+            id: "wallpaper.filter.qihoo-resolution",
+            title: model.selectedQihooResolution.title,
+            options: WallpaperQihooResolution.allCases.map {
+                JarvisDropdownOption(id: $0.rawValue, title: $0.title)
+            },
+            selectionID: model.selectedQihooResolution.rawValue,
+            accessibilityLabel: "360 分辨率",
+            help: "按 360 壁纸的实际像素尺寸筛选"
+        ) { rawValue in
+            guard let resolution = WallpaperQihooResolution(rawValue: rawValue) else { return }
+            model.selectedQihooResolution = resolution
+            applyOnlineFilters()
         }
     }
 
@@ -235,7 +306,7 @@ struct WallpaperView: View {
                 items: model.library,
                 availableWidth: availableWidth,
                 emptyTitle: "还没有已下载壁纸",
-                emptyMessage: "从 Wallhaven 下载壁纸后，会在这里长期保留。",
+                emptyMessage: "从在线图库下载壁纸后，会在这里长期保留。",
                 showsDelete: true,
                 onDelete: { deleteItem = $0 }
             )

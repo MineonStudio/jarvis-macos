@@ -2,7 +2,11 @@ import AppKit
 
 extension AppModel {
     func applyWindowLayout(_ layout: WindowLayout) {
-        guard requireAllPermissions() else { return }
+        refreshPermissionStatus()
+        guard accessibilityPermissionGranted else {
+            promptForTaskPermission(.accessibility)
+            return
+        }
         windowLayoutController?.apply(layout)
     }
 }

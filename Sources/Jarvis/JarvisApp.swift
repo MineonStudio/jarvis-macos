@@ -80,8 +80,8 @@ private struct JarvisRootView: View {
                 minHeight: JarvisMainWindowController.minimumWindowSize.height
             )
             .overlay {
-                if !appModel.hasAllRequiredPermissions, !isSettingsPresented {
-                    JarvisPermissionGateOverlay()
+                if let prompt = appModel.taskPermissionPrompt, !isSettingsPresented {
+                    JarvisTaskPermissionOverlay(prompt: prompt)
                         .environment(appModel)
                 }
             }
@@ -96,7 +96,7 @@ private struct JarvisRootView: View {
                     .padding(.bottom, 26)
                     .allowsHitTesting(false)
             }
-            .animation(.easeInOut(duration: 0.2), value: appModel.hasAllRequiredPermissions)
+            .animation(.easeInOut(duration: 0.2), value: appModel.taskPermissionPrompt)
             .animation(.easeInOut(duration: 0.2), value: isSettingsPresented)
             // Keep the system title-bar region and its native window controls.
             // Apple recommends removing only the title and toolbar background
@@ -113,6 +113,11 @@ private struct JarvisRootView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 appModel.refreshPermissionStatus()
+                if let prompt = appModel.taskPermissionPrompt,
+                   appModel.isRequiredPermissionGranted(prompt.permission)
+                {
+                    appModel.taskPermissionPrompt = nil
+                }
             }
     }
 }

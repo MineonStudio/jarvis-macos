@@ -3,6 +3,39 @@ import AppKit
 extension AppModel {
     // MARK: - Clipboard workflow
 
+    func configureClipboardRecording() {
+        guard automaticClipboardRecordingEnabled else {
+            clipboardService.stop()
+            return
+        }
+        clipboardService.start(
+            onChange: { [weak self] item in
+                Task { @MainActor [weak self] in
+                    self?.receiveClipboardItem(item)
+                }
+            },
+            prepareCacheSpace: { _ in }
+        )
+    }
+
+    func updateAutomaticClipboardRecordingEnabled(_ enabled: Bool) {
+        automaticClipboardRecordingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: clipboardRecordingEnabledKey)
+        configureClipboardRecording()
+        JarvisLog.info(
+            category: .clipboard,
+            event: "recording.preferenceChanged",
+            fields: ["enabled": String(enabled)]
+        )
+        showToast(enabled ? "已开启自动记录剪贴板" : "已暂停自动记录剪贴板")
+    }
+
+    func updateHideSensitiveClipboardContent(_ hidden: Bool) {
+        hideSensitiveClipboardContent = hidden
+        UserDefaults.standard.set(hidden, forKey: hideSensitiveClipboardContentKey)
+        showToast(hidden ? "敏感内容将默认隐藏" : "敏感内容将直接显示")
+    }
+
     func migrateClipboardTextCache() {
         var didChange = false
         var migratedCount = 0
@@ -172,7 +205,6 @@ extension AppModel {
     }
 
     func showClipboardPanel() {
-        guard requireAllPermissions() else { return }
         clipboardPanelController.show(app: self)
     }
 
@@ -281,19 +313,14 @@ extension AppModel {
     }
 
     func updateClipboardCacheAutoCleanupEnabled(_ enabled: Bool) {
-        clipboardCacheAutoCleanupEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: clipboardCacheAutoCleanupEnabledKey)
-        JarvisLog.info(
-            category: .clipboard,
-            event: "cache.autoCleanup.changed",
-            fields: ["enabled": String(enabled)]
-        )
-        configureClipboardCacheAutoCleanup()
+        updateClipboardCacheAutoCleanupPeriod(enabled ? .sevenDays : .never)
     }
 
     func updateClipboardCacheAutoCleanupPeriod(_ period: ClipboardCacheCleanupPeriod) {
         clipboardCacheAutoCleanupPeriod = period
+        clipboardCacheAutoCleanupEnabled = period != .never
         UserDefaults.standard.set(period.rawValue, forKey: clipboardCacheAutoCleanupPeriodKey)
+        UserDefaults.standard.set(clipboardCacheAutoCleanupEnabled, forKey: clipboardCacheAutoCleanupEnabledKey)
         JarvisLog.info(
             category: .clipboard,
             event: "cache.autoCleanupPeriod.changed",
@@ -533,18 +560,25 @@ extension AppModel {
 
     func loadClipboardCacheCleanupSettings() {
         let defaults = UserDefaults.standard
-        clipboardCacheAutoCleanupEnabled = defaults.bool(forKey: clipboardCacheAutoCleanupEnabledKey)
-        if let rawValue = defaults.string(forKey: clipboardCacheAutoCleanupPeriodKey),
-           let period = ClipboardCacheCleanupPeriod(rawValue: rawValue)
-        {
-            clipboardCacheAutoCleanupPeriod = period
+        automaticClipboardRecordingEnabled = defaults.object(forKey: clipboardRecordingEnabledKey) as? Bool ?? true
+        hideSensitiveClipboardContent = defaults.object(forKey: hideSensitiveClipboardContentKey) as? Bool ?? true
+        let wasCleanupEnabled = defaults.bool(forKey: clipboardCacheAutoCleanupEnabledKey)
+        if wasCleanupEnabled {
+            let savedPeriod = defaults.string(forKey: clipboardCacheAutoCleanupPeriodKey)
+                .flatMap(ClipboardCacheCleanupPeriod.init(rawValue:))
+            clipboardCacheAutoCleanupPeriod = savedPeriod.flatMap { $0 == .never ? nil : $0 } ?? .sevenDays
+        } else {
+            clipboardCacheAutoCleanupPeriod = .never
         }
+        clipboardCacheAutoCleanupEnabled = clipboardCacheAutoCleanupPeriod != .never
     }
 
     func configureClipboardCacheAutoCleanup() {
         clipboardCacheCleanupTimer?.invalidate()
         clipboardCacheCleanupTimer = nil
-        guard clipboardCacheAutoCleanupEnabled else {
+        guard clipboardCacheAutoCleanupEnabled,
+              let cutoffDate = clipboardCacheAutoCleanupPeriod.cutoffDate
+        else {
             JarvisLog.debug(
                 category: .clipboard,
                 event: "cache.autoCleanup.disabled"
@@ -557,12 +591,14 @@ extension AppModel {
             event: "cache.autoCleanup.started",
             fields: ["period": clipboardCacheAutoCleanupPeriod.rawValue]
         )
-        clearClipboardCache(olderThan: clipboardCacheAutoCleanupPeriod.cutoffDate, automatically: true)
+        clearClipboardCache(olderThan: cutoffDate, automatically: true)
         clipboardCacheCleanupTimer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self,
+                      let cutoffDate = self.clipboardCacheAutoCleanupPeriod.cutoffDate
+                else { return }
                 self.clearClipboardCache(
-                    olderThan: self.clipboardCacheAutoCleanupPeriod.cutoffDate,
+                    olderThan: cutoffDate,
                     automatically: true
                 )
             }

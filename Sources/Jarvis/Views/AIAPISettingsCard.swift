@@ -40,7 +40,7 @@ struct AIAPISettingsCard: View {
 
     var body: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
                 SettingsCardHeader(title: "API 配置", systemImage: "key")
                 fieldsSection
                 if let error = app.aiModelsRefreshError {
@@ -82,14 +82,14 @@ struct AIAPISettingsCard: View {
     }
 
     private var fieldsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("提供商")
-                    .font(JarvisTypography.control)
+                    .font(SettingsTypography.itemTitle)
 
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
-                    spacing: 8
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+                    spacing: 10
                 ) {
                     ForEach(AIAPIProvider.allCases) { option in
                         AIAPIProviderCapsule(
@@ -114,10 +114,10 @@ struct AIAPISettingsCard: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.labelSpacing) {
                 HStack(alignment: .center) {
                     Text("模型")
-                        .font(JarvisTypography.control)
+                        .font(SettingsTypography.itemTitle)
                     Spacer(minLength: 8)
                     refreshModelsButton
                 }
@@ -167,7 +167,7 @@ struct AIAPISettingsCard: View {
     }
 
     private var actionsRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Spacer()
 
             if isLocked {
@@ -217,9 +217,9 @@ struct AIAPISettingsCard: View {
         title: String,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: SettingsFormMetrics.labelSpacing) {
             Text(title)
-                .font(JarvisTypography.control)
+                .font(SettingsTypography.itemTitle)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -260,7 +260,12 @@ struct AIAPISettingsCard: View {
             )
             // The menu sizes itself to its content, so a plain
             // `maxWidth: .infinity` frame centers it inside the control box.
-            .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: SettingsFormMetrics.controlHeight,
+                maxHeight: SettingsFormMetrics.controlHeight,
+                alignment: .leading
+            )
         }
     }
 
@@ -277,19 +282,21 @@ struct AIAPISettingsCard: View {
         @ViewBuilder content: () -> some View
     ) -> some View {
         content()
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: SettingsFormMetrics.controlHeight, alignment: .leading)
+            .padding(.horizontal, 10)
             .background(
                 Color.jarvisPanel.opacity(0.72),
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
             }
     }
 
     private func loadDraft() {
+        let previousProvider = provider
+        let previousEndpoint = effectiveBaseURL
         if hasStoredConfiguration {
             provider = app.apiProvider
             let configuration = AIAPIConfiguration(
@@ -306,7 +313,9 @@ struct AIAPISettingsCard: View {
             model = ""
         }
         apiKey = ""
-        app.clearAIModels()
+        if previousProvider != provider || previousEndpoint != effectiveBaseURL {
+            app.clearAIModels()
+        }
     }
 
     private func beginEditing() {
@@ -337,6 +346,8 @@ struct AIAPISettingsCard: View {
 }
 
 private struct AIAPIProviderCapsule: View {
+    private nonisolated(unsafe) static let brandIconCache = NSCache<NSString, NSImage>()
+
     let provider: AIAPIProvider
     let isSelected: Bool
     let isEnabled: Bool
@@ -362,7 +373,7 @@ private struct AIAPIProviderCapsule: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 34)
+            .frame(maxWidth: .infinity, minHeight: SettingsFormMetrics.controlHeight)
             .background(
                 isSelected ? Color.jarvisAccent.opacity(0.12) : Color.jarvisPanel.opacity(0.55),
                 in: Capsule()
@@ -378,7 +389,7 @@ private struct AIAPIProviderCapsule: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.65)
+        .opacity(isEnabled ? 1 : SettingsFormMetrics.disabledControlOpacity)
         .accessibilityLabel("\(provider.title)，\(isSelected ? "已选择" : "选择提供商")")
         .help(provider.title)
     }
@@ -402,17 +413,33 @@ private struct AIAPIProviderCapsule: View {
 
     private static func brandImage(for provider: AIAPIProvider) -> NSImage? {
         guard let resource = provider.brandIconResource,
-              let url = Bundle.main.url(
-                  forResource: resource.name,
-                  withExtension: resource.fileExtension,
-                  subdirectory: "AIProviderIcons"
-              ),
-              let image = NSImage(contentsOf: url)
+              let image = loadBrandImage(
+                  named: resource.name,
+                  fileExtension: resource.fileExtension
+              )
+        else {
+            return nil
+        }
+        return image
+    }
+
+    private static func loadBrandImage(named name: String, fileExtension: String) -> NSImage? {
+        if let cached = brandIconCache.object(forKey: name as NSString) {
+            return cached
+        }
+        guard let url = Bundle.main.url(
+            forResource: name,
+            withExtension: fileExtension,
+            subdirectory: "AIProviderIcons"
+        ),
+            let image = NSImage(contentsOf: url)
         else {
             return nil
         }
 
         image.isTemplate = false
-        return JarvisBrandIconMetrics.trimmed(image, cacheKey: "api.\(resource.name)")
+        let trimmed = JarvisBrandIconMetrics.trimmed(image, cacheKey: "api.\(name)")
+        brandIconCache.setObject(trimmed, forKey: name as NSString)
+        return trimmed
     }
 }

@@ -7,7 +7,7 @@ final class JarvisMainWindowControllerTests: XCTestCase {
     func testSettingsModalUsesFixedCenteredLayoutSize() {
         XCTAssertEqual(
             SettingsLayout.modalSize,
-            CGSize(width: 1_040, height: 680)
+            CGSize(width: 1040, height: 680)
         )
     }
 

@@ -6,7 +6,7 @@ enum SettingsLayout {
     static let sidebarIdealWidth: CGFloat = 200
     static let sidebarMinimumWidth: CGFloat = 180
     static let sidebarMaximumWidth: CGFloat = 240
-    static let modalSize = CGSize(width: 1_040, height: 680)
+    static let modalSize = CGSize(width: 1040, height: 680)
 }
 
 enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
@@ -17,7 +17,9 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     case diagnostics
     case about
 
-    var id: Self { self }
+    var id: Self {
+        self
+    }
 
     var title: String {
         switch self {
@@ -103,55 +105,55 @@ struct ShortcutSettingsCard: View {
     }
 
     private var content: some View {
-            VStack(alignment: .leading, spacing: 15) {
-                SettingsCardHeader(title: "快捷键", systemImage: "keyboard")
+        VStack(alignment: .leading, spacing: 15) {
+            SettingsCardHeader(title: "快捷键", systemImage: "keyboard")
 
-                shortcutRow(
-                    title: "截图",
-                    shortcut: $screenshotShortcut,
-                    isRecording: $isRecordingScreenshotShortcut,
-                    conflictMessage: app.screenshotShortcutConflictMessage
-                ) {
-                    let previous = screenshotShortcut
-                    if !app.updateScreenshotShortcut(.default) {
-                        screenshotShortcut = previous
-                    } else {
-                        screenshotShortcut = .default
-                    }
-                }
-
-                Divider().overlay(Color.primary.opacity(0.12))
-
-                shortcutRow(
-                    title: "剪贴板",
-                    shortcut: $clipboardShortcut,
-                    isRecording: $isRecordingClipboardShortcut,
-                    conflictMessage: app.clipboardShortcutConflictMessage
-                ) {
-                    let previous = clipboardShortcut
-                    if !app.updateClipboardShortcut(.clipboardDefault) {
-                        clipboardShortcut = previous
-                    } else {
-                        clipboardShortcut = .clipboardDefault
-                    }
-                }
-
-                Divider().overlay(Color.primary.opacity(0.12))
-
-                shortcutRow(
-                    title: "录音",
-                    shortcut: $meetingShortcut,
-                    isRecording: $isRecordingMeetingShortcut,
-                    conflictMessage: app.meetingShortcutConflictMessage
-                ) {
-                    let previous = meetingShortcut
-                    if !app.updateMeetingShortcut(.meetingDefault) {
-                        meetingShortcut = previous
-                    } else {
-                        meetingShortcut = .meetingDefault
-                    }
+            shortcutRow(
+                title: "截图",
+                shortcut: $screenshotShortcut,
+                isRecording: $isRecordingScreenshotShortcut,
+                conflictMessage: app.screenshotShortcutConflictMessage
+            ) {
+                let previous = screenshotShortcut
+                if !app.updateScreenshotShortcut(.default) {
+                    screenshotShortcut = previous
+                } else {
+                    screenshotShortcut = .default
                 }
             }
+
+            Divider().overlay(Color.primary.opacity(0.12))
+
+            shortcutRow(
+                title: "剪贴板",
+                shortcut: $clipboardShortcut,
+                isRecording: $isRecordingClipboardShortcut,
+                conflictMessage: app.clipboardShortcutConflictMessage
+            ) {
+                let previous = clipboardShortcut
+                if !app.updateClipboardShortcut(.clipboardDefault) {
+                    clipboardShortcut = previous
+                } else {
+                    clipboardShortcut = .clipboardDefault
+                }
+            }
+
+            Divider().overlay(Color.primary.opacity(0.12))
+
+            shortcutRow(
+                title: "录音",
+                shortcut: $meetingShortcut,
+                isRecording: $isRecordingMeetingShortcut,
+                conflictMessage: app.meetingShortcutConflictMessage
+            ) {
+                let previous = meetingShortcut
+                if !app.updateMeetingShortcut(.meetingDefault) {
+                    meetingShortcut = previous
+                } else {
+                    meetingShortcut = .meetingDefault
+                }
+            }
+        }
     }
 
     private func shortcutRow(
@@ -188,19 +190,19 @@ struct WindowLayoutShortcutSettingsCard: View {
     }
 
     private var content: some View {
-            VStack(alignment: .leading, spacing: 15) {
-                SettingsCardHeader(
-                    title: "窗口布局快捷键",
-                    systemImage: "macwindow.on.rectangle"
-                )
+        VStack(alignment: .leading, spacing: 15) {
+            SettingsCardHeader(
+                title: "窗口布局快捷键",
+                systemImage: "macwindow.on.rectangle"
+            )
 
-                ForEach(Array(WindowLayout.allCases.enumerated()), id: \.element) { index, layout in
-                    if index > 0 {
-                        Divider().overlay(Color.primary.opacity(0.12))
-                    }
-                    WindowLayoutShortcutRow(layout: layout)
+            ForEach(Array(WindowLayout.allCases.enumerated()), id: \.element) { index, layout in
+                if index > 0 {
+                    Divider().overlay(Color.primary.opacity(0.12))
                 }
+                WindowLayoutShortcutRow(layout: layout)
             }
+        }
     }
 }
 

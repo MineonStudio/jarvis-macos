@@ -14,11 +14,11 @@ final class JarvisMainWindowControllerTests: XCTestCase {
     func testSettingsSectionsExposeStableSidebarOrder() {
         XCTAssertEqual(
             SettingsSection.allCases,
-            [.general, .appearance, .shortcuts, .model, .privacyCache, .diagnostics, .about]
+            [.general, .appearance, .wallpaperSources, .shortcuts, .model, .privacyCache, .diagnostics, .about]
         )
         XCTAssertEqual(
             SettingsSection.allCases.map(\.title),
-            ["常规", "外观", "快捷键", "模型", "隐私与缓存", "诊断", "关于"]
+            ["常规", "外观", "壁纸源", "快捷键", "模型", "隐私与缓存", "诊断", "关于"]
         )
         XCTAssertTrue(SettingsSection.allCases.allSatisfy { !$0.icon.isEmpty })
     }

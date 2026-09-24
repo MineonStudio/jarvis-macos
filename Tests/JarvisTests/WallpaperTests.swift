@@ -26,8 +26,8 @@ final class WallpaperTests: XCTestCase {
     }
 
     func testWallpaperRatioAndTagFiltersExposeWallhavenQueries() {
-        XCTAssertEqual(WallpaperRatio.landscape.apiValue, "16x9,16x10,21x9,32x9")
-        XCTAssertEqual(WallpaperRatio.portrait.apiValue, "9x16,10x16")
+        XCTAssertEqual(WallpaperRatio.landscape.apiValue, "16x9,16x10,21x9,32x9,48x9,3x2,4x3,5x4")
+        XCTAssertEqual(WallpaperRatio.portrait.apiValue, "9x16,10x16,9x18")
         XCTAssertEqual(WallpaperRatio.square.apiValue, "1x1")
         XCTAssertNil(WallpaperRatio.any.apiValue)
         XCTAssertTrue(WallpaperTags.popular.contains { $0.query == "landscape" })
@@ -35,7 +35,7 @@ final class WallpaperTests: XCTestCase {
         XCTAssertFalse(WallpaperTags.popular.contains { $0.query == "美女" })
         XCTAssertEqual(
             WallpaperSorting.allCases.map(\.apiValue),
-            ["toplist", "date_added", "relevance", "views", "favorites"]
+            ["toplist", "date_added", "relevance", "views", "favorites", "random"]
         )
     }
 
@@ -412,7 +412,7 @@ final class WallpaperTests: XCTestCase {
         let queryItems = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         let query = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name, $0.value) })
 
-        XCTAssertFalse(query.keys.contains("categories"))
+        XCTAssertEqual(query["categories"], "111")
         XCTAssertEqual(query["purity"], "110")
         XCTAssertEqual(query["atleast"], "3440x1440")
         XCTAssertEqual(query["ratios"], "21x9")

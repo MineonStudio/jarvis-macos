@@ -25,8 +25,8 @@ APP_DIR="${JARVIS_APP_DIR:-$DEFAULT_APP_DIR}"
 JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER}"
 JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
 JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
-JARVIS_VERSION="${JARVIS_VERSION:-1.4.1}"
-JARVIS_BUILD="${JARVIS_BUILD:-339}"
+JARVIS_VERSION="${JARVIS_VERSION:-1.4.2}"
+JARVIS_BUILD="${JARVIS_BUILD:-340}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -45,6 +45,12 @@ if [[ -d "$ROOT_DIR/Resources/AIProviderIcons" ]]; then
   cp "$ROOT_DIR/Resources/AIProviderIcons"/*.png \
      "$ROOT_DIR/Resources/AIProviderIcons"/*.svg \
      "$APP_DIR/Contents/Resources/AIProviderIcons/"
+fi
+
+if [[ -d "$ROOT_DIR/Resources/WallpaperSourceIcons" ]]; then
+  mkdir -p "$APP_DIR/Contents/Resources/WallpaperSourceIcons"
+  cp "$ROOT_DIR/Resources/WallpaperSourceIcons"/*.png \
+     "$APP_DIR/Contents/Resources/WallpaperSourceIcons/"
 fi
 
 if [[ -d "$ROOT_DIR/Resources/EntertainmentIcons" ]]; then

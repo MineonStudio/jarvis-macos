@@ -73,7 +73,7 @@ extension AppModel {
 
         Task.detached { [weak self] in
             do {
-                let apiKey = try AIAPIKeychain.shared.read()
+                let apiKey = try AIAPIKeyStore.shared.read()
                 let provider = AIAPIConfiguration.load(resolvedAPIKey: apiKey)
                 await self?.applyLoadedAIAPISettings(provider)
             } catch {
@@ -119,7 +119,7 @@ extension AppModel {
             }
 
             let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
+            let storedAPIKey = trimmedAPIKey.isEmpty ? try AIAPIKeyStore.shared.read() ?? "" : ""
             let resolvedAPIKey = trimmedAPIKey.isEmpty ? storedAPIKey : trimmedAPIKey
             guard !resolvedAPIKey.isEmpty else {
                 showToast(JarvisFeedbackCopy.apiKeyRequired)
@@ -143,7 +143,7 @@ extension AppModel {
             )
             try persistProviderConfiguration(
                 configuration,
-                writeKeychain: !trimmedAPIKey.isEmpty
+                writeAPIKey: !trimmedAPIKey.isEmpty
             )
             if announce {
                 showToast(JarvisFeedbackCopy.saved)
@@ -158,7 +158,7 @@ extension AppModel {
     @discardableResult
     func deleteAIAPIConfiguration() -> Bool {
         do {
-            try AIAPIKeychain.shared.delete()
+            try AIAPIKeyStore.shared.delete()
             AIAPIConfiguration.removeStoredConfiguration()
 
             providerEndpoint = AIAPIConfiguration.defaultEndpoint
@@ -203,7 +203,7 @@ extension AppModel {
         let currentModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         aiModelsRefreshTask = Task.detached { [weak self] in
             do {
-                let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
+                let storedAPIKey = enteredAPIKey.isEmpty ? try AIAPIKeyStore.shared.read() ?? "" : ""
                 let resolvedAPIKey = enteredAPIKey.isEmpty ? storedAPIKey : enteredAPIKey
                 let configuration = AIAPIConfiguration(
                     endpoint: endpoint,
@@ -239,10 +239,10 @@ extension AppModel {
 
     private func persistProviderConfiguration(
         _ configuration: AIAPIConfiguration,
-        writeKeychain: Bool
+        writeAPIKey: Bool
     ) throws {
-        if writeKeychain, !configuration.apiKey.isEmpty {
-            try AIAPIKeychain.shared.write(configuration.apiKey)
+        if writeAPIKey, !configuration.apiKey.isEmpty {
+            try AIAPIKeyStore.shared.write(configuration.apiKey)
         }
         UserDefaults.standard.set(configuration.endpoint, forKey: AIAPIConfiguration.apiEndpointKey)
         UserDefaults.standard.set(configuration.model, forKey: AIAPIConfiguration.apiModelKey)
@@ -274,7 +274,7 @@ extension AppModel {
         let trimmedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
-            let storedAPIKey = try AIAPIKeychain.shared.read() ?? ""
+            let storedAPIKey = trimmedAPIKey.isEmpty ? try AIAPIKeyStore.shared.read() ?? "" : ""
             let configuration = AIAPIConfiguration(
                 endpoint: trimmedEndpoint,
                 model: trimmedModel,

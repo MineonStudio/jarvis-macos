@@ -1,9 +1,7 @@
 import SwiftUI
 
-struct ClipboardCacheSettingsCard: View {
+struct ClipboardPrivacySettingsCard: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let capacityOptions = ClipboardCacheStore.supportedMaximumBytes
 
     var body: some View {
         JarvisCard {
@@ -15,7 +13,6 @@ struct ClipboardCacheSettingsCard: View {
                         set: { app.updateAutomaticClipboardRecordingEnabled($0) }
                     )
                 )
-                divider
                 preferenceRow(
                     title: "敏感内容默认隐藏",
                     isOn: Binding(
@@ -23,26 +20,8 @@ struct ClipboardCacheSettingsCard: View {
                         set: { app.updateHideSensitiveClipboardContent($0) }
                     )
                 )
-                divider
-                folderRow
-                divider
-                capacitySection
-                usageSection
-                divider
-                cleanupSection
             }
         }
-        .onAppear {
-            app.refreshClipboardCacheUsage()
-        }
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: app.clipboardCacheAutoCleanupPeriod
-        )
-    }
-
-    private var divider: some View {
-        Divider().overlay(Color.primary.opacity(0.12))
     }
 
     private func preferenceRow(title: String, isOn: Binding<Bool>) -> some View {
@@ -53,6 +32,32 @@ struct ClipboardCacheSettingsCard: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
+    }
+}
+
+struct ClipboardCacheSettingsCard: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let capacityOptions = ClipboardCacheStore.supportedMaximumBytes
+
+    var body: some View {
+        JarvisCard {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+                folderRow
+                VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+                    capacitySection
+                    usageSection
+                }
+                cleanupSection
+            }
+        }
+        .onAppear {
+            app.refreshClipboardCacheUsage()
+        }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: app.clipboardCacheAutoCleanupPeriod
+        )
     }
 
     private var folderRow: some View {

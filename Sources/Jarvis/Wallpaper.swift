@@ -39,6 +39,26 @@ enum WallpaperSource: String, CaseIterable, Codable, Hashable, Identifiable {
     }
 }
 
+enum WallpaperSourcePreferences {
+    static let storageKey = "wallpaper.enabledSources"
+    static let defaultStorageValue = WallpaperSource.onlineGalleryCases
+        .map(\.rawValue)
+        .joined(separator: ",")
+
+    static func enabledSources(from storageValue: String) -> [WallpaperSource] {
+        let storedIDs = Set(storageValue.split(separator: ",").map(String.init))
+        let enabled = WallpaperSource.onlineGalleryCases.filter { storedIDs.contains($0.rawValue) }
+        return enabled.isEmpty ? [.wallhaven] : enabled
+    }
+
+    static func storageValue(for sources: [WallpaperSource]) -> String {
+        WallpaperSource.onlineGalleryCases
+            .filter(sources.contains)
+            .map(\.rawValue)
+            .joined(separator: ",")
+    }
+}
+
 enum WallpaperResolution: String, CaseIterable, Codable, Hashable, Identifiable {
     case any
     case hd
@@ -51,6 +71,7 @@ enum WallpaperResolution: String, CaseIterable, Codable, Hashable, Identifiable 
     case fiveK
     case superUltrawide
     case eightK
+    case custom
 
     var id: String {
         rawValue
@@ -69,6 +90,7 @@ enum WallpaperResolution: String, CaseIterable, Codable, Hashable, Identifiable 
         case .fiveK: "5K 及以上"
         case .superUltrawide: "5120 × 1440 及以上"
         case .eightK: "8K 及以上"
+        case .custom: "自定义"
         }
     }
 
@@ -85,6 +107,7 @@ enum WallpaperResolution: String, CaseIterable, Codable, Hashable, Identifiable 
         case .fiveK: "5K"
         case .superUltrawide: "5120×1440"
         case .eightK: "8K"
+        case .custom: "自定义"
         }
     }
 
@@ -101,6 +124,7 @@ enum WallpaperResolution: String, CaseIterable, Codable, Hashable, Identifiable 
         case .fiveK: "5120x2880"
         case .superUltrawide: "5120x1440"
         case .eightK: "7680x4320"
+        case .custom: nil
         }
     }
 }
@@ -116,6 +140,11 @@ enum WallpaperRatio: String, CaseIterable, Codable, Hashable, Identifiable {
     case thirtyTwoByNine
     case nineBySixteen
     case tenBySixteen
+    case fortyEightByNine
+    case nineByEighteen
+    case threeByTwo
+    case fourByThree
+    case fiveByFour
 
     var id: String {
         rawValue
@@ -133,14 +162,19 @@ enum WallpaperRatio: String, CaseIterable, Codable, Hashable, Identifiable {
         case .thirtyTwoByNine: "32:9"
         case .nineBySixteen: "9:16"
         case .tenBySixteen: "10:16"
+        case .fortyEightByNine: "48:9"
+        case .nineByEighteen: "9:18"
+        case .threeByTwo: "3:2"
+        case .fourByThree: "4:3"
+        case .fiveByFour: "5:4"
         }
     }
 
     var apiValue: String? {
         switch self {
         case .any: nil
-        case .landscape: "16x9,16x10,21x9,32x9"
-        case .portrait: "9x16,10x16"
+        case .landscape: "16x9,16x10,21x9,32x9,48x9,3x2,4x3,5x4"
+        case .portrait: "9x16,10x16,9x18"
         case .square: "1x1"
         case .sixteenByNine: "16x9"
         case .sixteenByTen: "16x10"
@@ -148,6 +182,11 @@ enum WallpaperRatio: String, CaseIterable, Codable, Hashable, Identifiable {
         case .thirtyTwoByNine: "32x9"
         case .nineBySixteen: "9x16"
         case .tenBySixteen: "10x16"
+        case .fortyEightByNine: "48x9"
+        case .nineByEighteen: "9x18"
+        case .threeByTwo: "3x2"
+        case .fourByThree: "4x3"
+        case .fiveByFour: "5x4"
         }
     }
 }
@@ -158,6 +197,7 @@ enum WallpaperSorting: String, CaseIterable, Codable, Hashable, Identifiable {
     case relevance
     case views
     case favorites
+    case random
 
     var id: String {
         rawValue
@@ -165,11 +205,12 @@ enum WallpaperSorting: String, CaseIterable, Codable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .toplist: "热门"
+        case .toplist: "热门榜"
         case .dateAdded: "最新"
         case .relevance: "相关"
         case .views: "浏览量"
         case .favorites: "收藏数"
+        case .random: "随机"
         }
     }
 
@@ -180,6 +221,151 @@ enum WallpaperSorting: String, CaseIterable, Codable, Hashable, Identifiable {
         case .relevance: "relevance"
         case .views: "views"
         case .favorites: "favorites"
+        case .random: "random"
+        }
+    }
+}
+
+enum WallpaperPurityPreset: String, CaseIterable, Hashable, Identifiable {
+    case automatic = "auto"
+    case sfw = "110"
+    case nsfw = "001"
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .automatic: "自动纯度"
+        case .sfw: "SFW"
+        case .nsfw: "NSFW"
+        }
+    }
+
+    var purities: Set<WallpaperPurity>? {
+        switch self {
+        case .automatic: nil
+        case .sfw: [.sfw, .sketchy]
+        case .nsfw: [.nsfw]
+        }
+    }
+}
+
+enum WallpaperPurity: String, CaseIterable, Hashable, Identifiable {
+    case sfw
+    case sketchy
+    case nsfw
+
+    var id: String {
+        rawValue
+    }
+}
+
+enum WallpaperTopRange: String, CaseIterable, Hashable, Identifiable {
+    case day
+    case threeDays
+    case week
+    case month
+    case threeMonths
+    case sixMonths
+    case year
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .day: "最近 1 天"
+        case .threeDays: "最近 3 天"
+        case .week: "最近 1 周"
+        case .month: "最近 1 个月"
+        case .threeMonths: "最近 3 个月"
+        case .sixMonths: "最近 6 个月"
+        case .year: "最近 1 年"
+        }
+    }
+
+    var apiValue: String {
+        switch self {
+        case .day: "1d"
+        case .threeDays: "3d"
+        case .week: "1w"
+        case .month: "1M"
+        case .threeMonths: "3M"
+        case .sixMonths: "6M"
+        case .year: "1y"
+        }
+    }
+}
+
+enum WallpaperColor: String, CaseIterable, Hashable, Identifiable {
+    case darkRed = "660000"
+    case red = "990000"
+    case crimson = "cc0000"
+    case lightRed = "cc3333"
+    case pink = "ea4c88"
+    case darkPurple = "993399"
+    case purple = "663399"
+    case indigo = "333399"
+    case blue = "0066cc"
+    case cyan = "0099cc"
+    case turquoise = "66cccc"
+    case lime = "77cc33"
+    case green = "669900"
+    case darkGreen = "336600"
+    case olive = "666600"
+    case yellowGreen = "999900"
+    case yellow = "cccc33"
+    case brightYellow = "ffff00"
+    case amber = "ffcc33"
+    case orange = "ff9900"
+    case darkOrange = "ff6600"
+    case ochre = "cc6633"
+    case brown = "996633"
+    case darkBrown = "663300"
+    case black = "000000"
+    case gray = "999999"
+    case lightGray = "cccccc"
+    case white = "ffffff"
+    case slate = "424153"
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .darkRed: "深红"
+        case .red: "红"
+        case .crimson: "猩红"
+        case .lightRed: "浅红"
+        case .pink: "粉"
+        case .darkPurple: "深紫"
+        case .purple: "紫"
+        case .indigo: "靛蓝"
+        case .blue: "蓝"
+        case .cyan: "青"
+        case .turquoise: "青绿"
+        case .lime: "黄绿"
+        case .green: "绿"
+        case .darkGreen: "深绿"
+        case .olive: "橄榄绿"
+        case .yellowGreen: "黄绿"
+        case .yellow: "黄"
+        case .brightYellow: "亮黄"
+        case .amber: "琥珀"
+        case .orange: "橙"
+        case .darkOrange: "深橙"
+        case .ochre: "赭色"
+        case .brown: "棕"
+        case .darkBrown: "深棕"
+        case .black: "黑"
+        case .gray: "灰"
+        case .lightGray: "浅灰"
+        case .white: "白"
+        case .slate: "石板灰"
         }
     }
 }
@@ -317,6 +503,11 @@ struct WallpaperSearchFilters: Equatable {
     var ratio: WallpaperRatio = .any
     var sorting: WallpaperSorting = .dateAdded
     var tag: String = ""
+    var purities: Set<WallpaperPurity>?
+    var topRange: WallpaperTopRange = .month
+    var color: WallpaperColor?
+    var customMinimumResolution: String?
+    var randomSeed: String = ""
     var qihooCategory: WallpaperQihooCategory = .all
     var qihooResolution: WallpaperQihooResolution = .any
 }
@@ -463,24 +654,49 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Senda
     }
 
     func search(page: Int, filters: WallpaperSearchFilters) async throws -> WallpaperPage {
-        let url = try Self.searchURL(page: page, filters: filters)
+        let apiKey = try WallhavenAPIKeyStore.shared.read()
+        let url = try Self.searchURL(
+            page: page,
+            filters: filters,
+            includesNSFW: apiKey?.isEmpty == false
+        )
 
+        var request = WallpaperHTTP.request(url: url)
+        if let apiKey, !apiKey.isEmpty {
+            request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        }
         let data = try await WallpaperHTTP.data(
-            for: WallpaperHTTP.request(url: url),
+            for: request,
             session: session
         )
         return try Self.decode(data: data)
     }
 
-    static func searchURL(page: Int, filters: WallpaperSearchFilters) throws -> URL {
+    static func searchURL(
+        page: Int,
+        filters: WallpaperSearchFilters,
+        includesNSFW: Bool = false
+    ) throws -> URL {
         var components = URLComponents(string: "https://wallhaven.cc/api/v1/search")
+        let selectedPurities = filters.purities
+            ?? (includesNSFW ? Set(WallpaperPurity.allCases) : Set([.sfw, .sketchy]))
+        // Wallhaven purity bits are ordered SFW, Sketchy, NSFW.
+        let purities = [WallpaperPurity.sfw, .sketchy, .nsfw]
+            .map { selectedPurities.contains($0) ? "1" : "0" }
+            .joined()
         components?.queryItems = [
-            URLQueryItem(name: "purity", value: "110"),
+            URLQueryItem(name: "categories", value: "111"),
+            URLQueryItem(name: "purity", value: purities == "000" ? "100" : purities),
             URLQueryItem(name: "sorting", value: filters.sorting.apiValue),
             URLQueryItem(name: "order", value: "desc"),
             URLQueryItem(name: "page", value: "\(max(1, page))")
         ]
-        if let minimumResolution = filters.resolution.minimumResolution {
+        if filters.sorting == .toplist {
+            components?.queryItems?.append(URLQueryItem(name: "topRange", value: filters.topRange.apiValue))
+        }
+        let minimumResolution = filters.resolution.minimumResolution
+            ?? (filters.resolution == .custom ? normalizedResolution(filters.customMinimumResolution) : nil)
+        if let minimumResolution {
             components?.queryItems?.append(
                 URLQueryItem(name: "atleast", value: minimumResolution)
             )
@@ -488,14 +704,39 @@ final class WallhavenWallpaperSource: WallpaperSourceProviding, @unchecked Senda
         if let ratio = filters.ratio.apiValue {
             components?.queryItems?.append(URLQueryItem(name: "ratios", value: ratio))
         }
+        if let color = filters.color {
+            components?.queryItems?.append(URLQueryItem(name: "colors", value: color.rawValue))
+        }
         let tag = filters.tag.trimmingCharacters(in: .whitespacesAndNewlines)
         if !tag.isEmpty {
             components?.queryItems?.append(URLQueryItem(name: "q", value: tag))
+        }
+        let seed = filters.randomSeed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if filters.sorting == .random,
+           seed.count == 6,
+           seed.utf8.allSatisfy({
+               (48 ... 57).contains($0) || (65 ... 90).contains($0) || (97 ... 122).contains($0)
+           })
+        {
+            components?.queryItems?.append(URLQueryItem(name: "seed", value: seed))
         }
         guard let url = components?.url else {
             throw WallpaperAPIError.invalidURL
         }
         return url
+    }
+
+    private static func normalizedResolution(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = value.lowercased().split(separator: "x", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let width = Int(parts[0]), width > 0,
+              let height = Int(parts[1]), height > 0
+        else {
+            return nil
+        }
+        return "\(width)x\(height)"
     }
 
     static func decode(data: Data) throws -> WallpaperPage {
@@ -1680,10 +1921,15 @@ final class WallpaperViewModel: ObservableObject {
     static let initialDisplayCount = 36
     private static let loadMoreDisplayCount = 24
 
-    @Published var selectedSource: WallpaperSource = .wallhaven
+    @Published var selectedSource: WallpaperSource
     @Published var selectedResolution: WallpaperResolution = .any
     @Published var selectedRatio: WallpaperRatio = .any
     @Published var selectedSorting: WallpaperSorting = .dateAdded
+    @Published var selectedPurityPreset: WallpaperPurityPreset = .automatic
+    @Published var selectedTopRange: WallpaperTopRange = .month
+    @Published var selectedColor: WallpaperColor?
+    @Published var customMinimumResolution = ""
+    @Published var randomSeed = ""
     @Published var selectedQihooCategory: WallpaperQihooCategory = .all
     @Published var selectedQihooResolution: WallpaperQihooResolution = .any
     @Published var selectedTag = ""
@@ -1715,8 +1961,15 @@ final class WallpaperViewModel: ObservableObject {
         qihooSource: any WallpaperSourceProviding = QihooWallpaperSource(),
         downloader: WallpaperDownloadService = WallpaperDownloadService(),
         desktopWallpaperService: DesktopWallpaperService? = nil,
-        wallpaperSystemService: WallpaperSystemService? = nil
+        wallpaperSystemService: WallpaperSystemService? = nil,
+        initialSelectedSource: WallpaperSource? = nil
     ) {
+        selectedSource = initialSelectedSource
+            ?? WallpaperSourcePreferences.enabledSources(
+                from: UserDefaults.standard.string(forKey: WallpaperSourcePreferences.storageKey)
+                    ?? WallpaperSourcePreferences.defaultStorageValue
+            ).first
+            ?? .wallhaven
         self.store = store
         self.wallhavenSource = wallhavenSource
         self.qihooSource = qihooSource
@@ -1903,6 +2156,11 @@ final class WallpaperViewModel: ObservableObject {
             ratio: selectedRatio,
             sorting: selectedSorting,
             tag: selectedTag,
+            purities: selectedPurityPreset.purities,
+            topRange: selectedTopRange,
+            color: selectedColor,
+            customMinimumResolution: customMinimumResolution,
+            randomSeed: randomSeed,
             qihooCategory: selectedQihooCategory,
             qihooResolution: selectedQihooResolution
         )

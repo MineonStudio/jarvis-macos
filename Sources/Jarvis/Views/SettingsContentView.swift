@@ -12,6 +12,7 @@ enum SettingsLayout {
 enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     case general
     case appearance
+    case wallpaperSources
     case shortcuts
     case model
     case privacyCache
@@ -27,6 +28,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
         case .general: "常规"
         case .privacyCache: "隐私与缓存"
         case .appearance: "外观"
+        case .wallpaperSources: "壁纸源"
         case .shortcuts: "快捷键"
         case .model: "模型"
         case .diagnostics: "诊断"
@@ -39,6 +41,7 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
         case .general: "gearshape"
         case .privacyCache: "lock.shield"
         case .appearance: "paintbrush"
+        case .wallpaperSources: "photo.stack"
         case .shortcuts: "keyboard"
         case .model: "cube"
         case .diagnostics: "waveform.path.ecg"
@@ -140,8 +143,6 @@ struct ShortcutSettingsCard: View {
                 }
             }
 
-            Divider().overlay(Color.primary.opacity(0.12))
-
             shortcutRow(
                 title: "剪贴板",
                 shortcut: $clipboardShortcut,
@@ -155,8 +156,6 @@ struct ShortcutSettingsCard: View {
                     clipboardShortcut = .clipboardDefault
                 }
             }
-
-            Divider().overlay(Color.primary.opacity(0.12))
 
             shortcutRow(
                 title: "录音",
@@ -214,10 +213,7 @@ struct WindowLayoutShortcutSettingsCard: View {
                 systemImage: "macwindow.on.rectangle"
             )
 
-            ForEach(Array(WindowLayout.allCases.enumerated()), id: \.element) { index, layout in
-                if index > 0 {
-                    Divider().overlay(Color.primary.opacity(0.12))
-                }
+            ForEach(WindowLayout.allCases, id: \.self) { layout in
                 WindowLayoutShortcutRow(layout: layout)
             }
         }
@@ -292,6 +288,8 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: SettingsSection = .general
+    @AppStorage(WallpaperSourcePreferences.storageKey)
+    private var enabledWallpaperSources = WallpaperSourcePreferences.defaultStorageValue
 
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
@@ -313,6 +311,7 @@ struct SettingsView: View {
                     ideal: SettingsLayout.sidebarIdealWidth,
                     max: SettingsLayout.sidebarMaximumWidth
                 )
+                .toolbar(removing: .sidebarToggle)
             } detail: {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
@@ -365,6 +364,8 @@ struct SettingsView: View {
             themeSettingsCard
             appIconSettingsCard
             accentColorSettingsCard
+        case .wallpaperSources:
+            WallpaperSourcesSettingsCard(enabledSourcesStorageValue: $enabledWallpaperSources)
         case .shortcuts:
             ShortcutSettingsCard()
             WindowLayoutShortcutSettingsCard()
@@ -372,6 +373,7 @@ struct SettingsView: View {
             AIAPISettingsCard()
             MeetingModelSettingsCard()
         case .privacyCache:
+            ClipboardPrivacySettingsCard()
             ClipboardCacheSettingsCard()
         case .diagnostics:
             DiagnosticsSettingsCard()
@@ -383,7 +385,7 @@ struct SettingsView: View {
 
     private var versionAndUpdateCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.labelSpacing) {
                 SettingsCardHeader(
                     title: "版本与更新",
                     systemImage: "arrow.triangle.2.circlepath"
@@ -520,7 +522,7 @@ struct SettingsView: View {
 
     private var sourceRepositoryCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+            VStack(alignment: .leading, spacing: SettingsFormMetrics.labelSpacing) {
                 SettingsCardHeader(
                     title: "开源仓库",
                     systemImage: "chevron.left.forwardslash.chevron.right"
@@ -631,11 +633,8 @@ struct MeetingModelSettingsCard: View {
         VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
             SettingsCardHeader(title: "会议识别模型", systemImage: "waveform.and.person.filled")
 
-            ForEach(Array(MeetingModelPreparationStage.allCases.enumerated()), id: \.element.id) { index, stage in
+            ForEach(MeetingModelPreparationStage.allCases) { stage in
                 MeetingModelSettingsRow(stage: stage)
-                if index < MeetingModelPreparationStage.allCases.count - 1 {
-                    Divider().overlay(Color.primary.opacity(0.12))
-                }
             }
 
             if case let .failed(nil, _, message) = app.meetingModelState {

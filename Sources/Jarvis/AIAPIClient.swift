@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 struct AIAPIConfiguration: Equatable, Sendable {
     static let apiEndpointKey = "jarvis.ai.api.endpoint"
@@ -60,16 +59,16 @@ struct AIAPIConfiguration: Equatable, Sendable {
 
     static func load(
         defaults: UserDefaults = .standard,
-        keychain: AIAPIKeychain = .shared
+        keyStore: AIAPIKeyStore = .shared
     ) -> Self {
-        load(defaults: defaults, resolvedAPIKey: keychain.readIfAvailable())
+        load(defaults: defaults, resolvedAPIKey: keyStore.readIfAvailable())
     }
 
     static func loadProvider(
         defaults: UserDefaults = .standard,
-        keychain: AIAPIKeychain = .shared
+        keyStore: AIAPIKeyStore = .shared
     ) -> Self {
-        load(defaults: defaults, keychain: keychain)
+        load(defaults: defaults, keyStore: keyStore)
     }
 
     static func load(
@@ -616,89 +615,5 @@ struct OpenAICompatibleAPIClient: AITextCompletionAPI, AIAPIConnectionTesting, S
             return nil
         }
         return message
-    }
-}
-
-final class AIAPIKeychain: @unchecked Sendable {
-    static let shared = AIAPIKeychain()
-
-    private let service = "\(JarvisAppIdentity.bundleIdentifier).ai"
-    private let legacyService = "\(JarvisAppIdentity.bundleIdentifier).screenshot-translation"
-    private let account = "api-key"
-
-    func readIfAvailable() -> String {
-        (try? read()) ?? ""
-    }
-
-    func read() throws -> String? {
-        if let value = try read(service: service) {
-            return value
-        }
-        guard let legacy = try read(service: legacyService) else {
-            return nil
-        }
-        try? write(legacy)
-        return legacy
-    }
-
-    private func read(service: String) throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound {
-            return nil
-        }
-        guard status == errSecSuccess,
-              let data = result as? Data
-        else {
-            throw KeychainError(status: status)
-        }
-        return String(data: data, encoding: .utf8)
-    }
-
-    func write(_ value: String) throws {
-        let data = Data(value.utf8)
-        try delete()
-        let insert: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecAttrSynchronizable as String: false
-        ]
-        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
-        guard insertStatus == errSecSuccess else { throw KeychainError(status: insertStatus) }
-    }
-
-    func delete() throws {
-        try delete(service: service)
-        try delete(service: legacyService)
-    }
-
-    private func delete(service: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError(status: status)
-        }
-    }
-}
-
-private struct KeychainError: LocalizedError {
-    let status: OSStatus
-
-    var errorDescription: String? {
-        "Keychain 操作失败（\(status)）"
     }
 }

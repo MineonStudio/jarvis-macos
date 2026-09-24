@@ -10,6 +10,13 @@ import SwiftUI
 struct JarvisDropdownOption: Identifiable, Equatable {
     let id: String
     let title: String
+    let colorHex: String?
+
+    init(id: String, title: String, colorHex: String? = nil) {
+        self.id = id
+        self.title = title
+        self.colorHex = colorHex
+    }
 }
 
 enum JarvisDropdownMetrics {
@@ -120,6 +127,7 @@ struct JarvisDropdownMenu: View {
     let controlWidth: CGFloat?
     let maximumControlWidth: CGFloat
     let showsChevron: Bool
+    let showsSelectedOption: Bool
     let usesLiquidGlass: Bool
     let isEnabled: Bool
     let onSelect: (String) -> Void
@@ -135,6 +143,7 @@ struct JarvisDropdownMenu: View {
         controlWidth: CGFloat? = nil,
         maximumControlWidth: CGFloat = JarvisDropdownMetrics.maximumControlWidth,
         showsChevron: Bool = true,
+        showsSelectedOption: Bool = false,
         usesLiquidGlass: Bool = false,
         isEnabled: Bool = true,
         onSelect: @escaping (String) -> Void
@@ -147,6 +156,7 @@ struct JarvisDropdownMenu: View {
         self.controlWidth = controlWidth
         self.maximumControlWidth = maximumControlWidth
         self.showsChevron = showsChevron
+        self.showsSelectedOption = showsSelectedOption
         self.usesLiquidGlass = usesLiquidGlass
         self.isEnabled = isEnabled
         self.onSelect = onSelect
@@ -205,6 +215,7 @@ struct JarvisDropdownMenu: View {
                 isPresented: $isPresented,
                 options: options,
                 selectionID: selectionID,
+                showsSelectedOption: showsSelectedOption,
                 controlWidth: resolvedMenuWidth,
                 onSelect: { optionID in
                     onSelect(optionID)
@@ -233,6 +244,7 @@ private struct JarvisDropdownTriggerGlassModifier: ViewModifier {
 private struct JarvisDropdownPillMenuList: View {
     let options: [JarvisDropdownOption]
     let selectionID: String?
+    let showsSelectedOption: Bool
     let controlWidth: CGFloat
     let onSelect: (String) -> Void
 
@@ -241,7 +253,7 @@ private struct JarvisDropdownPillMenuList: View {
     @State private var highlightedOptionID: String?
 
     private var visibleOptions: [JarvisDropdownOption] {
-        guard let selectionID else { return options }
+        guard let selectionID, !showsSelectedOption else { return options }
         return options.filter { $0.id != selectionID }
     }
 
@@ -254,7 +266,18 @@ private struct JarvisDropdownPillMenuList: View {
                 Button {
                     onSelect(option.id)
                 } label: {
-                    Text(option.title)
+                    HStack(spacing: 8) {
+                        if let colorHex = option.colorHex,
+                           let color = Self.color(fromHex: colorHex)
+                        {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 12, height: 12)
+                                .overlay(Circle().stroke(Color.primary.opacity(0.22), lineWidth: 0.7))
+                                .accessibilityHidden(true)
+                        }
+                        Text(option.title)
+                    }
                 }
                 .buttonStyle(
                     JarvisDropdownPillButtonStyle(
@@ -304,6 +327,17 @@ private struct JarvisDropdownPillMenuList: View {
         .onDisappear {
             highlightedOptionID = nil
         }
+    }
+
+    private static func color(fromHex hex: String) -> Color? {
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+        return Color(
+            .sRGB,
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255,
+            opacity: 1
+        )
     }
 }
 
@@ -374,6 +408,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
     @Binding var isPresented: Bool
     let options: [JarvisDropdownOption]
     let selectionID: String?
+    let showsSelectedOption: Bool
     let controlWidth: CGFloat
     let onSelect: (String) -> Void
 
@@ -389,6 +424,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
             isPresented: isPresented,
             options: options,
             selectionID: selectionID,
+            showsSelectedOption: showsSelectedOption,
             controlWidth: controlWidth,
             onSelect: onSelect,
             dismiss: { isPresented = false }
@@ -418,6 +454,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
             isPresented: Bool,
             options: [JarvisDropdownOption],
             selectionID: String?,
+            showsSelectedOption: Bool,
             controlWidth: CGFloat,
             onSelect: @escaping (String) -> Void,
             dismiss: @escaping () -> Void
@@ -434,6 +471,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
                 present(
                     options: options,
                     selectionID: selectionID,
+                    showsSelectedOption: showsSelectedOption,
                     controlWidth: controlWidth,
                     onSelect: onSelect,
                     dismiss: dismiss
@@ -461,6 +499,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
         private func present(
             options: [JarvisDropdownOption],
             selectionID: String?,
+            showsSelectedOption: Bool,
             controlWidth: CGFloat,
             onSelect: @escaping (String) -> Void,
             dismiss: @escaping () -> Void
@@ -476,6 +515,7 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
             let menu = JarvisDropdownPillMenuList(
                 options: options,
                 selectionID: selectionID,
+                showsSelectedOption: showsSelectedOption,
                 controlWidth: controlWidth,
                 onSelect: { [self] optionID in
                     dismiss()

@@ -72,13 +72,9 @@ struct JarvisSidebarNavigation<
             if !bottomItems.isEmpty {
                 itemGroup(bottomItems)
                     .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
-                    .padding(.bottom, 4)
             }
 
             if let footerTitle, let footerIcon, let footerAction {
-                Divider()
-                    .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
-
                 Button {
                     withAnimation(
                         JarvisMotion.animation(JarvisMotion.sidebarSelection, reduceMotion: reduceMotion)
@@ -121,7 +117,9 @@ struct JarvisSidebarNavigation<
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                 .contentShape(Rectangle())
-                .padding(JarvisMetrics.sidebarContentPadding)
+                .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
+                .padding(.top, 4)
+                .padding(.bottom, JarvisMetrics.sidebarContentPadding)
                 .onHover { isHovering in
                     withAnimation(
                         JarvisMotion.animation(

@@ -236,13 +236,44 @@ struct MeetingActionItem: Codable, Equatable, Identifiable, Sendable {
     var task: String
     var owner: String
     var dueDate: String
+    var isCompleted: Bool
 
-    init(id: UUID = UUID(), task: String, owner: String = "", dueDate: String = "") {
+    init(
+        id: UUID = UUID(),
+        task: String,
+        owner: String = "",
+        dueDate: String = "",
+        isCompleted: Bool = false
+    ) {
         self.id = id
         self.task = task
         self.owner = owner
         self.dueDate = dueDate
+        self.isCompleted = isCompleted
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case task
+        case owner
+        case dueDate
+        case isCompleted
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        task = try container.decode(String.self, forKey: .task)
+        owner = try container.decodeIfPresent(String.self, forKey: .owner) ?? ""
+        dueDate = try container.decodeIfPresent(String.self, forKey: .dueDate) ?? ""
+        isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+    }
+}
+
+struct MeetingSummaryCitation: Codable, Equatable, Sendable {
+    let kind: MeetingFactKind
+    let text: String
+    var sourceSegmentIDs: [UUID]
 }
 
 struct MeetingSummary: Codable, Equatable, Sendable {
@@ -251,6 +282,23 @@ struct MeetingSummary: Codable, Equatable, Sendable {
     var decisions: [String]
     var actionItems: [MeetingActionItem]
     var openQuestions: [String]
+    var citations: [MeetingSummaryCitation]?
+
+    init(
+        overview: String,
+        keyPoints: [String],
+        decisions: [String],
+        actionItems: [MeetingActionItem],
+        openQuestions: [String],
+        citations: [MeetingSummaryCitation]? = nil
+    ) {
+        self.overview = overview
+        self.keyPoints = keyPoints
+        self.decisions = decisions
+        self.actionItems = actionItems
+        self.openQuestions = openQuestions
+        self.citations = citations
+    }
 }
 
 struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
@@ -337,7 +385,13 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         if title.meetingSearchContains(query) || status.title.meetingSearchContains(query) {
             return true
         }
-        return transcript.contains { $0.text.meetingSearchContains(query) }
+        if transcript.contains(where: { $0.text.meetingSearchContains(query) }) {
+            return true
+        }
+        guard let summary else { return false }
+        return ([summary.overview] + summary.keyPoints + summary.decisions + summary.openQuestions
+            + summary.actionItems.map(\.task))
+            .contains { $0.meetingSearchContains(query) }
     }
 
     mutating func applyInterruptedLaunchRecovery() {
@@ -362,7 +416,7 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-private extension String {
+extension String {
     /// Substring match without locale word-breaking. Chinese locales treat
     /// `localizedCaseInsensitiveContains` as a linguistic search, so a single
     /// character like "会" does not match "会议".
@@ -411,7 +465,7 @@ extension MeetingRecord {
         summaryCheckpoint = detail.summaryCheckpoint
     }
 
-    func markdownDocument() -> String {
+    func markdownDocument(includeTranscript: Bool = true) -> String {
         var lines: [String] = [
             "# \(title)",
             "",
@@ -433,7 +487,7 @@ extension MeetingRecord {
                 lines.append("## 待办事项")
                 lines.append("")
                 for item in summary.actionItems {
-                    var task = "- \(item.task)"
+                    var task = "- [\(item.isCompleted ? "x" : " ")] \(item.task)"
                     if !item.owner.isEmpty {
                         task += "（负责人：\(item.owner)）"
                     }
@@ -445,7 +499,7 @@ extension MeetingRecord {
             }
             appendMarkdownList(title: "未解决问题", items: summary.openQuestions, to: &lines)
         }
-        if !transcript.isEmpty {
+        if includeTranscript, !transcript.isEmpty {
             lines.append("")
             lines.append("## 逐字稿")
             lines.append("")

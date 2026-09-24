@@ -122,6 +122,24 @@ final class MeetingRepository: @unchecked Sendable {
         }
     }
 
+    func detailMatchesSearch(for id: UUID, query: String) -> Bool {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return true }
+        return lock.withLock {
+            let url = detailFileURL(for: id)
+            guard let data = try? Data(contentsOf: url),
+                  let detail = try? JSONDecoder().decode(MeetingRecordDetail.self, from: data)
+            else { return false }
+            let searchableText = [detail.summary?.overview ?? ""]
+                + (detail.summary?.keyPoints ?? [])
+                + (detail.summary?.decisions ?? [])
+                + (detail.summary?.actionItems.map(\.task) ?? [])
+                + (detail.summary?.openQuestions ?? [])
+                + detail.transcript.map(\.text)
+            return searchableText.contains { $0.meetingSearchContains(normalizedQuery) }
+        }
+    }
+
     func recordingsUsageBytes() -> Int64 {
         lock.withLock {
             let urls = (try? fileManager.contentsOfDirectory(

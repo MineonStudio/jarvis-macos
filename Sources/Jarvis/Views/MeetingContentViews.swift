@@ -12,6 +12,7 @@ private enum MeetingDetailTypography {
 struct MeetingView: View {
     @Environment(AppModel.self) private var app
     @State private var searchText = ""
+    @State private var searchMatchedRecordIDs: Set<UUID>?
 
     var body: some View {
         JarvisContentArea(
@@ -21,6 +22,9 @@ struct MeetingView: View {
                 }
             },
             trailingToolbar: {
+                ToolbarItem(id: "meeting.copy", placement: .automatic) {
+                    MeetingCopyToolbar(record: selectedRecord)
+                }
                 ToolbarItem(id: "meeting.export", placement: .automatic) {
                     MeetingExportToolbar(record: selectedRecord)
                 }
@@ -42,18 +46,30 @@ struct MeetingView: View {
                     Group {
                         if app.meetingRecords.isEmpty {
                             MeetingEmptyState()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .jarvisModulePanel()
                         } else {
-                            HStack(spacing: 0) {
-                                MeetingHistoryList(searchText: searchText)
-                                    .frame(width: 246)
-                                Divider()
-                                MeetingDetailPane(record: selectedRecord)
+                            HStack(alignment: .top, spacing: 12) {
+                                MeetingHistoryList(
+                                    searchText: searchText,
+                                    matchedRecordIDs: searchMatchedRecordIDs
+                                )
+                                .frame(width: 246)
+                                .frame(maxHeight: .infinity)
+                                .jarvisModulePanel()
+
+                                MeetingDetailPane(
+                                    record: selectedRecord,
+                                    isSearchEmpty: !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                        && filteredRecords.isEmpty
+                                )
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .jarvisModulePanel()
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .jarvisModulePanel()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -73,20 +89,50 @@ struct MeetingView: View {
             }
         }
         .onChange(of: searchText) { _, _ in
-            let filteredIDs = Set(filteredRecords.map(\.id))
+            searchMatchedRecordIDs = nil
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let immediateMatches = app.meetingRecords.filter { $0.matchesSearch(query) }
             if let selectedMeetingID = app.selectedMeetingID,
-               !filteredIDs.contains(selectedMeetingID)
+               !immediateMatches.contains(where: { $0.id == selectedMeetingID })
             {
+                app.selectedMeetingID = nil
+            }
+        }
+        .task(id: searchText) {
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else {
+                searchMatchedRecordIDs = nil
+                if app.selectedMeetingID == nil {
+                    app.selectedMeetingID = app.meetingRecords.first?.id
+                }
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            let matches = await app.matchingMeetingIDs(searchText: query)
+            guard !Task.isCancelled, query == searchText.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return
+            }
+            searchMatchedRecordIDs = matches
+            if let selectedMeetingID = app.selectedMeetingID, !matches.contains(selectedMeetingID) {
                 app.selectedMeetingID = filteredRecords.first?.id
             }
         }
     }
 
     private var filteredRecords: [MeetingRecord] {
-        MeetingHistoryList.filteredRecords(from: app.meetingRecords, searchText: searchText)
+        MeetingHistoryList.filteredRecords(
+            from: app.meetingRecords,
+            searchText: searchText,
+            matchedRecordIDs: searchMatchedRecordIDs
+        )
     }
 
     private var selectedRecord: MeetingRecord? {
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let selectedMeetingID = app.selectedMeetingID else { return nil }
+            return filteredRecords.first { $0.id == selectedMeetingID }
+        }
         guard let selectedMeetingID = app.selectedMeetingID else {
             return app.meetingRecords.first
         }
@@ -229,33 +275,59 @@ private struct MeetingStorageErrorBanner: View {
     }
 }
 
-private struct MeetingExportToolbar: View {
+private struct MeetingCopyToolbar: View {
     @Environment(AppModel.self) private var app
     let record: MeetingRecord?
 
-    private var canExport: Bool {
+    private var canCopy: Bool {
         record != nil
     }
 
     var body: some View {
-        HStack(spacing: 2) {
-            JarvisToolbarIconButton(
-                systemName: "doc.on.doc",
-                help: "复制纪要",
-                isEnabled: canExport
-            ) {
-                guard let record else { return }
-                app.copyMeetingMarkdown(record)
+        Menu {
+            if let record {
+                Button("复制精简纪要") {
+                    app.copyMeetingMarkdown(record)
+                }
+                Button("复制完整记录") {
+                    app.copyMeetingMarkdown(record, includeTranscript: true)
+                }
             }
-            JarvisToolbarIconButton(
-                systemName: "square.and.arrow.up",
-                help: "导出 Markdown",
-                isEnabled: canExport
-            ) {
-                guard let record else { return }
-                app.exportMeetingMarkdown(record)
-            }
+        } label: {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
+                .foregroundStyle(.secondary)
         }
+        .buttonStyle(JarvisToolbarIconButtonStyle())
+        .disabled(!canCopy)
+        .accessibilityLabel("复制会议内容")
+        .padding(4)
+        .frame(height: JarvisToolbarMetrics.controlSize)
+    }
+}
+
+private struct MeetingExportToolbar: View {
+    @Environment(AppModel.self) private var app
+    let record: MeetingRecord?
+
+    var body: some View {
+        Menu {
+            if let record {
+                Button("导出精简纪要…") {
+                    app.exportMeetingMarkdown(record)
+                }
+                Button("导出完整记录…") {
+                    app.exportMeetingMarkdown(record, includeTranscript: true)
+                }
+            }
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: JarvisToolbarMetrics.iconSize, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(JarvisToolbarIconButtonStyle())
+        .disabled(record == nil)
+        .accessibilityLabel("导出会议内容")
         .padding(4)
         .frame(height: JarvisToolbarMetrics.controlSize)
     }
@@ -264,14 +336,25 @@ private struct MeetingExportToolbar: View {
 private struct MeetingHistoryList: View {
     @Environment(AppModel.self) private var app
     let searchText: String
+    let matchedRecordIDs: Set<UUID>?
     @State private var recordPendingDeletion: MeetingRecord?
 
-    static func filteredRecords(from records: [MeetingRecord], searchText: String) -> [MeetingRecord] {
-        records.filter { $0.matchesSearch(searchText) }
+    static func filteredRecords(
+        from records: [MeetingRecord],
+        searchText: String,
+        matchedRecordIDs: Set<UUID>? = nil
+    ) -> [MeetingRecord] {
+        records.filter {
+            $0.matchesSearch(searchText) || matchedRecordIDs?.contains($0.id) == true
+        }
     }
 
     private var filteredRecords: [MeetingRecord] {
-        Self.filteredRecords(from: app.meetingRecords, searchText: searchText)
+        Self.filteredRecords(
+            from: app.meetingRecords,
+            searchText: searchText,
+            matchedRecordIDs: matchedRecordIDs
+        )
     }
 
     var body: some View {
@@ -397,56 +480,73 @@ private struct MeetingDetailPane: View {
     @State private var draftTitle = ""
     @State private var pendingSeekTime: TimeInterval?
     let record: MeetingRecord?
+    let isSearchEmpty: Bool
 
     var body: some View {
         Group {
             if let record {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        meetingHeader(record)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            meetingHeader(record)
 
-                        MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
+                            MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
 
-                        if shouldShowProgress(for: record) {
-                            MeetingProcessingCard(state: app.meetingProcessingState)
-                        }
-
-                        if record.status == .failed || record.status == .summaryFailed,
-                           let errorMessage = record.errorMessage
-                        {
-                            MeetingFailureCard(record: record, message: errorMessage)
-                        }
-
-                        if let summary = record.summary {
-                            MeetingSummarySection(summary: summary)
-                        } else if !record.transcript.isEmpty,
-                                  record.status != .summarizing,
-                                  record.status != .failed,
-                                  record.status != .summaryFailed
-                        {
-                            MeetingNeedsSummaryCard(record: record)
-                        }
-
-                        if !record.speakers.isEmpty {
-                            MeetingSpeakerSection(record: record)
-                        }
-
-                        if !record.transcript.isEmpty {
-                            MeetingTranscriptSection(record: record) { time in
-                                pendingSeekTime = time
+                            if shouldShowProgress(for: record) {
+                                MeetingProcessingCard(state: app.meetingProcessingState)
                             }
-                        } else if !shouldShowProgress(for: record) {
-                            JarvisEmptyState(
-                                icon: "waveform",
-                                title: "还没有逐字稿",
-                                message: "结束录音后，Jarvis 会自动处理这段会议。"
-                            )
+
+                            if record.status == .failed || record.status == .summaryFailed,
+                               let errorMessage = record.errorMessage
+                            {
+                                MeetingFailureCard(record: record, message: errorMessage)
+                            }
+
+                            if let summary = record.summary {
+                                MeetingSummarySection(record: record, summary: summary) { segmentID in
+                                    guard let segment = record.transcript.first(where: { $0.id == segmentID }) else {
+                                        return
+                                    }
+                                    pendingSeekTime = segment.startTime
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        proxy.scrollTo(segment.id, anchor: .center)
+                                    }
+                                }
+                            } else if !record.transcript.isEmpty,
+                                      record.status != .summarizing,
+                                      record.status != .failed,
+                                      record.status != .summaryFailed
+                            {
+                                MeetingNeedsSummaryCard(record: record)
+                            }
+
+                            if !record.speakers.isEmpty {
+                                MeetingSpeakerSection(record: record)
+                            }
+
+                            if !record.transcript.isEmpty {
+                                MeetingTranscriptSection(record: record) { time in
+                                    pendingSeekTime = time
+                                }
+                            } else if !shouldShowProgress(for: record) {
+                                JarvisEmptyState(
+                                    icon: "waveform",
+                                    title: "还没有逐字稿",
+                                    message: "结束录音后，Jarvis 会自动处理这段会议。"
+                                )
+                            }
                         }
+                        .frame(maxWidth: 860, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(JarvisMetrics.pageInset)
                     }
-                    .frame(maxWidth: 860, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(JarvisMetrics.pageInset)
                 }
+            } else if isSearchEmpty {
+                JarvisEmptyState(
+                    icon: "magnifyingglass",
+                    title: "没有匹配的会议",
+                    message: "试试会议名称、总结内容或逐字稿中的其他词语。"
+                )
             } else {
                 Text("选择一条会议记录")
                     .foregroundStyle(Color.jarvisTextSecondary)
@@ -986,42 +1086,117 @@ private struct MeetingNeedsSummaryCard: View {
 }
 
 private struct MeetingSummarySection: View {
+    @Environment(AppModel.self) private var app
+    @State private var isDiscussionExpanded = false
+    @State private var isRegenerationConfirmationPresented = false
+    let record: MeetingRecord
     let summary: MeetingSummary
+    let onSeekToSegment: (UUID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MeetingSectionHeader(title: "会议总结", systemImage: "sparkles")
-            JarvisCard {
-                VStack(alignment: .leading, spacing: 18) {
-                    if !summary.overview.isEmpty {
-                        Text(summary.overview)
-                            .font(MeetingDetailTypography.body)
-                            .lineSpacing(5)
-                    }
-                    summaryList(title: "关键讨论", icon: "list.bullet", items: summary.keyPoints)
-                    summaryList(title: "明确决策", icon: "checkmark.seal", items: summary.decisions)
-                    actionList
-                    summaryList(title: "未解决问题", icon: "questionmark.circle", items: summary.openQuestions)
+            HStack {
+                MeetingSectionHeader(title: "会议总结", systemImage: "sparkles")
+                Spacer()
+                Button("重新生成") {
+                    isRegenerationConfirmationPresented = true
+                }
+                .buttonStyle(.borderless)
+                .disabled(app.meetingActiveProcessingID != nil)
+                .accessibilityHint("根据当前逐字稿重新生成会议总结")
+                if !summary.actionItems.isEmpty {
+                    Text("\(summary.actionItems.filter { !$0.isCompleted }.count) 项待办")
+                        .font(JarvisTypography.captionEmphasis)
+                        .foregroundStyle(Color.jarvisTextSecondary)
                 }
             }
+            JarvisCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    if !summary.overview.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label("会议结论", systemImage: "checkmark.seal.fill")
+                                .font(MeetingDetailTypography.h3)
+                                .foregroundStyle(Color.jarvisAccent)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(summary.overview)
+                                .font(.system(size: 16, weight: .medium))
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    actionList
+                    summaryList(
+                        title: "已确认决策",
+                        icon: "checkmark.circle",
+                        kind: .decision,
+                        items: summary.decisions
+                    )
+                    summaryList(
+                        title: "待确认问题",
+                        icon: "questionmark.circle",
+                        kind: .openQuestion,
+                        items: summary.openQuestions
+                    )
+                    if !summary.keyPoints.isEmpty {
+                        DisclosureGroup(isExpanded: $isDiscussionExpanded) {
+                            summaryList(
+                                title: "",
+                                icon: "",
+                                kind: .keyPoint,
+                                items: summary.keyPoints,
+                                showsHeading: false
+                            )
+                            .padding(.top, 8)
+                        } label: {
+                            Label("讨论要点（\(summary.keyPoints.count)）", systemImage: "text.alignleft")
+                                .font(MeetingDetailTypography.h3)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            "重新生成会议总结？",
+            isPresented: $isRegenerationConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("重新生成") {
+                app.summarizeMeeting(recordID: record.id)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将根据当前逐字稿覆盖现有总结。原始录音和逐字稿会保留。")
         }
     }
 
     @ViewBuilder
-    private func summaryList(title: String, icon: String, items: [String]) -> some View {
+    private func summaryList(
+        title: String,
+        icon: String,
+        kind: MeetingFactKind,
+        items: [String],
+        showsHeading: Bool = true
+    ) -> some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Label(title, systemImage: icon)
-                    .font(MeetingDetailTypography.h3)
+                if showsHeading {
+                    Label(title, systemImage: icon)
+                        .font(MeetingDetailTypography.h3)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle()
-                            .fill(Color.jarvisAccent)
-                            .frame(width: 5, height: 5)
-                            .padding(.top, 8)
-                        Text(item)
-                            .font(MeetingDetailTypography.body)
-                            .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle()
+                                .fill(Color.jarvisAccent)
+                                .frame(width: 5, height: 5)
+                                .padding(.top, 8)
+                            Text(item)
+                                .font(MeetingDetailTypography.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        sourceLinks(for: kind, text: item)
                     }
                 }
             }
@@ -1034,22 +1209,71 @@ private struct MeetingSummarySection: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("待办事项", systemImage: "checklist")
                     .font(MeetingDetailTypography.h3)
+                    .accessibilityAddTraits(.isHeader)
                 ForEach(summary.actionItems) { item in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.task)
-                            .font(MeetingDetailTypography.body)
-                        HStack(spacing: 8) {
-                            if !item.owner.isEmpty {
-                                Text("负责人：\(item.owner)")
-                            }
-                            if !item.dueDate.isEmpty {
-                                Text("截止：\(item.dueDate)")
-                            }
+                    HStack(alignment: .top, spacing: 10) {
+                        Button {
+                            app.setMeetingActionItemCompleted(
+                                recordID: record.id,
+                                actionItemID: item.id,
+                                isCompleted: !item.isCompleted
+                            )
+                        } label: {
+                            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 17))
+                                .foregroundStyle(item.isCompleted ? Color.jarvisAccent : Color.secondary)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(item.isCompleted ? "标记待办为未完成" : "标记待办为已完成：\(item.task)")
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.task)
+                                .font(MeetingDetailTypography.body)
+                                .strikethrough(item.isCompleted)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 10) {
+                                Text("负责人：\(item.owner.isEmpty ? "未指定" : item.owner)")
+                                Text("截止：\(item.dueDate.isEmpty ? "未指定" : item.dueDate)")
+                            }
+                            .font(JarvisTypography.caption)
+                            .foregroundStyle(Color.jarvisTextSecondary)
+                            sourceLinks(for: .actionItem, text: item.task)
+                        }
+                    }
+                    .padding(.vertical, 7)
+                    if item.id != summary.actionItems.last?.id {
+                        Divider().opacity(0.55)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sourceLinks(for kind: MeetingFactKind, text: String) -> some View {
+        let citations = (summary.citations ?? []).filter { $0.kind == kind && $0.text == text }
+        if let citation = citations.first {
+            HStack(spacing: 8) {
+                ForEach(Array(citation.sourceSegmentIDs.prefix(2)), id: \.self) { segmentID in
+                    if let segment = record.transcript.first(where: { $0.id == segmentID }) {
+                        Button {
+                            onSeekToSegment(segmentID)
+                        } label: {
+                            Label(
+                                "原文 \(formatMeetingTimestamp(segment.startTime))",
+                                systemImage: "arrow.uturn.down"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .font(JarvisTypography.caption)
+                        .foregroundStyle(Color.jarvisAccent)
+                        .accessibilityHint("跳到对应逐字稿并播放录音")
+                    }
+                }
+                if citation.sourceSegmentIDs.count > 2 {
+                    Text("+\(citation.sourceSegmentIDs.count - 2) 处")
                         .font(JarvisTypography.caption)
                         .foregroundStyle(Color.jarvisTextSecondary)
-                    }
-                    .padding(.vertical, 2)
                 }
             }
         }
@@ -1118,7 +1342,12 @@ private struct MeetingTranscriptSection: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("从\(formatMeetingTimestamp(segment.startTime))开始播放")
+                    .accessibilityLabel(
+                        "\(speaker?.name ?? segment.speakerID)，"
+                            + "\(formatMeetingTimestamp(segment.startTime))，\(segment.text)"
+                    )
+                    .accessibilityHint("双击从这段逐字稿开始播放录音")
+                    .id(segment.id)
                     if segment.id != record.transcript.last?.id {
                         Divider().opacity(0.55)
                     }

@@ -135,6 +135,9 @@ final class MeetingTests: XCTestCase {
         let detail = try XCTUnwrap(repository.loadDetail(for: record.id))
         XCTAssertEqual(detail.transcript.first?.text, "先确认范围。")
         XCTAssertEqual(detail.summary?.overview, "确认范围")
+        XCTAssertTrue(repository.detailMatchesSearch(for: record.id, query: "先确认"))
+        XCTAssertTrue(repository.detailMatchesSearch(for: record.id, query: "范围已对齐"))
+        XCTAssertFalse(repository.detailMatchesSearch(for: record.id, query: "不存在的词"))
 
         var titleOnly = loaded.records[0]
         titleOnly.title = "改名后的评审"
@@ -165,6 +168,11 @@ final class MeetingTests: XCTestCase {
         XCTAssertTrue(markdown.contains("整理接口"))
         XCTAssertTrue(markdown.contains("**小王** 01:05"))
         XCTAssertTrue(markdown.contains("周五前给方案。"))
+
+        let conciseMarkdown = record.markdownDocument(includeTranscript: false)
+        XCTAssertTrue(conciseMarkdown.contains("## 会议总结"))
+        XCTAssertFalse(conciseMarkdown.contains("## 逐字稿"))
+        XCTAssertFalse(conciseMarkdown.contains("周五前给方案。"))
     }
 
     func testRepositoryRejectsPathTraversalAudioName() throws {
@@ -309,6 +317,45 @@ final class MeetingTests: XCTestCase {
         XCTAssertEqual(summary.decisions, ["先做录音和总结"])
         XCTAssertEqual(summary.actionItems.first?.owner, "小王")
         XCTAssertEqual(summary.openQuestions, ["是否需要系统音频"])
+    }
+
+    func testSummaryServiceKeepsOnlyMatchingCitationsFromThisTranscript() async throws {
+        let segment = MeetingTranscriptSegment(
+            startTime: 12,
+            endTime: 15,
+            speakerID: "S1",
+            text: "我们先做首版。"
+        )
+        let unrelatedID = UUID()
+        let response = """
+        {"overview":"确认方向","keyPoints":[],"decisions":["先做首版"],"actionItems":[],"openQuestions":[],"citations":[
+          {"kind":"decision","text":"先做首版","sourceSegmentIDs":["\(segment.id.uuidString)"]},
+          {"kind":"decision","text":"不存在的决策","sourceSegmentIDs":["\(segment.id.uuidString)"]},
+          {"kind":"decision","text":"先做首版","sourceSegmentIDs":["\(unrelatedID.uuidString)"]}
+        ]}
+        """
+        let record = MeetingRecord(
+            title: "计划会",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
+            transcript: [segment]
+        )
+        let service = MeetingSummaryService(
+            api: MeetingTestAPI(sourceSegmentID: segment.id, summaryResponse: response)
+        )
+
+        let summary = try await service.summarize(
+            record: record,
+            configuration: AIAPIConfiguration(
+                endpoint: "https://example.com/v1/chat/completions",
+                model: "test",
+                apiKey: "test-key"
+            )
+        )
+
+        XCTAssertEqual(summary.citations, [
+            MeetingSummaryCitation(kind: .decision, text: "先做首版", sourceSegmentIDs: [segment.id])
+        ])
     }
 
     func testSummaryServiceExtractsJSONEmbeddedInMarkdown() {
@@ -533,6 +580,35 @@ final class MeetingTests: XCTestCase {
         XCTAssertFalse(record.matchesSearch("无"))
         XCTAssertTrue(record.matchesSearch(" 评 "))
         XCTAssertTrue(record.matchesSearch(""))
+    }
+
+    func testMeetingSearchMatchesSummaryAndActionItems() {
+        let record = MeetingRecord(
+            title: "产品评审",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            summary: MeetingSummary(
+                overview: "本周交付首版",
+                keyPoints: ["优先完成登录流程"],
+                decisions: ["先支持 macOS"],
+                actionItems: [MeetingActionItem(task: "整理接口清单")],
+                openQuestions: ["是否支持离线模式"]
+            )
+        )
+
+        XCTAssertTrue(record.matchesSearch("首版"))
+        XCTAssertTrue(record.matchesSearch("接口清单"))
+        XCTAssertTrue(record.matchesSearch("离线模式"))
+    }
+
+    func testLegacyMeetingSummaryAndActionItemDecodeNewFieldsWithDefaults() throws {
+        let data = Data(
+            #"{"overview":"已完成","keyPoints":[],"decisions":[],"actionItems":[{"id":"00000000-0000-0000-0000-000000000001","task":"发送纪要","owner":"","dueDate":""}],"openQuestions":[]}"#.utf8
+        )
+
+        let summary = try JSONDecoder().decode(MeetingSummary.self, from: data)
+
+        XCTAssertNil(summary.citations)
+        XCTAssertFalse(try XCTUnwrap(summary.actionItems.first).isCompleted)
     }
 
     func testMeetingSkillIsAvailableInNavigation() {

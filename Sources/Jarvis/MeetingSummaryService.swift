@@ -103,7 +103,13 @@ struct MeetingSummaryService: Sendable {
             ),
             to: onCheckpoint
         )
-        return summary
+        var validatedSummary = summary
+        validatedSummary.citations = normalizedCitations(
+            summary.citations ?? [],
+            summary: summary,
+            allowedSegmentIDs: Set(record.transcript.map(\.id))
+        )
+        return validatedSummary
     }
 
     static func extractJSONObject(_ raw: String) -> String {
@@ -209,8 +215,12 @@ struct MeetingSummaryService: Sendable {
             let systemPrompt = """
             你是严谨的中文会议纪要助手。只能根据给出的事实生成纪要，不要补充事实之外的内容。
             必须只返回 JSON 对象，格式为：
-            {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"]}
-            保留所有相关事实，去除重复内容。没有明确负责人或截止时间时保留空字符串，不要编造。
+            {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"],"citations":[{"kind":"keyPoint|decision|actionItem|openQuestion","text":"与对应条目完全相同","sourceSegmentIDs":["逐字稿片段ID"]}]}
+            概览只写 1 句，控制在 80 个汉字以内，先说会议结论或当前状态。
+            关键讨论最多 5 条，每条不超过 50 个汉字；合并同一议题，优先保留影响决策、执行或风险的内容，省略重复背景和闲聊。
+            决策、待办和仍影响执行的未解决问题必须完整保留，不设条数上限。每个待办只写一个可执行动作，不要把不同负责人或截止时间的任务合并。
+            没有明确负责人或截止时间时保留空字符串，不要编造。每条决策、待办和未解决问题都要引用来源；sourceSegmentIDs 只能使用输入事实中出现的 ID。
+            去掉不同措辞表达的重复内容；同一事项在不同分块重复出现时合并为一条。
             只能返回 JSON，不要 Markdown，不要解释文字。
             """
             let userPrompt = """
@@ -244,15 +254,18 @@ struct MeetingSummaryService: Sendable {
                 actionItems: $0.actionItems.map {
                     SynthesisActionItem(task: $0.task, owner: $0.owner, dueDate: $0.dueDate)
                 },
-                openQuestions: $0.openQuestions
+                openQuestions: $0.openQuestions,
+                citations: $0.citations
             )
         }
         let data = try JSONEncoder().encode(mergeInputs)
         let systemPrompt = """
         你是严谨的中文会议纪要合并助手。只能根据给出的局部纪要生成完整纪要，不要补充事实之外的内容。
         必须只返回 JSON 对象，格式为：
-        {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"]}
-        合并所有局部纪要，保留所有不重复的有效信息，不要因为篇幅主动删除内容。没有明确负责人或截止时间时保留空字符串，不要编造。
+        {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"],"citations":[{"kind":"keyPoint|decision|actionItem|openQuestion","text":"与对应条目完全相同","sourceSegmentIDs":["逐字稿片段ID"]}]}
+        概览只写 1 句，控制在 80 个汉字以内。关键讨论最多 5 条，每条不超过 50 个汉字；按议题合并并删除语义重复项。
+        完整保留所有不重复的明确决策、待办和仍影响执行的问题。不同负责人或截止时间的任务必须分开。没有明确负责人或截止时间时保留空字符串，不要编造。
+        尽量保留输入 citations 的来源 ID，并确保每条决策和待办引用对应原文；不要生成输入中没有的 ID。
         只能返回 JSON，不要 Markdown，不要解释文字。
         """
         let userPrompt = """
@@ -331,7 +344,17 @@ struct MeetingSummaryService: Sendable {
                 keyPoints: keyPoints,
                 decisions: decisions,
                 actionItems: actionItems,
-                openQuestions: openQuestions
+                openQuestions: openQuestions,
+                citations: payload.citations.compactMap { item in
+                    guard let kind = MeetingFactKind(rawValue: item.kind),
+                          let text = normalizedText(item.text)
+                    else { return nil }
+                    return MeetingSummaryCitation(
+                        kind: kind,
+                        text: text,
+                        sourceSegmentIDs: item.sourceSegmentIDs.compactMap(UUID.init(uuidString:))
+                    )
+                }
             )
         } catch let error as AIAPIError {
             throw error
@@ -366,7 +389,8 @@ struct MeetingSummaryService: Sendable {
                 kind: fact.kind.rawValue,
                 text: fact.text,
                 owner: fact.owner,
-                dueDate: fact.dueDate
+                dueDate: fact.dueDate,
+                sourceSegmentIDs: fact.sourceSegmentIDs
             )
             guard let candidateData = try? JSONEncoder().encode(current + [candidate]) else {
                 break
@@ -503,6 +527,52 @@ struct MeetingSummaryService: Sendable {
         return result
     }
 
+    private func normalizedCitations(
+        _ citations: [MeetingSummaryCitation],
+        summary: MeetingSummary,
+        allowedSegmentIDs: Set<UUID>
+    ) -> [MeetingSummaryCitation] {
+        var result: [MeetingSummaryCitation] = []
+        var indexesBySignature: [String: Int] = [:]
+        for citation in citations where citationMatchesSummary(citation, summary: summary) {
+            let sourceIDs = Array(Set(citation.sourceSegmentIDs.filter(allowedSegmentIDs.contains)))
+                .sorted { $0.uuidString < $1.uuidString }
+            guard !sourceIDs.isEmpty else { continue }
+            let signature = "\(citation.kind.rawValue)\u{1F}\(citation.text)"
+            if let index = indexesBySignature[signature] {
+                result[index].sourceSegmentIDs = Array(
+                    Set(result[index].sourceSegmentIDs + sourceIDs)
+                ).sorted { $0.uuidString < $1.uuidString }
+            } else {
+                indexesBySignature[signature] = result.count
+                result.append(
+                    MeetingSummaryCitation(
+                        kind: citation.kind,
+                        text: citation.text,
+                        sourceSegmentIDs: sourceIDs
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    private func citationMatchesSummary(
+        _ citation: MeetingSummaryCitation,
+        summary: MeetingSummary
+    ) -> Bool {
+        switch citation.kind {
+        case .keyPoint:
+            summary.keyPoints.contains(citation.text)
+        case .decision:
+            summary.decisions.contains(citation.text)
+        case .actionItem:
+            summary.actionItems.contains { $0.task == citation.text }
+        case .openQuestion:
+            summary.openQuestions.contains(citation.text)
+        }
+    }
+
     private func publish(
         _ checkpoint: MeetingSummaryCheckpoint,
         to handler: CheckpointHandler?
@@ -526,6 +596,7 @@ struct MeetingSummaryService: Sendable {
         let text: String
         let owner: String
         let dueDate: String
+        let sourceSegmentIDs: [UUID]
     }
 
     private struct SynthesisSummary: Encodable {
@@ -534,6 +605,7 @@ struct MeetingSummaryService: Sendable {
         let decisions: [String]
         let actionItems: [SynthesisActionItem]
         let openQuestions: [String]
+        let citations: [MeetingSummaryCitation]?
     }
 
     private struct SynthesisActionItem: Encodable {
@@ -577,6 +649,7 @@ struct MeetingSummaryService: Sendable {
         let decisions: [String]
         let actionItems: [DecodedActionItem]
         let openQuestions: [String]
+        let citations: [DecodedCitation]
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -585,6 +658,7 @@ struct MeetingSummaryService: Sendable {
             decisions = try container.decodeIfPresent([String].self, forKey: .decisions) ?? []
             actionItems = try container.decodeIfPresent([DecodedActionItem].self, forKey: .actionItems) ?? []
             openQuestions = try container.decodeIfPresent([String].self, forKey: .openQuestions) ?? []
+            citations = try container.decodeIfPresent([DecodedCitation].self, forKey: .citations) ?? []
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -593,6 +667,26 @@ struct MeetingSummaryService: Sendable {
             case decisions
             case actionItems
             case openQuestions
+            case citations
+        }
+    }
+
+    private struct DecodedCitation: Decodable {
+        let kind: String
+        let text: String
+        let sourceSegmentIDs: [String]
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
+            text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+            sourceSegmentIDs = try container.decodeIfPresent([String].self, forKey: .sourceSegmentIDs) ?? []
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case kind
+            case text
+            case sourceSegmentIDs
         }
     }
 

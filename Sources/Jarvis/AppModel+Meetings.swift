@@ -274,10 +274,15 @@ extension AppModel {
 
     func summarizeSelectedMeeting() {
         guard let selectedMeetingID,
-              let record = meetingRecords.first(where: { $0.id == selectedMeetingID })
+              meetingRecords.contains(where: { $0.id == selectedMeetingID })
         else { return }
-        ensureMeetingDetailLoaded(record.id)
-        enqueueMeetingProcessing(recordID: record.id, kind: .summarizeOnly)
+        summarizeMeeting(recordID: selectedMeetingID)
+    }
+
+    func summarizeMeeting(recordID: UUID) {
+        guard meetingRecords.contains(where: { $0.id == recordID }) else { return }
+        ensureMeetingDetailLoaded(recordID)
+        enqueueMeetingProcessing(recordID: recordID, kind: .summarizeOnly)
     }
 
     func retryMeetingProcessing(_ record: MeetingRecord) {
@@ -299,33 +304,54 @@ extension AppModel {
         meetingRecords[index].applyDetail(detail)
     }
 
-    func copyMeetingMarkdown(_ record: MeetingRecord) {
+    func matchingMeetingIDs(searchText: String) async -> Set<UUID> {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return Set(meetingRecords.map(\.id)) }
+        let records = meetingRecords
+        let repository = meetingRepository
+        return await Task.detached(priority: .userInitiated) {
+            Set(records.compactMap { record in
+                record.matchesSearch(query)
+                    || repository.detailMatchesSearch(for: record.id, query: query)
+                    ? record.id
+                    : nil
+            })
+        }.value
+    }
+
+    func copyMeetingMarkdown(_ record: MeetingRecord, includeTranscript: Bool = false) {
         ensureMeetingDetailLoaded(record.id)
         guard let current = meetingRecords.first(where: { $0.id == record.id }) else { return }
-        guard !current.transcript.isEmpty || current.summary != nil else {
+        guard current.summary != nil || (includeTranscript && !current.transcript.isEmpty) else {
             showToast(JarvisFeedbackCopy.nothingToCopy)
             return
         }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(current.markdownDocument(), forType: .string)
+        NSPasteboard.general.setString(
+            current.markdownDocument(includeTranscript: includeTranscript),
+            forType: .string
+        )
         showToast(JarvisFeedbackCopy.copied)
     }
 
-    func exportMeetingMarkdown(_ record: MeetingRecord) {
+    func exportMeetingMarkdown(_ record: MeetingRecord, includeTranscript: Bool = false) {
         ensureMeetingDetailLoaded(record.id)
         guard let current = meetingRecords.first(where: { $0.id == record.id }) else { return }
-        guard !current.transcript.isEmpty || current.summary != nil else {
+        guard current.summary != nil || (includeTranscript && !current.transcript.isEmpty) else {
             showToast(JarvisFeedbackCopy.nothingToExport)
             return
         }
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
         savePanel.allowedContentTypes = [.plainText]
-        savePanel.nameFieldStringValue = "\(current.title).md"
+        savePanel.nameFieldStringValue = includeTranscript
+            ? "\(current.title)-完整记录.md"
+            : "\(current.title).md"
         savePanel.begin { [weak self] response in
             guard response == .OK, let url = savePanel.url else { return }
             do {
-                try current.markdownDocument().write(to: url, atomically: true, encoding: .utf8)
+                try current.markdownDocument(includeTranscript: includeTranscript)
+                    .write(to: url, atomically: true, encoding: .utf8)
                 self?.showToast(JarvisFeedbackCopy.exported)
             } catch {
                 self?.showToast(JarvisFeedbackCopy.exportFailed)
@@ -369,6 +395,20 @@ extension AppModel {
         guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else { return }
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         meetingRecords[index].title = normalizedTitle.isEmpty ? MeetingRecord.defaultTitle : normalizedTitle
+        persistMeeting(meetingRecords[index])
+    }
+
+    func setMeetingActionItemCompleted(
+        recordID: UUID,
+        actionItemID: UUID,
+        isCompleted: Bool
+    ) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+              var summary = meetingRecords[index].summary,
+              let itemIndex = summary.actionItems.firstIndex(where: { $0.id == actionItemID })
+        else { return }
+        summary.actionItems[itemIndex].isCompleted = isCompleted
+        meetingRecords[index].summary = summary
         persistMeeting(meetingRecords[index])
     }
 

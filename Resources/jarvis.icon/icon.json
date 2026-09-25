@@ -1,37 +1,37 @@
 {
-  "fill" : "system-dark",
-  "groups" : [
+  "fill": "system-dark",
+  "groups": [
     {
-      "layers" : [
+      "layers": [
         {
-          "fill" : "automatic",
-          "glass" : true,
-          "hidden" : false,
-          "image-name-specializations" : [
+          "fill": "automatic",
+          "glass": false,
+          "hidden": false,
+          "image-name-specializations": [
             {
-              "value" : "Codex 图像 2026年8月26日 15_31_01.png"
+              "value": "Codex 图像 2026年8月26日 15_31_01.png"
             },
             {
-              "appearance" : "dark",
-              "value" : "Codex 图像 2026年8月26日 15_31_01-dark.png"
+              "appearance": "dark",
+              "value": "Codex 图像 2026年8月26日 15_31_01-dark.png"
             }
           ],
-          "name" : "Codex 图像 2026年8月26日 15_31_01",
-          "position-specializations" : [
+          "name": "Codex 图像 2026年8月26日 15_31_01",
+          "position-specializations": [
             {
-              "value" : {
-                "scale" : 1,
-                "translation-in-points" : [
+              "value": {
+                "scale": 1,
+                "translation-in-points": [
                   0,
                   0
                 ]
               }
             },
             {
-              "appearance" : "dark",
-              "value" : {
-                "scale" : 1,
-                "translation-in-points" : [
+              "appearance": "dark",
+              "value": {
+                "scale": 1,
+                "translation-in-points": [
                   0,
                   0
                 ]
@@ -40,18 +40,18 @@
           ]
         }
       ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
       },
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
       }
     }
   ],
-  "supported-platforms" : {
-    "squares" : [
+  "supported-platforms": {
+    "squares": [
       "macOS"
     ]
   }

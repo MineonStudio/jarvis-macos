@@ -56,7 +56,13 @@ enum JarvisLocalSigning {
     }
 
     static func signingCertificateFingerprint(from requirement: String) -> String? {
-        guard let marker = requirement.range(of: "certificate root = H\""),
+        // `codesign -d -r-` may print either `H"..."` or `h"..."`. The
+        // SHA-1 value is normalized below, so match the marker case-insensitively
+        // as well; otherwise valid signatures can appear to have no identity.
+        guard let marker = requirement.range(
+            of: "certificate root = H\"",
+            options: .caseInsensitive
+        ),
               let end = requirement[marker.upperBound...].firstIndex(of: "\"")
         else {
             return nil

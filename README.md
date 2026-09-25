@@ -55,7 +55,7 @@ open dist/Jarvis-1.4.5-macos.dmg
 需要 macOS 26 或更高版本。升级时保持同一个 `com.jarvis.mac` Bundle ID 和 `dist/Jarvis.app` 路径，只递增版本号：
 
 ```bash
-JARVIS_VERSION="1.4.10" JARVIS_BUILD="348" ./build_app.sh
+JARVIS_VERSION="1.4.11" JARVIS_BUILD="349" ./build_app.sh
 ```
 
 应用图标资源名会随版本递增，避免 macOS 在覆盖安装后继续从 LaunchServices 或 Dock 图标缓存读取旧图标；用户通过新版 DMG 安装后无需手动清缓存或重启 Dock。

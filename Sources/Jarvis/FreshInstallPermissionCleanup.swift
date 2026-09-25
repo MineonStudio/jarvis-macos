@@ -2,23 +2,32 @@ import Foundation
 
 enum JarvisFreshInstallPermissionCleanup {
     private static let markerKey = "jarvis.installation.permission-reset.fingerprint"
+    static let pendingResetKey = "jarvis.installation.permission-reset.pending"
 
     static func runIfNeeded() {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
         guard bundleIdentifier == "com.jarvis.mac" else { return }
-        let shouldResetPermissions = !JarvisLocalSigning.isAvailable
+        let defaults = UserDefaults.standard
+        let hasPendingReset = defaults.bool(forKey: pendingResetKey)
+        let shouldResetPermissions = !JarvisLocalSigning.isSignedWithInstalledIdentity(
+            appAt: Bundle.main.bundleURL
+        )
 
         do {
             let didReset = try runIfNeeded(
                 bundleURL: Bundle.main.bundleURL,
                 bundleIdentifier: bundleIdentifier,
-                defaults: .standard
+                defaults: defaults,
+                force: hasPendingReset
             ) {
-                if shouldResetPermissions {
+                if shouldResetPermissions || hasPendingReset {
                     try JarvisUpdateService.resetPrivacyPermissions(bundleIdentifier: bundleIdentifier)
                 }
             }
-            if didReset {
+            if hasPendingReset, didReset {
+                defaults.removeObject(forKey: pendingResetKey)
+            }
+            if didReset, shouldResetPermissions || hasPendingReset {
                 JarvisLog.notice(
                     category: .security,
                     event: "privacyPermissions.reset.complete",
@@ -42,10 +51,11 @@ enum JarvisFreshInstallPermissionCleanup {
         bundleURL: URL,
         bundleIdentifier _: String,
         defaults: UserDefaults,
+        force: Bool = false,
         reset: () throws -> Void
     ) throws -> Bool {
         let fingerprint = installationFingerprint(for: bundleURL)
-        guard defaults.string(forKey: markerKey) != fingerprint else { return false }
+        guard force || defaults.string(forKey: markerKey) != fingerprint else { return false }
 
         try reset()
         defaults.set(fingerprint, forKey: markerKey)

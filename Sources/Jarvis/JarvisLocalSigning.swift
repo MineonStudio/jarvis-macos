@@ -29,6 +29,72 @@ enum JarvisLocalSigning {
         isIdentityInstalled(identityName)
     }
 
+    /// Whether an app is signed by the certificate in this user's keychain.
+    /// A matching display name alone is not enough: an ad-hoc copy and a
+    /// self-signed copy can coexist on the same Mac, and TCC treats them as
+    /// different applications.
+    static func isSignedWithInstalledIdentity(appAt appURL: URL) -> Bool {
+        guard let appFingerprint = signingCertificateFingerprint(appAt: appURL),
+              let fingerprints = installedIdentityFingerprints(identityName)
+        else { return false }
+        return fingerprints.contains(appFingerprint)
+    }
+
+    static func signingCertificateFingerprint(appAt appURL: URL) -> String? {
+        guard let requirement = signingRequirement(of: appURL) else { return nil }
+        return signingCertificateFingerprint(from: requirement)
+    }
+
+    static func signingCertificateFingerprint(from requirement: String) -> String? {
+        guard let marker = requirement.range(of: "certificate root = H\""),
+              let end = requirement[marker.upperBound...].firstIndex(of: "\"")
+        else {
+            return nil
+        }
+        return String(requirement[marker.upperBound ..< end]).lowercased()
+    }
+
+    /// Reuse the current app's exact certificate when possible. If this is an
+    /// identity transition, choose a stable certificate hash rather than a
+    /// potentially ambiguous common name.
+    static func localSigningFingerprint(matching currentFingerprint: String? = nil) -> String? {
+        guard let fingerprints = installedIdentityFingerprints(identityName) else { return nil }
+        if let currentFingerprint, fingerprints.contains(currentFingerprint) {
+            return currentFingerprint
+        }
+        return fingerprints.sorted().first
+    }
+
+    private static func signingRequirement(of appURL: URL) -> String? {
+        runCapturingError(
+            executable: "/usr/bin/codesign",
+            arguments: ["-d", "-r-", appURL.path]
+        )
+    }
+
+    private static func installedIdentityFingerprints(_ name: String) -> Set<String>? {
+        guard let output = run(
+            executable: "/usr/bin/security",
+            arguments: [
+                "find-certificate", "-Z", "-c", name,
+                "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/Keychains/login.keychain-db"
+            ]
+        ) else {
+            return nil
+        }
+        let hashes = output
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                guard line.hasPrefix("SHA-1 hash:") else { return nil }
+                return line
+                    .split(separator: ":", maxSplits: 1)
+                    .last?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+            }
+        return hashes.isEmpty ? nil : Set(hashes)
+    }
+
     /// Keychain only lists a self-signed certificate under the plain
     /// code-signing policy, never under "valid identities", so do not pass
     /// `-v` here.
@@ -246,6 +312,23 @@ enum JarvisLocalSigning {
         process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = FileHandle.nullDevice
+
+        guard (try? process.run()) != nil else { return nil }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return String(
+            data: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )
+    }
+
+    private static func runCapturingError(executable: String, arguments: [String]) -> String? {
+        let process = Process()
+        let outputPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = outputPipe
 
         guard (try? process.run()) != nil else { return nil }
         process.waitUntilExit()

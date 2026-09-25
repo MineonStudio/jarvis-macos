@@ -47,6 +47,20 @@ final class JarvisSigningScriptTests: XCTestCase {
 
     // MARK: - entitlements
 
+    func testLocalSigningFingerprintComesFromTheDesignatedRequirement() {
+        XCTAssertEqual(
+            JarvisLocalSigning.signingCertificateFingerprint(
+                from: #"designated => identifier "com.jarvis.mac" and certificate root = H"597FC147C96E69F52B31BD24795A832004485BF1""#
+            ),
+            "597fc147c96e69f52b31bd24795a832004485bf1"
+        )
+        XCTAssertNil(
+            JarvisLocalSigning.signingCertificateFingerprint(
+                from: #"designated => anchor apple generic and identifier "com.jarvis.mac"#
+            )
+        )
+    }
+
     /// 重新签名会整体替换签名，漏掉一项就是静默收走一项系统权限。
     func testSigningEntitlementsMatchTheBuiltBundlesCopy() throws {
         let shipped = try repositoryFile("Resources/Jarvis.entitlements")

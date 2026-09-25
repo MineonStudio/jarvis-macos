@@ -5,6 +5,22 @@ import XCTest
 final class AppVersionTests: XCTestCase {
     private let service = JarvisUpdateService()
 
+    private func assertZshSyntax(of scriptURL: URL, file: StaticString = #filePath, line: UInt = #line) throws {
+        let process = Process()
+        let errors = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-n", scriptURL.path]
+        process.standardError = errors
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        let message = String(
+            data: errors.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertEqual(process.terminationStatus, 0, "Installer zsh syntax error: \(message)", file: file, line: line)
+    }
+
     func testVersionComparisonIgnoresLeadingVAndComparesNumericParts() {
         XCTAssertTrue(service.isNewer("v0.4.7", than: "0.4.6"))
         XCTAssertTrue(service.isNewer("1.0.0", than: "0.99.99"))
@@ -207,6 +223,35 @@ final class AppVersionTests: XCTestCase {
         XCTAssertEqual(resetCount, 1)
     }
 
+    func testPendingIdentityTransitionForcesOnePermissionReset() throws {
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-pending-reset-test-\(UUID().uuidString)", isDirectory: true)
+        let bundleURL = temporaryRoot.appendingPathComponent("Jarvis.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+
+        let suiteName = "jarvis-pending-reset-defaults-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            JarvisFreshInstallPermissionCleanup.installationFingerprint(for: bundleURL),
+            forKey: "jarvis.installation.permission-reset.fingerprint"
+        )
+
+        var resetCount = 0
+        let didReset = try JarvisFreshInstallPermissionCleanup.runIfNeeded(
+            bundleURL: bundleURL,
+            bundleIdentifier: "com.jarvis.mac",
+            defaults: defaults,
+            force: true
+        ) {
+            resetCount += 1
+        }
+
+        XCTAssertTrue(didReset)
+        XCTAssertEqual(resetCount, 1)
+    }
+
     func testLaunchServicesCleanupKeepsRunningAndResolvedAppsAndTargetsJarvisResidueOnly() {
         let dump = """
         bundle id:                  Jarvis (0x1)
@@ -249,7 +294,7 @@ final class AppVersionTests: XCTestCase {
         )
     }
 
-    func testInstallerDoesNotOwnScreenRecordingPermissionReset() throws {
+    func testInstallerOnlySchedulesResetWhenSigningIdentityChanges() throws {
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-update-test-\(UUID().uuidString).zsh")
         defer { try? FileManager.default.removeItem(at: scriptURL) }
@@ -262,7 +307,9 @@ final class AppVersionTests: XCTestCase {
             parentProcessID: 1234
         )
         let script = try String(contentsOf: scriptURL, encoding: .utf8)
-        XCTAssertFalse(script.contains("tccutil"))
+        try assertZshSyntax(of: scriptURL)
+        XCTAssertTrue(script.contains("needs_permission_reset=false"))
+        XCTAssertTrue(script.contains("[[ \"$needs_permission_reset\" == \"true\" ]] || return 0"))
         XCTAssertFalse(script.contains("reset_screen_recording_permission"))
         XCTAssertFalse(script.contains("kill -TERM"))
         XCTAssertFalse(script.contains("kill -KILL"))
@@ -279,5 +326,25 @@ final class AppVersionTests: XCTestCase {
         } else {
             XCTFail("Installer should verify the signature before removing quarantine")
         }
+    }
+
+    func testInstallerSchedulesPermissionResetForIdentityTransition() throws {
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-update-transition-test-\(UUID().uuidString).zsh")
+        defer { try? FileManager.default.removeItem(at: scriptURL) }
+
+        try service.makeInstallerScript(
+            at: scriptURL,
+            currentAppURL: URL(fileURLWithPath: "/Applications/Jarvis.app"),
+            newAppURL: URL(fileURLWithPath: "/tmp/Jarvis.app"),
+            temporaryDirectory: URL(fileURLWithPath: "/tmp/JarvisUpdate"),
+            parentProcessID: 1234,
+            requiresPermissionReset: true
+        )
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+        try assertZshSyntax(of: scriptURL)
+        XCTAssertTrue(script.contains("needs_permission_reset=true"))
+        XCTAssertTrue(script.contains("jarvis.installation.permission-reset.pending -bool true"))
+        XCTAssertTrue(script.contains("clear_permission_reset_pending"))
     }
 }

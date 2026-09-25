@@ -84,12 +84,11 @@ struct JarvisMascotView: View {
                 .fill(fillColor)
                 .scaleEffect(
                     x: isPointerTracking ? 1.06 : 1,
-                    y: isBlinking || isPressed ? 0.08 : (isPointerTracking ? 1.05 : 1)
+                    y: isBlinking ? 0.08 : (isPointerTracking ? 1.05 : 1)
                 )
                 .offset(x: displayedGazeOffset.width, y: displayedGazeOffset.height)
                 .animation(.interactiveSpring(response: 0.12, dampingFraction: 0.82), value: displayedGazeOffset)
                 .animation(.easeInOut(duration: 0.16), value: isBlinking)
-                .animation(.spring(response: 0.14, dampingFraction: 0.72), value: isPressed)
 
             Image(systemName: "sparkles")
                 .font(.system(size: diameter * 0.085, weight: .medium))

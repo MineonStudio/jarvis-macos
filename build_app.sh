@@ -25,8 +25,9 @@ APP_DIR="${JARVIS_APP_DIR:-$DEFAULT_APP_DIR}"
 JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER}"
 JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
 JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
-JARVIS_VERSION="${JARVIS_VERSION:-1.4.4}"
-JARVIS_BUILD="${JARVIS_BUILD:-342}"
+JARVIS_VERSION="${JARVIS_VERSION:-1.4.5}"
+JARVIS_BUILD="${JARVIS_BUILD:-343}"
+ICON_ASSET_NAME="jarvis-${JARVIS_VERSION//./-}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -70,6 +71,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $JARVIS_BUNDLE_NAME" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $JARVIS_VERSION" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $JARVIS_BUILD" "$APP_DIR/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_ASSET_NAME" "$APP_DIR/Contents/Info.plist"
 
 # Remove obsolete custom menu resources from upgraded bundles.
 rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
@@ -138,19 +140,21 @@ if [[ -d "$ICON_COMPOSER_DIR" ]]; then
     cp "$VARIANT_OUTPUT_DIR/jarvis.icns" "$DOCK_ICON_DIR/jarvis-$iconVariant.icns"
   done
 
+  ditto "$ICON_COMPOSER_DIR" "$ICON_VARIANT_TEMP/$ICON_ASSET_NAME.icon"
   xcrun actool \
-    "$ICON_COMPOSER_DIR" \
+    "$ICON_VARIANT_TEMP/$ICON_ASSET_NAME.icon" \
     --compile "$APP_DIR/Contents/Resources" \
     --platform macosx \
     --minimum-deployment-target 26.0 \
-    --app-icon jarvis \
+    --app-icon "$ICON_ASSET_NAME" \
     --output-partial-info-plist "$ASSET_PARTIAL_INFO" \
     --notices \
     --warnings >/dev/null
   rm -f "$ASSET_PARTIAL_INFO"
-  # actool also emits a standalone jarvis.icns. Keep only Assets.car so the
-  # bundle's CFBundleIconName resolves to the adaptive Icon Composer asset.
-  rm -f "$APP_DIR/Contents/Resources/jarvis.icns"
+  # A version-specific asset name forces LaunchServices and Dock to resolve
+  # a fresh icon after an upgrade, even when the bundle identifier is stable.
+  # Keep only Assets.car so CFBundleIconName resolves the adaptive source.
+  rm -f "$APP_DIR/Contents/Resources/$ICON_ASSET_NAME.icns"
 fi
 
 ENTITLEMENTS="$ROOT_DIR/Resources/Jarvis.entitlements"

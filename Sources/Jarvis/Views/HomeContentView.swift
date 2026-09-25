@@ -18,24 +18,15 @@ struct JarvisHomeView: View {
             content: {
                 GeometryReader { geometry in
                     let diameter = min(max(geometry.size.width * 0.42, 320), 480)
-                    let isSystemDark = app.activeColorScheme == .dark
 
-                    Group {
-                        if let image = JarvisDockIconController.shared.previewImage(
-                            for: app.appIconAppearance,
-                            isSystemDark: isSystemDark
-                        ) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .interpolation(.high)
-                                .scaledToFit()
-                                .accessibilityLabel("Jarvis 机器人")
-                        } else {
-                            JarvisOrbMark(diameter: diameter * 0.72)
-                        }
-                    }
-                    .frame(width: diameter, height: diameter)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    JarvisMascotShape()
+                        .fill(
+                            app.activeColorScheme == .dark ? .white : Color.jarvisAccent,
+                            style: FillStyle(eoFill: true)
+                        )
+                        .frame(width: diameter, height: diameter)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityLabel("Jarvis 机器人")
                 }
                 .padding(40)
             }

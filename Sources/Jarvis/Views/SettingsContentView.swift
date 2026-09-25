@@ -409,14 +409,14 @@ struct SettingsView: View {
                         "自动检查更新",
                         isOn: Binding(
                             get: { app.automaticUpdateChecksEnabled },
-                            set: app.setAutomaticUpdateChecksEnabled
+                            set: { app.setAutomaticUpdateChecksEnabled($0) }
                         )
                     )
                     Toggle(
                         "自动下载，退出时安装",
                         isOn: Binding(
                             get: { app.automaticUpdateDownloadsEnabled },
-                            set: app.setAutomaticUpdateDownloadsEnabled
+                            set: { app.setAutomaticUpdateDownloadsEnabled($0) }
                         )
                     )
                     .disabled(!app.automaticUpdateChecksEnabled)

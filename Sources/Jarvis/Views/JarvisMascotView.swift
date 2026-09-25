@@ -82,25 +82,36 @@ struct JarvisMascotView: View {
 
             JarvisMascotEyesShape()
                 .fill(fillColor)
-                .scaleEffect(x: isPointerTracking ? 1.06 : 1, y: isBlinking ? 0.08 : (isPointerTracking ? 1.05 : 1))
+                .scaleEffect(
+                    x: isPointerTracking ? 1.06 : 1,
+                    y: isBlinking || isPressed ? 0.08 : (isPointerTracking ? 1.05 : 1)
+                )
                 .offset(x: displayedGazeOffset.width, y: displayedGazeOffset.height)
                 .animation(.interactiveSpring(response: 0.12, dampingFraction: 0.82), value: displayedGazeOffset)
                 .animation(.easeInOut(duration: 0.16), value: isBlinking)
+                .animation(.spring(response: 0.14, dampingFraction: 0.72), value: isPressed)
 
-            if isCelebrating {
-                Image(systemName: "sparkle")
-                    .font(.system(size: diameter * 0.085, weight: .medium))
-                    .foregroundStyle(fillColor)
-                    .offset(x: diameter * 0.38, y: -diameter * 0.34)
-                    .transition(.scale.combined(with: .opacity))
-            }
+            Image(systemName: "sparkles")
+                .font(.system(size: diameter * 0.085, weight: .medium))
+                .foregroundStyle(fillColor)
+                .offset(x: diameter * 0.38, y: -diameter * 0.34)
+                .scaleEffect(isCelebrating ? 1 : 0.25)
+                .rotationEffect(.degrees(isCelebrating ? 0 : -35))
+                .opacity(isCelebrating ? 1 : 0)
+                .animation(.spring(response: 0.24, dampingFraction: 0.56), value: isCelebrating)
+                .accessibilityHidden(true)
         }
         .frame(width: diameter, height: diameter)
         .scaleEffect(x: scaleX, y: scaleY * (isBreathing ? 1.012 : 1))
         .rotationEffect(.degrees((pointerDirection?.width ?? 0) * 2.5))
+        .rotation3DEffect(
+            .degrees((pointerDirection?.height ?? 0) * -3.5),
+            axis: (x: 1, y: 0, z: 0)
+        )
         .offset(x: dragTranslation.width * 0.12, y: dragTranslation.height * 0.12)
         .animation(.spring(response: 0.30, dampingFraction: 0.82), value: isPointerTracking)
         .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.84), value: pointerDirection?.width)
+        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.84), value: pointerDirection?.height)
         .task {
             await gazeLoop()
         }

@@ -1,7 +1,184 @@
 import SwiftUI
 
-struct JarvisMascotShape: Shape {
-    private static let pathData = """
+struct JarvisMascotView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppModel.self) private var app
+
+    @State private var gazeOffset: CGSize = .zero
+    @State private var isBlinking = false
+    @State private var isTapBouncing = false
+    @State private var dragSquash: CGFloat = 0
+    @State private var isDragging = false
+
+    let diameter: CGFloat
+
+    private var fillColor: Color {
+        app.activeColorScheme == .dark ? .white : .jarvisAccent
+    }
+
+    private var maximumDragDistance: CGFloat {
+        diameter * 0.65
+    }
+
+    private var scaleX: CGFloat {
+        (isTapBouncing ? 1.10 : 1) * (1 + dragSquash * 0.10)
+    }
+
+    private var scaleY: CGFloat {
+        (isTapBouncing ? 0.90 : 1) * (1 - dragSquash * 0.42)
+    }
+
+    var body: some View {
+        ZStack {
+            JarvisMascotBodyShape()
+                .fill(fillColor, style: FillStyle(eoFill: true))
+
+            JarvisMascotEyesShape()
+                .fill(fillColor)
+                .scaleEffect(y: isBlinking ? 0.08 : 1)
+                .offset(x: gazeOffset.width, y: gazeOffset.height)
+                .animation(
+                    JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                    value: gazeOffset
+                )
+        }
+        .frame(width: diameter, height: diameter)
+        .scaleEffect(x: scaleX, y: scaleY)
+        .task(id: reduceMotion) {
+            await gazeLoop()
+        }
+        .task(id: reduceMotion) {
+            await blinkLoop()
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Jarvis 机器人")
+        .accessibilityValue("待命，会眨眼并环视")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("点击或拖拽触发弹跳动画")
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    updateDrag(value.translation)
+                }
+                .onEnded { _ in
+                    finishDrag()
+                }
+        )
+    }
+
+    private func updateDrag(_ translation: CGSize) {
+        let distance = hypot(translation.width, translation.height)
+        guard distance > 4 else { return }
+
+        isDragging = true
+        isTapBouncing = false
+        let normalizedDistance = min(distance / maximumDragDistance, 1)
+
+        if reduceMotion {
+            dragSquash = normalizedDistance
+        } else {
+            withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.82, blendDuration: 0.01)) {
+                dragSquash = normalizedDistance
+            }
+        }
+    }
+
+    private func finishDrag() {
+        guard isDragging else {
+            triggerTapBounce()
+            return
+        }
+
+        isDragging = false
+        withAnimation(
+            JarvisMotion.animation(
+                .spring(response: 0.32, dampingFraction: 0.56, blendDuration: 0.03),
+                reduceMotion: reduceMotion
+            )
+        ) {
+            dragSquash = 0
+        }
+    }
+
+    private func triggerTapBounce() {
+        guard !reduceMotion else { return }
+
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.46, blendDuration: 0.02)) {
+            isTapBouncing = true
+        }
+
+        Task {
+            guard await pause(for: 0.16) else { return }
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.62, blendDuration: 0.03)) {
+                isTapBouncing = false
+            }
+        }
+    }
+
+    private func gazeLoop() async {
+        guard !reduceMotion else {
+            gazeOffset = .zero
+            return
+        }
+
+        while !Task.isCancelled {
+            guard await pause(for: Double.random(in: 0.55 ... 1.45)) else { return }
+            guard !isDragging else { continue }
+
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.72, blendDuration: 0.02)) {
+                gazeOffset = CGSize(
+                    width: CGFloat.random(in: -diameter * 0.025 ... diameter * 0.025),
+                    height: CGFloat.random(in: -diameter * 0.018 ... diameter * 0.018)
+                )
+            }
+        }
+    }
+
+    private func blinkLoop() async {
+        guard !reduceMotion else {
+            isBlinking = false
+            return
+        }
+
+        while !Task.isCancelled {
+            guard await pause(for: Double.random(in: 1.8 ... 4.2)) else { return }
+            withAnimation(.easeInOut(duration: 0.08)) {
+                isBlinking = true
+            }
+
+            guard await pause(for: 0.12) else { return }
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isBlinking = false
+            }
+        }
+    }
+
+    private func pause(for seconds: Double) async -> Bool {
+        do {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            return !Task.isCancelled
+        } catch {
+            return false
+        }
+    }
+}
+
+private struct JarvisMascotBodyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        JarvisMascotVector.fittedPath(JarvisMascotVector.bodyPath, in: rect)
+    }
+}
+
+private struct JarvisMascotEyesShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        JarvisMascotVector.fittedPath(JarvisMascotVector.eyesPath, in: rect)
+    }
+}
+
+private enum JarvisMascotVector {
+    private static let bodyPathData = """
     M 469.50,161.00 Q 481,157 491.50,157.00 Q 502,157 512.50,160.50 Q 523,164 527.50,167.00 Q
     532,170 538.00,176.00 Q 544,182 549.50,193.00 Q 555,204 556.00,209.00 Q 557,214 557.00,222.50 Q
     557,231 554.50,240.00 Q 552,249 548.00,256.00 Q 544,263 538.50,268.50 Q 533,274 526.50,277.50 Q
@@ -31,38 +208,40 @@ struct JarvisMascotShape: Shape {
     706,505 699.50,495.50 Q 693,486 686.50,479.50 Q 680,473 673.00,468.00 Q 666,463 649.50,456.00 Q
     633,449 617.50,446.00 Q 602,443 590.50,442.00 Q 579,441 536.00,441.50 Q 493,442 471.50,444.00 Q
     450,446 429.00,449.50 Q 408,453 393.00,457.50 Q 378,462 364.50,469.50 Q 351,477 339.50,489.00 Q
-    328,501 321.50,513.00 Q 315,525 310.00,542.50 Q 305,560 304.00,574.50 Z M 595.50,516.00 Q
-    602,515 609.00,517.50 Q 616,520 620.50,524.50 Q 625,529 629.00,536.00 Q 633,543 636.00,555.00 Q
-    639,567 639.00,578.50 Q 639,590 636.50,600.50 Q 634,611 629.00,620.00 Q 624,629 618.00,634.00 Q
-    612,639 603.50,640.50 Q 595,642 586.50,638.00 Q 578,634 572.00,625.50 Q 566,617 562.50,604.50 Q
-    559,592 559.00,580.00 Q 559,568 561.50,557.00 Q 564,546 569.50,536.50 Q 575,527 582.00,522.00 Q
-    589,517 595.50,516.00 Z M 425.50,518.50 Q 434,517 441.00,520.00 Q 448,523 452.00,527.00 Q
-    456,531 460.00,538.00 Q 464,545 467.00,556.50 Q 470,568 470.00,580.50 Q 470,593 467.50,603.50 Q
-    465,614 460.00,623.00 Q 455,632 448.50,637.00 Q 442,642 439.00,643.00 Q 436,644 430.00,644.00 Q
-    424,644 418.50,641.50 Q 413,639 408.00,634.00 Q 403,629 399.50,622.50 Q 396,616 393.50,607.00 Q
-    391,598 390.50,585.00 Q 390,572 393.00,559.00 Q 396,546 401.00,537.50 Q 406,529 411.50,524.50 Q
-    417,520 425.50,518.50 Z
+    328,501 321.50,513.00 Q 315,525 310.00,542.50 Q 305,560 304.00,574.50 Z
     """
+    private static let eyesPathData = """
+    M 595.50,516.00 Q 602,515 609.00,517.50 Q 616,520 620.50,524.50 Q 625,529 629.00,536.00 Q
+    633,543 636.00,555.00 Q 639,567 639.00,578.50 Q 639,590 636.50,600.50 Q 634,611 629.00,620.00 Q
+    624,629 618.00,634.00 Q 612,639 603.50,640.50 Q 595,642 586.50,638.00 Q 578,634 572.00,625.50 Q
+    566,617 562.50,604.50 Q 559,592 559.00,580.00 Q 559,568 561.50,557.00 Q 564,546 569.50,536.50 Q
+    575,527 582.00,522.00 Q 589,517 595.50,516.00 Z M 425.50,518.50 Q 434,517 441.00,520.00 Q
+    448,523 452.00,527.00 Q 456,531 460.00,538.00 Q 464,545 467.00,556.50 Q 470,568 470.00,580.50 Q
+    470,593 467.50,603.50 Q 465,614 460.00,623.00 Q 455,632 448.50,637.00 Q 442,642 439.00,643.00 Q
+    436,644 430.00,644.00 Q 424,644 418.50,641.50 Q 413,639 408.00,634.00 Q 403,629 399.50,622.50 Q
+    396,616 393.50,607.00 Q 391,598 390.50,585.00 Q 390,572 393.00,559.00 Q 396,546 401.00,537.50 Q
+    406,529 411.50,524.50 Q 417,520 425.50,518.50 Z
+    """
+    static let bodyPath = parse(bodyPathData)
+    static let eyesPath = parse(eyesPathData)
+    private static let sourceBounds = bodyPath.boundingRect
 
-    private static let sourcePath = makeSourcePath()
-
-    func path(in rect: CGRect) -> Path {
-        let bounds = Self.sourcePath.boundingRect
+    static func fittedPath(_ path: Path, in rect: CGRect) -> Path {
         let inset = min(rect.width, rect.height) * 0.045
         let availableRect = rect.insetBy(dx: inset, dy: inset)
-        let scale = min(availableRect.width / bounds.width, availableRect.height / bounds.height)
+        let scale = min(availableRect.width / sourceBounds.width, availableRect.height / sourceBounds.height)
         let transform = CGAffineTransform(
             a: scale,
             b: 0,
             c: 0,
             d: scale,
-            tx: availableRect.midX - bounds.midX * scale,
-            ty: availableRect.midY - bounds.midY * scale
+            tx: availableRect.midX - sourceBounds.midX * scale,
+            ty: availableRect.midY - sourceBounds.midY * scale
         )
-        return Self.sourcePath.applying(transform)
+        return path.applying(transform)
     }
 
-    private static func makeSourcePath() -> Path {
+    private static func parse(_ pathData: String) -> Path {
         let tokens = pathData
             .replacingOccurrences(of: ",", with: " ")
             .split(whereSeparator: \.isWhitespace)

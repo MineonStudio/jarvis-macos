@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct JarvisHomeView: View {
-    @Environment(AppModel.self) private var app
-
     var body: some View {
         JarvisContentArea(
             leadingToolbar: {
@@ -19,14 +17,8 @@ struct JarvisHomeView: View {
                 GeometryReader { geometry in
                     let diameter = min(max(geometry.size.width * 0.42, 320), 480)
 
-                    JarvisMascotShape()
-                        .fill(
-                            app.activeColorScheme == .dark ? .white : Color.jarvisAccent,
-                            style: FillStyle(eoFill: true)
-                        )
-                        .frame(width: diameter, height: diameter)
+                    JarvisMascotView(diameter: diameter)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityLabel("Jarvis 机器人")
                 }
                 .padding(40)
             }

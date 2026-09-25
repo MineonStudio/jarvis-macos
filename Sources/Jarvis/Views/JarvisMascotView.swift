@@ -7,6 +7,7 @@ struct JarvisMascotView: View {
     @State private var gazeOffset: CGSize = .zero
     @State private var pointerTilt: CGFloat = 0
     @State private var isBlinking = false
+    @State private var isBreathing = false
     @State private var isTapBouncing = false
     @State private var isPointerInside = false
     @State private var isPressed = false
@@ -98,7 +99,7 @@ struct JarvisMascotView: View {
             }
         }
         .frame(width: diameter, height: diameter)
-        .scaleEffect(x: scaleX, y: scaleY)
+        .scaleEffect(x: scaleX, y: scaleY * (isBreathing ? 1.012 : 1))
         .rotationEffect(.degrees(pointerTilt))
         .offset(x: dragTranslation.width * 0.12, y: dragTranslation.height * 0.12)
         .animation(
@@ -110,6 +111,9 @@ struct JarvisMascotView: View {
         }
         .task(id: reduceMotion) {
             await blinkLoop()
+        }
+        .task(id: reduceMotion) {
+            await breathingLoop()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Jarvis 机器人")
@@ -265,6 +269,25 @@ struct JarvisMascotView: View {
             withAnimation(.easeInOut(duration: 0.12)) {
                 isBlinking = false
             }
+        }
+    }
+
+    private func breathingLoop() async {
+        guard !reduceMotion else {
+            isBreathing = false
+            return
+        }
+
+        while !Task.isCancelled {
+            withAnimation(.easeInOut(duration: 1.25)) {
+                isBreathing = true
+            }
+            guard await pause(for: 1.25) else { return }
+
+            withAnimation(.easeInOut(duration: 1.25)) {
+                isBreathing = false
+            }
+            guard await pause(for: 1.25) else { return }
         }
     }
 

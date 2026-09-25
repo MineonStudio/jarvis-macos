@@ -25,8 +25,8 @@ APP_DIR="${JARVIS_APP_DIR:-$DEFAULT_APP_DIR}"
 JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER}"
 JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
 JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
-JARVIS_VERSION="${JARVIS_VERSION:-1.4.3}"
-JARVIS_BUILD="${JARVIS_BUILD:-341}"
+JARVIS_VERSION="${JARVIS_VERSION:-1.4.4}"
+JARVIS_BUILD="${JARVIS_BUILD:-342}"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -77,11 +77,6 @@ rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleDark.png" \
       "$APP_DIR/Contents/Resources/JarvisMenuBarCapsuleLight.png" \
       "$APP_DIR/Contents/Resources/HermesIcon.png"
-
-if [[ -f "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" ]]; then
-  cp "$ROOT_DIR/Resources/JarvisMenuBarIcon.png" \
-     "$APP_DIR/Contents/Resources/JarvisMenuBarIcon.png"
-fi
 
 # Use the native Icon Composer asset as the Dock/Finder icon source. This
 # preserves the layered macOS 26 composition instead of flattening it into a

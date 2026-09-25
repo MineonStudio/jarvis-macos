@@ -54,13 +54,14 @@ final class MenuBarConfigurationTests: XCTestCase {
         )
     }
 
-    func testMenuBarUsesConfiguredIconResourceWithAccessibleTitle() {
-        XCTAssertEqual(JarvisMenuBarController.menuBarIconResourceName, "JarvisMenuBarIcon")
-        XCTAssertEqual(JarvisMenuBarController.menuBarIconFileExtension, "png")
+    func testMenuBarUsesVectorMascotIconWithAccessibleTitle() {
+        let image = JarvisMenuBarController.makeMenuBarIcon()
+
+        XCTAssertTrue(image.isTemplate)
+        XCTAssertEqual(image.size, JarvisMenuBarController.menuBarIconPointSize)
         XCTAssertEqual(
-            JarvisMenuBarController.menuBarIconPointSize,
-            NSSize(width: 18, height: 18)
+            JarvisMenuBarController.menuBarTitle,
+            "JARVIS"
         )
-        XCTAssertEqual(JarvisMenuBarController.menuBarTitle, "JARVIS")
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct JarvisMascotView: View {
@@ -256,7 +257,7 @@ private struct JarvisMascotEyesShape: Shape {
     }
 }
 
-private enum JarvisMascotVector {
+enum JarvisMascotVector {
     private static let bodyPathData = """
     M 469.50,161.00 Q 481,157 491.50,157.00 Q 502,157 512.50,160.50 Q 523,164 527.50,167.00 Q
     532,170 538.00,176.00 Q 544,182 549.50,193.00 Q 555,204 556.00,209.00 Q 557,214 557.00,222.50 Q
@@ -318,6 +319,22 @@ private enum JarvisMascotVector {
             ty: availableRect.midY - sourceBounds.midY * scale
         )
         return path.applying(transform)
+    }
+
+    static func makeMenuBarImage(sourceSize: CGFloat = 1024) -> NSImage {
+        let size = NSSize(width: sourceSize, height: sourceSize)
+        let image = NSImage(size: size)
+        image.lockFocusFlipped(true)
+        defer { image.unlockFocus() }
+
+        NSColor.white.setFill()
+        let bounds = CGRect(origin: .zero, size: size)
+        let body = NSBezierPath(cgPath: fittedPath(bodyPath, in: bounds).cgPath)
+        body.windingRule = .evenOdd
+        body.fill()
+
+        NSBezierPath(cgPath: fittedPath(eyesPath, in: bounds).cgPath).fill()
+        return image
     }
 
     private static func parse(_ pathData: String) -> Path {

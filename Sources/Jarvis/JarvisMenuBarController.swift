@@ -4,8 +4,6 @@ import AppKit
 final class JarvisMenuBarController: NSObject, NSMenuDelegate {
     static let shared = JarvisMenuBarController()
     static let menuBarTitle = "JARVIS"
-    static let menuBarIconResourceName = "JarvisMenuBarIcon"
-    static let menuBarIconFileExtension = "png"
     static let menuBarIconPointSize = NSSize(width: 18, height: 18)
     static let menuBarAutosaveName = NSStatusItem.AutosaveName(
         "\(JarvisAppIdentity.bundleIdentifier).primary-status-item"
@@ -204,17 +202,12 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         button.layer?.cornerRadius = 0
         button.layer?.masksToBounds = false
 
-        if let icon = Self.makeMenuBarIcon() {
-            button.image = icon
-            button.imagePosition = .imageOnly
-            button.imageScaling = .scaleProportionallyDown
-            button.title = ""
-            button.attributedTitle = NSAttributedString(string: "")
-            (button.cell as? NSButtonCell)?.attributedTitle = button.attributedTitle
-        } else {
-            // Keep the menu discoverable if a damaged bundle is missing the icon.
-            button.title = Self.menuBarTitle
-        }
+        button.image = Self.makeMenuBarIcon()
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.title = ""
+        button.attributedTitle = NSAttributedString(string: "")
+        (button.cell as? NSButtonCell)?.attributedTitle = button.attributedTitle
 
         button.setAccessibilityLabel(Self.menuBarTitle)
     }
@@ -259,17 +252,11 @@ final class JarvisMenuBarController: NSObject, NSMenuDelegate {
         meetingMenuItem.isEnabled = isMeetingRecording || meetingModelsReady
     }
 
-    private static func makeMenuBarIcon() -> NSImage? {
-        guard let url = Bundle.main.url(
-            forResource: menuBarIconResourceName,
-            withExtension: menuBarIconFileExtension
-        ),
-            let image = NSImage(contentsOf: url)
-        else {
-            return nil
-        }
-
-        return makeTemplateIcon(from: image, pointSize: menuBarIconPointSize.width)
+    static func makeMenuBarIcon() -> NSImage {
+        makeTemplateIcon(
+            from: JarvisMascotVector.makeMenuBarImage(),
+            pointSize: menuBarIconPointSize.width
+        )
     }
 
     private static func makeTemplateIcon(from base: NSImage, pointSize: CGFloat) -> NSImage {

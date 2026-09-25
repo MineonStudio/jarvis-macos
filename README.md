@@ -48,7 +48,7 @@ open dist/Jarvis.app
 需要 macOS 26 或更高版本。升级时保持同一个 `com.jarvis.mac` Bundle ID 和 `dist/Jarvis.app` 路径，只递增版本号：
 
 ```bash
-JARVIS_VERSION="1.4.3" JARVIS_BUILD="341" ./build_app.sh
+JARVIS_VERSION="1.4.4" JARVIS_BUILD="342" ./build_app.sh
 ```
 
 ## 质量检查

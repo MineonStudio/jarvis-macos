@@ -13,20 +13,23 @@ if [[ "$JARVIS_DEV_BUILD" == "1" ]]; then
   # grants survive rebuilds. Ad-hoc signing derives a new identity from every
   # binary, which makes macOS treat each build as a different app.
   DEFAULT_CODESIGN_IDENTITY="Jarvis Dev Signing"
+  DEFAULT_INSTALL_SOURCE="development"
 else
   DEFAULT_APP_DIR="$ROOT_DIR/dist/Jarvis.app"
   DEFAULT_BUNDLE_IDENTIFIER="com.jarvis.mac"
   DEFAULT_DISPLAY_NAME="贾维斯"
   DEFAULT_BUNDLE_NAME="Jarvis"
   DEFAULT_CODESIGN_IDENTITY=""
+  DEFAULT_INSTALL_SOURCE="direct-download"
 fi
 JARVIS_CODESIGN_IDENTITY="${JARVIS_CODESIGN_IDENTITY:-$DEFAULT_CODESIGN_IDENTITY}"
 APP_DIR="${JARVIS_APP_DIR:-$DEFAULT_APP_DIR}"
 JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER}"
 JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
 JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
-JARVIS_VERSION="${JARVIS_VERSION:-1.4.5}"
-JARVIS_BUILD="${JARVIS_BUILD:-343}"
+JARVIS_INSTALL_SOURCE="${JARVIS_INSTALL_SOURCE:-$DEFAULT_INSTALL_SOURCE}"
+JARVIS_VERSION="${JARVIS_VERSION:-1.4.6}"
+JARVIS_BUILD="${JARVIS_BUILD:-344}"
 ICON_ASSET_NAME="jarvis-${JARVIS_VERSION//./-}"
 
 cd "$ROOT_DIR"
@@ -72,6 +75,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $JARVIS_VERSION" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $JARVIS_BUILD" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_ASSET_NAME" "$APP_DIR/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :JarvisInstallSource $JARVIS_INSTALL_SOURCE" "$APP_DIR/Contents/Info.plist"
 
 # Remove obsolete custom menu resources from upgraded bundles.
 rm -f "$APP_DIR/Contents/Resources/JarvisMenuIcon.png" \

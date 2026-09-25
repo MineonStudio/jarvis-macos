@@ -9,11 +9,10 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationSelection: TopLevelSection = .home
     @State private var loadedSection: AppSection = .home
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var homePointerTracker = JarvisHomePointerTracker()
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             JarvisSidebarNavigation(
                 topItems: topNavigationItems,
                 bottomItems: bottomNavigationItems,
@@ -27,6 +26,7 @@ struct ContentView: View {
                 showsHeader: false
             )
             .background(Color.jarvisBackground)
+            .toolbar(removing: .sidebarToggle)
             .navigationSplitViewColumnWidth(
                 min: JarvisMetrics.sidebarMinimumWidth,
                 ideal: JarvisMetrics.sidebarWidth,

@@ -17,6 +17,8 @@ struct JarvisApp: App {
 
     init() {
         NSApplication.shared.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
+        JarvisInstallSource.recordIfMissing()
+        JarvisFreshInstallPermissionCleanup.runIfNeeded()
         JarvisLog.notice(
             category: .lifecycle,
             event: "process.started",
@@ -52,9 +54,12 @@ struct JarvisApp: App {
             height: JarvisMainWindowController.launchWindowSize.height
         )
         .windowToolbarStyle(.unified)
-        // Keep native menu titles inline in the toolbar. macOS 27's
-        // titleAndIcon style moves them below their circular trigger.
-        .windowToolbarLabelStyle(fixed: .titleOnly)
+        // Keep the toolbar to one row so module-specific labels cannot change
+        // the main content's vertical origin as navigation changes.
+        .windowToolbarLabelStyle(fixed: .iconOnly)
+        .commands {
+            CommandGroup(replacing: .sidebar) {}
+        }
     }
 }
 
@@ -135,6 +140,7 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
         menuBarController.install()
+        appModel?.startAutomaticUpdateChecks()
         NSApp.activate()
         // 挂在委托上而不是主窗口上：主窗口关着时贴图也可能还在。
         screenParametersObserver = NotificationCenter.default.addObserver(
@@ -191,12 +197,19 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
             }
             Task { @MainActor in
                 await appModel.finalizeMeetingRecordingForTermination()
-                NSApp.reply(toApplicationShouldTerminate: Self.confirmResumeDiscardIfNeeded(appModel))
+                let mayExit = Self.confirmResumeDiscardIfNeeded(appModel)
+                    && appModel.launchPreparedUpdateInstaller()
+                NSApp.reply(toApplicationShouldTerminate: mayExit)
             }
             return .terminateLater
         }
 
-        return Self.confirmResumeDiscardIfNeeded(appModel) ? .terminateNow : .terminateCancel
+        guard Self.confirmResumeDiscardIfNeeded(appModel),
+              appModel.launchPreparedUpdateInstaller()
+        else {
+            return .terminateCancel
+        }
+        return .terminateNow
     }
 
     private static func confirmResumeDiscardIfNeeded(_ appModel: AppModel) -> Bool {

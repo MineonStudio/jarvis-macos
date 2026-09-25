@@ -12,6 +12,75 @@ final class AppVersionTests: XCTestCase {
         XCTAssertFalse(service.isNewer("0.4.5", than: "0.4.6"))
     }
 
+    func testBuildNumberBreaksTiesForTheSameMarketingVersion() throws {
+        let release = try JarvisReleaseInfo(
+            version: "1.4.5",
+            build: "344",
+            releaseURL: XCTUnwrap(URL(string: "https://github.com/MineonStudio/jarvis-macos/releases/tag/v1.4.5")),
+            downloadURL: XCTUnwrap(URL(string: "https://github.com/MineonStudio/jarvis-macos/releases/download/v1.4.5/Jarvis-update.zip")),
+            assetDigest: "sha256:\(String(repeating: "a", count: 64))",
+            archiveSize: 1,
+            isLegacyBootstrap: false
+        )
+
+        XCTAssertTrue(service.isNewer(release, than: "1.4.5", build: "343"))
+        XCTAssertFalse(service.isNewer(release, than: "1.4.5", build: "344"))
+    }
+
+    func testLegacyBootstrapIsRestrictedToThePublishedBridgeVersion() {
+        XCTAssertTrue(service.isLegacyBootstrapRelease("v1.4.5"))
+        XCTAssertFalse(service.isLegacyBootstrapRelease("1.4.4"))
+        XCTAssertFalse(service.isLegacyBootstrapRelease("1.4.6"))
+    }
+
+    func testSignedUpdateManifestRequiresValidSignatureAndFields() throws {
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(repeating: 0x42, count: 32))
+        let manifest = JarvisUpdateManifest(
+            schemaVersion: 1,
+            version: "1.4.5",
+            build: "344",
+            bundleIdentifier: "com.jarvis.mac",
+            channel: "stable",
+            archiveName: "Jarvis-update.zip",
+            sha256: String(repeating: "a", count: 64)
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let manifestData = try encoder.encode(manifest)
+        let signature = try privateKey.signature(for: manifestData)
+        let publicKey = privateKey.publicKey.rawRepresentation.base64EncodedString()
+
+        XCTAssertEqual(
+            try JarvisUpdateSecurity.verifyManifest(
+                data: manifestData,
+                signatureData: Data(signature.base64EncodedString().utf8),
+                publicKeyBase64: publicKey
+            ),
+            manifest
+        )
+
+        var tamperedData = manifestData
+        tamperedData[tamperedData.startIndex] ^= 1
+        XCTAssertThrowsError(
+            try JarvisUpdateSecurity.verifyManifest(
+                data: tamperedData,
+                signatureData: Data(signature.base64EncodedString().utf8),
+                publicKeyBase64: publicKey
+            )
+        )
+    }
+
+    func testInstallSourceIsRecordedOnce() throws {
+        let suiteName = "JarvisInstallSourceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("dmg", forKey: "jarvis.install.source")
+
+        JarvisInstallSource.recordIfMissing(defaults: defaults)
+
+        XCTAssertEqual(JarvisInstallSource.current(defaults: defaults), "dmg")
+    }
+
     func testVersionDisplayIncludesShortVersionAndBuild() {
         XCTAssertTrue(JarvisAppVersion.displayName.contains(JarvisAppVersion.shortVersion))
         XCTAssertTrue(JarvisAppVersion.displayName.contains(JarvisAppVersion.build))
@@ -195,12 +264,18 @@ final class AppVersionTests: XCTestCase {
         let script = try String(contentsOf: scriptURL, encoding: .utf8)
         XCTAssertFalse(script.contains("tccutil"))
         XCTAssertFalse(script.contains("reset_screen_recording_permission"))
+        XCTAssertFalse(script.contains("kill -TERM"))
+        XCTAssertFalse(script.contains("kill -KILL"))
         XCTAssertTrue(script.contains("refresh_launch_services"))
         XCTAssertTrue(script.contains("lsregister"))
+        XCTAssertTrue(script.contains("等待用户已批准退出的应用结束"))
+        XCTAssertTrue(script.contains("/bin/rm -rf \"$old_app\""))
+        XCTAssertTrue(script.contains("quoted form of oldApp & \" && /bin/mv \" & quoted form of backupApp"))
         if let verifyRange = script.range(of: "codesign --verify"),
            let quarantineRange = script.range(of: "xattr -dr com.apple.quarantine")
         {
             XCTAssertLessThan(verifyRange.lowerBound, quarantineRange.lowerBound)
+            XCTAssertLessThan(try XCTUnwrap(script.range(of: "等待用户已批准退出的应用结束")?.lowerBound), verifyRange.lowerBound)
         } else {
             XCTFail("Installer should verify the signature before removing quarantine")
         }

@@ -95,6 +95,8 @@ final class AppModel {
     }
 
     var updateState: JarvisUpdateState = .idle
+    var automaticUpdateChecksEnabled = UserDefaults.standard.object(forKey: "jarvis.updates.automatic-checks") as? Bool ?? true
+    var automaticUpdateDownloadsEnabled = UserDefaults.standard.object(forKey: "jarvis.updates.automatic-downloads") as? Bool ?? true
     var selectedAIProvider: AIConversationProvider = .deepSeek
     var selectedEntertainmentPlatform: EntertainmentPlatform = .x
     var apiProvider: AIAPIProvider = .openAI
@@ -162,6 +164,8 @@ final class AppModel {
     @ObservationIgnored let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
     @ObservationIgnored let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     @ObservationIgnored let updateService = JarvisUpdateService()
+    @ObservationIgnored var stagedUpdate: JarvisStagedUpdate?
+    @ObservationIgnored var automaticUpdateTask: Task<Void, Never>?
     @ObservationIgnored let aiConversationDownloadManager = AIConversationDownloadManager()
     @ObservationIgnored let meetingRepository: MeetingRepository
     @ObservationIgnored let meetingRecorder: MeetingRecorder
@@ -642,56 +646,116 @@ extension AppModel {
         }
     }
 
-    func checkForUpdates() {
-        guard updateState != .checking else { return }
+    func setAutomaticUpdateChecksEnabled(_ enabled: Bool) {
+        automaticUpdateChecksEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "jarvis.updates.automatic-checks")
+        if enabled {
+            startAutomaticUpdateChecks()
+        } else {
+            automaticUpdateTask?.cancel()
+            automaticUpdateTask = nil
+        }
+    }
+
+    func setAutomaticUpdateDownloadsEnabled(_ enabled: Bool) {
+        automaticUpdateDownloadsEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "jarvis.updates.automatic-downloads")
+    }
+
+    func startAutomaticUpdateChecks() {
+        guard automaticUpdateChecksEnabled, automaticUpdateTask == nil else { return }
+        automaticUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            while !Task.isCancelled {
+                guard let self else { return }
+                if automaticUpdateChecksEnabled {
+                    checkForUpdates(
+                        silently: true,
+                        automaticallyDownload: automaticUpdateDownloadsEnabled
+                    )
+                }
+                try? await Task.sleep(for: .seconds(24 * 60 * 60))
+            }
+        }
+    }
+
+    func checkForUpdates(silently: Bool = false, automaticallyDownload: Bool = false) {
+        guard stagedUpdate == nil else { return }
+        switch updateState {
+        case .checking, .downloading, .readyToInstall, .installing:
+            return
+        default:
+            break
+        }
         updateState = .checking
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let release = try await updateService.checkForLatestRelease()
                 let hasNewVersion = updateService.isNewer(
-                    release.version,
-                    than: JarvisAppVersion.shortVersion
+                    release,
+                    than: JarvisAppVersion.shortVersion,
+                    build: JarvisAppVersion.build
                 )
                 updateState = hasNewVersion ? .available(release) : .upToDate
-                if !hasNewVersion {
+                if !hasNewVersion, !silently {
                     showToast(JarvisFeedbackCopy.latestVersion)
                 }
+                if hasNewVersion, automaticallyDownload {
+                    prepareUpdate(release, silently: true)
+                }
             } catch {
-                updateState = .failed(message: error.localizedDescription)
-                showToast(JarvisFeedbackCopy.updateCheckFailed)
+                updateState = silently ? .idle : .failed(message: error.localizedDescription)
+                if !silently {
+                    showToast(JarvisFeedbackCopy.updateCheckFailed)
+                }
+                JarvisLog.error(category: .update, event: "release.check.failed", error: error)
             }
         }
     }
 
     func downloadAndInstallUpdate() {
         guard case let .available(release) = updateState else { return }
-        // Ad-hoc updates replace the code identity, so TCC must be reset
-        // before install. Warn first; the actual tccutil reset runs inside
-        // `JarvisUpdateService.downloadAndInstall`. Installations that carry
-        // the local signing identity keep theirs.
-        if !JarvisLocalSigning.isAvailable {
-            let alert = NSAlert()
-            alert.messageText = "安装后需要重新授权"
-            alert.informativeText = "这次更新会清除屏幕录制和辅助功能授权。"
-            alert.addButton(withTitle: "继续")
-            alert.addButton(withTitle: "取消")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        prepareUpdate(release, silently: false)
+    }
+
+    func installPreparedUpdateNow() {
+        guard stagedUpdate != nil else { return }
+        NSApp.terminate(nil)
+    }
+
+    @discardableResult
+    func launchPreparedUpdateInstaller() -> Bool {
+        guard let stagedUpdate else { return true }
+        do {
+            try updateService.launchInstaller(for: stagedUpdate)
+            updateState = .installing(version: stagedUpdate.version)
+            return true
+        } catch {
+            updateState = .readyToInstall(version: stagedUpdate.version)
+            showToast("更新器启动失败，原版本未更改")
+            JarvisLog.error(category: .update, event: "install.handoff.failed", error: error)
+            return false
         }
+    }
+
+    private func prepareUpdate(_ release: JarvisReleaseInfo, silently: Bool) {
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 updateState = .downloading(version: release.version)
-                try await updateService.downloadAndInstall(release)
-                updateState = .installing(version: release.version)
-                // The detached installer waits for this process to exit before
-                // replacing the bundle and opening the updated app.
-                try await Task.sleep(for: .milliseconds(250))
-                NSApp.terminate(nil)
+                stagedUpdate = try await updateService.prepareUpdate(release)
+                updateState = .readyToInstall(version: release.version)
+                if !silently {
+                    showToast("更新已准备好；退出贾维斯时安装")
+                }
             } catch {
-                updateState = .failed(message: error.localizedDescription)
-                showToast(JarvisFeedbackCopy.updateFailed)
+                updateState = silently ? .idle : .failed(message: error.localizedDescription)
+                if !silently {
+                    showToast(JarvisFeedbackCopy.updateFailed)
+                }
+                JarvisLog.error(category: .update, event: "install.prepare.failed", error: error)
             }
         }
     }

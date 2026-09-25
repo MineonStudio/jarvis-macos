@@ -55,7 +55,7 @@ open dist/Jarvis-1.4.5-macos.dmg
 需要 macOS 26 或更高版本。升级时保持同一个 `com.jarvis.mac` Bundle ID 和 `dist/Jarvis.app` 路径，只递增版本号：
 
 ```bash
-JARVIS_VERSION="1.4.5" JARVIS_BUILD="343" ./build_app.sh
+JARVIS_VERSION="1.4.6" JARVIS_BUILD="344" ./build_app.sh
 ```
 
 应用图标资源名会随版本递增，避免 macOS 在覆盖安装后继续从 LaunchServices 或 Dock 图标缓存读取旧图标；用户通过新版 DMG 安装后无需手动清缓存或重启 Dock。
@@ -74,7 +74,7 @@ git diff --check
 
 项目使用 SwiftFormat 统一格式、SwiftLint 检查复杂度与规范，并在 GitHub Actions 中执行静态检查、测试和 Release 构建。持久化失败必须通过日志和用户可见状态反馈，不应静默忽略。
 
-版本号会显示在设置页的“版本与更新”区域。发布新版本时使用 `v主版本.次版本.修订版本` 标签，并在 GitHub Releases 创建正式版本；设置页可检查 GitHub Releases 是否有新版本。发布包使用 ad-hoc 签名（没有付费 Apple Developer ID，因此无法公证）；每次替换二进制都会产生新的代码身份，屏幕录制和辅助功能授权无法沿用。点击“下载更新”后，Jarvis 会先在当前进程中用 tccutil 清除这两项旧授权，安装完成后再向用户重新申请。
+版本号会显示在设置页的“版本与更新”区域。正式发布时使用 `v主版本.次版本.修订版本` 标签，并通过 `./package_release.sh` 生成 GitHub Release 所需的直接下载 ZIP、DMG、应用内更新 ZIP 和 Ed25519 签名清单。设置页支持每日自动检查、可选自动下载，也可手动检查和安装。发布包使用 ad-hoc 签名（没有 Apple Developer ID，因此无法公证）；没有本机 `Jarvis Local Signing` 身份时，成功替换后的首次启动会清理旧的屏幕录制与辅助功能授权，用户需在系统设置中重新授权。更新下载或安装失败时不会提前清理权限。
 
 用 `install.sh` 安装的副本不受这条限制：本机存在 `Jarvis Local Signing` 证书时，更新流程会在替换前用同一张证书重签新版，代码身份不变，因此跳过 tccutil 重置，屏幕录制和辅助功能授权沿用（钥匙串访问权限仍会重新询问一次，见上文「安装」一节）。
 
@@ -84,7 +84,7 @@ git diff --check
 
 截图快捷键默认为 F1，剪贴板历史默认使用 F2 唤起独立面板，两个快捷键都可以在对应技能页自定义。历史内容保存在本机 Application Support 目录，文件和视频会优先保存本地副本，超过 1GB 的文件则保留原文件引用以避免占用过多磁盘空间。
 
-macOS 对第三方应用读取其他应用画面强制要求屏幕录制权限，这是系统安全限制。正式发布同样使用 ad-hoc 签名，所以更新流程会主动重置权限，而不是依赖稳定的 Developer ID。
+macOS 对第三方应用读取其他应用画面强制要求屏幕录制权限，这是系统安全限制。发布签名私钥保存在本机登录钥匙串，参见 [更新发布说明](docs/update-release.md)；不要遗失或上传该私钥。
 
 开发期想少授几次权，`build_dev_app.sh` 默认就在找登录钥匙串里名为 `Jarvis Dev Signing` 的自签名证书（找不到会警告并回退 ad-hoc）。没有这张证书时，用和 `install.sh` 相同的办法建一张即可——自签名不需要 Apple 账号，也就不需要那 99 美元：
 

@@ -102,18 +102,10 @@ final class AuditRegressionTests: XCTestCase {
 
     // MARK: - 版本比较：预发布标签不得被判为更新
 
-    /// 审计报告 W-报告 §4.3：`versionParts` 用 `compactMap` **丢弃**非数字段，
-    /// 导致 `v1.4.0-rc.1` 被解析成 `[1, 4, 1]`，比 `1.4.0` 的 `[1, 4, 0]` 更大。
     func testPrereleaseTagsAreNotNewerThanTheEquivalentRelease() {
         let service = JarvisUpdateService()
-        // 当前实现下的真实行为（记录缺陷）：
-        XCTAssertTrue(
-            service.isNewer("v1.4.0-rc.1", than: "1.4.0"),
-            "记录缺陷：v1.4.0-rc.1 当前被判为比 1.4.0 更新，用户会被提示升级到预发布版本"
-        )
-        // 期望行为（修复 versionParts 后应如此）：
-        // XCTAssertFalse(service.isNewer("v1.4.0-rc.1", than: "1.4.0"))
-        // 正常版本号比较必须保持正确：
+        XCTAssertFalse(service.isNewer("v1.4.0-rc.1", than: "1.4.0"))
+        XCTAssertFalse(service.isNewer("not-a-version", than: "1.4.0"))
         XCTAssertTrue(service.isNewer("1.4.0", than: "1.3.5"))
         XCTAssertFalse(service.isNewer("1.3.5", than: "1.3.5"))
     }

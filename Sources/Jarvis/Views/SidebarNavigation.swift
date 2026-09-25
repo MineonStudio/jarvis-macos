@@ -69,6 +69,7 @@ struct JarvisSidebarNavigation<
             }
 
             itemGroup(topItems)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
                 .padding(.top, JarvisMetrics.sidebarContentPadding)
 
@@ -104,7 +105,12 @@ struct JarvisSidebarNavigation<
                                     : Color.primary.opacity(0.74)
                             )
                     }
-                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: JarvisMetrics.sidebarRowHeight,
+                        maxHeight: JarvisMetrics.sidebarRowHeight,
+                        alignment: .leading
+                    )
                     .padding(.horizontal, 8)
                     .background {
                         Capsule()
@@ -120,7 +126,12 @@ struct JarvisSidebarNavigation<
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: JarvisMetrics.sidebarRowHeight,
+                    maxHeight: JarvisMetrics.sidebarRowHeight,
+                    alignment: .leading
+                )
                 .contentShape(Rectangle())
                 .padding(.horizontal, JarvisMetrics.sidebarContentPadding)
                 .padding(.top, 4)
@@ -151,7 +162,7 @@ struct JarvisSidebarNavigation<
     }
 
     private func itemGroup(_ items: [Item]) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: JarvisMetrics.sidebarItemSpacing) {
             ForEach(items) { item in
                 primaryRow(item)
             }
@@ -187,7 +198,12 @@ struct JarvisSidebarNavigation<
                             : Color.primary.opacity(0.74)
                     )
             }
-            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: JarvisMetrics.sidebarRowHeight,
+                maxHeight: JarvisMetrics.sidebarRowHeight,
+                alignment: .leading
+            )
             .padding(.horizontal, 8)
             .background {
                 Capsule()
@@ -201,7 +217,12 @@ struct JarvisSidebarNavigation<
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: JarvisMetrics.sidebarRowHeight,
+            maxHeight: JarvisMetrics.sidebarRowHeight,
+            alignment: .leading
+        )
         .contentShape(Rectangle())
         .onHover { isHovering in
             withAnimation(

@@ -403,6 +403,29 @@ struct SettingsView: View {
                     Spacer(minLength: 8)
                     updateControls
                 }
+
+                HStack(spacing: 20) {
+                    Toggle(
+                        "自动检查更新",
+                        isOn: Binding(
+                            get: { app.automaticUpdateChecksEnabled },
+                            set: app.setAutomaticUpdateChecksEnabled
+                        )
+                    )
+                    Toggle(
+                        "自动下载，退出时安装",
+                        isOn: Binding(
+                            get: { app.automaticUpdateDownloadsEnabled },
+                            set: app.setAutomaticUpdateDownloadsEnabled
+                        )
+                    )
+                    .disabled(!app.automaticUpdateChecksEnabled)
+                    Spacer(minLength: 0)
+                    Text("来源：\(installSourceTitle)")
+                        .font(SettingsTypography.itemSubtitle)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                }
+                .toggleStyle(.checkbox)
             }
         }
     }
@@ -436,6 +459,17 @@ struct SettingsView: View {
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .disabled(true)
             }
+        case let .readyToInstall(version):
+            HStack(spacing: 8) {
+                Text(displayVersion(version))
+                    .font(JarvisTypography.monospaced)
+                    .foregroundStyle(Color.jarvisAccent)
+                    .lineLimit(1)
+                Button("退出并更新") {
+                    app.installPreparedUpdateNow()
+                }
+                .buttonStyle(JarvisPrimaryButtonStyle())
+            }
         case let .installing(version):
             HStack(spacing: 8) {
                 Text(displayVersion(version))
@@ -462,6 +496,15 @@ struct SettingsView: View {
 
     private func displayVersion(_ version: String) -> String {
         version.lowercased().hasPrefix("v") ? version : "v\(version)"
+    }
+
+    private var installSourceTitle: String {
+        switch JarvisInstallSource.current() {
+        case "direct-download": "直接下载"
+        case "dmg": "DMG"
+        case "development": "开发版"
+        default: "旧版或未知"
+        }
     }
 
     private var themeSettingsCard: some View {

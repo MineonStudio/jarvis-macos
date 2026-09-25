@@ -225,6 +225,8 @@ enum JarvisMetrics {
     static let sidebarWidth: CGFloat = 168
     static let sidebarMaximumWidth: CGFloat = 220
     static let sidebarContentPadding: CGFloat = 8
+    static let sidebarRowHeight: CGFloat = 32
+    static let sidebarItemSpacing: CGFloat = 4
 }
 
 /// 分段 / 组合容器的统一几何。

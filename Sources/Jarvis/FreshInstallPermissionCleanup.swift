@@ -5,6 +5,8 @@ enum JarvisFreshInstallPermissionCleanup {
 
     static func runIfNeeded() {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        guard bundleIdentifier == "com.jarvis.mac" else { return }
+        let shouldResetPermissions = !JarvisLocalSigning.isAvailable
 
         do {
             let didReset = try runIfNeeded(
@@ -12,7 +14,9 @@ enum JarvisFreshInstallPermissionCleanup {
                 bundleIdentifier: bundleIdentifier,
                 defaults: .standard
             ) {
-                try JarvisUpdateService.resetPrivacyPermissions(bundleIdentifier: bundleIdentifier)
+                if shouldResetPermissions {
+                    try JarvisUpdateService.resetPrivacyPermissions(bundleIdentifier: bundleIdentifier)
+                }
             }
             if didReset {
                 JarvisLog.notice(

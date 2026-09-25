@@ -1,10 +1,12 @@
 import Foundation
+import CryptoKit
 import Security
 
 /// Re-signs an installed copy with a certificate that lives on this Mac.
 ///
 /// Shipping builds are ad-hoc signed, so every replacement is a new code
-/// identity and macOS drops the Screen Recording, Accessibility, and Keychain
+/// identity and macOS drops the Screen Recording, Accessibility, Microphone,
+/// Camera, and Keychain
 /// grants along with it. `install.sh` installs a self-signed local identity
 /// instead; signing each update with that same certificate keeps the identity
 /// — and therefore the grants — stable, which is why the update flow skips its
@@ -43,6 +45,14 @@ enum JarvisLocalSigning {
     static func signingCertificateFingerprint(appAt appURL: URL) -> String? {
         guard let requirement = signingRequirement(of: appURL) else { return nil }
         return signingCertificateFingerprint(from: requirement)
+    }
+
+    /// Hashes the designated requirement so ad-hoc updates (whose requirement
+    /// contains a cdhash) and certificate-signed updates can both be compared.
+    static func codeIdentityFingerprint(appAt appURL: URL) -> String? {
+        guard let requirement = signingRequirement(of: appURL) else { return nil }
+        let digest = SHA256.hash(data: Data(requirement.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     static func signingCertificateFingerprint(from requirement: String) -> String? {
@@ -101,19 +111,24 @@ enum JarvisLocalSigning {
     static func isIdentityInstalled(_ name: String) -> Bool {
         guard let output = run(
             executable: "/usr/bin/security",
-            arguments: ["find-identity", "-p", "codesigning"]
+            arguments: [
+                "find-identity", "-p", "codesigning",
+                "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/Keychains/login.keychain-db"
+            ]
         ) else {
             return false
         }
-        return output.contains(name)
+        return output.localizedCaseInsensitiveContains(name)
     }
 
-    /// Signs `appURL` with the local identity. Returns `false` without throwing
-    /// when the Mac has no such identity, so callers can keep using the ad-hoc
-    /// path.
-    @discardableResult
-    static func resign(appAt appURL: URL, identity: String = identityName) throws -> Bool {
-        guard isIdentityInstalled(identity) else { return false }
+    /// Signs `appURL` with the local identity. Callers must not fall back to
+    /// ad-hoc signing because that would change the TCC code identity.
+    static func resign(appAt appURL: URL, identity: String = identityName) throws {
+        guard isIdentityInstalled(identity) else {
+            throw JarvisUpdateError.localSigningFailed(
+                "登录钥匙串中找不到证书指纹 \(identity.uppercased())。请解锁登录钥匙串后重试"
+            )
+        }
 
         let fileManager = FileManager.default
         let entitlementsURL = fileManager.temporaryDirectory
@@ -124,14 +139,15 @@ enum JarvisLocalSigning {
         try runOrThrow(
             executable: "/usr/bin/codesign",
             arguments: [
+                "--keychain",
+                "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/Keychains/login.keychain-db",
                 "--force",
                 "--options", "runtime",
                 "--entitlements", entitlementsURL.path,
-                "--sign", identity,
+                "--sign", identity.count == 40 ? identity.uppercased() : identity,
                 appURL.path
             ]
         )
-        return true
     }
 
     // MARK: - Adopting an identity on a Mac that installed from a zip
@@ -141,8 +157,8 @@ enum JarvisLocalSigning {
     /// Every release ships ad-hoc signed, so a Mac that installed by dragging
     /// the app out of the zip starts out with no certificate at all; that is
     /// the case this exists for. Adopting means re-signing the bundle, which
-    /// costs the current grants once and keeps every later update from asking
-    /// again.
+    /// must happen before permission grants so every later same-channel update
+    /// can keep using this identity.
     static var canAdoptLocalIdentity: Bool {
         let appURL = Bundle.main.bundleURL
         guard appURL.pathExtension.lowercased() == "app",
@@ -153,7 +169,7 @@ enum JarvisLocalSigning {
         guard FileManager.default.isWritableFile(atPath: appURL.deletingLastPathComponent().path) else {
             return false
         }
-        return certificateCount(of: appURL) == 0
+        return !isSignedWithInstalledIdentity(appAt: appURL)
     }
 
     /// Certificates attached to a bundle's signature; none means ad-hoc.
@@ -350,7 +366,7 @@ enum JarvisLocalSigning {
             try process.run()
             process.waitUntilExit()
         } catch {
-            throw JarvisUpdateError.toolFailed("签名失败：\(error.localizedDescription)")
+            throw JarvisUpdateError.signingToolFailed(error.localizedDescription)
         }
 
         guard process.terminationStatus == 0 else {
@@ -358,8 +374,8 @@ enum JarvisLocalSigning {
                 data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
                 encoding: .utf8
             )?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw JarvisUpdateError.toolFailed(
-                "签名失败：\(message?.isEmpty == false ? message! : "codesign 返回状态码 \(process.terminationStatus)")"
+            throw JarvisUpdateError.signingToolFailed(
+                message?.isEmpty == false ? message! : "codesign 返回状态码 \(process.terminationStatus)"
             )
         }
     }

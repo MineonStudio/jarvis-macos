@@ -111,8 +111,15 @@ struct JarvisPermissionGateView: View {
         JarvisRequiredPermission.allCases.count { !app.isRequiredPermissionGranted($0) }
     }
 
+    private var hasPersistentSigningIdentity: Bool {
+        JarvisLocalSigning.isSignedWithInstalledIdentity(appAt: Bundle.main.bundleURL)
+    }
+
     private var invitationLine: String {
-        switch remainingCount {
+        guard hasPersistentSigningIdentity else {
+            return "先固定这台 Mac 上的应用身份，之后同渠道更新就能保留授权。"
+        }
+        return switch remainingCount {
         case 0: "都好了，我们开始。"
         case 1: "就差这一步了。"
         default: "打开这些，我们就开始。"
@@ -137,10 +144,15 @@ struct JarvisPermissionGateView: View {
                     .multilineTextAlignment(.center)
             }
 
-            JarvisPermissionList()
-
-            if JarvisLocalSigning.canAdoptLocalIdentity {
+            if hasPersistentSigningIdentity {
+                JarvisPermissionList()
+            } else if JarvisLocalSigning.canAdoptLocalIdentity {
                 signingAdoptionCard
+            } else {
+                Text("请先把贾维斯移到“应用程序”文件夹，再完成本机签名。固定应用身份后才能开始授权。")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .multilineTextAlignment(.center)
             }
         }
         .padding(.horizontal, 28)
@@ -157,10 +169,9 @@ struct JarvisPermissionGateView: View {
         }
     }
 
-    /// Releases are ad-hoc signed, so an app dragged out of the download zip
-    /// loses every grant on each update. Signing this copy with a certificate
-    /// made on this Mac fixes that for good; the offer sits here because it
-    /// costs one round of grants either way.
+    /// Releases are ad-hoc signed. Signing this copy with a certificate made
+    /// on this Mac before granting permissions lets later same-channel updates
+    /// preserve those grants.
     private var signingAdoptionCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -171,7 +182,7 @@ struct JarvisPermissionGateView: View {
                     .font(JarvisTypography.bodyEmphasis)
             }
 
-            Text("贾维斯会在这台 Mac 上生成一张证书给自己签名，之后每次更新都沿用同一个身份，权限只授一次。证书不会离开这台 Mac。")
+            Text("先在这台 Mac 上生成一张本机证书并签名，再授予屏幕录制、辅助功能、麦克风和摄像头权限。之后同渠道更新会沿用这个身份，证书不会离开这台 Mac。")
                 .font(JarvisTypography.caption)
                 .foregroundStyle(Color.jarvisTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)

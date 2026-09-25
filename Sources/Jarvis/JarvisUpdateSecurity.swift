@@ -124,13 +124,38 @@ struct JarvisStagedUpdate: Equatable {
 }
 
 enum JarvisInstallSource {
-    private static let defaultsKey = "jarvis.install.source"
+    static let defaultsKey = "jarvis.install.source"
+    static let pendingSourceKey = "jarvis.install.source.pending"
     private static let knownSources: Set<String> = ["direct-download", "dmg", "development"]
 
     static func recordIfMissing(defaults: UserDefaults = .standard, bundle: Bundle = .main) {
-        guard defaults.object(forKey: defaultsKey) == nil else { return }
-        let source = bundle.object(forInfoDictionaryKey: "JarvisInstallSource") as? String
-        defaults.set(source.flatMap { knownSources.contains($0) ? $0 : nil } ?? "unknown", forKey: defaultsKey)
+        guard let source = bundle.object(forInfoDictionaryKey: "JarvisInstallSource") as? String else {
+            if defaults.object(forKey: defaultsKey) == nil {
+                defaults.set("unknown", forKey: defaultsKey)
+            }
+            return
+        }
+
+        guard knownSources.contains(source) else {
+            if source == "unknown", defaults.object(forKey: defaultsKey) == nil {
+                defaults.set("unknown", forKey: defaultsKey)
+            }
+            return
+        }
+
+        guard let recordedSource = defaults.string(forKey: defaultsKey),
+              recordedSource != "unknown"
+        else {
+            defaults.set(source, forKey: defaultsKey)
+            return
+        }
+
+        guard knownSources.contains(recordedSource), recordedSource != source else { return }
+        // The replacement app carries its source in Info.plist. Defer updating
+        // the preference until TCC reset succeeds so a failed reset is retried
+        // at the next launch.
+        defaults.set(source, forKey: pendingSourceKey)
+        defaults.set(true, forKey: JarvisFreshInstallPermissionCleanup.pendingResetKey)
     }
 
     static func current(defaults: UserDefaults = .standard) -> String {

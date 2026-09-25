@@ -64,6 +64,8 @@ enum JarvisSigningScript {
     static let resetPrivacyPermissions = """
     /usr/bin/tccutil reset ScreenCapture "$bundle_id" >/dev/null 2>&1
     /usr/bin/tccutil reset Accessibility "$bundle_id" >/dev/null 2>&1
+    /usr/bin/tccutil reset Microphone "$bundle_id" >/dev/null 2>&1
+    /usr/bin/tccutil reset Camera "$bundle_id" >/dev/null 2>&1
     """
 
     /// 用本机身份签名并校验。

@@ -138,7 +138,9 @@ final class AppVersionTests: XCTestCase {
             ),
             [
                 ["reset", "ScreenCapture", "com.jarvis.mac"],
-                ["reset", "Accessibility", "com.jarvis.mac"]
+                ["reset", "Accessibility", "com.jarvis.mac"],
+                ["reset", "Microphone", "com.jarvis.mac"],
+                ["reset", "Camera", "com.jarvis.mac"]
             ]
         )
     }

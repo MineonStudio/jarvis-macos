@@ -84,7 +84,8 @@ enum JarvisUpdateError: LocalizedError {
     case unsupportedInstallLocation
     case ambiguousInstallLocation
     case unsupportedUpdateChannel
-    case localSigningFailed
+    case localSigningFailed(String)
+    case signingToolFailed(String)
     case toolFailed(String)
     case checksumUnavailable
     case checksumMismatch
@@ -112,8 +113,10 @@ enum JarvisUpdateError: LocalizedError {
             "检测到多个贾维斯安装副本，无法确定要更新哪一个。请保留一个安装副本后重试"
         case .unsupportedUpdateChannel:
             "开发版不使用正式版更新通道"
-        case .localSigningFailed:
-            "无法使用本机原有签名身份完成更新。为保留屏幕录制和辅助功能授权，更新已取消；请解锁登录钥匙串后重试"
+        case let .localSigningFailed(reason):
+            "无法使用本机原有签名身份完成更新：\(reason)"
+        case let .signingToolFailed(message):
+            "使用本机签名身份签署更新失败：\(message)"
         case let .toolFailed(message):
             "解压更新包失败：\(message)"
         case .checksumUnavailable:
@@ -377,25 +380,34 @@ struct JarvisUpdateService {
             && currentSigningFingerprint == localSigningFingerprint
         let localIdentityAvailable = JarvisLocalSigning.isAvailable
         guard !currentAppUsesLocalIdentity || localIdentityAvailable else {
-            throw JarvisUpdateError.localSigningFailed
+            throw JarvisUpdateError.localSigningFailed(
+                "登录钥匙串中找不到当前应用使用的签名身份。请解锁登录钥匙串后重试"
+            )
+        }
+        guard localIdentityAvailable else {
+            throw JarvisUpdateError.localSigningFailed(
+                "这份安装尚未建立稳定的本机签名身份。请先在权限页完成一次本机签名，再更新"
+            )
         }
         let requiresPermissionReset = localIdentityAvailable && !currentAppUsesLocalIdentity
 
-        if localIdentityAvailable {
-            // The download is verified by digest and signature before this
-            // point; signing it with this Mac's identity keeps existing grants.
-            // A false result means the identity disappeared between the
-            // availability check and signing; never install that ad-hoc bundle.
-            guard let localSigningFingerprint,
-                  try JarvisLocalSigning.resign(
-                      appAt: newAppURL,
-                      identity: localSigningFingerprint
-                  ),
-                  JarvisLocalSigning.signingCertificateFingerprint(appAt: newAppURL)
-                  == localSigningFingerprint
-            else {
-                throw JarvisUpdateError.localSigningFailed
-            }
+        // The download is verified by digest and signature before this point.
+        // Every installed update must be signed with the same local identity;
+        // refusing an ad-hoc fallback prevents grants from disappearing later.
+        guard let localSigningFingerprint else {
+            throw JarvisUpdateError.localSigningFailed(
+                "登录钥匙串中找不到 Jarvis Local Signing 证书"
+            )
+        }
+        try JarvisLocalSigning.resign(
+            appAt: newAppURL,
+            identity: localSigningFingerprint
+        )
+        let signedFingerprint = JarvisLocalSigning.signingCertificateFingerprint(appAt: newAppURL)
+        guard signedFingerprint == localSigningFingerprint else {
+            throw JarvisUpdateError.localSigningFailed(
+                "签名后的证书指纹不匹配；期望 \(localSigningFingerprint)，实际 \(signedFingerprint ?? "未读取到")"
+            )
         }
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")
@@ -716,6 +728,10 @@ extension JarvisUpdateService {
                     || log "屏幕录制旧授权清理失败，请在新版本的权限页面重新授权"
                 /usr/bin/tccutil reset Accessibility com.jarvis.mac >/dev/null 2>&1 \\
                     || log "辅助功能旧授权清理失败，请在新版本的权限页面重新授权"
+                /usr/bin/tccutil reset Microphone com.jarvis.mac >/dev/null 2>&1 \\
+                    || log "麦克风旧授权清理失败，请在新版本的权限页面重新授权"
+                /usr/bin/tccutil reset Camera com.jarvis.mac >/dev/null 2>&1 \\
+                    || log "摄像头旧授权清理失败，请在新版本的权限页面重新授权"
             fi
         }
 

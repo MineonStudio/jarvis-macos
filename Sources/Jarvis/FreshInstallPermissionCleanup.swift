@@ -2,6 +2,7 @@ import Foundation
 
 enum JarvisFreshInstallPermissionCleanup {
     private static let markerKey = "jarvis.installation.permission-reset.fingerprint"
+    private static let codeIdentityKey = "jarvis.installation.code-identity.fingerprint"
     static let pendingResetKey = "jarvis.installation.permission-reset.pending"
 
     static func runIfNeeded() {
@@ -9,30 +10,49 @@ enum JarvisFreshInstallPermissionCleanup {
         guard bundleIdentifier == "com.jarvis.mac" else { return }
         let defaults = UserDefaults.standard
         let hasPendingReset = defaults.bool(forKey: pendingResetKey)
-        let shouldResetPermissions = !JarvisLocalSigning.isSignedWithInstalledIdentity(
-            appAt: Bundle.main.bundleURL
-        )
+        let currentInstallation = installationFingerprint(for: Bundle.main.bundleURL)
+        let previousInstallation = defaults.string(forKey: markerKey)
+        let currentCodeIdentity = JarvisLocalSigning.codeIdentityFingerprint(appAt: Bundle.main.bundleURL)
+        let previousCodeIdentity = defaults.string(forKey: codeIdentityKey)
+        let replacedBundle = previousInstallation != nil && previousInstallation != currentInstallation
+        let signingIdentityChanged = previousCodeIdentity != nil
+            && currentCodeIdentity != nil
+            && currentCodeIdentity != previousCodeIdentity
+        let resetForIdentityChange = replacedBundle && signingIdentityChanged
+        let resetRequested = hasPendingReset || resetForIdentityChange
 
         do {
             let didReset = try runIfNeeded(
                 bundleURL: Bundle.main.bundleURL,
                 bundleIdentifier: bundleIdentifier,
                 defaults: defaults,
-                force: hasPendingReset
+                force: resetRequested
             ) {
-                if shouldResetPermissions || hasPendingReset {
+                if resetRequested {
                     try JarvisUpdateService.resetPrivacyPermissions(bundleIdentifier: bundleIdentifier)
                 }
             }
-            if hasPendingReset, didReset {
+            if resetRequested, didReset {
+                if hasPendingReset {
+                    if let pendingSource = defaults.string(forKey: JarvisInstallSource.pendingSourceKey) {
+                        defaults.set(pendingSource, forKey: JarvisInstallSource.defaultsKey)
+                        defaults.removeObject(forKey: JarvisInstallSource.pendingSourceKey)
+                    }
+                }
                 defaults.removeObject(forKey: pendingResetKey)
             }
-            if didReset, shouldResetPermissions || hasPendingReset {
+            if let currentCodeIdentity {
+                defaults.set(currentCodeIdentity, forKey: codeIdentityKey)
+            }
+            if didReset, resetRequested {
                 JarvisLog.notice(
                     category: .security,
                     event: "privacyPermissions.reset.complete",
                     result: "success",
-                    fields: ["reason": "installationChanged"]
+                    fields: [
+                        "reason": hasPendingReset ? "pendingReset" : "codeIdentityChanged",
+                        "channel": JarvisInstallSource.current(defaults: defaults)
+                    ]
                 )
             }
         } catch {

@@ -28,8 +28,8 @@ JARVIS_BUNDLE_IDENTIFIER="${JARVIS_BUNDLE_IDENTIFIER:-$DEFAULT_BUNDLE_IDENTIFIER
 JARVIS_DISPLAY_NAME="${JARVIS_DISPLAY_NAME:-$DEFAULT_DISPLAY_NAME}"
 JARVIS_BUNDLE_NAME="${JARVIS_BUNDLE_NAME:-$DEFAULT_BUNDLE_NAME}"
 JARVIS_INSTALL_SOURCE="${JARVIS_INSTALL_SOURCE:-$DEFAULT_INSTALL_SOURCE}"
-JARVIS_VERSION="${JARVIS_VERSION:-1.4.8}"
-JARVIS_BUILD="${JARVIS_BUILD:-346}"
+JARVIS_VERSION="${JARVIS_VERSION:-1.4.9}"
+JARVIS_BUILD="${JARVIS_BUILD:-347}"
 ICON_ASSET_NAME="jarvis-${JARVIS_VERSION//./-}"
 
 cd "$ROOT_DIR"
@@ -176,7 +176,8 @@ if [[ -n "$JARVIS_CODESIGN_IDENTITY" ]]; then
 else
   # Shipping default is ad-hoc: there is no paid Apple Developer ID to sign
   # or notarize with. Each new binary is a new TCC identity, so in-app
-  # updates must tccutil-reset Screen Recording and Accessibility before
+  # updates must tccutil-reset Screen Recording, Accessibility, Microphone,
+  # and Camera before
   # replacing the bundle (see JarvisPrivacyPermissionReset).
   codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP_DIR" >/dev/null
 fi

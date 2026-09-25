@@ -404,12 +404,6 @@ struct SettingsView: View {
                     updateControls
                 }
 
-                HStack {
-                    Spacer(minLength: 0)
-                    Text("来源：\(installSourceTitle)")
-                        .font(SettingsTypography.itemSubtitle)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
             }
         }
     }
@@ -468,15 +462,6 @@ struct SettingsView: View {
 
     private func displayVersion(_ version: String) -> String {
         version.lowercased().hasPrefix("v") ? version : "v\(version)"
-    }
-
-    private var installSourceTitle: String {
-        switch JarvisInstallSource.current() {
-        case "direct-download": "直接下载"
-        case "dmg": "DMG"
-        case "development": "开发版"
-        default: "旧版或未知"
-        }
     }
 
     private var themeSettingsCard: some View {

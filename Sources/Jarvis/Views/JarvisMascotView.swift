@@ -50,18 +50,16 @@ struct JarvisMascotView: View {
 
     private var scaleX: CGFloat {
         let hoverScale: CGFloat = isPointerTracking ? 1.025 : 1
-        let pressScale: CGFloat = isPressed ? 0.94 : 1
-        let bounceScale: CGFloat = isTapBouncing ? 1.08 : 1
+        let bounceScale: CGFloat = isTapBouncing ? 1.035 : 1
         let dragScale = 1 + dragSquash * (dragHorizontalRatio * 0.16 - dragVerticalRatio * 0.10)
-        return hoverScale * pressScale * bounceScale * dragScale
+        return hoverScale * bounceScale * dragScale
     }
 
     private var scaleY: CGFloat {
         let hoverScale: CGFloat = isPointerTracking ? 1.025 : 1
-        let pressScale: CGFloat = isPressed ? 0.90 : 1
-        let bounceScale: CGFloat = isTapBouncing ? 0.92 : 1
+        let bounceScale: CGFloat = isTapBouncing ? 1.035 : 1
         let dragScale = 1 + dragSquash * (dragVerticalRatio * 0.16 - dragHorizontalRatio * 0.26)
-        return hoverScale * pressScale * bounceScale * dragScale
+        return hoverScale * bounceScale * dragScale
     }
 
     private var accessibilityStatus: String {

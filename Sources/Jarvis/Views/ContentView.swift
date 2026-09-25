@@ -2,12 +2,15 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
+    static let homePointerCoordinateSpace = "jarvis.main-window"
+
     @Binding var isSettingsPresented: Bool
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationSelection: TopLevelSection = .home
     @State private var loadedSection: AppSection = .home
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var homePointerTracker = JarvisHomePointerTracker()
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -35,6 +38,23 @@ struct ContentView: View {
         }
         .jarvisToastOverlay(app.toastMessage)
         .tint(app.accentColorPreference.resolvedColor)
+        .coordinateSpace(name: Self.homePointerCoordinateSpace)
+        .onContinuousHover(coordinateSpace: .named(Self.homePointerCoordinateSpace)) { phase in
+            guard loadedSection == .home else {
+                homePointerTracker.location = nil
+                return
+            }
+            if case let .active(location) = phase {
+                homePointerTracker.location = location
+            } else {
+                homePointerTracker.location = nil
+            }
+        }
+        .onChange(of: loadedSection) { _, section in
+            if section != .home {
+                homePointerTracker.location = nil
+            }
+        }
         .onChange(of: app.selectedSection) { _, newSection in
             // Other entry points (quick actions, menu bar, screenshot flow)
             // still drive the app model. Reflect them in the navbar immediately;
@@ -126,7 +146,7 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch loadedSection {
-        case .home: JarvisHomeView()
+        case .home: JarvisHomeView(pointerTracker: homePointerTracker)
         case .aiConversation: AIConversationView()
         case .entertainment: EntertainmentView()
         case .skill(.screenshot): ScreenshotView()

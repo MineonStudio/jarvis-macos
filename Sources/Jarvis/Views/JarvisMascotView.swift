@@ -1,15 +1,12 @@
 import SwiftUI
 
 struct JarvisMascotView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppModel.self) private var app
 
     @State private var gazeOffset: CGSize = .zero
-    @State private var pointerTilt: CGFloat = 0
     @State private var isBlinking = false
     @State private var isBreathing = false
     @State private var isTapBouncing = false
-    @State private var isPointerInside = false
     @State private var isPressed = false
     @State private var isDragging = false
     @State private var dragTranslation: CGSize = .zero
@@ -17,6 +14,19 @@ struct JarvisMascotView: View {
     @State private var isCelebrating = false
 
     let diameter: CGFloat
+    let pointerDirection: CGSize?
+
+    private var isPointerTracking: Bool {
+        pointerDirection != nil
+    }
+
+    private var displayedGazeOffset: CGSize {
+        guard let pointerDirection else { return gazeOffset }
+        return CGSize(
+            width: pointerDirection.width * diameter * 0.022,
+            height: pointerDirection.height * diameter * 0.016
+        )
+    }
 
     private var fillColor: Color {
         app.activeColorScheme == .dark ? .white : .jarvisAccent
@@ -39,7 +49,7 @@ struct JarvisMascotView: View {
     }
 
     private var scaleX: CGFloat {
-        let hoverScale: CGFloat = isPointerInside ? 1.025 : 1
+        let hoverScale: CGFloat = isPointerTracking ? 1.025 : 1
         let pressScale: CGFloat = isPressed ? 0.94 : 1
         let bounceScale: CGFloat = isTapBouncing ? 1.08 : 1
         let dragScale = 1 + dragSquash * (dragHorizontalRatio * 0.16 - dragVerticalRatio * 0.10)
@@ -47,7 +57,7 @@ struct JarvisMascotView: View {
     }
 
     private var scaleY: CGFloat {
-        let hoverScale: CGFloat = isPointerInside ? 1.025 : 1
+        let hoverScale: CGFloat = isPointerTracking ? 1.025 : 1
         let pressScale: CGFloat = isPressed ? 0.90 : 1
         let bounceScale: CGFloat = isTapBouncing ? 0.92 : 1
         let dragScale = 1 + dragSquash * (dragVerticalRatio * 0.16 - dragHorizontalRatio * 0.26)
@@ -61,7 +71,7 @@ struct JarvisMascotView: View {
         if isPressed {
             return "正在响应点击"
         }
-        if isPointerInside {
+        if isPointerTracking {
             return "正在注视指针"
         }
         return "待命，会眨眼并环视"
@@ -69,25 +79,14 @@ struct JarvisMascotView: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .strokeBorder(fillColor.opacity(isPointerInside ? 0.16 : 0), lineWidth: diameter * 0.012)
-                .scaleEffect(isPointerInside ? 1.03 : 0.92)
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-                    value: isPointerInside
-                )
-
             JarvisMascotBodyShape()
                 .fill(fillColor, style: FillStyle(eoFill: true))
 
             JarvisMascotEyesShape()
                 .fill(fillColor)
-                .scaleEffect(x: isPointerInside ? 1.06 : 1, y: isBlinking ? 0.08 : (isPointerInside ? 1.05 : 1))
-                .offset(x: gazeOffset.width, y: gazeOffset.height)
-                .animation(
-                    JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
-                    value: gazeOffset
-                )
+                .scaleEffect(x: isPointerTracking ? 1.06 : 1, y: isBlinking ? 0.08 : (isPointerTracking ? 1.05 : 1))
+                .offset(x: displayedGazeOffset.width, y: displayedGazeOffset.height)
+                .animation(.interactiveSpring(response: 0.12, dampingFraction: 0.82), value: displayedGazeOffset)
                 .animation(.easeInOut(duration: 0.16), value: isBlinking)
 
             if isCelebrating {
@@ -100,30 +99,25 @@ struct JarvisMascotView: View {
         }
         .frame(width: diameter, height: diameter)
         .scaleEffect(x: scaleX, y: scaleY * (isBreathing ? 1.012 : 1))
-        .rotationEffect(.degrees(pointerTilt))
+        .rotationEffect(.degrees((pointerDirection?.width ?? 0) * 2.5))
         .offset(x: dragTranslation.width * 0.12, y: dragTranslation.height * 0.12)
-        .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
-            value: isPointerInside
-        )
-        .task(id: reduceMotion) {
+        .animation(.spring(response: 0.30, dampingFraction: 0.82), value: isPointerTracking)
+        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.84), value: pointerDirection?.width)
+        .task {
             await gazeLoop()
         }
-        .task(id: reduceMotion) {
+        .task {
             await blinkLoop()
         }
-        .task(id: reduceMotion) {
+        .task {
             await breathingLoop()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Jarvis 机器人")
         .accessibilityValue(accessibilityStatus)
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("悬停可注视指针，点击会弹跳，按住可拖拽")
+        .accessibilityHint("在首页窗口移动指针可注视跟随，点击会弹跳，按住可拖拽")
         .contentShape(Rectangle())
-        .onContinuousHover { phase in
-            updateHover(phase)
-        }
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
@@ -133,38 +127,6 @@ struct JarvisMascotView: View {
                     finishDrag()
                 }
         )
-    }
-
-    private func updateHover(_ phase: HoverPhase) {
-        switch phase {
-        case let .active(location):
-            isPointerInside = true
-            guard !isDragging else { return }
-
-            let horizontal = min(max(location.x / diameter * 2 - 1, -1), 1)
-            let vertical = min(max(location.y / diameter * 2 - 1, -1), 1)
-            withAnimation(
-                JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion)
-            ) {
-                gazeOffset = CGSize(
-                    width: horizontal * diameter * 0.022,
-                    height: vertical * diameter * 0.016
-                )
-                pointerTilt = horizontal * 2.5
-            }
-        case .ended:
-            isPointerInside = false
-            pointerTilt = 0
-            guard !isDragging else { return }
-            withAnimation(
-                JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion)
-            ) {
-                gazeOffset = .zero
-            }
-        @unknown default:
-            isPointerInside = false
-            pointerTilt = 0
-        }
     }
 
     private func updateDrag(_ translation: CGSize) {
@@ -180,14 +142,9 @@ struct JarvisMascotView: View {
         let horizontal = min(max(translation.width / maximumDragDistance, -1), 1)
         let vertical = min(max(translation.height / maximumDragDistance, -1), 1)
 
-        if reduceMotion {
+        withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.82, blendDuration: 0.01)) {
             dragSquash = normalizedDistance
             gazeOffset = CGSize(width: horizontal * diameter * 0.02, height: vertical * diameter * 0.016)
-        } else {
-            withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.82, blendDuration: 0.01)) {
-                dragSquash = normalizedDistance
-                gazeOffset = CGSize(width: horizontal * diameter * 0.02, height: vertical * diameter * 0.016)
-            }
         }
     }
 
@@ -197,14 +154,9 @@ struct JarvisMascotView: View {
         isDragging = false
         dragTranslation = .zero
 
-        withAnimation(
-            JarvisMotion.animation(
-                .spring(response: 0.32, dampingFraction: 0.56, blendDuration: 0.03),
-                reduceMotion: reduceMotion
-            )
-        ) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.56, blendDuration: 0.03)) {
             dragSquash = 0
-            if !isPointerInside {
+            if !isPointerTracking {
                 gazeOffset = .zero
             }
         }
@@ -215,8 +167,6 @@ struct JarvisMascotView: View {
     }
 
     private func triggerTapBounce() {
-        guard !reduceMotion else { return }
-
         withAnimation(.spring(response: 0.18, dampingFraction: 0.46, blendDuration: 0.02)) {
             isTapBouncing = true
             isCelebrating = true
@@ -235,14 +185,9 @@ struct JarvisMascotView: View {
     }
 
     private func gazeLoop() async {
-        guard !reduceMotion else {
-            gazeOffset = .zero
-            return
-        }
-
         while !Task.isCancelled {
             guard await pause(for: Double.random(in: 0.55 ... 1.45)) else { return }
-            guard !isDragging, !isPointerInside else { continue }
+            guard !isDragging, !isPointerTracking else { continue }
 
             withAnimation(.spring(response: 0.24, dampingFraction: 0.72, blendDuration: 0.02)) {
                 gazeOffset = CGSize(
@@ -254,11 +199,6 @@ struct JarvisMascotView: View {
     }
 
     private func blinkLoop() async {
-        guard !reduceMotion else {
-            isBlinking = false
-            return
-        }
-
         while !Task.isCancelled {
             guard await pause(for: Double.random(in: 1.8 ... 4.2)) else { return }
             withAnimation(.easeInOut(duration: 0.08)) {
@@ -273,11 +213,6 @@ struct JarvisMascotView: View {
     }
 
     private func breathingLoop() async {
-        guard !reduceMotion else {
-            isBreathing = false
-            return
-        }
-
         while !Task.isCancelled {
             withAnimation(.easeInOut(duration: 1.25)) {
                 isBreathing = true

@@ -74,7 +74,7 @@ git diff --check
 
 项目使用 SwiftFormat 统一格式、SwiftLint 检查复杂度与规范，并在 GitHub Actions 中执行静态检查、测试和 Release 构建。持久化失败必须通过日志和用户可见状态反馈，不应静默忽略。
 
-版本号会显示在设置页的“版本与更新”区域。正式发布时使用 `v主版本.次版本.修订版本` 标签，并通过 `./package_release.sh` 生成 GitHub Release 所需的直接下载 ZIP、DMG、应用内更新 ZIP 和 Ed25519 签名清单。设置页支持每日自动检查、可选自动下载，也可手动检查和安装。发布包使用 ad-hoc 签名（没有 Apple Developer ID，因此无法公证）；没有本机 `Jarvis Local Signing` 身份时，成功替换后的首次启动会清理旧的屏幕录制与辅助功能授权，用户需在系统设置中重新授权。更新下载或安装失败时不会提前清理权限。
+版本号会显示在设置页的“版本与更新”区域。正式发布时使用 `v主版本.次版本.修订版本` 标签，并通过 `./package_release.sh` 生成 GitHub Release 所需的直接下载 ZIP、DMG、应用内更新 ZIP 和 Ed25519 签名清单。更新由用户手动检查；发现新版后 Jarvis 会自动下载、校验并替换安装。发布包使用 ad-hoc 签名（没有 Apple Developer ID，因此无法公证）；没有本机 `Jarvis Local Signing` 身份时，成功替换后的首次启动会清理旧的屏幕录制与辅助功能授权，用户需在系统设置中重新授权。更新下载或安装失败时不会提前清理权限。
 
 用 `install.sh` 安装的副本不受这条限制：本机存在 `Jarvis Local Signing` 证书时，更新流程会在替换前用同一张证书重签新版，代码身份不变，因此跳过 tccutil 重置，屏幕录制和辅助功能授权沿用（钥匙串访问权限仍会重新询问一次，见上文「安装」一节）。
 

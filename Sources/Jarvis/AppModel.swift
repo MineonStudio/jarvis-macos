@@ -95,8 +95,6 @@ final class AppModel {
     }
 
     var updateState: JarvisUpdateState = .idle
-    var automaticUpdateChecksEnabled = UserDefaults.standard.object(forKey: "jarvis.updates.automatic-checks") as? Bool ?? true
-    var automaticUpdateDownloadsEnabled = UserDefaults.standard.object(forKey: "jarvis.updates.automatic-downloads") as? Bool ?? true
     var selectedAIProvider: AIConversationProvider = .deepSeek
     var selectedEntertainmentPlatform: EntertainmentPlatform = .x
     var apiProvider: AIAPIProvider = .openAI
@@ -165,7 +163,6 @@ final class AppModel {
     @ObservationIgnored let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     @ObservationIgnored let updateService = JarvisUpdateService()
     @ObservationIgnored var stagedUpdate: JarvisStagedUpdate?
-    @ObservationIgnored var automaticUpdateTask: Task<Void, Never>?
     @ObservationIgnored let aiConversationDownloadManager = AIConversationDownloadManager()
     @ObservationIgnored let meetingRepository: MeetingRepository
     @ObservationIgnored let meetingRecorder: MeetingRecorder
@@ -646,40 +643,7 @@ extension AppModel {
         }
     }
 
-    func setAutomaticUpdateChecksEnabled(_ enabled: Bool) {
-        automaticUpdateChecksEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: "jarvis.updates.automatic-checks")
-        if enabled {
-            startAutomaticUpdateChecks()
-        } else {
-            automaticUpdateTask?.cancel()
-            automaticUpdateTask = nil
-        }
-    }
-
-    func setAutomaticUpdateDownloadsEnabled(_ enabled: Bool) {
-        automaticUpdateDownloadsEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: "jarvis.updates.automatic-downloads")
-    }
-
-    func startAutomaticUpdateChecks() {
-        guard automaticUpdateChecksEnabled, automaticUpdateTask == nil else { return }
-        automaticUpdateTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(20))
-            while !Task.isCancelled {
-                guard let self else { return }
-                if automaticUpdateChecksEnabled {
-                    checkForUpdates(
-                        silently: true,
-                        automaticallyDownload: automaticUpdateDownloadsEnabled
-                    )
-                }
-                try? await Task.sleep(for: .seconds(24 * 60 * 60))
-            }
-        }
-    }
-
-    func checkForUpdates(silently: Bool = false, automaticallyDownload: Bool = false) {
+    func checkForUpdates() {
         guard stagedUpdate == nil else { return }
         switch updateState {
         case .checking, .downloading, .readyToInstall, .installing:
@@ -697,26 +661,18 @@ extension AppModel {
                     than: JarvisAppVersion.shortVersion,
                     build: JarvisAppVersion.build
                 )
-                updateState = hasNewVersion ? .available(release) : .upToDate
-                if !hasNewVersion, !silently {
+                if hasNewVersion {
+                    prepareUpdate(release)
+                } else {
+                    updateState = .upToDate
                     showToast(JarvisFeedbackCopy.latestVersion)
                 }
-                if hasNewVersion, automaticallyDownload {
-                    prepareUpdate(release, silently: true)
-                }
             } catch {
-                updateState = silently ? .idle : .failed(message: error.localizedDescription)
-                if !silently {
-                    showToast(JarvisFeedbackCopy.updateCheckFailed)
-                }
+                updateState = .failed(message: error.localizedDescription)
+                showToast(JarvisFeedbackCopy.updateCheckFailed)
                 JarvisLog.error(category: .update, event: "release.check.failed", error: error)
             }
         }
-    }
-
-    func downloadAndInstallUpdate() {
-        guard case let .available(release) = updateState else { return }
-        prepareUpdate(release, silently: false)
     }
 
     func installPreparedUpdateNow() {
@@ -739,7 +695,7 @@ extension AppModel {
         }
     }
 
-    private func prepareUpdate(_ release: JarvisReleaseInfo, silently: Bool) {
+    private func prepareUpdate(_ release: JarvisReleaseInfo) {
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -747,14 +703,11 @@ extension AppModel {
                 updateState = .downloading(version: release.version)
                 stagedUpdate = try await updateService.prepareUpdate(release)
                 updateState = .readyToInstall(version: release.version)
-                if !silently {
-                    showToast("更新已准备好；退出贾维斯时安装")
-                }
+                showToast("更新已下载，正在替换安装")
+                installPreparedUpdateNow()
             } catch {
-                updateState = silently ? .idle : .failed(message: error.localizedDescription)
-                if !silently {
-                    showToast(JarvisFeedbackCopy.updateFailed)
-                }
+                updateState = .failed(message: error.localizedDescription)
+                showToast(JarvisFeedbackCopy.updateFailed)
                 JarvisLog.error(category: .update, event: "install.prepare.failed", error: error)
             }
         }

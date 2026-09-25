@@ -140,7 +140,6 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(JarvisApplicationPresentation.activationPolicy)
         menuBarController.install()
-        appModel?.startAutomaticUpdateChecks()
         NSApp.activate()
         // 挂在委托上而不是主窗口上：主窗口关着时贴图也可能还在。
         screenParametersObserver = NotificationCenter.default.addObserver(

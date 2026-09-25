@@ -404,28 +404,12 @@ struct SettingsView: View {
                     updateControls
                 }
 
-                HStack(spacing: 20) {
-                    Toggle(
-                        "自动检查更新",
-                        isOn: Binding(
-                            get: { app.automaticUpdateChecksEnabled },
-                            set: { app.setAutomaticUpdateChecksEnabled($0) }
-                        )
-                    )
-                    Toggle(
-                        "自动下载，退出时安装",
-                        isOn: Binding(
-                            get: { app.automaticUpdateDownloadsEnabled },
-                            set: { app.setAutomaticUpdateDownloadsEnabled($0) }
-                        )
-                    )
-                    .disabled(!app.automaticUpdateChecksEnabled)
+                HStack {
                     Spacer(minLength: 0)
                     Text("来源：\(installSourceTitle)")
                         .font(SettingsTypography.itemSubtitle)
                         .foregroundStyle(Color.jarvisTextSecondary)
                 }
-                .toggleStyle(.checkbox)
             }
         }
     }
@@ -433,18 +417,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var updateControls: some View {
         switch app.updateState {
-        case let .available(release):
-            HStack(spacing: 10) {
-                Text(displayVersion(release.version))
-                    .font(JarvisTypography.monospaced)
-                    .foregroundStyle(Color.jarvisAccent)
-                    .lineLimit(1)
-                Button("下载更新") {
-                    app.downloadAndInstallUpdate()
-                }
-                .buttonStyle(JarvisPrimaryButtonStyle())
-                .accessibilityLabel("下载更新 \(displayVersion(release.version))")
-            }
         case .checking:
             Button("检查中…") {}
                 .buttonStyle(JarvisSecondaryButtonStyle())

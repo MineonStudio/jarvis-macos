@@ -37,7 +37,6 @@ enum JarvisUpdateState: Equatable {
     case idle
     case checking
     case upToDate
-    case available(JarvisReleaseInfo)
     case downloading(version: String)
     case readyToInstall(version: String)
     case installing(version: String)

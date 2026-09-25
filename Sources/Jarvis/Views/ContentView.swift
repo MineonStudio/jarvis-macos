@@ -23,7 +23,8 @@ struct ContentView: View {
                 footerTitle: "设置",
                 footerIcon: "gearshape",
                 footerIsSelected: false,
-                footerAction: { isSettingsPresented = true }
+                footerAction: { isSettingsPresented = true },
+                showsHeader: false
             )
             .background(Color.jarvisBackground)
             .navigationSplitViewColumnWidth(

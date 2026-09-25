@@ -14,6 +14,7 @@ struct JarvisSidebarNavigation<
     let footerAction: (() -> Void)?
     let headerTitle: String
     let showsHeaderOrb: Bool
+    let showsHeader: Bool
 
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,7 +32,8 @@ struct JarvisSidebarNavigation<
         footerIsSelected: Bool = false,
         footerAction: (() -> Void)? = nil,
         headerTitle: String = "JARVIS",
-        showsHeaderOrb: Bool = true
+        showsHeaderOrb: Bool = true,
+        showsHeader: Bool = true
     ) {
         self.topItems = topItems
         self.bottomItems = bottomItems
@@ -44,24 +46,27 @@ struct JarvisSidebarNavigation<
         self.footerAction = footerAction
         self.headerTitle = headerTitle
         self.showsHeaderOrb = showsHeaderOrb
+        self.showsHeader = showsHeader
     }
 
     var body: some View {
         let accentColor = app.accentColorPreference.resolvedColor
 
         VStack(spacing: 0) {
-            HStack(spacing: 7) {
-                if showsHeaderOrb {
-                    JarvisOrbMark(diameter: 24)
-                }
+            if showsHeader {
+                HStack(spacing: 7) {
+                    if showsHeaderOrb {
+                        JarvisOrbMark(diameter: 24)
+                    }
 
-                Text(headerTitle)
-                    .font(JarvisTypography.pageTitle)
-                    .tracking(showsHeaderOrb ? 2.4 : 0)
+                    Text(headerTitle)
+                        .font(JarvisTypography.pageTitle)
+                        .tracking(showsHeaderOrb ? 2.4 : 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
 
             itemGroup(topItems)
                 .padding(.horizontal, JarvisMetrics.sidebarContentPadding)

@@ -430,17 +430,11 @@ struct SettingsView: View {
                     .font(SettingsTypography.itemSubtitle)
                     .foregroundStyle(Color.jarvisAccent)
                     .lineLimit(1)
-                if JarvisAppIdentity.isDevelopment {
-                    Text("开发版不能安装正式更新")
-                        .font(SettingsTypography.itemSubtitle)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                } else {
-                    Button("下载并安装") {
-                        app.downloadAndInstallUpdate()
-                    }
-                    .buttonStyle(JarvisPrimaryButtonStyle())
-                    .accessibilityLabel("下载并安装 \(displayVersion(release.version))")
+                Button("下载新版本") {
+                    app.downloadAndInstallUpdate()
                 }
+                .buttonStyle(JarvisPrimaryButtonStyle())
+                .accessibilityLabel("下载新版本 \(displayVersion(release.version))")
             }
         case let .downloading(version):
             HStack(spacing: 8) {
@@ -451,17 +445,6 @@ struct SettingsView: View {
                 Button("下载中…") {}
                     .buttonStyle(JarvisSecondaryButtonStyle())
                     .disabled(true)
-            }
-        case let .readyToInstall(version):
-            HStack(spacing: 8) {
-                Text(displayVersion(version))
-                    .font(JarvisTypography.monospaced)
-                    .foregroundStyle(Color.jarvisAccent)
-                    .lineLimit(1)
-                Button("退出并更新") {
-                    app.installPreparedUpdateNow()
-                }
-                .buttonStyle(JarvisPrimaryButtonStyle())
             }
         case let .installing(version):
             HStack(spacing: 8) {

@@ -162,7 +162,6 @@ final class AppModel {
     @ObservationIgnored let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
     @ObservationIgnored let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     @ObservationIgnored let updateService = JarvisUpdateService()
-    @ObservationIgnored var stagedUpdate: JarvisStagedUpdate?
     @ObservationIgnored let aiConversationDownloadManager = AIConversationDownloadManager()
     @ObservationIgnored let meetingRepository: MeetingRepository
     @ObservationIgnored let meetingRecorder: MeetingRecorder
@@ -644,9 +643,8 @@ extension AppModel {
     }
 
     func checkForUpdates() {
-        guard stagedUpdate == nil else { return }
         switch updateState {
-        case .checking, .downloading, .readyToInstall, .installing:
+        case .checking, .downloading, .installing:
             return
         default:
             break
@@ -657,9 +655,8 @@ extension AppModel {
             do {
                 let release = try await updateService.checkForLatestRelease()
                 let hasNewVersion = updateService.isNewer(
-                    release,
-                    than: JarvisAppVersion.shortVersion,
-                    build: JarvisAppVersion.build
+                    release.version,
+                    than: JarvisAppVersion.shortVersion
                 )
                 if hasNewVersion {
                     updateState = .available(release)
@@ -679,39 +676,23 @@ extension AppModel {
 
     func downloadAndInstallUpdate() {
         guard case let .available(release) = updateState else { return }
-        prepareUpdate(release)
-    }
-
-    func installPreparedUpdateNow() {
-        guard stagedUpdate != nil else { return }
-        NSApp.terminate(nil)
-    }
-
-    @discardableResult
-    func launchPreparedUpdateInstaller() -> Bool {
-        guard let stagedUpdate else { return true }
-        do {
-            try updateService.launchInstaller(for: stagedUpdate)
-            updateState = .installing(version: stagedUpdate.version)
-            return true
-        } catch {
-            updateState = .readyToInstall(version: stagedUpdate.version)
-            showToast("更新器启动失败，原版本未更改")
-            JarvisLog.error(category: .update, event: "install.handoff.failed", error: error)
-            return false
+        if !JarvisLocalSigning.isAvailable {
+            let alert = NSAlert()
+            alert.messageText = "安装后需要重新授权"
+            alert.informativeText = "这次更新会清除屏幕录制和辅助功能授权。"
+            alert.addButton(withTitle: "继续")
+            alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
-    }
-
-    private func prepareUpdate(_ release: JarvisReleaseInfo) {
         updateState = .downloading(version: release.version)
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 updateState = .downloading(version: release.version)
-                stagedUpdate = try await updateService.prepareUpdate(release)
-                updateState = .readyToInstall(version: release.version)
-                showToast("更新已下载，正在替换安装")
-                installPreparedUpdateNow()
+                try await updateService.downloadAndInstall(release)
+                updateState = .installing(version: release.version)
+                try await Task.sleep(for: .milliseconds(250))
+                NSApp.terminate(nil)
             } catch {
                 let message = Self.updateFailureMessage(error)
                 updateState = .failed(message: message)
@@ -719,6 +700,11 @@ extension AppModel {
                 JarvisLog.error(category: .update, event: "install.prepare.failed", error: error)
             }
         }
+    }
+
+    @discardableResult
+    func launchPreparedUpdateInstaller() -> Bool {
+        true
     }
 
     private static func updateFailureMessage(_ error: Error) -> String {

@@ -165,73 +165,24 @@ struct JarvisUpdateService {
             throw URLError(.resourceUnavailable)
         }
 
-        let manifestAsset = release.assets.first { $0.name == Self.manifestAssetName }
-        let signatureAsset = release.assets.first { $0.name == Self.signatureAssetName }
-        let releaseInfo: JarvisReleaseInfo
-        if let manifestAsset, let signatureAsset {
-            let manifestData = try await downloadSmallAsset(
-                manifestAsset,
-                maximumBytes: JarvisUpdateSecurity.maximumManifestBytes
-            )
-            let signatureData = try await downloadSmallAsset(
-                signatureAsset,
-                maximumBytes: JarvisUpdateSecurity.maximumSignatureBytes
-            )
-            guard let publicKey = Bundle.main.object(forInfoDictionaryKey: "JarvisUpdatePublicKey") as? String else {
-                throw JarvisUpdateError.invalidManifestSignature
-            }
-            let manifest = try JarvisUpdateSecurity.verifyManifest(
-                data: manifestData,
-                signatureData: signatureData,
-                publicKeyBase64: publicKey
-            )
-            guard JarvisUpdateSecurity.normalizedVersion(release.tagName) == manifest.version else {
-                throw JarvisUpdateError.invalidManifest
-            }
-            guard let archive = release.assets.first(where: { $0.name == manifest.archiveName }),
-                  archive.size > 0,
-                  archive.size <= JarvisUpdateSecurity.maximumArchiveBytes,
-                  isAllowedGitHubAssetURL(archive.browserDownloadURL)
-            else {
-                throw JarvisUpdateError.downloadUnavailable
-            }
-            releaseInfo = JarvisReleaseInfo(
-                version: manifest.version,
-                build: manifest.build,
-                releaseURL: release.htmlURL,
-                downloadURL: archive.browserDownloadURL,
-                assetDigest: "sha256:\(manifest.sha256)",
-                archiveSize: archive.size,
-                isLegacyBootstrap: false
-            )
-        } else if manifestAsset == nil, signatureAsset == nil,
-                  isLegacyBootstrapRelease(release.tagName)
-        {
-            // One-time bridge for installs that predate the pinned key. Only
-            // the already-published 1.4.5 release may use GitHub's digest.
-            let versionSuffix = JarvisUpdateSecurity.normalizedVersion(release.tagName) ?? ""
-            guard let archive = release.assets.first(where: {
-                $0.name == "Jarvis-\(versionSuffix)-macos.zip"
-            }),
-                archive.size > 0,
-                archive.size <= JarvisUpdateSecurity.maximumArchiveBytes,
-                let digest = archive.digest,
-                isAllowedGitHubAssetURL(archive.browserDownloadURL)
-            else {
-                throw JarvisUpdateError.downloadUnavailable
-            }
-            releaseInfo = JarvisReleaseInfo(
-                version: release.tagName,
-                build: nil,
-                releaseURL: release.htmlURL,
-                downloadURL: archive.browserDownloadURL,
-                assetDigest: digest,
-                archiveSize: archive.size,
-                isLegacyBootstrap: true
-            )
-        } else {
-            throw JarvisUpdateError.missingSignedManifest
+        // 1.3.10 picked the first Jarvis zip and trusted GitHub's digest.
+        // Prefer the versioned app archive when a separate update zip is also attached.
+        let zipAssets = release.assets.filter { asset in
+            let name = asset.name.lowercased()
+            return name.contains("jarvis") && name.hasSuffix(".zip")
         }
+        let asset = zipAssets.first { $0.name.hasPrefix("Jarvis-v") }
+            ?? zipAssets.first { !$0.name.lowercased().contains("update") }
+            ?? zipAssets.first
+        let releaseInfo = JarvisReleaseInfo(
+            version: release.tagName,
+            build: nil,
+            releaseURL: release.htmlURL,
+            downloadURL: asset?.browserDownloadURL,
+            assetDigest: asset?.digest,
+            archiveSize: asset?.size ?? 0,
+            isLegacyBootstrap: false
+        )
         JarvisLog.info(
             category: .update,
             event: "release.check.complete",
@@ -240,8 +191,7 @@ struct JarvisUpdateService {
             fields: [
                 "version": releaseInfo.version,
                 "hasDownload": String(releaseInfo.downloadURL != nil),
-                "hasDigest": String(releaseInfo.assetDigest != nil),
-                "legacyBootstrap": String(releaseInfo.isLegacyBootstrap)
+                "hasDigest": String(releaseInfo.assetDigest != nil)
             ]
         )
         return releaseInfo
@@ -265,22 +215,20 @@ struct JarvisUpdateService {
         )
     }
 
-    /// Downloads and validates an update without terminating the app or
-    /// changing privacy permissions. Installation is handed off only after
-    /// AppKit confirms that termination has been accepted.
-    func prepareUpdate(_ release: JarvisReleaseInfo) async throws -> JarvisStagedUpdate {
-        guard Bundle.main.bundleIdentifier == JarvisAppIdentity.productionBundleIdentifier else {
-            throw JarvisUpdateError.unsupportedUpdateChannel
-        }
+    /// Downloads, validates, and hands the update to a detached installer.
+    /// Matches the 1.3.10 path: a Mac with the local signing identity re-signs
+    /// the app and keeps permissions; everyone else resets those grants and
+    /// installs the ad-hoc build.
+    func downloadAndInstall(_ release: JarvisReleaseInfo) async throws {
         let operationID = JarvisLog.operationID()
+        var handedOffToInstaller = false
         JarvisLog.notice(
             category: .update,
             event: "install.begin",
             operationID: operationID,
             fields: [
                 "version": release.version,
-                "hasDigest": String(release.assetDigest != nil),
-                "legacyBootstrap": String(release.isLegacyBootstrap)
+                "hasDigest": String(release.assetDigest != nil)
             ]
         )
         defer {
@@ -288,7 +236,7 @@ struct JarvisUpdateService {
                 category: .update,
                 event: "install.complete",
                 operationID: operationID,
-                result: "prepared",
+                result: handedOffToInstaller ? "handedOffToInstaller" : "failed",
                 fields: ["version": release.version]
             )
         }
@@ -296,10 +244,6 @@ struct JarvisUpdateService {
             throw JarvisUpdateError.downloadUnavailable
         }
 
-        // Resolve the writable install location before touching LaunchServices.
-        // When macOS runs a quarantined app through App Translocation, the
-        // original Downloads path is only discoverable while its registration
-        // is still intact.
         let launchedAppURL = Bundle.main.bundleURL.standardizedFileURL
         guard launchedAppURL.pathExtension.lowercased() == "app",
               launchedAppURL.lastPathComponent == "Jarvis.app"
@@ -308,21 +252,24 @@ struct JarvisUpdateService {
         }
         let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
         try validateInstallLocation(currentAppURL)
+        cleanupStaleLaunchServices(preserving: [launchedAppURL, currentAppURL])
+
+        let keepsCodeIdentity = JarvisLocalSigning.isAvailable
+        if !keepsCodeIdentity {
+            try resetPrivacyPermissions()
+        }
 
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("JarvisUpdate-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: temporaryDirectory.path)
-        var preparedSuccessfully = false
         defer {
-            if !preparedSuccessfully {
+            if !handedOffToInstaller {
                 try? fileManager.removeItem(at: temporaryDirectory)
             }
         }
 
-        // URLSession follows the GitHub Release redirect and owns the
-        // temporary download file until the request completes.
         var request = URLRequest(url: downloadURL)
         request.setValue("Jarvis macOS; +https://github.com/MineonStudio/jarvis-macos", forHTTPHeaderField: "User-Agent")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
@@ -334,13 +281,6 @@ struct JarvisUpdateService {
         }
 
         let archiveURL = temporaryDirectory.appendingPathComponent("Jarvis-update.zip")
-        let archiveAttributes = try fileManager.attributesOfItem(atPath: downloadedURL.path)
-        let downloadedSize = (archiveAttributes[.size] as? NSNumber)?.int64Value ?? -1
-        guard downloadedSize == release.archiveSize,
-              downloadedSize <= JarvisUpdateSecurity.maximumArchiveBytes
-        else {
-            throw JarvisUpdateError.invalidArchive
-        }
         try fileManager.moveItem(at: downloadedURL, to: archiveURL)
         try verifyDigest(of: archiveURL, expected: release.assetDigest)
 
@@ -357,58 +297,8 @@ struct JarvisUpdateService {
             throw JarvisUpdateError.invalidApplication
         }
 
-        guard let newAppVersion = Self.bundleValue("CFBundleShortVersionString", in: newAppURL),
-              let newAppBuild = Self.bundleValue("CFBundleVersion", in: newAppURL),
-              JarvisUpdateSecurity.normalizedVersion(newAppVersion) == JarvisUpdateSecurity.normalizedVersion(release.version),
-              release.build == nil || release.build == newAppBuild,
-              JarvisUpdateSecurity.isNewer(
-                  remoteVersion: newAppVersion,
-                  remoteBuild: newAppBuild,
-                  than: JarvisAppVersion.shortVersion,
-                  localBuild: JarvisAppVersion.build
-              )
-        else {
-            throw JarvisUpdateError.mismatchedVersion
-        }
-
-        let currentSigningFingerprint = JarvisLocalSigning.signingCertificateFingerprint(
-            appAt: currentAppURL
-        )
-        let localSigningFingerprint = JarvisLocalSigning.localSigningFingerprint(
-            matching: currentSigningFingerprint
-        )
-        let currentAppUsesLocalIdentity = currentSigningFingerprint != nil
-            && currentSigningFingerprint == localSigningFingerprint
-        let localIdentityAvailable = JarvisLocalSigning.isAvailable
-        guard !currentAppUsesLocalIdentity || localIdentityAvailable else {
-            throw JarvisUpdateError.localSigningFailed(
-                "登录钥匙串中找不到当前应用使用的签名身份。请解锁登录钥匙串后重试"
-            )
-        }
-        guard localIdentityAvailable else {
-            throw JarvisUpdateError.localSigningFailed(
-                "这份安装尚未建立稳定的本机签名身份。请先在权限页完成一次本机签名，再更新"
-            )
-        }
-        let requiresPermissionReset = localIdentityAvailable && !currentAppUsesLocalIdentity
-
-        // The download is verified by digest and signature before this point.
-        // Every installed update must be signed with the same local identity;
-        // refusing an ad-hoc fallback prevents grants from disappearing later.
-        guard let localSigningFingerprint else {
-            throw JarvisUpdateError.localSigningFailed(
-                "登录钥匙串中找不到 Jarvis Local Signing 证书"
-            )
-        }
-        try JarvisLocalSigning.resign(
-            appAt: newAppURL,
-            identity: localSigningFingerprint
-        )
-        let signedFingerprint = JarvisLocalSigning.signingCertificateFingerprint(appAt: newAppURL)
-        guard signedFingerprint == localSigningFingerprint else {
-            throw JarvisUpdateError.localSigningFailed(
-                "签名后的证书指纹不匹配；期望 \(localSigningFingerprint)，实际 \(signedFingerprint ?? "未读取到")"
-            )
+        if keepsCodeIdentity {
+            try JarvisLocalSigning.resign(appAt: newAppURL)
         }
 
         let scriptURL = temporaryDirectory.appendingPathComponent("install-update.zsh")
@@ -417,37 +307,27 @@ struct JarvisUpdateService {
             currentAppURL: currentAppURL,
             newAppURL: newAppURL,
             temporaryDirectory: temporaryDirectory,
-            parentProcessID: ProcessInfo.processInfo.processIdentifier,
-            requiresPermissionReset: requiresPermissionReset
+            parentProcessID: ProcessInfo.processInfo.processIdentifier
         )
 
-        try runTool("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", newAppURL.path])
-        preparedSuccessfully = true
-        JarvisLog.notice(
-            category: .update,
-            event: "install.prepared",
-            operationID: operationID,
-            result: "success",
-            fields: ["version": release.version]
-        )
-        return JarvisStagedUpdate(
-            version: release.version,
-            temporaryDirectoryURL: temporaryDirectory,
-            scriptURL: scriptURL
-        )
-    }
-
-    func launchInstaller(for stagedUpdate: JarvisStagedUpdate) throws {
         let installer = Process()
         installer.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
-        installer.arguments = ["/bin/zsh", stagedUpdate.scriptURL.path]
+        installer.arguments = ["/bin/zsh", scriptURL.path]
         installer.standardOutput = FileHandle.nullDevice
         installer.standardError = FileHandle.nullDevice
         try installer.run()
+        handedOffToInstaller = true
     }
 
     static func resetPrivacyPermissions(bundleIdentifier: String) throws {
         try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
+    }
+
+    private func resetPrivacyPermissions() throws {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            throw JarvisUpdateError.privacyPermissionResetFailed("无法读取应用 Bundle ID")
+        }
+        try Self.resetPrivacyPermissions(bundleIdentifier: bundleIdentifier)
     }
 
     private func downloadSmallAsset(_ asset: GitHubReleaseAsset, maximumBytes: Int) async throws -> Data {

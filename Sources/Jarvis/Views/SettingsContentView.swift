@@ -50,6 +50,27 @@ enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+private enum SigningCertificatePrompt {
+    case download
+    case remove
+
+    var title: String {
+        switch self {
+        case .download: "下载签名证书？"
+        case .remove: "移除签名证书？"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .download:
+            "将在这台 Mac 的登录钥匙串中创建 Jarvis Local Signing 代码签名证书，并用它为当前安装重新签名。证书与私钥只保存在本机，不会离开这台电脑。完成后，同一安装渠道的后续更新可以沿用该签名身份，从而保留屏幕录制、辅助功能、麦克风和摄像头授权。应用会退出并重新打开。重新签名会更换代码身份，现有授权不会迁移，重新打开后需要再授予一次。"
+        case .remove:
+            "将从登录钥匙串中删除 Jarvis Local Signing 证书、对应私钥及其信任设置。当前已安装的副本不会被改签，已经授予的权限不会立刻失效。删除之后，后续更新无法再沿用同一签名身份；安装更新时会清除上述四项系统权限，并需要重新授权。"
+        }
+    }
+}
+
 enum SettingsTypography {
     static let pageTitle = Font.system(size: 22, weight: .semibold)
     static let cardTitle = Font.system(size: 16, weight: .semibold)
@@ -289,6 +310,8 @@ struct SettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: SettingsSection = .general
     @State private var isClearPermissionsConfirmationPresented = false
+    @State private var hasLocalSigningCertificate = false
+    @State private var signingCertificatePrompt: SigningCertificatePrompt?
     @AppStorage(WallpaperSourcePreferences.storageKey)
     private var enabledWallpaperSources = WallpaperSourcePreferences.defaultStorageValue
 
@@ -348,6 +371,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             app.refreshPermissionStatus()
+            hasLocalSigningCertificate = JarvisLocalSigning.isAvailable
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             app.refreshPermissionStatus()
@@ -570,6 +594,36 @@ struct SettingsView: View {
                 HStack(spacing: 14) {
                     SettingsCardHeader(title: "权限", systemImage: "lock.shield")
                     Spacer(minLength: 8)
+                    Button(hasLocalSigningCertificate ? "移除证书" : "下载证书") {
+                        signingCertificatePrompt = hasLocalSigningCertificate ? .remove : .download
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                    .confirmationDialog(
+                        signingCertificatePrompt?.title ?? "",
+                        isPresented: Binding(
+                            get: { signingCertificatePrompt != nil },
+                            set: {
+                                if !$0 {
+                                    signingCertificatePrompt = nil
+                                }
+                            }
+                        ),
+                        titleVisibility: .visible
+                    ) {
+                        if signingCertificatePrompt == .download {
+                            Button("下载并重启") {
+                                app.installLocalSigningCertificate()
+                            }
+                        } else if signingCertificatePrompt == .remove {
+                            Button("移除证书", role: .destructive) {
+                                app.removeLocalSigningCertificate()
+                                hasLocalSigningCertificate = JarvisLocalSigning.isAvailable
+                            }
+                        }
+                        Button("取消", role: .cancel) {}
+                    } message: {
+                        Text(signingCertificatePrompt?.message ?? "")
+                    }
                     Button("清除所有权限") {
                         isClearPermissionsConfirmationPresented = true
                     }

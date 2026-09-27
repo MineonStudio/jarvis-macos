@@ -114,6 +114,41 @@ enum JarvisLocalSigning {
     /// Keychain only lists a self-signed certificate under the plain
     /// code-signing policy, never under "valid identities", so do not pass
     /// `-v` here.
+    /// Deletes the login-keychain identity, including its private key and user trust settings.
+    static func removeInstalledIdentity() throws {
+        let keychain = loginKeychainPath
+        let hashes = installedIdentityFingerprints(identityName) ?? []
+        if hashes.isEmpty {
+            try runOrThrow(
+                executable: "/usr/bin/security",
+                arguments: ["delete-identity", "-c", identityName, "-t", keychain]
+            )
+        } else {
+            for hash in hashes.sorted() {
+                do {
+                    try runOrThrow(
+                        executable: "/usr/bin/security",
+                        arguments: ["delete-identity", "-Z", hash, "-t", keychain]
+                    )
+                } catch {
+                    try runOrThrow(
+                        executable: "/usr/bin/security",
+                        arguments: ["delete-certificate", "-Z", hash, "-t", keychain]
+                    )
+                }
+            }
+        }
+        guard !isIdentityInstalled(identityName) else {
+            throw JarvisUpdateError.localSigningFailed("登录钥匙串中仍能找到该证书")
+        }
+    }
+
+    private static var loginKeychainPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Keychains/login.keychain-db")
+            .path
+    }
+
     static func isIdentityInstalled(_ name: String) -> Bool {
         guard let output = run(
             executable: "/usr/bin/security",

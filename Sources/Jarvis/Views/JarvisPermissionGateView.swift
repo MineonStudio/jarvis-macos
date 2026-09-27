@@ -247,7 +247,7 @@ struct JarvisPermissionList: View {
 
     var body: some View {
         if mode == .settings {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ForEach(JarvisRequiredPermission.allCases) { permission in
                     JarvisPermissionStatusCapsule(permission: permission)
                 }
@@ -277,37 +277,29 @@ private struct JarvisPermissionStatusCapsule: View {
 
     var body: some View {
         let isGranted = app.isRequiredPermissionGranted(permission)
-        return HStack(spacing: 7) {
-            Image(systemName: isGranted ? "checkmark.circle.fill" : permission.systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isGranted ? Color.green : Color.jarvisTextSecondary)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(permission.title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Text(isGranted ? "已授权" : "未授权")
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundStyle(isGranted ? Color.green : Color.jarvisTextSecondary)
-                    .lineLimit(1)
-            }
+        return HStack(spacing: 8) {
+            Image(systemName: permission.systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .frame(width: 16, height: 16)
+            Text(permission.title)
+                .font(JarvisTypography.control)
+                .foregroundStyle(Color.primary)
+                .lineLimit(1)
             Spacer(minLength: 0)
+            if isGranted {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.green)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            isGranted ? Color.green.opacity(0.08) : Color.jarvisInsetSurface,
-            in: Capsule()
-        )
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: SettingsFormMetrics.controlHeight, alignment: .leading)
+        .background(Color.jarvisPanel.opacity(0.55), in: Capsule())
         .overlay {
             Capsule()
-                .strokeBorder(
-                    isGranted ? Color.green.opacity(0.2) : Color.primary.opacity(0.07),
-                    lineWidth: 1
-                )
+                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(permission.title)，\(isGranted ? "已授权" : "未授权")")

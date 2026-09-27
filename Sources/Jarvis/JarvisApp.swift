@@ -174,6 +174,7 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
+        appModel?.performPermissionResetAndRelaunchIfNeeded()
         if let screenParametersObserver {
             NotificationCenter.default.removeObserver(screenParametersObserver)
         }
@@ -192,12 +193,16 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "取消")
             alert.addButton(withTitle: "停止录音并退出")
             guard alert.runModal() != .alertFirstButtonReturn else {
+                appModel.cancelPermissionResetAndRelaunch()
                 return .terminateCancel
             }
             Task { @MainActor in
                 await appModel.finalizeMeetingRecordingForTermination()
                 let mayExit = Self.confirmResumeDiscardIfNeeded(appModel)
                     && appModel.launchPreparedUpdateInstaller()
+                if !mayExit {
+                    appModel.cancelPermissionResetAndRelaunch()
+                }
                 NSApp.reply(toApplicationShouldTerminate: mayExit)
             }
             return .terminateLater
@@ -206,6 +211,7 @@ private final class JarvisApplicationDelegate: NSObject, NSApplicationDelegate {
         guard Self.confirmResumeDiscardIfNeeded(appModel),
               appModel.launchPreparedUpdateInstaller()
         else {
+            appModel.cancelPermissionResetAndRelaunch()
             return .terminateCancel
         }
         return .terminateNow

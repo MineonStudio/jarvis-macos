@@ -162,6 +162,7 @@ final class AppModel {
     @ObservationIgnored let screenshotHistoryPreviewController = ScreenshotHistoryPreviewController()
     @ObservationIgnored let clipboardMediaPreviewController = ClipboardMediaPreviewController()
     @ObservationIgnored let updateService = JarvisUpdateService()
+    var shouldRelaunchAfterTermination = false
     @ObservationIgnored let aiConversationDownloadManager = AIConversationDownloadManager()
     @ObservationIgnored let meetingRepository: MeetingRepository
     @ObservationIgnored let meetingRecorder: MeetingRecorder

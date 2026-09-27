@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 
@@ -30,6 +31,41 @@ extension AppModel {
         case .accessibility: accessibilityPermissionGranted
         case .microphone: microphonePermissionGranted
         case .camera: cameraPermissionGranted
+        }
+    }
+
+    func clearAllPrivacyPermissionsAndRestart() {
+        shouldRelaunchAfterTermination = true
+        NSApp.terminate(nil)
+    }
+
+    func performPermissionResetAndRelaunchIfNeeded() {
+        guard shouldRelaunchAfterTermination else { return }
+        shouldRelaunchAfterTermination = false
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? JarvisAppIdentity.bundleIdentifier
+        do {
+            try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
+        } catch {
+            showToast(error.localizedDescription)
+            return
+        }
+        relaunchCurrentApp()
+    }
+
+    func cancelPermissionResetAndRelaunch() {
+        shouldRelaunchAfterTermination = false
+    }
+
+    private func relaunchCurrentApp() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-n", Bundle.main.bundleURL.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            showToast("重启失败")
         }
     }
 

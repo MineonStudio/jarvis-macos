@@ -288,6 +288,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: SettingsSection = .general
+    @State private var isClearPermissionsConfirmationPresented = false
     @AppStorage(WallpaperSourcePreferences.storageKey)
     private var enabledWallpaperSources = WallpaperSourcePreferences.defaultStorageValue
 
@@ -566,9 +567,28 @@ struct SettingsView: View {
     private var permissionSettingsCard: some View {
         JarvisCard {
             VStack(alignment: .leading, spacing: 10) {
-                SettingsCardHeader(title: "权限", systemImage: "lock.shield")
+                HStack(spacing: 14) {
+                    SettingsCardHeader(title: "权限", systemImage: "lock.shield")
+                    Spacer(minLength: 8)
+                    Button("清除所有权限") {
+                        isClearPermissionsConfirmationPresented = true
+                    }
+                    .buttonStyle(JarvisSecondaryButtonStyle())
+                }
                 JarvisPermissionList(cornerRadius: 12, mode: .settings)
             }
+        }
+        .confirmationDialog(
+            "清除所有权限？",
+            isPresented: $isClearPermissionsConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("确认并重启", role: .destructive) {
+                app.clearAllPrivacyPermissionsAndRestart()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将清除屏幕录制、辅助功能、麦克风和摄像头授权，然后重新打开贾维斯。")
         }
     }
 }

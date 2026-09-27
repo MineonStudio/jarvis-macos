@@ -37,6 +37,7 @@ enum JarvisUpdateState: Equatable {
     case idle
     case checking
     case upToDate
+    case available(JarvisReleaseInfo)
     case downloading(version: String)
     case readyToInstall(version: String)
     case installing(version: String)
@@ -112,7 +113,7 @@ enum JarvisUpdateError: LocalizedError {
         case .ambiguousInstallLocation:
             "检测到多个贾维斯安装副本，无法确定要更新哪一个。请保留一个安装副本后重试"
         case .unsupportedUpdateChannel:
-            "开发版不使用正式版更新通道"
+            "开发版不能安装正式更新。请打开已安装的贾维斯后再更新"
         case let .localSigningFailed(reason):
             "无法使用本机原有签名身份完成更新：\(reason)"
         case let .signingToolFailed(message):
@@ -141,9 +142,6 @@ struct JarvisUpdateService {
     }
 
     func checkForLatestRelease() async throws -> JarvisReleaseInfo {
-        guard Bundle.main.bundleIdentifier == "com.jarvis.mac" else {
-            throw JarvisUpdateError.unsupportedUpdateChannel
-        }
         let operationID = JarvisLog.operationID()
         JarvisLog.info(
             category: .update,
@@ -271,6 +269,9 @@ struct JarvisUpdateService {
     /// changing privacy permissions. Installation is handed off only after
     /// AppKit confirms that termination has been accepted.
     func prepareUpdate(_ release: JarvisReleaseInfo) async throws -> JarvisStagedUpdate {
+        guard Bundle.main.bundleIdentifier == JarvisAppIdentity.productionBundleIdentifier else {
+            throw JarvisUpdateError.unsupportedUpdateChannel
+        }
         let operationID = JarvisLog.operationID()
         JarvisLog.notice(
             category: .update,

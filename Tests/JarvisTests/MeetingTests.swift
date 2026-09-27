@@ -400,10 +400,7 @@ final class MeetingTests: XCTestCase {
         let received = await api.receivedConfiguration
         XCTAssertEqual(received, configuration)
         let options = await api.receivedOptions
-        XCTAssertEqual(
-            options.map(\.task),
-            [AICompletionOptions.meetingFactExtraction.task, AICompletionOptions.meetingSummary.task]
-        )
+        XCTAssertEqual(options.map(\.task), [AICompletionOptions.meetingSummary.task])
     }
 
     func testSummaryServiceDoesNotSilentlyTrimAIOutput() async throws {
@@ -534,7 +531,7 @@ final class MeetingTests: XCTestCase {
             startTime: 0,
             endTime: 1,
             speakerID: "S1",
-            text: "一些没有形成结论的闲聊。"
+            text: String(repeating: "一些没有形成结论的闲聊。", count: 900)
         )
         let record = MeetingRecord(
             title: "无结论会议",
@@ -559,7 +556,81 @@ final class MeetingTests: XCTestCase {
 
         XCTAssertEqual(summary.overview, "未提取到可确认的会议结论")
         let options = await api.receivedOptions
-        XCTAssertEqual(options.map(\.task), [AICompletionOptions.meetingFactExtraction.task])
+        XCTAssertGreaterThan(options.count, 1)
+        XCTAssertTrue(options.allSatisfy { $0.task == AICompletionOptions.meetingFactExtraction.task })
+    }
+
+    @MainActor
+    func testShortSummaryUsesAnIndeterminateProgressWhileTheRequestRuns() async throws {
+        let segment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 1,
+            speakerID: "S1",
+            text: "今天确认了发布范围。"
+        )
+        let record = MeetingRecord(
+            title: "短会",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            speakers: [MeetingSpeaker(id: "S1", name: "主持人", colorIndex: 0)],
+            transcript: [segment]
+        )
+        var progressValues: [Double?] = []
+        _ = try await MeetingSummaryService(
+            api: MeetingTestAPI(
+                sourceSegmentID: segment.id,
+                summaryResponse: #"{"overview":"确认了发布范围","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[]}"#
+            )
+        ).summarize(
+            record: record,
+            configuration: AIAPIConfiguration(
+                endpoint: "https://example.com/v1/chat/completions",
+                model: "test",
+                apiKey: "test-key"
+            ),
+            onProgress: { progressValues.append($0) }
+        )
+
+        XCTAssertTrue(progressValues.contains(nil))
+        XCTAssertFalse(progressValues.contains { $0 == 0.96 })
+    }
+
+    @MainActor
+    func testLongSummaryProgressAdvancesAndDoesNotStickAtNinetySix() async throws {
+        let segment = MeetingTranscriptSegment(
+            startTime: 0,
+            endTime: 1,
+            speakerID: "S1",
+            text: String(repeating: "这是一段需要被分段处理的会议内容。", count: 900)
+        )
+        let record = MeetingRecord(
+            title: "长会进度",
+            audioFileName: "meeting-\(UUID().uuidString).m4a",
+            speakers: [MeetingSpeaker(id: "S1", name: "说话人 1", colorIndex: 0)],
+            transcript: [segment]
+        )
+        var progressValues: [Double?] = []
+        _ = try await MeetingSummaryService(
+            api: MeetingTestAPI(
+                sourceSegmentID: segment.id,
+                summaryResponse: #"{"overview":"已合并长会议摘要","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[]}"#
+            )
+        ).summarize(
+            record: record,
+            configuration: AIAPIConfiguration(
+                endpoint: "https://example.com/v1/chat/completions",
+                model: "test",
+                apiKey: "test-key"
+            ),
+            onProgress: { progressValues.append($0) }
+        )
+
+        let numeric = progressValues.compactMap { $0 }
+        XCTAssertGreaterThan(numeric.count, 1)
+        XCTAssertFalse(numeric.contains { abs($0 - 0.96) < 0.0001 })
+        XCTAssertLessThan(numeric.last ?? 1, 1)
+        for pair in zip(numeric, numeric.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(pair.1 + 0.0001, pair.0)
+        }
     }
 
     func testMeetingSearchMatchesSingleChineseCharacterAndLatinLetter() {

@@ -531,7 +531,7 @@ extension AppModel {
             meetingRecords[index].status = .summarizing
             persistMeeting(meetingRecords[index])
         }
-        meetingProcessingState = .processing(stage: .summarizing, progress: 0.96)
+        meetingProcessingState = .processing(stage: .summarizing, progress: nil)
         meetingProcessingTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { completeActiveMeetingProcessing(for: record.id) }
@@ -553,7 +553,7 @@ extension AppModel {
             meetingRecords[index].status = .summarizing
             persistMeeting(meetingRecords[index])
         }
-        meetingProcessingState = .processing(stage: .summarizing, progress: 0.96)
+        meetingProcessingState = .processing(stage: .summarizing, progress: nil)
         let operationID = JarvisLog.operationID()
         JarvisLog.notice(
             category: .meeting,
@@ -587,6 +587,10 @@ extension AppModel {
                         "factCount": String(checkpoint.facts.count)
                     ]
                 )
+            },
+            onProgress: { [weak self] progress in
+                guard let self, self.meetingActiveProcessingID == record.id else { return }
+                self.meetingProcessingState = .processing(stage: .summarizing, progress: progress)
             }
         )
         guard let index = meetingRecords.firstIndex(where: { $0.id == record.id }) else { return }

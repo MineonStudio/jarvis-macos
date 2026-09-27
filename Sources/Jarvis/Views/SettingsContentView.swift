@@ -403,7 +403,6 @@ struct SettingsView: View {
                     Spacer(minLength: 8)
                     updateControls
                 }
-
             }
         }
     }
@@ -415,6 +414,34 @@ struct SettingsView: View {
             Button("检查中…") {}
                 .buttonStyle(JarvisSecondaryButtonStyle())
                 .disabled(true)
+        case .upToDate:
+            HStack(spacing: 10) {
+                Text(JarvisFeedbackCopy.latestVersion)
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                Button("检查更新") {
+                    app.checkForUpdates()
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
+            }
+        case let .available(release):
+            HStack(spacing: 10) {
+                Text("\(JarvisFeedbackCopy.updateAvailable) \(displayVersion(release.version))")
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(Color.jarvisAccent)
+                    .lineLimit(1)
+                if JarvisAppIdentity.isDevelopment {
+                    Text("开发版不能安装正式更新")
+                        .font(SettingsTypography.itemSubtitle)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                } else {
+                    Button("下载并安装") {
+                        app.downloadAndInstallUpdate()
+                    }
+                    .buttonStyle(JarvisPrimaryButtonStyle())
+                    .accessibilityLabel("下载并安装 \(displayVersion(release.version))")
+                }
+            }
         case let .downloading(version):
             HStack(spacing: 8) {
                 Text(displayVersion(version))
@@ -447,11 +474,17 @@ struct SettingsView: View {
                     .disabled(true)
             }
         case let .failed(message):
-            Button("重试") {
-                app.checkForUpdates()
+            HStack(spacing: 10) {
+                Text(message)
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("重试") {
+                    app.checkForUpdates()
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle())
             }
-            .buttonStyle(JarvisSecondaryButtonStyle())
-            .help("更新操作失败：\(message)")
         default:
             Button("检查更新") {
                 app.checkForUpdates()

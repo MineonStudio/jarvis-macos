@@ -51,6 +51,7 @@ enum JarvisFeedbackCopy {
     static let launchAtLoginOff = "已关闭开机自启"
     static let launchAtLoginFailed = "开机自启失败"
     static let latestVersion = "当前已是最新版本"
+    static let updateAvailable = "发现新版本"
     static let updateCheckFailed = "检查更新失败"
     static let updateFailed = "更新失败"
     static let recordingStarted = "已开始录音"

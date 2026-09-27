@@ -9,10 +9,16 @@ private enum MeetingDetailTypography {
     static let body = Font.system(size: 15)
 }
 
+private enum MeetingPaneMetrics {
+    static let sideColumnWidth: CGFloat = 246
+}
+
 struct MeetingView: View {
     @Environment(AppModel.self) private var app
     @State private var searchText = ""
     @State private var searchMatchedRecordIDs: Set<UUID>?
+    @State private var pendingSeekTime: TimeInterval?
+    @State private var citedPlayback = CitedAudioPlayback()
 
     var body: some View {
         JarvisContentArea(
@@ -54,16 +60,27 @@ struct MeetingView: View {
                                     searchText: searchText,
                                     matchedRecordIDs: searchMatchedRecordIDs
                                 )
-                                .frame(width: 246)
+                                .frame(width: MeetingPaneMetrics.sideColumnWidth)
                                 .frame(maxHeight: .infinity)
                                 .jarvisModulePanel()
 
                                 MeetingDetailPane(
+                                    pendingSeekTime: $pendingSeekTime,
+                                    citedPlayback: $citedPlayback,
                                     record: selectedRecord,
                                     isSearchEmpty: !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                         && filteredRecords.isEmpty
                                 )
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .jarvisModulePanel()
+
+                                MeetingActionItemsPanel(
+                                    record: selectedRecord,
+                                    citedPlayback: citedPlayback,
+                                    onToggleCitation: toggleCitation
+                                )
+                                .frame(width: MeetingPaneMetrics.sideColumnWidth)
+                                .frame(maxHeight: .infinity)
                                 .jarvisModulePanel()
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -84,6 +101,8 @@ struct MeetingView: View {
             app.refreshMeetingModelState()
         }
         .onChange(of: app.selectedMeetingID) { _, newValue in
+            pendingSeekTime = nil
+            citedPlayback = CitedAudioPlayback()
             if let newValue {
                 app.ensureMeetingDetailLoaded(newValue)
             }
@@ -126,6 +145,15 @@ struct MeetingView: View {
             searchText: searchText,
             matchedRecordIDs: searchMatchedRecordIDs
         )
+    }
+
+    private func toggleCitation(at time: TimeInterval) {
+        if citedPlayback.isPlaying, citedPlayback.activeTime == time {
+            citedPlayback.stopRequest += 1
+        } else {
+            citedPlayback.activeTime = time
+            pendingSeekTime = time
+        }
     }
 
     private var selectedRecord: MeetingRecord? {
@@ -478,68 +506,52 @@ private struct MeetingDetailPane: View {
     @FocusState private var isTitleFocused: Bool
     @State private var isTitleHovered = false
     @State private var draftTitle = ""
-    @State private var pendingSeekTime: TimeInterval?
+    @Binding var pendingSeekTime: TimeInterval?
+    @Binding var citedPlayback: CitedAudioPlayback
     let record: MeetingRecord?
     let isSearchEmpty: Bool
 
     var body: some View {
         Group {
             if let record {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            meetingHeader(record)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        meetingHeader(record)
 
-                            MeetingAudioSection(record: record, pendingSeekTime: $pendingSeekTime)
+                        MeetingAudioSection(
+                            record: record,
+                            pendingSeekTime: $pendingSeekTime,
+                            citedPlayback: $citedPlayback
+                        )
 
-                            if shouldShowProgress(for: record) {
-                                MeetingProcessingCard(state: app.meetingProcessingState)
-                            }
-
-                            if record.status == .failed || record.status == .summaryFailed,
-                               let errorMessage = record.errorMessage
-                            {
-                                MeetingFailureCard(record: record, message: errorMessage)
-                            }
-
-                            if let summary = record.summary {
-                                MeetingSummarySection(record: record, summary: summary) { segmentID in
-                                    guard let segment = record.transcript.first(where: { $0.id == segmentID }) else {
-                                        return
-                                    }
-                                    pendingSeekTime = segment.startTime
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        proxy.scrollTo(segment.id, anchor: .center)
-                                    }
-                                }
-                            } else if !record.transcript.isEmpty,
-                                      record.status != .summarizing,
-                                      record.status != .failed,
-                                      record.status != .summaryFailed
-                            {
-                                MeetingNeedsSummaryCard(record: record)
-                            }
-
-                            if !record.speakers.isEmpty {
-                                MeetingSpeakerSection(record: record)
-                            }
-
-                            if !record.transcript.isEmpty {
-                                MeetingTranscriptSection(record: record) { time in
-                                    pendingSeekTime = time
-                                }
-                            } else if !shouldShowProgress(for: record) {
-                                JarvisEmptyState(
-                                    icon: "waveform",
-                                    title: "还没有逐字稿",
-                                    message: "结束录音后，Jarvis 会自动处理这段会议。"
-                                )
-                            }
+                        if shouldShowProgress(for: record) {
+                            MeetingProcessingCard(state: app.meetingProcessingState)
                         }
-                        .frame(maxWidth: 860, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(JarvisMetrics.pageInset)
+
+                        if record.status == .failed || record.status == .summaryFailed,
+                           let errorMessage = record.errorMessage
+                        {
+                            MeetingFailureCard(record: record, message: errorMessage)
+                        }
+
+                        if let summary = record.summary {
+                            MeetingSummarySection(
+                                record: record,
+                                summary: summary,
+                                citedPlayback: citedPlayback,
+                                onToggleCitation: toggleCitation
+                            )
+                        } else if !record.transcript.isEmpty,
+                                  record.status != .summarizing,
+                                  record.status != .failed,
+                                  record.status != .summaryFailed
+                        {
+                            MeetingNeedsSummaryCard(record: record)
+                        }
                     }
+                    .frame(maxWidth: 860, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(JarvisMetrics.pageInset)
                 }
             } else if isSearchEmpty {
                 JarvisEmptyState(
@@ -629,6 +641,15 @@ private struct MeetingDetailPane: View {
         case .transcribing, .summarizing: .orange
         case .transcribed: Color.jarvisTextSecondary
         case .ready: .green
+        }
+    }
+
+    private func toggleCitation(at time: TimeInterval) {
+        if citedPlayback.isPlaying, citedPlayback.activeTime == time {
+            citedPlayback.stopRequest += 1
+        } else {
+            citedPlayback.activeTime = time
+            pendingSeekTime = time
         }
     }
 
@@ -730,6 +751,7 @@ private struct MeetingAudioSection: View {
     @Environment(AppModel.self) private var app
     let record: MeetingRecord
     @Binding var pendingSeekTime: TimeInterval?
+    @Binding var citedPlayback: CitedAudioPlayback
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -742,7 +764,8 @@ private struct MeetingAudioSection: View {
                     audioURL: app.meetingMicrophoneAudioURL(for: record),
                     isRecording: true,
                     recordingElapsed: app.meetingElapsed,
-                    pendingSeekTime: $pendingSeekTime
+                    pendingSeekTime: $pendingSeekTime,
+                    citedPlayback: $citedPlayback
                 )
             } else {
                 MeetingAudioPlayer(
@@ -750,10 +773,21 @@ private struct MeetingAudioSection: View {
                     audioURL: app.meetingAudioURL(for: record),
                     isRecording: false,
                     recordingElapsed: 0,
-                    pendingSeekTime: $pendingSeekTime
+                    pendingSeekTime: $pendingSeekTime,
+                    citedPlayback: $citedPlayback
                 )
             }
         }
+    }
+}
+
+private struct CitedAudioPlayback: Equatable {
+    var activeTime: TimeInterval?
+    var isPlaying = false
+    var stopRequest = 0
+
+    func isPlayingCitation(_ time: TimeInterval) -> Bool {
+        isPlaying && activeTime == time
     }
 }
 
@@ -842,6 +876,12 @@ private final class MeetingAudioPlaybackController: ObservableObject {
         currentTime = boundedTime
     }
 
+    func haltPlayback() {
+        audioPlayer?.stop()
+        currentTime = audioPlayer?.currentTime ?? 0
+        isPlaying = false
+    }
+
     func stop() {
         resetPlayback()
         loadedURL = nil
@@ -876,6 +916,7 @@ private struct MeetingAudioPlayer: View {
     let isRecording: Bool
     let recordingElapsed: TimeInterval
     @Binding var pendingSeekTime: TimeInterval?
+    @Binding var citedPlayback: CitedAudioPlayback
     @StateObject private var controller = MeetingAudioPlaybackController()
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
@@ -908,6 +949,7 @@ private struct MeetingAudioPlayer: View {
                     HStack(spacing: 10) {
                         Button {
                             controller.togglePlayback()
+                            citedPlayback.isPlaying = controller.isPlaying
                         } label: {
                             Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill")
                                 .frame(width: 28, height: 28)
@@ -918,7 +960,10 @@ private struct MeetingAudioPlayer: View {
                         Slider(
                             value: Binding(
                                 get: { controller.currentTime },
-                                set: { controller.seek(to: $0) }
+                                set: { newValue in
+                                    controller.seek(to: newValue)
+                                    citedPlayback.activeTime = nil
+                                }
                             ),
                             in: 0 ... max(controller.duration, 1)
                         )
@@ -984,12 +1029,22 @@ private struct MeetingAudioPlayer: View {
             if !controller.isPlaying {
                 controller.togglePlayback()
             }
+            citedPlayback.activeTime = newValue
+            citedPlayback.isPlaying = controller.isPlaying
             pendingSeekTime = nil
+        }
+        .onChange(of: citedPlayback.stopRequest) { _, _ in
+            guard !isRecording else { return }
+            controller.haltPlayback()
+            citedPlayback.isPlaying = false
         }
         .onReceive(playbackTimer) { _ in
             guard !isRecording else { return }
             controller.refreshAvailability()
             controller.refreshProgress()
+            if citedPlayback.isPlaying != controller.isPlaying {
+                citedPlayback.isPlaying = controller.isPlaying
+            }
         }
         .onDisappear {
             controller.stop()
@@ -1009,15 +1064,21 @@ private struct MeetingProcessingCard: View {
                     Text(state.title)
                         .font(JarvisTypography.bodyEmphasis)
                     Spacer()
-                    if case let .processing(_, progress) = state {
+                    if case let .processing(_, progress) = state, let progress {
                         Text("\(Int(progress * 100))%")
                             .font(JarvisTypography.monospaced)
                             .foregroundStyle(Color.jarvisTextSecondary)
                     }
                 }
                 if case let .processing(_, progress) = state {
-                    ProgressView(value: progress)
-                        .tint(Color.jarvisAccent)
+                    if let progress {
+                        ProgressView(value: progress)
+                            .tint(Color.jarvisAccent)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(Color.jarvisAccent)
+                    }
                 }
                 Text("原始音频文件会保留在本机；只有你主动删除会议时才会删除。")
                     .font(JarvisTypography.caption)
@@ -1091,7 +1152,8 @@ private struct MeetingSummarySection: View {
     @State private var isRegenerationConfirmationPresented = false
     let record: MeetingRecord
     let summary: MeetingSummary
-    let onSeekToSegment: (UUID) -> Void
+    let citedPlayback: CitedAudioPlayback
+    let onToggleCitation: (TimeInterval) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1104,11 +1166,6 @@ private struct MeetingSummarySection: View {
                 .buttonStyle(.borderless)
                 .disabled(app.meetingActiveProcessingID != nil)
                 .accessibilityHint("根据当前逐字稿重新生成会议总结")
-                if !summary.actionItems.isEmpty {
-                    Text("\(summary.actionItems.filter { !$0.isCompleted }.count) 项待办")
-                        .font(JarvisTypography.captionEmphasis)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
             }
             JarvisCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -1124,7 +1181,6 @@ private struct MeetingSummarySection: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    actionList
                     summaryList(
                         title: "已确认决策",
                         icon: "checkmark.circle",
@@ -1186,177 +1242,143 @@ private struct MeetingSummarySection: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(alignment: .top, spacing: 8) {
-                            Circle()
-                                .fill(Color.jarvisAccent)
-                                .frame(width: 5, height: 5)
-                                .padding(.top, 8)
-                            Text(item)
-                                .font(MeetingDetailTypography.body)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        sourceLinks(for: kind, text: item)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var actionList: some View {
-        if !summary.actionItems.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("待办事项", systemImage: "checklist")
-                    .font(MeetingDetailTypography.h3)
-                    .accessibilityAddTraits(.isHeader)
-                ForEach(summary.actionItems) { item in
-                    HStack(alignment: .top, spacing: 10) {
-                        Button {
-                            app.setMeetingActionItemCompleted(
-                                recordID: record.id,
-                                actionItemID: item.id,
-                                isCompleted: !item.isCompleted
-                            )
-                        } label: {
-                            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 17))
-                                .foregroundStyle(item.isCompleted ? Color.jarvisAccent : Color.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(item.isCompleted ? "标记待办为未完成" : "标记待办为已完成：\(item.task)")
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.task)
-                                .font(MeetingDetailTypography.body)
-                                .strikethrough(item.isCompleted)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(spacing: 10) {
-                                Text("负责人：\(item.owner.isEmpty ? "未指定" : item.owner)")
-                                Text("截止：\(item.dueDate.isEmpty ? "未指定" : item.dueDate)")
-                            }
-                            .font(JarvisTypography.caption)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                            sourceLinks(for: .actionItem, text: item.task)
-                        }
-                    }
-                    .padding(.vertical, 7)
-                    if item.id != summary.actionItems.last?.id {
-                        Divider().opacity(0.55)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func sourceLinks(for kind: MeetingFactKind, text: String) -> some View {
-        let citations = (summary.citations ?? []).filter { $0.kind == kind && $0.text == text }
-        if let citation = citations.first {
-            HStack(spacing: 8) {
-                ForEach(Array(citation.sourceSegmentIDs.prefix(2)), id: \.self) { segmentID in
-                    if let segment = record.transcript.first(where: { $0.id == segmentID }) {
-                        Button {
-                            onSeekToSegment(segmentID)
-                        } label: {
-                            Label(
-                                "原文 \(formatMeetingTimestamp(segment.startTime))",
-                                systemImage: "arrow.uturn.down"
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .font(JarvisTypography.caption)
-                        .foregroundStyle(Color.jarvisAccent)
-                        .accessibilityHint("跳到对应逐字稿并播放录音")
-                    }
-                }
-                if citation.sourceSegmentIDs.count > 2 {
-                    Text("+\(citation.sourceSegmentIDs.count - 2) 处")
-                        .font(JarvisTypography.caption)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                }
-            }
-        }
-    }
-}
-
-private struct MeetingSpeakerSection: View {
-    let record: MeetingRecord
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            MeetingSectionHeader(title: "说话人", systemImage: "person.2")
-            MeetingChipFlowLayout(spacing: 8) {
-                ForEach(record.speakers) { speaker in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(speakerColor(speaker.colorIndex))
-                            .frame(width: 8, height: 8)
-                        Text(speaker.name)
-                            .font(MeetingDetailTypography.h3)
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(Color.jarvisPanel, in: Capsule())
-                }
-            }
-        }
-    }
-}
-
-private struct MeetingTranscriptSection: View {
-    let record: MeetingRecord
-    let onSeek: (TimeInterval) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            MeetingSectionHeader(title: "逐字稿", systemImage: "text.quote")
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(record.transcript) { segment in
-                    let speaker = record.speakers.first { $0.id == segment.speakerID }
-                    Button {
-                        onSeek(segment.startTime)
-                    } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            Circle()
-                                .fill(speakerColor(speaker?.colorIndex ?? 0))
-                                .frame(width: 9, height: 9)
-                                .padding(.top, 5)
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 8) {
-                                    Text(speaker?.name ?? segment.speakerID)
-                                        .font(MeetingDetailTypography.h3)
-                                    Text(formatMeetingTimestamp(segment.startTime))
-                                        .font(JarvisTypography.monospaced)
-                                        .foregroundStyle(Color.jarvisTextSecondary)
-                                }
-                                Text(segment.text)
-                                    .font(MeetingDetailTypography.body)
-                                    .lineSpacing(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .multilineTextAlignment(.leading)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        "\(speaker?.name ?? segment.speakerID)，"
-                            + "\(formatMeetingTimestamp(segment.startTime))，\(segment.text)"
+                    let playTime = meetingSourcePlayTime(
+                        record: record,
+                        summary: summary,
+                        kind: kind,
+                        text: item
                     )
-                    .accessibilityHint("双击从这段逐字稿开始播放录音")
-                    .id(segment.id)
-                    if segment.id != record.transcript.last?.id {
-                        Divider().opacity(0.55)
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(Color.jarvisAccent)
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 8)
+                        MeetingCitedSentence(
+                            text: item,
+                            playTime: playTime,
+                            isPlaying: playTime.map(citedPlayback.isPlayingCitation) ?? false,
+                            onToggle: onToggleCitation
+                        )
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .jarvisContentSurface(cornerRadius: JarvisMetrics.cardRadius)
         }
     }
+}
+
+private struct MeetingActionItemsPanel: View {
+    @Environment(AppModel.self) private var app
+    let record: MeetingRecord?
+    let citedPlayback: CitedAudioPlayback
+    let onToggleCitation: (TimeInterval) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("待办事项")
+                    .font(JarvisTypography.bodyEmphasis)
+                Spacer()
+                Text("\(actionItems.count)")
+                    .font(JarvisTypography.captionEmphasis)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            }
+            .padding(.horizontal, 10)
+            .accessibilityAddTraits(.isHeader)
+
+            if actionItems.isEmpty {
+                Text(emptyMessage)
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 10)
+            } else if let record, let summary = record.summary {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(actionItems) { item in
+                            actionRow(item, record: record, summary: summary)
+                            if item.id != actionItems.last?.id {
+                                Divider().opacity(0.55)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 12)
+                }
+            }
+        }
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var actionItems: [MeetingActionItem] {
+        record?.summary?.actionItems ?? []
+    }
+
+    private var emptyMessage: String {
+        guard record != nil else { return "选择一条会议" }
+        guard record?.summary != nil else { return "生成总结后，待办会显示在这里" }
+        return "这次会议没有待办"
+    }
+
+    private func actionRow(
+        _ item: MeetingActionItem,
+        record: MeetingRecord,
+        summary: MeetingSummary
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Button {
+                app.setMeetingActionItemCompleted(
+                    recordID: record.id,
+                    actionItemID: item.id,
+                    isCompleted: !item.isCompleted
+                )
+            } label: {
+                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(item.isCompleted ? Color.jarvisAccent : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.isCompleted ? "标记待办为未完成" : "标记待办为已完成：\(item.task)")
+
+            VStack(alignment: .leading, spacing: 4) {
+                let playTime = meetingSourcePlayTime(
+                    record: record,
+                    summary: summary,
+                    kind: .actionItem,
+                    text: item.task
+                )
+                MeetingCitedSentence(
+                    text: item.task,
+                    isStrikethrough: item.isCompleted,
+                    playTime: playTime,
+                    isPlaying: playTime.map(citedPlayback.isPlayingCitation) ?? false,
+                    onToggle: onToggleCitation
+                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("负责人：\(item.owner.isEmpty ? "未指定" : item.owner)")
+                    Text("截止：\(item.dueDate.isEmpty ? "未指定" : item.dueDate)")
+                }
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+private func meetingSourcePlayTime(
+    record: MeetingRecord,
+    summary: MeetingSummary,
+    kind: MeetingFactKind,
+    text: String
+) -> TimeInterval? {
+    guard let citation = summary.citations?.first(where: { $0.kind == kind && $0.text == text }) else {
+        return nil
+    }
+    let times = citation.sourceSegmentIDs.compactMap { segmentID in
+        record.transcript.first { $0.id == segmentID }?.startTime
+    }
+    return times.min()
 }
 
 private func formatMeetingDuration(_ duration: TimeInterval) -> String {
@@ -1403,49 +1425,46 @@ private func formatMeetingTimestamp(_ time: TimeInterval) -> String {
     MeetingRecordingStyle.formatTimestamp(time)
 }
 
-@MainActor
-private func speakerColor(_ index: Int) -> Color {
-    [Color.jarvisAccent, .purple, .orange, .green, .pink, .indigo][index % 6]
-}
+private struct MeetingCitedSentence: View {
+    let text: String
+    var isStrikethrough = false
+    var playTime: TimeInterval?
+    var isPlaying = false
+    let onToggle: (TimeInterval) -> Void
 
-private struct MeetingChipFlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
-        arrange(in: proposal.width ?? 0, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
-        let frames = arrange(in: bounds.width, subviews: subviews).frames
-        for (index, frame) in frames.enumerated() where index < subviews.count {
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
-                proposal: ProposedViewSize(frame.size)
-            )
-        }
-    }
-
-    private func arrange(in width: CGFloat, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
-        let availableWidth = max(width, 1)
-        var frames: [CGRect] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var maxX: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > availableWidth {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
+    var body: some View {
+        if let playTime {
+            Button {
+                onToggle(playTime)
+            } label: {
+                citationText
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
             }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-            maxX = max(maxX, x - spacing)
+            .buttonStyle(.plain)
+            .help(isPlaying ? "停止播放" : "播放原文 \(formatMeetingTimestamp(playTime))")
+            .accessibilityLabel(text)
+            .accessibilityHint(isPlaying ? "停止播放" : "从对应位置播放录音")
+        } else {
+            Text(text)
+                .font(MeetingDetailTypography.body)
+                .foregroundStyle(Color.primary)
+                .strikethrough(isStrikethrough)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
 
-        return (CGSize(width: max(maxX, availableWidth), height: y + rowHeight), frames)
+    private var citationText: Text {
+        let sentence = Text(text)
+            .font(MeetingDetailTypography.body)
+            .foregroundStyle(Color.primary)
+            .strikethrough(isStrikethrough)
+        let symbol = Text(Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle.fill"))
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color.jarvisAccent)
+            .baselineOffset(-1)
+        return Text("\(sentence)\u{00A0}\(symbol)")
     }
 }

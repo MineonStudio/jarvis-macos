@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 import Security
 
 /// Re-signs an installed copy with a certificate that lives on this Mac.
@@ -63,7 +63,7 @@ enum JarvisLocalSigning {
             of: "certificate root = H\"",
             options: .caseInsensitive
         ),
-              let end = requirement[marker.upperBound...].firstIndex(of: "\"")
+            let end = requirement[marker.upperBound...].firstIndex(of: "\"")
         else {
             return nil
         }

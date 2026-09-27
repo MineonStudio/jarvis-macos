@@ -662,17 +662,24 @@ extension AppModel {
                     build: JarvisAppVersion.build
                 )
                 if hasNewVersion {
-                    prepareUpdate(release)
+                    updateState = .available(release)
+                    showToast("\(JarvisFeedbackCopy.updateAvailable) \(displayUpdateVersion(release.version))")
                 } else {
                     updateState = .upToDate
                     showToast(JarvisFeedbackCopy.latestVersion)
                 }
             } catch {
-                updateState = .failed(message: error.localizedDescription)
-                showToast(JarvisFeedbackCopy.updateCheckFailed)
+                let message = Self.updateFailureMessage(error)
+                updateState = .failed(message: message)
+                showToast(message)
                 JarvisLog.error(category: .update, event: "release.check.failed", error: error)
             }
         }
+    }
+
+    func downloadAndInstallUpdate() {
+        guard case let .available(release) = updateState else { return }
+        prepareUpdate(release)
     }
 
     func installPreparedUpdateNow() {
@@ -706,11 +713,33 @@ extension AppModel {
                 showToast("更新已下载，正在替换安装")
                 installPreparedUpdateNow()
             } catch {
-                updateState = .failed(message: error.localizedDescription)
-                showToast(JarvisFeedbackCopy.updateFailed)
+                let message = Self.updateFailureMessage(error)
+                updateState = .failed(message: message)
+                showToast(message)
                 JarvisLog.error(category: .update, event: "install.prepare.failed", error: error)
             }
         }
+    }
+
+    private static func updateFailureMessage(_ error: Error) -> String {
+        if let updateError = error as? JarvisUpdateError {
+            return updateError.localizedDescription
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost:
+                return "网络超时，请稍后重试"
+            case .badServerResponse, .resourceUnavailable:
+                return "更新服务器没有返回有效结果"
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
+    }
+
+    private func displayUpdateVersion(_ version: String) -> String {
+        version.lowercased().hasPrefix("v") ? version : "v\(version)"
     }
 
     @discardableResult

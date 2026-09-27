@@ -3,14 +3,19 @@ import Foundation
 
 struct MeetingSummaryService: Sendable {
     typealias CheckpointHandler = @MainActor @Sendable (MeetingSummaryCheckpoint) -> Void
+    typealias ProgressHandler = @MainActor @Sendable (Double?) -> Void
 
     let api: any AITextCompletionAPI
+
+    /// Fact extraction can run this many chunks at once. Synthesis batches use the same cap.
+    private static let maxConcurrentSummaryRequests = 3
 
     func summarize(
         record: MeetingRecord,
         configuration: AIAPIConfiguration,
         checkpoint: MeetingSummaryCheckpoint? = nil,
-        onCheckpoint: CheckpointHandler? = nil
+        onCheckpoint: CheckpointHandler? = nil,
+        onProgress: ProgressHandler? = nil
     ) async throws -> MeetingSummary {
         let chunks = makeChunks(from: record.transcript, speakers: record.speakers)
         guard !chunks.isEmpty else {
@@ -18,22 +23,115 @@ struct MeetingSummaryService: Sendable {
         }
 
         let fingerprint = transcriptFingerprint(record.transcript)
-        var facts: [MeetingFact]
-        var completedChunkCount: Int
-        if let checkpoint,
-           checkpoint.pipelineVersion == MeetingSummaryCheckpoint.currentPipelineVersion,
-           checkpoint.transcriptFingerprint == fingerprint,
-           checkpoint.totalChunkCount == chunks.count,
-           checkpoint.completedChunkCount >= 0,
-           checkpoint.completedChunkCount <= chunks.count
-        {
-            facts = checkpoint.facts
-            completedChunkCount = checkpoint.completedChunkCount
-        } else {
-            facts = []
-            completedChunkCount = 0
+        let resumable = resumableCheckpoint(checkpoint, fingerprint: fingerprint, chunkCount: chunks.count)
+        if shouldSummarizeDirectly(chunks: chunks, checkpoint: resumable) {
+            return try await summarizeDirectly(
+                record: record,
+                chunks: chunks,
+                fingerprint: fingerprint,
+                configuration: configuration,
+                onCheckpoint: onCheckpoint,
+                onProgress: onProgress
+            )
         }
 
+        return try await summarizeFromFacts(
+            record: record,
+            chunks: chunks,
+            fingerprint: fingerprint,
+            checkpoint: resumable,
+            configuration: configuration,
+            onCheckpoint: onCheckpoint,
+            onProgress: onProgress
+        )
+    }
+
+    /// One request is faster than extract-then-summarize, and the model can keep
+    /// the conclusion complete because it still sees the whole transcript.
+    private func shouldSummarizeDirectly(
+        chunks: [TranscriptChunk],
+        checkpoint: MeetingSummaryCheckpoint?
+    ) -> Bool {
+        if checkpoint?.directSummary == true {
+            return true
+        }
+        guard chunks.count == 1 else { return false }
+        guard let checkpoint else { return true }
+        return checkpoint.completedChunkCount == 0 && checkpoint.facts.isEmpty
+    }
+
+    private func resumableCheckpoint(
+        _ checkpoint: MeetingSummaryCheckpoint?,
+        fingerprint: String,
+        chunkCount: Int
+    ) -> MeetingSummaryCheckpoint? {
+        guard let checkpoint,
+              checkpoint.pipelineVersion == MeetingSummaryCheckpoint.currentPipelineVersion,
+              checkpoint.transcriptFingerprint == fingerprint,
+              checkpoint.totalChunkCount == chunkCount,
+              checkpoint.completedChunkCount >= 0,
+              checkpoint.completedChunkCount <= chunkCount
+        else {
+            return nil
+        }
+        return checkpoint
+    }
+
+    private func summarizeDirectly(
+        record: MeetingRecord,
+        chunks: [TranscriptChunk],
+        fingerprint: String,
+        configuration: AIAPIConfiguration,
+        onCheckpoint: CheckpointHandler?,
+        onProgress: ProgressHandler?
+    ) async throws -> MeetingSummary {
+        await report(nil, to: onProgress)
+        let checkpoint = MeetingSummaryCheckpoint(
+            transcriptFingerprint: fingerprint,
+            stage: .synthesizing,
+            completedChunkCount: chunks.count,
+            totalChunkCount: chunks.count,
+            directSummary: true
+        )
+        await publish(checkpoint, to: onCheckpoint)
+        let summary = try await requestDirectSummary(
+            title: record.title,
+            chunks: chunks,
+            configuration: configuration
+        )
+        await publish(
+            MeetingSummaryCheckpoint(
+                transcriptFingerprint: fingerprint,
+                stage: .completed,
+                completedChunkCount: chunks.count,
+                totalChunkCount: chunks.count,
+                directSummary: true
+            ),
+            to: onCheckpoint
+        )
+        return validatedSummary(summary, transcript: record.transcript)
+    }
+
+    private func summarizeFromFacts(
+        record: MeetingRecord,
+        chunks: [TranscriptChunk],
+        fingerprint: String,
+        checkpoint: MeetingSummaryCheckpoint?,
+        configuration: AIAPIConfiguration,
+        onCheckpoint: CheckpointHandler?,
+        onProgress: ProgressHandler?
+    ) async throws -> MeetingSummary {
+        var facts = checkpoint?.facts ?? []
+        var completedChunkCount = checkpoint?.completedChunkCount ?? 0
+        await report(
+            Self.summaryProgress(
+                completedChunks: completedChunkCount,
+                totalChunks: chunks.count,
+                completedSynthesisSteps: 0,
+                totalSynthesisSteps: 1
+            ),
+            to: onProgress
+        )
         if completedChunkCount == 0 {
             await publish(
                 MeetingSummaryCheckpoint(
@@ -46,31 +144,23 @@ struct MeetingSummaryService: Sendable {
             )
         }
 
-        for index in completedChunkCount ..< chunks.count {
-            try Task.checkCancellation()
-            let extractedFacts = try await requestFacts(
-                title: record.title,
-                chunk: chunks[index],
-                configuration: configuration
-            )
-            facts = mergeFacts(facts + extractedFacts)
-            await publish(
-                MeetingSummaryCheckpoint(
-                    transcriptFingerprint: fingerprint,
-                    stage: .extractingFacts,
-                    completedChunkCount: index + 1,
-                    totalChunkCount: chunks.count,
-                    facts: facts
-                ),
-                to: onCheckpoint
-            )
-        }
+        facts = try await extractFacts(
+            title: record.title,
+            chunks: chunks,
+            configuration: configuration,
+            fingerprint: fingerprint,
+            completedChunkCount: completedChunkCount,
+            facts: facts,
+            onCheckpoint: onCheckpoint,
+            onProgress: onProgress
+        )
+        completedChunkCount = chunks.count
 
         await publish(
             MeetingSummaryCheckpoint(
                 transcriptFingerprint: fingerprint,
                 stage: .synthesizing,
-                completedChunkCount: chunks.count,
+                completedChunkCount: completedChunkCount,
                 totalChunkCount: chunks.count,
                 facts: facts
             ),
@@ -89,7 +179,18 @@ struct MeetingSummaryService: Sendable {
             try await requestSummary(
                 title: record.title,
                 facts: facts,
-                configuration: configuration
+                configuration: configuration,
+                onSynthesisStep: { completed, total in
+                    await self.report(
+                        Self.summaryProgress(
+                            completedChunks: chunks.count,
+                            totalChunks: chunks.count,
+                            completedSynthesisSteps: completed,
+                            totalSynthesisSteps: total
+                        ),
+                        to: onProgress
+                    )
+                }
             )
         }
 
@@ -103,11 +204,101 @@ struct MeetingSummaryService: Sendable {
             ),
             to: onCheckpoint
         )
+        return validatedSummary(summary, transcript: record.transcript)
+    }
+
+    private func extractFacts(
+        title: String,
+        chunks: [TranscriptChunk],
+        configuration: AIAPIConfiguration,
+        fingerprint: String,
+        completedChunkCount: Int,
+        facts: [MeetingFact],
+        onCheckpoint: CheckpointHandler?,
+        onProgress: ProgressHandler?
+    ) async throws -> [MeetingFact] {
+        var facts = facts
+        var completedPrefix = completedChunkCount
+        guard completedPrefix < chunks.count else { return facts }
+
+        var nextIndex = completedPrefix
+        var buffered: [Int: [MeetingFact]] = [:]
+        try await withThrowingTaskGroup(of: (Int, [MeetingFact]).self) { group in
+            func enqueue() {
+                guard nextIndex < chunks.count else { return }
+                let index = nextIndex
+                nextIndex += 1
+                let chunk = chunks[index]
+                group.addTask { [self] in
+                    let extracted = try await self.requestFacts(
+                        title: title,
+                        chunk: chunk,
+                        configuration: configuration
+                    )
+                    return (index, extracted)
+                }
+            }
+
+            let initialCount = min(Self.maxConcurrentSummaryRequests, chunks.count - completedPrefix)
+            for _ in 0 ..< initialCount {
+                enqueue()
+            }
+
+            for try await (index, extracted) in group {
+                buffered[index] = extracted
+                while let ready = buffered.removeValue(forKey: completedPrefix) {
+                    facts = mergeFacts(facts + ready)
+                    completedPrefix += 1
+                    await publish(
+                        MeetingSummaryCheckpoint(
+                            transcriptFingerprint: fingerprint,
+                            stage: .extractingFacts,
+                            completedChunkCount: completedPrefix,
+                            totalChunkCount: chunks.count,
+                            facts: facts
+                        ),
+                        to: onCheckpoint
+                    )
+                    await report(
+                        Self.summaryProgress(
+                            completedChunks: completedPrefix,
+                            totalChunks: chunks.count,
+                            completedSynthesisSteps: 0,
+                            totalSynthesisSteps: 1
+                        ),
+                        to: onProgress
+                    )
+                }
+                enqueue()
+            }
+        }
+        return facts
+    }
+
+    /// Extraction fills the first 80% of the bar. Synthesis uses the rest, and
+    /// stops at 99 so 100% is reserved for the finished state.
+    static func summaryProgress(
+        completedChunks: Int,
+        totalChunks: Int,
+        completedSynthesisSteps: Int,
+        totalSynthesisSteps: Int
+    ) -> Double {
+        let safeChunks = max(totalChunks, 1)
+        let extraction = 0.8 * Double(min(max(completedChunks, 0), safeChunks)) / Double(safeChunks)
+        let safeSteps = max(totalSynthesisSteps, 1)
+        let synthesis = 0.19 * Double(min(max(completedSynthesisSteps, 0), safeSteps)) / Double(safeSteps)
+        return min(0.99, extraction + synthesis)
+    }
+
+    private func validatedSummary(
+        _ summary: MeetingSummary,
+        transcript: [MeetingTranscriptSegment]
+    ) -> MeetingSummary {
         var validatedSummary = summary
         validatedSummary.citations = normalizedCitations(
             summary.citations ?? [],
             summary: summary,
-            allowedSegmentIDs: Set(record.transcript.map(\.id))
+            allowedSegmentIDs: Set(transcript.map(\.id))
         )
         return validatedSummary
     }
@@ -131,6 +322,20 @@ struct MeetingSummaryService: Sendable {
     // every extracted fact is included in one of the requests below.
     private static let synthesisBatchTargetTokens = 3200
     private static let transcriptChunkTargetTokens = 4200
+
+    private static let summaryJSONShape = """
+    {"overview":"会议结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"],"citations":[{"kind":"keyPoint|decision|actionItem|openQuestion","text":"与对应条目完全相同","sourceSegmentIDs":["逐字稿片段ID"]}]}
+    """
+
+    private static let overviewInstruction = """
+    overview 是给用户看的会议结论，要覆盖这次会议已经明确的结果，不要压缩成一句话。按议题写成一段完整说明，把结论、决定、执行安排和仍未解决但会影响后续的要点都写进去；不同事项分句写清楚。可以写多句，但不要空话，也不要编造输入里没有的内容。
+    """
+
+    private static let summaryItemRules = """
+    关键讨论按议题保留，合并重复表述；不同议题不要并成一条，也不要因为条数删掉影响决策、执行或风险的内容。
+    决策、待办和仍影响执行的未解决问题必须完整保留，不设条数上限。每个待办只写一个可执行动作，不要把不同负责人或截止时间的任务合并。
+    没有明确负责人或截止时间时保留空字符串，不要编造。
+    """
 
     private func requestFacts(
         title: String,
@@ -160,26 +365,63 @@ struct MeetingSummaryService: Sendable {
         return try decodeFacts(raw, allowedSegmentIDs: Set(chunk.segmentIDs))
     }
 
+    private func requestDirectSummary(
+        title: String,
+        chunks: [TranscriptChunk],
+        configuration: AIAPIConfiguration
+    ) async throws -> MeetingSummary {
+        let systemPrompt = """
+        你是严谨的中文会议纪要助手。只能根据逐字稿生成纪要，不要补充原文没有的内容。
+        必须只返回 JSON 对象，格式为：
+        \(Self.summaryJSONShape)
+        \(Self.overviewInstruction)
+        \(Self.summaryItemRules)
+        每条结论、讨论、决策、待办和未解决问题都要引用来源；sourceSegmentIDs 只能使用逐字稿方括号里的片段 ID。
+        只能返回 JSON，不要 Markdown，不要解释文字。
+        """
+        let userPrompt = """
+        会议标题：\(title)
+
+        逐字稿：
+        \(chunks.map(\.text).joined(separator: "\n"))
+        """
+        let raw = try await api.complete(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            configuration: configuration,
+            options: .meetingSummary
+        )
+        return try decodeSummary(raw)
+    }
+
     private func requestSummary(
         title: String,
         facts: [MeetingFact],
-        configuration: AIAPIConfiguration
+        configuration: AIAPIConfiguration,
+        onSynthesisStep: @escaping @MainActor (Int, Int) async -> Void
     ) async throws -> MeetingSummary {
-        var partialSummaries = try await summarizeFactBatches(
-            title: title,
-            facts: facts,
-            configuration: configuration
-        )
+        let batches = makeSynthesisFactBatches(from: facts)
+        guard !batches.isEmpty else {
+            throw AIAPIError.emptyGeneratedContent(context: "会议事实提取")
+        }
+        let synthesisSteps = max(batches.count, 1)
+        var partialSummaries = try await runInParallel(batches) { [self] batch in
+            try await self.requestSummary(
+                title: title,
+                factsText: self.factsJSON(batch),
+                configuration: configuration
+            )
+        } onFinished: { finished, _ in
+            await onSynthesisStep(finished, synthesisSteps)
+        }
         while partialSummaries.count > 1 {
-            let batches = makeSummaryBatches(from: partialSummaries)
-            var mergedSummaries: [MeetingSummary] = []
-            for batch in batches {
-                let merged = try await requestSummaryMerge(
+            let mergeBatches = makeSummaryBatches(from: partialSummaries)
+            let mergedSummaries = try await runInParallel(mergeBatches) { [self] batch in
+                try await self.requestSummaryMerge(
                     title: title,
                     summaries: batch,
                     configuration: configuration
                 )
-                mergedSummaries.append(merged)
             }
             if mergedSummaries.count >= partialSummaries.count {
                 let firstBatch = Array(partialSummaries.prefix(2))
@@ -199,46 +441,39 @@ struct MeetingSummaryService: Sendable {
         return summary
     }
 
-    private func summarizeFactBatches(
+    private func requestSummary(
         title: String,
-        facts: [MeetingFact],
+        factsText: String,
         configuration: AIAPIConfiguration
-    ) async throws -> [MeetingSummary] {
-        let batches = makeSynthesisFactBatches(from: facts)
-        guard !batches.isEmpty else {
-            throw AIAPIError.emptyGeneratedContent(context: "会议事实提取")
-        }
-        var summaries: [MeetingSummary] = []
-        for batch in batches {
-            let factsData = try JSONEncoder().encode(batch)
-            let factsText = String(decoding: factsData, as: UTF8.self)
-            let systemPrompt = """
-            你是严谨的中文会议纪要助手。只能根据给出的事实生成纪要，不要补充事实之外的内容。
-            必须只返回 JSON 对象，格式为：
-            {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"],"citations":[{"kind":"keyPoint|decision|actionItem|openQuestion","text":"与对应条目完全相同","sourceSegmentIDs":["逐字稿片段ID"]}]}
-            概览只写 1 句，控制在 80 个汉字以内，先说会议结论或当前状态。
-            关键讨论最多 5 条，每条不超过 50 个汉字；合并同一议题，优先保留影响决策、执行或风险的内容，省略重复背景和闲聊。
-            决策、待办和仍影响执行的未解决问题必须完整保留，不设条数上限。每个待办只写一个可执行动作，不要把不同负责人或截止时间的任务合并。
-            没有明确负责人或截止时间时保留空字符串，不要编造。每条决策、待办和未解决问题都要引用来源；sourceSegmentIDs 只能使用输入事实中出现的 ID。
-            去掉不同措辞表达的重复内容；同一事项在不同分块重复出现时合并为一条。
-            只能返回 JSON，不要 Markdown，不要解释文字。
-            """
-            let userPrompt = """
-            会议标题：\(title)
+    ) async throws -> MeetingSummary {
+        let systemPrompt = """
+        你是严谨的中文会议纪要助手。只能根据给出的事实生成纪要，不要补充事实之外的内容。
+        必须只返回 JSON 对象，格式为：
+        \(Self.summaryJSONShape)
+        \(Self.overviewInstruction)
+        \(Self.summaryItemRules)
+        每条决策、待办、未解决问题和讨论要点都要引用来源；sourceSegmentIDs 只能使用输入事实中出现的 ID。
+        去掉不同措辞表达的重复内容；同一事项在不同分块重复出现时合并为一条。
+        只能返回 JSON，不要 Markdown，不要解释文字。
+        """
+        let userPrompt = """
+        会议标题：\(title)
 
-            已验证的会议事实：
-            \(factsText)
-            """
-            let raw = try await api.complete(
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                configuration: configuration,
-                options: .meetingSummary
-            )
-            let summary = try decodeSummary(raw)
-            summaries.append(summary)
-        }
-        return summaries
+        已验证的会议事实：
+        \(factsText)
+        """
+        let raw = try await api.complete(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            configuration: configuration,
+            options: .meetingSummary
+        )
+        return try decodeSummary(raw)
+    }
+
+    private func factsJSON(_ facts: [SynthesisFact]) throws -> String {
+        let data = try JSONEncoder().encode(facts)
+        return String(decoding: data, as: UTF8.self)
     }
 
     private func requestSummaryMerge(
@@ -262,10 +497,10 @@ struct MeetingSummaryService: Sendable {
         let systemPrompt = """
         你是严谨的中文会议纪要合并助手。只能根据给出的局部纪要生成完整纪要，不要补充事实之外的内容。
         必须只返回 JSON 对象，格式为：
-        {"overview":"一句话结论","keyPoints":["关键讨论"],"decisions":["明确决策"],"actionItems":[{"task":"任务","owner":"负责人","dueDate":"截止时间"}],"openQuestions":["未解决问题"],"citations":[{"kind":"keyPoint|decision|actionItem|openQuestion","text":"与对应条目完全相同","sourceSegmentIDs":["逐字稿片段ID"]}]}
-        概览只写 1 句，控制在 80 个汉字以内。关键讨论最多 5 条，每条不超过 50 个汉字；按议题合并并删除语义重复项。
-        完整保留所有不重复的明确决策、待办和仍影响执行的问题。不同负责人或截止时间的任务必须分开。没有明确负责人或截止时间时保留空字符串，不要编造。
-        尽量保留输入 citations 的来源 ID，并确保每条决策和待办引用对应原文；不要生成输入中没有的 ID。
+        \(Self.summaryJSONShape)
+        \(Self.overviewInstruction)
+        \(Self.summaryItemRules)
+        尽量保留输入 citations 的来源 ID，并确保每条结论、讨论、决策和待办引用对应原文；不要生成输入中没有的 ID。
         只能返回 JSON，不要 Markdown，不要解释文字。
         """
         let userPrompt = """
@@ -579,6 +814,48 @@ struct MeetingSummaryService: Sendable {
     ) async {
         guard let handler else { return }
         await handler(checkpoint)
+    }
+
+    private func report(_ progress: Double?, to handler: ProgressHandler?) async {
+        guard let handler else { return }
+        await handler(progress)
+    }
+
+    private func runInParallel<Input: Sendable, Output: Sendable>(
+        _ inputs: [Input],
+        limit: Int = MeetingSummaryService.maxConcurrentSummaryRequests,
+        operation: @escaping @Sendable (Input) async throws -> Output,
+        onFinished: (@MainActor (Int, Int) async -> Void)? = nil
+    ) async throws -> [Output] {
+        guard !inputs.isEmpty else { return [] }
+        var results = [Output?](repeating: nil, count: inputs.count)
+        try await withThrowingTaskGroup(of: (Int, Output).self) { group in
+            var nextIndex = 0
+            func enqueue() {
+                guard nextIndex < inputs.count else { return }
+                let index = nextIndex
+                let input = inputs[index]
+                nextIndex += 1
+                group.addTask {
+                    let output = try await operation(input)
+                    return (index, output)
+                }
+            }
+
+            for _ in 0 ..< min(limit, inputs.count) {
+                enqueue()
+            }
+            var finished = 0
+            for try await (index, output) in group {
+                results[index] = output
+                finished += 1
+                if let onFinished {
+                    await onFinished(finished, inputs.count)
+                }
+                enqueue()
+            }
+        }
+        return results.compactMap { $0 }
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {

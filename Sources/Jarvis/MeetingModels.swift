@@ -100,6 +100,8 @@ struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
     var completedChunkCount: Int
     var totalChunkCount: Int
     var facts: [MeetingFact]
+    /// Set when the summary was produced in one request, without fact extraction.
+    var directSummary: Bool?
     var errorMessage: String?
     var updatedAt: Date
 
@@ -109,6 +111,7 @@ struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
         completedChunkCount: Int,
         totalChunkCount: Int,
         facts: [MeetingFact] = [],
+        directSummary: Bool? = nil,
         errorMessage: String? = nil,
         updatedAt: Date = Date()
     ) {
@@ -118,6 +121,7 @@ struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
         self.completedChunkCount = completedChunkCount
         self.totalChunkCount = totalChunkCount
         self.facts = facts
+        self.directSummary = directSummary
         self.errorMessage = errorMessage
         self.updatedAt = updatedAt
     }
@@ -186,7 +190,7 @@ enum MeetingModelPreparationState: Equatable, Sendable {
 enum MeetingProcessingState: Equatable, Sendable {
     case idle
     case recording
-    case processing(stage: MeetingProcessingStage, progress: Double)
+    case processing(stage: MeetingProcessingStage, progress: Double?)
     case awaitingConfiguration
     case ready
     case failed(String)

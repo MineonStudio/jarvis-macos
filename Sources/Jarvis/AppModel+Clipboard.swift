@@ -14,7 +14,21 @@ extension AppModel {
                     self?.receiveClipboardItem(item)
                 }
             },
-            prepareCacheSpace: { _ in }
+            prepareCacheSpace: { [weak self, cacheStore = clipboardCacheStore, historyStore = screenshotHistoryStore, latestStore = screenshotCacheStore] bytes in
+                let clipboard = cacheStore.usage()
+                let screenshots = historyStore.storedUsage()
+                let allowed = SharedCacheAdmission.allows(
+                    usedBytes: clipboard.usedBytes + screenshots.bytes + latestStore.storedBytes(),
+                    capacityBytes: clipboard.capacityBytes,
+                    incomingBytes: bytes
+                )
+                if !allowed {
+                    Task { @MainActor [weak self] in
+                        self?.notifySharedCacheFull()
+                    }
+                }
+                return allowed
+            }
         )
     }
 
@@ -50,7 +64,7 @@ extension AppModel {
             }
 
             let data = Data(text.utf8)
-            trimClipboardCacheIfNeeded(forAdditionalBytes: Int64(data.count))
+            guard admitSharedCacheBytes(Int64(data.count), notify: false) else { continue }
             guard let path = clipboardCacheStore.storeData(data, fileExtension: "txt") else {
                 continue
             }
@@ -108,17 +122,13 @@ extension AppModel {
         clipboardItems.removeAll { $0.fingerprint == item.fingerprint }
         clipboardItems.append(item)
         clipboardItems = ClipboardOrdering.newestFirst(clipboardItems)
-        let overflowItems = Array(clipboardItems.dropFirst(ClipboardLimits.maximumItemCount))
-        clipboardItems = Array(clipboardItems.prefix(ClipboardLimits.maximumItemCount))
-        trimClipboardCacheIfNeeded()
         scheduleClipboardHistorySave()
 
         let preservedPaths = Set(item.cachePaths)
         let stalePaths = matchingItems.flatMap(\.cachePaths).filter { !preservedPaths.contains($0) }
-            + overflowItems.flatMap(\.cachePaths)
         clipboardCacheStore.removeLegacyFiles(
             atPaths: stalePaths,
-            reason: "historyReplacementOrOverflow"
+            reason: "historyDuplicateReplacement"
         )
         JarvisLog.info(
             category: .clipboard,
@@ -126,7 +136,6 @@ extension AppModel {
             result: "success",
             fields: [
                 "recordCount": String(clipboardItems.count),
-                "overflowCount": String(overflowItems.count),
                 "stalePathCount": String(stalePaths.count)
             ]
         )
@@ -280,18 +289,64 @@ extension AppModel {
 
     func refreshClipboardCacheUsage() {
         let cacheStore = clipboardCacheStore
+        let historyStore = screenshotHistoryStore
+        let latestScreenshotStore = screenshotCacheStore
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let usage = cacheStore.usage()
+            let clipboard = cacheStore.usage()
+            let screenshots = historyStore.storedUsage()
+            let latestBytes = latestScreenshotStore.storedBytes()
+            let usage = ClipboardCacheUsage(
+                usedBytes: clipboard.usedBytes + screenshots.bytes + latestBytes,
+                capacityBytes: clipboard.capacityBytes,
+                fileCount: clipboard.fileCount + screenshots.fileCount + (latestBytes > 0 ? 1 : 0),
+                clipboardBytes: clipboard.usedBytes,
+                screenshotBytes: screenshots.bytes + latestBytes
+            )
             DispatchQueue.main.async {
                 self?.clipboardCacheUsage = usage
             }
         }
     }
 
+    @discardableResult
+    func admitSharedCacheBytes(_ incomingBytes: Int64, notify: Bool = true) -> Bool {
+        let clipboard = clipboardCacheStore.usage()
+        let screenshots = screenshotHistoryStore.storedUsage()
+        let latestBytes = screenshotCacheStore.storedBytes()
+        let allowed = SharedCacheAdmission.allows(
+            usedBytes: clipboard.usedBytes + screenshots.bytes + latestBytes,
+            capacityBytes: clipboard.capacityBytes,
+            incomingBytes: incomingBytes
+        )
+        if !allowed, notify {
+            notifySharedCacheFull()
+        }
+        return allowed
+    }
+
+    func notifySharedCacheFull() {
+        let now = Date()
+        if let lastCacheFullNotice, now.timeIntervalSince(lastCacheFullNotice) < 3 {
+            return
+        }
+        lastCacheFullNotice = now
+        showToast(JarvisFeedbackCopy.cacheFull)
+    }
+
     func updateClipboardCacheMaximumBytes(_ value: Int64) {
         let requestedMaximum = ClipboardCacheStore.normalizedMaximumBytes(value)
-        let usage = clipboardCacheStore.usage()
-        guard requestedMaximum >= usage.usedBytes else {
+        let clipboard = clipboardCacheStore.usage()
+        let screenshots = screenshotHistoryStore.storedUsage()
+        let latestBytes = screenshotCacheStore.storedBytes()
+        let usedBytes = clipboard.usedBytes + screenshots.bytes + latestBytes
+        let usage = ClipboardCacheUsage(
+            usedBytes: usedBytes,
+            capacityBytes: clipboard.capacityBytes,
+            fileCount: clipboard.fileCount + screenshots.fileCount + (latestBytes > 0 ? 1 : 0),
+            clipboardBytes: clipboard.usedBytes,
+            screenshotBytes: screenshots.bytes + latestBytes
+        )
+        guard requestedMaximum >= usedBytes else {
             JarvisLog.notice(
                 category: .clipboard,
                 event: "cache.capacityChange.rejected",
@@ -308,7 +363,6 @@ extension AppModel {
 
         clipboardCacheStore.updateMaximumBytes(requestedMaximum)
         clipboardCacheMaximumBytes = clipboardCacheStore.currentMaximumBytes
-        trimClipboardCacheIfNeeded()
         refreshClipboardCacheUsage()
     }
 
@@ -371,7 +425,19 @@ extension AppModel {
         }
         clipboardItems.removeAll { removedIDs.contains($0.id) }
 
-        var didChange = !removedIDs.isEmpty
+        var removedScreenshotCount = 0
+        if category == .all, let olderThan {
+            removedScreenshotCount = screenshotHistoryStore.delete(olderThan: olderThan)
+            if removedScreenshotCount > 0 {
+                screenshotHistory = screenshotHistoryStore.load()
+            }
+            if screenshotCacheStore.removeIfModified(before: olderThan) {
+                latestScreenshotData = nil
+                removedScreenshotCount += 1
+            }
+        }
+
+        var didChange = !removedIDs.isEmpty || removedScreenshotCount > 0
         if category == .all {
             let referencedPaths = Set(
                 clipboardItems.flatMap { item in
@@ -409,13 +475,14 @@ extension AppModel {
         }
         refreshClipboardCacheUsage()
         if !automatically {
+            let removedCount = removedIDs.count + removedScreenshotCount
             if failedCount > 0 {
                 showToast(JarvisFeedbackCopy.cleanedCachePartial(
-                    removed: removedIDs.count,
+                    removed: removedCount,
                     failed: failedCount
                 ))
             } else {
-                showToast(JarvisFeedbackCopy.cleanedCache(removedIDs.count))
+                showToast(JarvisFeedbackCopy.cleanedCache(removedCount))
             }
         }
         JarvisLog.info(
@@ -425,10 +492,11 @@ extension AppModel {
             fields: [
                 "reason": reason,
                 "removedCount": String(removedIDs.count),
+                "removedScreenshotCount": String(removedScreenshotCount),
                 "failedCount": String(failedCount)
             ]
         )
-        return removedIDs.count
+        return removedIDs.count + removedScreenshotCount
     }
 
     func chooseClipboardCacheDirectory() {
@@ -438,7 +506,7 @@ extension AppModel {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "选择"
-        panel.message = "选择用于保存剪贴板文件和图片的缓存文件夹"
+        panel.message = "选择用于保存剪贴板文件的文件夹。截图仍在应用目录，占用计入同一上限。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
@@ -469,7 +537,6 @@ extension AppModel {
                 )
                 showToast(JarvisFeedbackCopy.cacheDirectoryUpdated)
             }
-            trimClipboardCacheIfNeeded()
             refreshClipboardCacheUsage()
         } catch {
             JarvisLog.error(
@@ -478,78 +545,6 @@ extension AppModel {
                 error: error
             )
             showToast(JarvisFeedbackCopy.cacheDirectorySwitchFailed)
-        }
-    }
-
-    func trimClipboardCacheIfNeeded(forAdditionalBytes additionalBytes: Int64 = 0) {
-        var usage = clipboardCacheStore.usage()
-        let needsRoom: (ClipboardCacheUsage) -> Bool = { usage in
-            usage.isOverCapacity
-                || additionalBytes > max(0, usage.capacityBytes - usage.usedBytes)
-        }
-        guard needsRoom(usage) else { return }
-        guard additionalBytes <= usage.capacityBytes || usage.isOverCapacity else { return }
-
-        let candidates = clipboardItems
-            .filter { !$0.isPinned && clipboardCacheStore.hasManagedReferences(for: $0) }
-            .sorted { $0.createdAt < $1.createdAt }
-        var changed = false
-        for item in candidates where needsRoom(usage) {
-            // 删除时顺手拿到的字节数，用来做减法。原本每删一条都调一次 `usage()`，
-            // 那会递归枚举整个缓存目录——淘汰 30 条就是 31 次全目录扫描，全在主线程。
-            let removal = clipboardCacheStore.removeManagedFilesReportingBytes(
-                for: [item],
-                reason: "automatic.capacity"
-            )
-            guard removal.succeeded else { continue }
-            if item.kind == .text, item.text != nil,
-               let index = clipboardItems.firstIndex(where: { $0.id == item.id })
-            {
-                clipboardItems[index].textPath = nil
-                clipboardItems[index].isStoredCopy = false
-            } else {
-                clipboardItems.removeAll { $0.id == item.id }
-            }
-            usage = ClipboardCacheUsage(
-                usedBytes: max(0, usage.usedBytes - removal.freedBytes),
-                capacityBytes: usage.capacityBytes,
-                fileCount: max(0, usage.fileCount - removal.removedFileCount)
-            )
-            changed = true
-        }
-
-        if needsRoom(usage) {
-            let referencedPaths = Set(
-                clipboardItems.flatMap { item in
-                    item.cachePaths
-                }
-            )
-            if clipboardCacheStore.removeOrphanedManagedFiles(
-                referencedPaths: referencedPaths,
-                reason: "automatic.capacity"
-            ) {
-                usage = clipboardCacheStore.usage()
-                changed = true
-            }
-        }
-        if changed, !persistClipboardHistory() {
-            JarvisLog.error(
-                category: .clipboard,
-                event: "history.saveAfterTrim.failed",
-                fields: ["recordCount": String(clipboardItems.count)]
-            )
-            showToast(JarvisFeedbackCopy.saveFailed)
-        }
-        if changed {
-            JarvisLog.info(
-                category: .clipboard,
-                event: "cache.capacityTrim.complete",
-                fields: [
-                    "remainingRecordCount": String(clipboardItems.count),
-                    "usedBytes": String(usage.usedBytes),
-                    "capacityBytes": String(usage.capacityBytes)
-                ]
-            )
         }
     }
 

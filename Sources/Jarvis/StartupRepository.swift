@@ -14,11 +14,23 @@ actor JarvisStartupRepository {
         let screenshotHistoryStore = ScreenshotHistoryStore()
         let clipboardCacheStore = ClipboardCacheStore()
 
+        let clipboardItems = clipboardStore.load()
+        let screenshotHistory = screenshotHistoryStore.load()
+        let cachedScreenshot = screenshotCacheStore.load()
+        let clipboard = clipboardCacheStore.usage()
+        let screenshots = screenshotHistoryStore.storedUsage()
+        let latestBytes = screenshotCacheStore.storedBytes()
         return JarvisStartupSnapshot(
-            clipboardItems: clipboardStore.load(),
-            screenshotHistory: screenshotHistoryStore.load(),
-            cachedScreenshot: screenshotCacheStore.load(),
-            clipboardCacheUsage: clipboardCacheStore.usage()
+            clipboardItems: clipboardItems,
+            screenshotHistory: screenshotHistory,
+            cachedScreenshot: cachedScreenshot,
+            clipboardCacheUsage: ClipboardCacheUsage(
+                usedBytes: clipboard.usedBytes + screenshots.bytes + latestBytes,
+                capacityBytes: clipboard.capacityBytes,
+                fileCount: clipboard.fileCount + screenshots.fileCount + (latestBytes > 0 ? 1 : 0),
+                clipboardBytes: clipboard.usedBytes,
+                screenshotBytes: screenshots.bytes + latestBytes
+            )
         )
     }
 }

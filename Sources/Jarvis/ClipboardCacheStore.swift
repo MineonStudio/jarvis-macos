@@ -83,10 +83,43 @@ enum ClipboardCacheCleanupPeriod: String, CaseIterable, Identifiable {
     }
 }
 
+enum SharedCacheAdmission {
+    static func allows(usedBytes: Int64, capacityBytes: Int64, incomingBytes: Int64) -> Bool {
+        guard incomingBytes >= 0, capacityBytes > 0 else { return false }
+        guard usedBytes <= capacityBytes else { return false }
+        return incomingBytes <= capacityBytes - usedBytes
+    }
+
+    /// 一次截图会落两份：历史 PNG，以及被整文件替换的 latest-screenshot.png。
+    /// 旧的 latest 不计入占用；正在覆盖的那张历史图从占用里扣掉。
+    static func screenshotSaveFits(
+        clipboardBytes: Int64,
+        historyBytes: Int64,
+        replacingHistoryBytes: Int64,
+        imageBytes: Int64,
+        capacityBytes: Int64
+    ) -> Bool {
+        guard imageBytes >= 0 else { return false }
+        let (incoming, overflowed) = imageBytes.multipliedReportingOverflow(by: 2)
+        if overflowed {
+            return false
+        }
+        let retainedHistory = max(0, historyBytes - max(0, replacingHistoryBytes))
+        let retained = max(0, clipboardBytes) + retainedHistory
+        return allows(
+            usedBytes: retained,
+            capacityBytes: capacityBytes,
+            incomingBytes: incoming
+        )
+    }
+}
+
 struct ClipboardCacheUsage: Equatable, Sendable {
     let usedBytes: Int64
     let capacityBytes: Int64
     let fileCount: Int
+    var clipboardBytes: Int64 = 0
+    var screenshotBytes: Int64 = 0
 
     var fraction: Double {
         guard capacityBytes > 0 else { return 1 }

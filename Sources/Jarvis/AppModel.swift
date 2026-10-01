@@ -189,6 +189,7 @@ final class AppModel {
     @ObservationIgnored var systemAppearanceObservation: NSKeyValueObservation?
     @ObservationIgnored var editingHistoryID: UUID?
     @ObservationIgnored var clipboardCacheCleanupTimer: Timer?
+    @ObservationIgnored var lastCacheFullNotice: Date?
     @ObservationIgnored var meetingRecordingTimer: Task<Void, Never>?
     @ObservationIgnored var meetingProcessingTask: Task<Void, Never>?
     @ObservationIgnored var meetingModelPreparationTask: Task<Void, Never>?
@@ -402,19 +403,32 @@ final class AppModel {
             )
         )
 
-        // Preserve the cache created by older builds as the first history item
-        // when upgrading to the persistent history format.
-        if screenshotHistory.isEmpty,
-           let cachedScreenshot = snapshot.cachedScreenshot,
-           let migratedItem = screenshotHistoryStore.add(data: cachedScreenshot)
-        {
-            screenshotHistory = [migratedItem]
+        // 旧版本只有一张工作截图。历史为空时补进历史，但补这一份也不能超出共享空间。
+        if screenshotHistory.isEmpty, let cachedScreenshot = snapshot.cachedScreenshot {
+            let incoming = Int64(cachedScreenshot.count)
+            let clipboard = clipboardCacheStore.usage()
+            let latestBytes = screenshotCacheStore.storedBytes()
+            let fits = SharedCacheAdmission.allows(
+                usedBytes: clipboard.usedBytes + latestBytes,
+                capacityBytes: clipboard.capacityBytes,
+                incomingBytes: incoming
+            )
+            if fits, let migratedItem = screenshotHistoryStore.add(data: cachedScreenshot) {
+                screenshotHistory = [migratedItem]
+            } else if !fits {
+                JarvisLog.notice(
+                    category: .storage,
+                    event: "screenshot.history.migrationSkipped",
+                    result: "cacheFull",
+                    fields: ["bytes": String(incoming)]
+                )
+            }
         }
 
-        trimClipboardCacheIfNeeded()
         migrateClipboardTextCache()
         configureClipboardRecording()
         configureClipboardCacheAutoCleanup()
+        refreshClipboardCacheUsage()
         if latestScreenshotData != nil {
             statusMessage = "已恢复上次缓存的截图"
         }
@@ -762,6 +776,22 @@ extension AppModel {
         }
         let cacheStore = screenshotCacheStore
         let historyStore = screenshotHistoryStore
+        let incomingBytes = Int64(data.count)
+        let replacingBytes = historyItem.flatMap { item in
+            historyStore.fileSize(ofStored: item)
+        } ?? 0
+        let clipboardUsage = clipboardCacheStore.usage()
+        let screenshotUsage = screenshotHistoryStore.storedUsage()
+        guard SharedCacheAdmission.screenshotSaveFits(
+            clipboardBytes: clipboardUsage.usedBytes,
+            historyBytes: screenshotUsage.bytes,
+            replacingHistoryBytes: replacingBytes,
+            imageBytes: incomingBytes,
+            capacityBytes: clipboardUsage.capacityBytes
+        ) else {
+            notifySharedCacheFull()
+            return
+        }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let cacheSaved = cacheStore.save(data)
             // 这次落盘实际对应的条目 id：更新时是原来那条，新建时是刚加进去那条。
@@ -783,6 +813,7 @@ extension AppModel {
                 if !cacheSaved || resolvedID == nil {
                     self.showToast(JarvisFeedbackCopy.historySaveFailed)
                 }
+                self.refreshClipboardCacheUsage()
             }
         }
     }
@@ -848,19 +879,46 @@ extension AppModel {
         reloadScreenshotHistory()
 
         if let deletedData, latestScreenshotData == deletedData {
-            if let replacement = screenshotHistory.first,
-               let replacementData = screenshotHistoryStore.data(for: replacement)
-            {
-                guard setLatestScreenshot(replacementData) else { return }
-            } else {
+            let replacement = screenshotHistory.first.flatMap { item in
+                screenshotHistoryStore.data(for: item)
+            }
+            switch replacement.map(replaceLatestScreenshotIfItFits) {
+            case .saved:
+                break
+            case .failed:
+                refreshClipboardCacheUsage()
+                return
+            case .refused, nil:
                 guard screenshotCacheStore.clear() else {
                     showToast(JarvisFeedbackCopy.cacheClearFailed)
+                    refreshClipboardCacheUsage()
                     return
                 }
                 latestScreenshotData = nil
             }
         }
+        refreshClipboardCacheUsage()
         showToast(JarvisFeedbackCopy.deleted)
+    }
+
+    private enum LatestScreenshotReplacement {
+        case saved
+        case refused
+        case failed
+    }
+
+    /// 删掉当前工作截图后，尝试用下一条历史图接上。接上去会超上限时拒绝，调用方改清空。
+    private func replaceLatestScreenshotIfItFits(_ data: Data) -> LatestScreenshotReplacement {
+        let clipboard = clipboardCacheStore.usage()
+        let history = screenshotHistoryStore.storedUsage()
+        guard SharedCacheAdmission.allows(
+            usedBytes: clipboard.usedBytes + history.bytes,
+            capacityBytes: clipboard.capacityBytes,
+            incomingBytes: Int64(data.count)
+        ) else {
+            return .refused
+        }
+        return setLatestScreenshot(data) ? .saved : .failed
     }
 
     private func reloadScreenshotHistory() {

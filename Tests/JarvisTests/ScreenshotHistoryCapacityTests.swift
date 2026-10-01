@@ -15,16 +15,11 @@ final class ScreenshotHistoryCapacityTests: XCTestCase {
         Data(repeating: 0x41, count: bytes)
     }
 
-    func testTotalBytesCapEvictsOldest() throws {
+    func testHistoryKeepsEveryScreenshotWithoutACountCap() throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = ScreenshotHistoryStore(
-            directoryURL: directory,
-            maximumCount: 100,
-            maximumTotalBytes: 3000
-        )
+        let store = ScreenshotHistoryStore(directoryURL: directory)
 
-        // 每张 1000 字节，上限 3000 → 只留三张，最早的那张被淘汰。
         var items: [ScreenshotHistoryItem] = []
         for index in 0 ..< 5 {
             let item = try XCTUnwrap(
@@ -34,12 +29,98 @@ final class ScreenshotHistoryCapacityTests: XCTestCase {
         }
 
         let remaining = store.load()
-        XCTAssertEqual(remaining.count, 3, "总字节上限没有生效")
-        XCTAssertEqual(remaining.map(\.id), [items[4].id, items[3].id, items[2].id])
+        XCTAssertEqual(remaining.count, 5)
+        XCTAssertEqual(remaining.map(\.id), items.reversed().map(\.id))
+        XCTAssertEqual(store.storedUsage().fileCount, 5)
+        XCTAssertEqual(store.storedUsage().bytes, 5000)
+    }
 
-        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasSuffix(".png") }
-        XCTAssertEqual(files.count, 3, "淘汰掉的截图文件应当一并删除")
+    func testSharedCacheAdmissionRejectsWritesThatWouldExceedCapacity() {
+        XCTAssertTrue(SharedCacheAdmission.allows(usedBytes: 80, capacityBytes: 100, incomingBytes: 20))
+        XCTAssertFalse(SharedCacheAdmission.allows(usedBytes: 80, capacityBytes: 100, incomingBytes: 21))
+        XCTAssertFalse(SharedCacheAdmission.allows(usedBytes: 100, capacityBytes: 100, incomingBytes: 1))
+        XCTAssertFalse(SharedCacheAdmission.allows(usedBytes: 101, capacityBytes: 100, incomingBytes: 0))
+    }
+
+    func testScreenshotSaveCountsHistoryAndLatestCopies() {
+        XCTAssertTrue(
+            SharedCacheAdmission.screenshotSaveFits(
+                clipboardBytes: 10,
+                historyBytes: 0,
+                replacingHistoryBytes: 0,
+                imageBytes: 30,
+                capacityBytes: 100
+            )
+        )
+        XCTAssertFalse(
+            SharedCacheAdmission.screenshotSaveFits(
+                clipboardBytes: 0,
+                historyBytes: 40,
+                replacingHistoryBytes: 0,
+                imageBytes: 40,
+                capacityBytes: 100
+            )
+        )
+        XCTAssertTrue(
+            SharedCacheAdmission.screenshotSaveFits(
+                clipboardBytes: 0,
+                historyBytes: 40,
+                replacingHistoryBytes: 40,
+                imageBytes: 40,
+                capacityBytes: 100
+            )
+        )
+        XCTAssertFalse(
+            SharedCacheAdmission.screenshotSaveFits(
+                clipboardBytes: 0,
+                historyBytes: 200,
+                replacingHistoryBytes: 0,
+                imageBytes: 1,
+                capacityBytes: 100
+            )
+        )
+    }
+
+    func testAgeCleanupRemovesOnlyOlderScreenshots() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ScreenshotHistoryStore(directoryURL: directory)
+        let old = try XCTUnwrap(
+            store.add(data: data(10), date: Date().addingTimeInterval(-10000))
+        )
+        let recent = try XCTUnwrap(store.add(data: data(10), date: Date()))
+
+        let removed = store.delete(olderThan: Date().addingTimeInterval(-100))
+
+        XCTAssertEqual(removed, 1)
+        XCTAssertEqual(store.load().map(\.id), [recent.id])
+        XCTAssertFalse(store.load().contains { $0.id == old.id })
+
+        let edited = try XCTUnwrap(
+            store.add(data: data(10), date: Date().addingTimeInterval(-10000))
+        )
+        let refreshed = try XCTUnwrap(store.update(edited, data: data(12), date: Date()))
+        XCTAssertEqual(store.delete(olderThan: Date().addingTimeInterval(-100)), 0)
+        XCTAssertEqual(store.load().map(\.id).contains(refreshed.id), true)
+    }
+
+    func testLatestScreenshotOlderThanCutoffIsRemoved() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("latest-screenshot.png")
+        let store = ScreenshotCacheStore(fileURL: file)
+        XCTAssertTrue(store.save(data(32)))
+        XCTAssertFalse(store.removeIfModified(before: Date().addingTimeInterval(-60)))
+        XCTAssertEqual(store.storedBytes(), 32)
+
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-3600)],
+            ofItemAtPath: file.path
+        )
+        XCTAssertTrue(store.removeIfModified(before: Date().addingTimeInterval(-60)))
+        XCTAssertEqual(store.storedBytes(), 0)
+        XCTAssertFalse(store.removeIfModified(before: Date()))
     }
 
     /// 索引写失败时不能再留孤儿：那张 PNG 进不了索引，也永远不会被淘汰。

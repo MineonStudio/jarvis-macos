@@ -70,11 +70,9 @@ final class AuditRegressionTests: XCTestCase {
     /// 锁定审计报告 C-2 的**根因**：`for index in collection.indices` 只求值一次，
     /// 循环体内缩短集合后继续按旧下标读取会触发致命错误。
     ///
-    /// 生产代码 `AppModel+Clipboard.swift:9-27` 正是这个形状：`migrateClipboardTextCache`
-    /// 持有 `clipboardItems.indices`，而循环内调用的 `trimClipboardCacheIfNeeded`
-    /// 会 `clipboardItems.removeAll { … }`（`:481`）并落盘（`:505`）。
-    ///
-    /// 本用例用"安全写法 vs 危险写法"直接对比，防止后人再写出危险形状：
+    /// 旧的 `migrateClipboardTextCache` 曾在这种循环里调用按容量删条目的逻辑。
+    /// 现在迁移只决定这条文本要不要落盘，不再在循环里删记录。这个用例留着，
+    /// 防止再写出「边遍历下标边缩短数组」的形状：
     /// 危险写法在本进程内会直接 trap，因此这里只断言安全写法的行为，
     /// 危险形状由 `swift -e` 独立验证（退出码 133 / SIGTRAP）：
     ///

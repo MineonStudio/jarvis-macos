@@ -5,7 +5,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum ClipboardLimits {
-    static let maximumItemCount = 300
+    /// 超过这个大小的文件只记原始路径，不复制进缓存。空间上限另算。
     static let maximumStoredFileSize: Int64 = 1024 * 1024 * 1024
 }
 
@@ -325,7 +325,7 @@ final class ClipboardService: @unchecked Sendable {
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var onChange: (@MainActor @Sendable (ClipboardItem) -> Void)?
-    private var prepareCacheSpace: (@Sendable (Int64) -> Void)?
+    private var prepareCacheSpace: (@Sendable (Int64) -> Bool)?
 
     init(cacheStore: ClipboardCacheStore = ClipboardCacheStore()) {
         self.cacheStore = cacheStore
@@ -333,7 +333,7 @@ final class ClipboardService: @unchecked Sendable {
 
     func start(
         onChange: @escaping @MainActor @Sendable (ClipboardItem) -> Void,
-        prepareCacheSpace: @escaping @Sendable (Int64) -> Void = { _ in }
+        prepareCacheSpace: @escaping @Sendable (Int64) -> Bool = { _ in true }
     ) {
         self.onChange = onChange
         self.prepareCacheSpace = prepareCacheSpace
@@ -424,7 +424,7 @@ final class ClipboardService: @unchecked Sendable {
             let prepareCacheSpace = self.prepareCacheSpace
             DispatchQueue.global(qos: .utility).async {
                 let data = Data(text.utf8)
-                prepareCacheSpace?(Int64(data.count))
+                guard prepareCacheSpace?(Int64(data.count)) != false else { return }
                 let path = cacheStore.storeData(data, fileExtension: "txt")
                 let item = ClipboardItem(
                     createdAt: capturedAt,
@@ -524,7 +524,7 @@ final class ClipboardService: @unchecked Sendable {
             let kind = Self.kind(for: url, contentType: contentType)
             let storedPath: String?
             if fileSize <= ClipboardLimits.maximumStoredFileSize {
-                prepareCacheSpace?(fileSize)
+                guard prepareCacheSpace?(fileSize) != false else { return }
                 storedPath = cacheStore.storeFile(url, fileSize: fileSize)
             } else {
                 storedPath = nil
@@ -578,7 +578,10 @@ final class ClipboardService: @unchecked Sendable {
                     return
                 }
                 DispatchQueue.global(qos: .utility).async {
-                    prepareCacheSpace?(Int64(data.count))
+                    guard prepareCacheSpace?(Int64(data.count)) != false else {
+                        finishCapture(nil)
+                        return
+                    }
                     finishCapture(cacheStore.storeData(data, fileExtension: "png"))
                 }
             }
@@ -590,7 +593,7 @@ final class ClipboardService: @unchecked Sendable {
         let cacheStore = self.cacheStore
         let prepareCacheSpace = self.prepareCacheSpace
         DispatchQueue.global(qos: .utility).async {
-            prepareCacheSpace?(Int64(data.count))
+            guard prepareCacheSpace?(Int64(data.count)) != false else { return }
             let path = cacheStore.storeData(data, fileExtension: "png")
             let item = ClipboardItem(
                 createdAt: createdAt,
@@ -632,7 +635,7 @@ final class ClipboardService: @unchecked Sendable {
         // Keep very large files as references so copying a movie never blocks
         // the app or silently fills the user's disk.
         guard fileSize <= ClipboardLimits.maximumStoredFileSize else { return nil }
-        prepareCacheSpace?(fileSize)
+        guard prepareCacheSpace?(fileSize) != false else { return nil }
         return cacheStore.storeFile(sourceURL, fileSize: fileSize)
     }
 }

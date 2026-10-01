@@ -43,6 +43,11 @@ struct ClipboardCacheSettingsCard: View {
     var body: some View {
         JarvisCard {
             VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+                SettingsCardHeader(title: "缓存", systemImage: "internaldrive")
+                Text("截图和剪贴板共用这一份空间和自动清理。只限制总容量，不限制条数。")
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 folderRow
                 VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
                     capacitySection
@@ -70,6 +75,10 @@ struct ClipboardCacheSettingsCard: View {
                     .foregroundStyle(Color.jarvisTextSecondary)
                     .lineLimit(2)
                     .truncationMode(.middle)
+                Text("只存放剪贴板文件。截图在应用目录，两边计入同一空间上限。")
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             Button("更改文件夹") {
@@ -128,6 +137,9 @@ struct ClipboardCacheSettingsCard: View {
                 Text("\(usageSummary) · \(app.clipboardCacheUsage.fileCount) 个文件")
                     .font(JarvisTypography.monospacedSmall)
             }
+            Text("截图 \(ClipboardCacheFormatting.byteDescription(app.clipboardCacheUsage.screenshotBytes)) · 剪贴板 \(ClipboardCacheFormatting.byteDescription(app.clipboardCacheUsage.clipboardBytes))")
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
             GeometryReader { proxy in
                 let usage = app.clipboardCacheUsage
                 ZStack(alignment: .leading) {

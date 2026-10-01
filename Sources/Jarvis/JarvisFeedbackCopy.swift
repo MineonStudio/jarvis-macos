@@ -30,6 +30,7 @@ enum JarvisFeedbackCopy {
     static let wallpaperBusy = "正在设置…"
     static let wallpaperFileUnavailable = "文件不可用"
     static let historySaveFailed = "历史保存失败"
+    static let cacheFull = "缓存空间已满，这次没有保存。请到设置的「隐私与缓存」清理，或提高缓存空间上限"
     static let cacheSaveFailed = "缓存保存失败"
     static let cacheClearFailed = "清除失败"
     static let noMatchingCache = "没有符合条件的缓存"

@@ -26,6 +26,39 @@ final class ScreenshotCacheStore: @unchecked Sendable {
         fileURL = directory.appendingPathComponent("latest-screenshot.png")
     }
 
+    func storedBytes() -> Int64 {
+        lock.withLock {
+            let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? NSNumber
+            return size?.int64Value ?? 0
+        }
+    }
+
+    /// 自动清理按文件修改时间丢掉过期的工作截图。文件不存在或还没过期时返回 false。
+    @discardableResult
+    func removeIfModified(before cutoff: Date) -> Bool {
+        lock.withLock {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                  let modified = attributes[.modificationDate] as? Date,
+                  modified < cutoff
+            else {
+                return false
+            }
+            do {
+                try FileManager.default.removeItem(at: fileURL)
+                return true
+            } catch CocoaError.fileNoSuchFile {
+                return false
+            } catch {
+                JarvisLog.error(
+                    category: .storage,
+                    event: "screenshot.cache.ageCleanup.failed",
+                    error: error
+                )
+                return false
+            }
+        }
+    }
+
     func load() -> Data? {
         lock.withLock {
             do {

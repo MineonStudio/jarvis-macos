@@ -15,17 +15,6 @@ final class JarvisDockIconController {
         )
     }
 
-    func previewImage(
-        for appearance: JarvisAppIconAppearance,
-        isSystemDark: Bool
-    ) -> NSImage? {
-        let resolvedAppearance = appearance.resolvedVariant(isSystemDark: isSystemDark)
-        return image(
-            for: resolvedAppearance,
-            resourceName: resolvedAppearance == .dark ? "jarvis-dark" : "jarvis-light"
-        )
-    }
-
     private func restoreSystemIcon() {
         // Keep a safe fallback when a built bundle is missing the explicit
         // light/dark resources required for deterministic Dock rendering.

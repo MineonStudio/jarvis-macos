@@ -154,6 +154,12 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
     let items: [Item]
     @Binding var selection: Item
     private let label: (Item, Bool) -> Label
+    /// 选项框，坐标系在内边距之内。外面要对齐色块时用。
+    private let onItemFrames: (([AnyHashable: CGRect]) -> Void)?
+    /// 选中胶囊的填充。不传就用当前强调色。
+    private let selectionStyle: ((Item) -> AnyShapeStyle)?
+    /// 拉满父视图宽度，选项均分。
+    private let expands: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var itemFrames: [AnyHashable: CGRect] = [:]
@@ -162,84 +168,163 @@ struct JarvisSegmentedControl<Item: Identifiable & Equatable, Label: View>: View
     init(
         items: [Item],
         selection: Binding<Item>,
+        expands: Bool = false,
+        onItemFrames: (([AnyHashable: CGRect]) -> Void)? = nil,
+        selectionStyle: ((Item) -> AnyShapeStyle)? = nil,
         @ViewBuilder label: @escaping (Item, Bool) -> Label
     ) {
         self.items = items
         _selection = selection
+        self.expands = expands
+        self.onItemFrames = onItemFrames
+        self.selectionStyle = selectionStyle
         self.label = label
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if let selectedFrame = itemFrames[AnyHashable(selection.id)] {
-                Capsule()
-                    .fill(JarvisMotion.selectionPillTint)
-                    .frame(width: selectedFrame.width, height: selectedFrame.height)
-                    .offset(x: selectedFrame.minX, y: selectedFrame.minY)
-                    .allowsHitTesting(false)
-                    .animation(
-                        JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
-                        value: selection
-                    )
-            }
-
-            if let hoveredItemID,
-               hoveredItemID != AnyHashable(selection.id),
-               let hoveredFrame = itemFrames[hoveredItemID]
-            {
-                Capsule()
-                    .fill(JarvisMotion.hoverPillTint)
-                    .frame(width: hoveredFrame.width, height: hoveredFrame.height)
-                    .offset(x: hoveredFrame.minX, y: hoveredFrame.minY)
-                    .allowsHitTesting(false)
-                    .animation(
-                        JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                        value: hoveredItemID
-                    )
-            }
-
-            HStack(spacing: JarvisMetrics.segmentedItemSpacing) {
-                ForEach(items) { item in
-                    Button {
-                        selection = item
-                    } label: {
-                        label(item, selection == item)
-                            .contentShape(Capsule())
-                            .background {
-                                GeometryReader { proxy in
-                                    Color.clear.preference(
-                                        key: JarvisSegmentedItemFramePreferenceKey.self,
-                                        value: [
-                                            AnyHashable(item.id): proxy.frame(
-                                                in: .named("JarvisSegmentedControl")
-                                            )
-                                        ]
-                                    )
-                                }
-                            }
-                    }
-                    .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.9))
-                    .contentShape(Capsule())
-                    .onHover { isHovered in
-                        let itemID = AnyHashable(item.id)
-                        if isHovered {
-                            hoveredItemID = itemID
-                        } else if hoveredItemID == itemID {
-                            hoveredItemID = nil
-                        }
-                    }
-                }
-            }
+        segmentRow
+            .frame(maxWidth: expands ? .infinity : nil)
             .animation(
                 JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
                 value: selection
             )
+            .background(alignment: .topLeading) {
+                // 强调色自己把整段涂上。这里只画主题那条跟着走的选中胶囊。
+                if selectionStyle == nil, let selectedFrame = itemFrames[AnyHashable(selection.id)] {
+                    Color.clear
+                        .frame(width: selectedFrame.width, height: selectedFrame.height)
+                        .background(JarvisMotion.selectionPillTint, in: Capsule())
+                        .offset(x: selectedFrame.minX, y: selectedFrame.minY)
+                        .allowsHitTesting(false)
+                        .animation(
+                            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                            value: selection
+                        )
+                }
+
+                if let hoveredItemID,
+                   hoveredItemID != AnyHashable(selection.id),
+                   let hoveredFrame = itemFrames[hoveredItemID]
+                {
+                    Capsule()
+                        .fill(JarvisMotion.hoverPillTint)
+                        .frame(width: hoveredFrame.width, height: hoveredFrame.height)
+                        .offset(x: hoveredFrame.minX, y: hoveredFrame.minY)
+                        .allowsHitTesting(false)
+                        .animation(
+                            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                            value: hoveredItemID
+                        )
+                }
+            }
+            .coordinateSpace(name: "JarvisSegmentedControl")
+            .padding(JarvisMetrics.segmentedControlPadding)
+            .frame(maxWidth: expands ? .infinity : nil)
+            .jarvisGlass(in: Capsule(), interactive: true)
+            .onPreferenceChange(JarvisSegmentedItemFramePreferenceKey.self) { frames in
+                guard itemFrames != frames else { return }
+                itemFrames = frames
+                onItemFrames?(frames)
+            }
+    }
+
+    @ViewBuilder
+    private var segmentRow: some View {
+        if expands {
+            JarvisEqualWidthHStack(spacing: JarvisMetrics.segmentedItemSpacing) {
+                ForEach(items) { item in
+                    segmentButton(item)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            HStack(spacing: JarvisMetrics.segmentedItemSpacing) {
+                ForEach(items) { item in
+                    segmentButton(item)
+                }
+            }
         }
-        .coordinateSpace(name: "JarvisSegmentedControl")
-        .padding(JarvisMetrics.segmentedControlPadding)
-        .jarvisGlass(in: Capsule(), interactive: true)
-        .onPreferenceChange(JarvisSegmentedItemFramePreferenceKey.self) { frames in
-            itemFrames = frames
+    }
+
+    private func segmentButton(_ item: Item) -> some View {
+        Button {
+            selection = item
+        } label: {
+            label(item, selection == item)
+                .contentShape(Capsule())
         }
+        .buttonStyle(JarvisSegmentButtonStyle(expands: expands))
+        .frame(maxWidth: expands ? .infinity : nil)
+        .contentShape(Capsule())
+        // 量按钮本身。选中项的标签可能是空的，量标签会得到零宽。
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: JarvisSegmentedItemFramePreferenceKey.self,
+                    value: [
+                        AnyHashable(item.id): proxy.frame(
+                            in: .named("JarvisSegmentedControl")
+                        )
+                    ]
+                )
+            }
+        }
+        .onHover { isHovered in
+            let itemID = AnyHashable(item.id)
+            if isHovered {
+                hoveredItemID = itemID
+            } else if hoveredItemID == itemID {
+                hoveredItemID = nil
+            }
+        }
+    }
+}
+
+/// 拉满时每个选项同一宽度。空标签的理想宽度是 0，普通 HStack 会把它挤没。
+private struct JarvisEqualWidthHStack: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        let spacingWidth = spacing * CGFloat(max(subviews.count - 1, 0))
+        let width = proposal.width ?? (
+            subviews.map { $0.sizeThatFits(.unspecified).width }.reduce(0, +) + spacingWidth
+        )
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let spacingWidth = spacing * CGFloat(subviews.count - 1)
+        let itemWidth = max(0, (bounds.width - spacingWidth) / CGFloat(subviews.count))
+        var x = bounds.minX
+        for subview in subviews {
+            subview.place(
+                at: CGPoint(x: x, y: bounds.midY),
+                anchor: .leading,
+                proposal: ProposedViewSize(width: itemWidth, height: nil)
+            )
+            x += itemWidth + spacing
+        }
+    }
+}
+
+/// 分段按钮。拉满时标签跟着按钮一样宽，选中色才铺得满整段。
+private struct JarvisSegmentButtonStyle: ButtonStyle {
+    var expands: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: expands ? .infinity : nil)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .scaleEffect(
+                reduceMotion ? 1 : (configuration.isPressed ? 0.985 : 1)
+            )
+            .animation(
+                JarvisMotion.animation(JarvisMotion.buttonPress, reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
     }
 }

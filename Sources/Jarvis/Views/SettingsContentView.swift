@@ -417,83 +417,102 @@ struct SettingsView: View {
                 )
 
                 HStack(alignment: .center, spacing: 14) {
-                    HStack(spacing: 8) {
-                        Text("当前版本")
-                            .font(SettingsTypography.itemSubtitle)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                        Text("Jarvis \(JarvisAppVersion.shortVersion)")
-                            .font(SettingsTypography.itemSubtitle)
-                            .foregroundStyle(Color.jarvisTextSecondary)
-                    }
-                    Spacer(minLength: 8)
-                    updateControls
+                    versionStatusLine
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    updateActionButton
                 }
             }
         }
     }
 
+    /// 平时显示版本号。检查有了结果之后，结果占同一位置，版本号让开。
+    private var versionStatusLine: some View {
+        ZStack(alignment: .leading) {
+            if let status = updateStatusText {
+                Text(status)
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(updateStatusColor)
+                    .lineLimit(updateStatusWraps ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: updateStatusWraps)
+                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+            } else {
+                HStack(spacing: 8) {
+                    Text("版本号")
+                    Text("Jarvis \(JarvisAppVersion.shortVersion)")
+                }
+                .font(SettingsTypography.itemSubtitle)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+            }
+        }
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: updateStatusText
+        )
+    }
+
+    private var updateStatusText: String? {
+        switch app.updateState {
+        case .idle, .checking:
+            nil
+        case .upToDate:
+            JarvisFeedbackCopy.latestVersion
+        case let .available(release):
+            "\(JarvisFeedbackCopy.updateAvailable) \(displayVersion(release.version))"
+        case let .downloading(version):
+            "正在下载 \(displayVersion(version))"
+        case let .readyToInstall(version):
+            "准备安装 \(displayVersion(version))"
+        case let .installing(version):
+            "正在安装 \(displayVersion(version))"
+        case let .failed(message):
+            message
+        }
+    }
+
+    private var updateStatusColor: Color {
+        if case .available = app.updateState {
+            Color.jarvisAccent
+        } else {
+            Color.jarvisTextSecondary
+        }
+    }
+
+    private var updateStatusWraps: Bool {
+        if case .failed = app.updateState {
+            true
+        } else {
+            false
+        }
+    }
+
     @ViewBuilder
-    private var updateControls: some View {
+    private var updateActionButton: some View {
         switch app.updateState {
         case .checking:
             Button("检查中…") {}
                 .buttonStyle(JarvisSecondaryButtonStyle())
                 .disabled(true)
-        case .upToDate:
-            HStack(spacing: 10) {
-                Text(JarvisFeedbackCopy.latestVersion)
-                    .font(SettingsTypography.itemSubtitle)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                Button("检查更新") {
-                    app.checkForUpdates()
-                }
-                .buttonStyle(JarvisSecondaryButtonStyle())
-            }
         case let .available(release):
-            HStack(spacing: 10) {
-                Text("\(JarvisFeedbackCopy.updateAvailable) \(displayVersion(release.version))")
-                    .font(SettingsTypography.itemSubtitle)
-                    .foregroundStyle(Color.jarvisAccent)
-                    .lineLimit(1)
-                Button("下载新版本") {
-                    app.downloadAndInstallUpdate()
-                }
-                .buttonStyle(JarvisPrimaryButtonStyle())
-                .accessibilityLabel("下载新版本 \(displayVersion(release.version))")
+            Button("下载新版本") {
+                app.downloadAndInstallUpdate()
             }
-        case let .downloading(version):
-            HStack(spacing: 8) {
-                Text(displayVersion(version))
-                    .font(JarvisTypography.monospaced)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-                Button("下载中…") {}
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(true)
-            }
-        case let .installing(version):
-            HStack(spacing: 8) {
-                Text(displayVersion(version))
-                    .font(JarvisTypography.monospaced)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(1)
-                Button("安装中…") {}
-                    .buttonStyle(JarvisSecondaryButtonStyle())
-                    .disabled(true)
-            }
-        case let .failed(message):
-            HStack(spacing: 10) {
-                Text(message)
-                    .font(SettingsTypography.itemSubtitle)
-                    .foregroundStyle(Color.jarvisTextSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("重试") {
-                    app.checkForUpdates()
-                }
+            .buttonStyle(JarvisPrimaryButtonStyle())
+            .accessibilityLabel("下载新版本 \(displayVersion(release.version))")
+        case .downloading:
+            Button("下载中…") {}
                 .buttonStyle(JarvisSecondaryButtonStyle())
+                .disabled(true)
+        case .installing, .readyToInstall:
+            Button("安装中…") {}
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .disabled(true)
+        case .failed:
+            Button("重试") {
+                app.checkForUpdates()
             }
-        default:
+            .buttonStyle(JarvisSecondaryButtonStyle())
+        case .idle, .upToDate:
             Button("检查更新") {
                 app.checkForUpdates()
             }
@@ -520,8 +539,9 @@ struct SettingsView: View {
 
     private var appIconSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+            HStack(spacing: 14) {
                 SettingsCardHeader(title: "应用图标", systemImage: "square.grid.2x2.fill")
+                Spacer(minLength: 8)
                 JarvisAppIconPicker(selection: Binding(
                     get: { app.appIconAppearance },
                     set: { app.updateAppIconAppearance($0) }
@@ -870,115 +890,169 @@ struct JarvisThemePicker: View {
 
 struct JarvisAppIconPicker: View {
     @Binding var selection: JarvisAppIconAppearance
-    @Environment(AppModel.self) private var app
 
     var body: some View {
-        let isSystemDark = app.activeColorScheme == .dark
-
-        HStack(spacing: 10) {
-            ForEach(JarvisAppIconAppearance.allCases) { appearance in
-                let resolvedPreview = appearance.resolvedVariant(isSystemDark: isSystemDark)
-
-                Button {
-                    selection = appearance
-                } label: {
-                    VStack(spacing: 8) {
-                        JarvisAppIconPreview(
-                            appearance: appearance,
-                            isSystemDark: isSystemDark
-                        )
-                        .id(resolvedPreview)
-                        Text(appearance.title)
-                            .font(JarvisTypography.controlEmphasis)
-                            .foregroundStyle(selection == appearance ? Color.primary : Color.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        selection == appearance
-                            ? Color.jarvisAccent.opacity(0.12)
-                            : Color.primary.opacity(0.045),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(
-                                selection == appearance
-                                    ? Color.jarvisAccent.opacity(0.65)
-                                    : Color.primary.opacity(0.08),
-                                lineWidth: selection == appearance ? 1.2 : 0.75
-                            )
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("应用图标：\(appearance.title)")
-                .accessibilityAddTraits(selection == appearance ? .isSelected : [])
-            }
+        JarvisSegmentedControl(
+            items: Array(JarvisAppIconAppearance.allCases),
+            selection: $selection
+        ) { appearance, isSelected in
+            Text(appearance.title)
+                .font(JarvisTypography.controlEmphasis)
+                .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .frame(
+                    minWidth: 54,
+                    minHeight: JarvisMetrics.segmentedItemHeight,
+                    maxHeight: JarvisMetrics.segmentedItemHeight
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, JarvisMetrics.segmentedItemVerticalPadding)
+                .contentShape(Capsule())
         }
-    }
-}
-
-private struct JarvisAppIconPreview: View {
-    let appearance: JarvisAppIconAppearance
-    let isSystemDark: Bool
-
-    var body: some View {
-        Group {
-            if let image = JarvisDockIconController.shared.previewImage(
-                for: appearance,
-                isSystemDark: isSystemDark
-            ) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Image(systemName: appearance.icon)
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(Color.jarvisAccent)
-            }
-        }
-        .frame(width: 68, height: 68)
-        .accessibilityHidden(true)
     }
 }
 
 struct JarvisAccentColorPicker: View {
     @Binding var selection: JarvisAccentColor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hoveredAccent: JarvisAccentColor?
+
+    /// 跟主题切换器同一条高度：选项 28，上下各 4，容器内边距各 2。
+    private static let itemHeight = JarvisMetrics.segmentedItemHeight
+        + JarvisMetrics.segmentedItemVerticalPadding * 2
+    private static let controlHeight = itemHeight + JarvisMetrics.segmentedControlPadding * 2
+
+    private var accents: [JarvisAccentColor] {
+        Array(JarvisAccentColor.allCases)
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(JarvisAccentColor.allCases) { accent in
-                Button {
-                    selection = accent
-                } label: {
-                    VStack(spacing: 6) {
-                        Circle()
-                            .fill(accent.color)
-                            .frame(width: 24, height: 24)
-                            .overlay {
-                                Circle()
-                                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.7)
-                            }
-                        Text(accent.title)
-                            .font(JarvisTypography.micro)
-                            .foregroundStyle(selection == accent ? Color.primary : Color.secondary)
-                            .lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            GeometryReader { proxy in
+                let spacing = JarvisMetrics.segmentedItemSpacing
+                let inset = JarvisMetrics.segmentedControlPadding
+                let count = CGFloat(accents.count)
+                let itemWidth = max(
+                    0,
+                    (proxy.size.width - inset * 2 - spacing * max(count - 1, 0)) / max(count, 1)
+                )
+                let selectedIndex = accents.firstIndex(of: selection) ?? 0
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                        .frame(width: itemWidth, height: Self.itemHeight)
+                        .background(AccentColorSwatch.selectionFill(selection), in: Capsule())
+                        .offset(x: CGFloat(selectedIndex) * (itemWidth + spacing))
+                        .allowsHitTesting(false)
+                        .animation(
+                            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+                            value: selection
+                        )
+
+                    if let hoveredAccent,
+                       hoveredAccent != selection,
+                       let hoveredIndex = accents.firstIndex(of: hoveredAccent)
+                    {
+                        Capsule()
+                            .fill(JarvisMotion.hoverPillTint)
+                            .frame(width: itemWidth, height: Self.itemHeight)
+                            .offset(x: CGFloat(hoveredIndex) * (itemWidth + spacing))
+                            .allowsHitTesting(false)
+                            .animation(
+                                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+                                value: hoveredAccent
+                            )
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        selection == accent
-                            ? Color.jarvisAccent.opacity(0.12)
-                            : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
+
+                    HStack(spacing: spacing) {
+                        ForEach(accents) { accent in
+                            accentTab(accent, width: itemWidth)
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("强调色：\(accent.title)")
-                .accessibilityAddTraits(selection == accent ? .isSelected : [])
+                .padding(inset)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.controlHeight)
+            .jarvisGlass(in: Capsule(), interactive: true)
+
+            HStack(spacing: JarvisMetrics.segmentedItemSpacing) {
+                ForEach(accents) { accent in
+                    Text(accent.title)
+                        .font(JarvisTypography.captionEmphasis)
+                        .foregroundStyle(Color.jarvisTextSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .opacity(hoveredAccent == accent ? 1 : 0)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, JarvisMetrics.segmentedControlPadding)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(
+            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            value: selection
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            value: hoveredAccent
+        )
+    }
+
+    private func accentTab(_ accent: JarvisAccentColor, width: CGFloat) -> some View {
+        let isSelected = selection == accent
+        return Button {
+            selection = accent
+        } label: {
+            // 选中色在底下滑过去，色块留在原位淡出，格子宽度不变。
+            AccentColorSwatch(accent: accent)
+                .opacity(isSelected ? 0 : 1)
+                .frame(width: width, height: Self.itemHeight)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.9))
+        .accessibilityLabel("强调色：\(accent.title)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { isHovering in
+            if isHovering {
+                hoveredAccent = accent
+            } else if hoveredAccent == accent {
+                hoveredAccent = nil
             }
         }
     }
+}
+
+/// 切换器里只放色块。跟随系统不是单一颜色，用实心色轮表示。
+private struct AccentColorSwatch: View {
+    let accent: JarvisAccentColor
+
+    /// 主题选项内容高 28，色块留一点边，切换器总高才跟主题一致。
+    static let diameter: CGFloat = 22
+
+    var body: some View {
+        Circle()
+            .fill(Self.selectionFill(accent))
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.6)
+            }
+            .frame(width: Self.diameter, height: Self.diameter)
+            .accessibilityHidden(true)
+    }
+
+    static func selectionFill(_ accent: JarvisAccentColor) -> AnyShapeStyle {
+        if accent == .system {
+            AnyShapeStyle(wheel)
+        } else {
+            AnyShapeStyle(accent.color)
+        }
+    }
+
+    fileprivate static let wheel = AngularGradient(
+        colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink, .red],
+        center: .center
+    )
 }
 
 struct JarvisToast: View {

@@ -47,6 +47,19 @@ final class JarvisBrandIconTests: XCTestCase {
         XCTAssertEqual(trimmed.size.height, CGFloat(ink), accuracy: 1.5, "透明边没裁干净")
     }
 
+    /// 墨迹贴在左上角。裁反了上下，裁出来的中心就是透明的。
+    func testTrimmingKeepsInkAnchoredAtTheTopLeft() throws {
+        let trimmed = try JarvisBrandIconMetrics.trimmed(makeImage(canvas: 40, ink: 10, offset: 2))
+
+        XCTAssertEqual(trimmed.size.width, 10, accuracy: 1.5)
+        XCTAssertEqual(trimmed.size.height, 10, accuracy: 1.5)
+        var rect = NSRect(origin: .zero, size: trimmed.size)
+        let cgImage = try XCTUnwrap(trimmed.cgImage(forProposedRect: &rect, context: nil, hints: nil))
+        let rep = try XCTUnwrap(NSBitmapImageRep(cgImage: cgImage))
+        let color = try XCTUnwrap(rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2))
+        XCTAssertGreaterThan(color.alphaComponent, 0.9)
+    }
+
     /// 本来就铺满画布的图（娱乐那几个方块）没有可裁的，原样返回——不然会把图形切掉。
     func testTrimLeavesFullBleedImagesAlone() throws {
         let image = try makeImage(canvas: 32, ink: 32, offset: 0)

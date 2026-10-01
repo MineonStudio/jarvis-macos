@@ -38,32 +38,111 @@ enum JarvisBrandIconMetrics {
     /// 语言模式下要显式说明这一点。
     private nonisolated(unsafe) static let cache = NSCache<NSString, NSImage>()
 
+    /// 不透明边界只在缩小后的位图上扫。`colorAt` 走原图像素，OpenRouter 那张
+    /// 会被栅成 2048×1460，第一次进模型设置要在主线程上卡一秒多。
+    private static let sampleLimit = 128
+    private static let alphaThreshold = UInt8(0.06 * 255)
+
     private static func makeTrimmed(_ image: NSImage) -> NSImage? {
         var proposed = NSRect(origin: .zero, size: image.size)
         guard let cgImage = image.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else {
             return nil
         }
-        let rep = NSBitmapImageRep(cgImage: cgImage)
-        guard rep.pixelsWide > 0, rep.pixelsHigh > 0 else { return nil }
+        let pixelWidth = cgImage.width
+        let pixelHeight = cgImage.height
+        guard pixelWidth > 0, pixelHeight > 0 else { return nil }
 
-        var minX = rep.pixelsWide
-        var maxX = -1
-        var minY = rep.pixelsHigh
-        var maxY = -1
-        for y in 0 ..< rep.pixelsHigh {
-            for x in 0 ..< rep.pixelsWide {
-                guard let color = rep.colorAt(x: x, y: y), color.alphaComponent > 0.06 else { continue }
-                minX = min(minX, x); maxX = max(maxX, x)
-                minY = min(minY, y); maxY = max(maxY, y)
-            }
+        let sampleScale = min(1, CGFloat(sampleLimit) / CGFloat(max(pixelWidth, pixelHeight)))
+        let sampleWidth = max(1, Int((CGFloat(pixelWidth) * sampleScale).rounded()))
+        let sampleHeight = max(1, Int((CGFloat(pixelHeight) * sampleScale).rounded()))
+        guard let bounds = opaqueBounds(
+            of: cgImage,
+            sampleWidth: sampleWidth,
+            sampleHeight: sampleHeight
+        ) else {
+            return nil
         }
-        guard maxX >= minX, maxY >= minY else { return nil }
-        let isFullBleed = minX == 0 && minY == 0
-            && maxX == rep.pixelsWide - 1 && maxY == rep.pixelsHigh - 1
-        guard !isFullBleed else { return nil }
+        if bounds.minX == 0, bounds.minY == 0,
+           bounds.maxX == sampleWidth - 1, bounds.maxY == sampleHeight - 1
+        {
+            return nil
+        }
 
-        let crop = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
-        guard let cropped = cgImage.cropping(to: crop) else { return nil }
+        let scaleX = CGFloat(pixelWidth) / CGFloat(sampleWidth)
+        let scaleY = CGFloat(pixelHeight) / CGFloat(sampleHeight)
+        let crop = CGRect(
+            x: floor(CGFloat(bounds.minX) * scaleX),
+            y: floor(CGFloat(bounds.minY) * scaleY),
+            width: ceil(CGFloat(bounds.maxX - bounds.minX + 1) * scaleX),
+            height: ceil(CGFloat(bounds.maxY - bounds.minY + 1) * scaleY)
+        ).intersection(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        guard crop.width >= 1, crop.height >= 1,
+              let cropped = cgImage.cropping(to: crop)
+        else {
+            return nil
+        }
         return NSImage(cgImage: cropped, size: NSSize(width: crop.width, height: crop.height))
+    }
+
+    private struct OpaqueBounds {
+        var minX: Int
+        var maxX: Int
+        var minY: Int
+        var maxY: Int
+    }
+
+    /// 缓冲的第 0 行是图像顶部，和 `CGImage.cropping` 的坐标一致。
+    private static func opaqueBounds(
+        of image: CGImage,
+        sampleWidth: Int,
+        sampleHeight: Int
+    ) -> OpaqueBounds? {
+        let bytesPerPixel = 4
+        let bytesPerRow = sampleWidth * bytesPerPixel
+        var pixels = [UInt8](repeating: 0, count: sampleHeight * bytesPerRow)
+        return pixels.withUnsafeMutableBytes { raw in
+            guard let base = raw.baseAddress,
+                  let context = CGContext(
+                      data: base,
+                      width: sampleWidth,
+                      height: sampleHeight,
+                      bitsPerComponent: 8,
+                      bytesPerRow: bytesPerRow,
+                      space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  )
+            else {
+                return nil
+            }
+            context.interpolationQuality = .none
+            context.setShouldAntialias(false)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
+
+            let buffer = base.assumingMemoryBound(to: UInt8.self)
+            var minX = sampleWidth
+            var maxX = -1
+            var minY = sampleHeight
+            var maxY = -1
+            for y in 0 ..< sampleHeight {
+                let row = y * bytesPerRow
+                for x in 0 ..< sampleWidth {
+                    guard buffer[row + x * bytesPerPixel + 3] > alphaThreshold else { continue }
+                    if x < minX {
+                        minX = x
+                    }
+                    if x > maxX {
+                        maxX = x
+                    }
+                    if y < minY {
+                        minY = y
+                    }
+                    if y > maxY {
+                        maxY = y
+                    }
+                }
+            }
+            guard maxX >= minX, maxY >= minY else { return nil }
+            return OpaqueBounds(minX: minX, maxX: maxX, minY: minY, maxY: maxY)
+        }
     }
 }

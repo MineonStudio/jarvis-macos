@@ -172,7 +172,7 @@ final class ResumeTests: XCTestCase {
         let templatedData = try ResumeDocumentCodec.encodedData(for: templatedDocument)
 
         let exportedRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertNil(exportedRoot["template"])
+        XCTAssertEqual(exportedRoot["template"] as? String, document.template.rawValue)
         XCTAssertEqual(try contentMatchingTemplate(ResumeDocumentCodec.decode(data), template: document.template), document)
         XCTAssertEqual(
             try contentMatchingTemplate(ResumeDocumentCodec.decode(templatedData), template: .editorial),

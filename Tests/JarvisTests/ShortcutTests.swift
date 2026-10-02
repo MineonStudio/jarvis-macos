@@ -27,19 +27,21 @@ final class ShortcutTests: XCTestCase {
     }
 
     func testMediaKeyEventsMapToPhysicalFunctionKeys() {
+        // S-5：ev_keymap.h 定义 NX_KEYTYPE_BRIGHTNESS_UP=2、BRIGHTNESS_DOWN=3；
+        // 物理键 F2(keyCode 120)=调亮、F1(keyCode 122)=调暗。实现与测试曾把两者写反。
         XCTAssertEqual(
             ScreenshotShortcut.functionKeyCode(
                 forSystemDefinedData: (2 << 16) | (0x0A << 8),
                 subtype: 8
             ),
-            122
+            120
         )
         XCTAssertEqual(
             ScreenshotShortcut.functionKeyCode(
                 forSystemDefinedData: (3 << 16) | (0x0A << 8),
                 subtype: 8
             ),
-            120
+            122
         )
         XCTAssertEqual(
             ScreenshotShortcut.functionKeyCode(

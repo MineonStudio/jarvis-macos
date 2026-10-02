@@ -2,7 +2,7 @@ import AppKit
 @testable import Jarvis
 import XCTest
 
-/// 图片落盘用的名字：只有时间戳，三个出口（保存面板、历史拖拽、剪贴板拖拽）一套。
+/// 图片落盘用的名字：时间戳精确到毫秒，三个出口（保存面板、历史拖拽、剪贴板拖拽）一套。
 final class ScreenshotFileNameTests: XCTestCase {
     /// 2026-09-18 12:31:00 +08:00
     private let reference = Date(timeIntervalSince1970: 1_789_705_860)
@@ -17,11 +17,11 @@ final class ScreenshotFileNameTests: XCTestCase {
             timeZone: timeZone("Asia/Shanghai")
         )
 
-        XCTAssertEqual(name, "20260918-123100.png")
+        XCTAssertEqual(name, "20260918-123100-000.png")
         XCTAssertFalse(name.contains("贾维斯"), "文件名里不该再有应用名")
     }
 
-    /// 形状固定成 `yyyyMMdd-HHmmss.png`：换时区只改数字，不改形状。
+    /// 形状固定成 `yyyyMMdd-HHmmss-SSS.png`：换时区只改数字，不改形状。
     func testNameShapeHoldsAcrossTimeZones() throws {
         for identifier in ["UTC", "Asia/Shanghai", "America/Los_Angeles"] {
             let name = try ScreenshotFileName.timestamped(
@@ -29,10 +29,25 @@ final class ScreenshotFileNameTests: XCTestCase {
                 timeZone: timeZone(identifier)
             )
             XCTAssertNotNil(
-                name.range(of: #"^\d{8}-\d{6}\.png$"#, options: .regularExpression),
+                name.range(of: #"^\d{8}-\d{6}-\d{3}\.png$"#, options: .regularExpression),
                 "\(identifier) 下得到的是 \(name)"
             )
         }
+    }
+
+    /// 改进 #8：毫秒位让同一秒内的两次截图名字不同。
+    func testMillisecondDistinguishesSameSecondCaptures() throws {
+        let first = try ScreenshotFileName.timestamped(
+            at: reference,
+            timeZone: timeZone("Asia/Shanghai")
+        )
+        let second = try ScreenshotFileName.timestamped(
+            at: reference.addingTimeInterval(0.042),
+            timeZone: timeZone("Asia/Shanghai")
+        )
+        XCTAssertEqual(first, "20260918-123100-000.png")
+        XCTAssertEqual(second, "20260918-123100-042.png")
+        XCTAssertNotEqual(first, second)
     }
 
     /// 名字不跟系统区域走。
@@ -73,7 +88,7 @@ extension ScreenshotFileNameTests {
         let suggested = item.suggestedFileName
 
         XCTAssertNotNil(
-            suggested.range(of: #"^\d{8}-\d{6}\.png$"#, options: .regularExpression),
+            suggested.range(of: #"^\d{8}-\d{6}-\d{3}\.png$"#, options: .regularExpression),
             "落盘名是 \(suggested)"
         )
         // 时间取 updatedAt（界面显示的是它，文件内容也是那一次写进去的），不是 createdAt。

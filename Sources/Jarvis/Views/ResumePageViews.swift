@@ -9,10 +9,8 @@ struct ResumePageContent: Sendable {
     var skills: [String]
     var projects: [ResumeProject]
 
-    var hasContent: Bool {
-        !education.isEmpty || !experience.isEmpty || !skills.isEmpty || !projects.isEmpty
-    }
-
+    // #31：本 struct 的 hasContent 已删除——分页入口用的是 ResumeDocument.hasContent，
+    // 这里这个零调用。判空直接看四个数组即可。
     static func fullDocument(_ document: ResumeDocument) -> Self {
         Self(
             includesHeader: true,
@@ -214,6 +212,59 @@ struct ResumePageView: View {
     let onSelectBullet: (UUID, Int) -> Void
     let pageContent: ResumePageContent?
 
+    /// #32：空态占位各模板只差分割线颜色/高度和 padding 数值，以前是四个几乎
+    /// 一样的 switch 分支。抽成配置表，分支只剩查表 + 一套布局。
+    private struct PlaceholderChrome {
+        let dividerColor: Color
+        let dividerHeight: CGFloat
+        let dividerTopPadding: CGFloat
+        /// nil 表示原来就没有 bottom padding（如 timeline），传 0 等价。
+        let dividerBottomPadding: CGFloat?
+        let horizontalPadding: CGFloat
+        let verticalPadding: CGFloat
+    }
+
+    private static func placeholderChrome(for template: ResumeTemplate) -> PlaceholderChrome {
+        switch template {
+        case .editorial:
+            PlaceholderChrome(
+                dividerColor: ResumePaperPalette.ink,
+                dividerHeight: 1,
+                dividerTopPadding: 20,
+                dividerBottomPadding: 2,
+                horizontalPadding: 58,
+                verticalPadding: 46
+            )
+        case .minimal:
+            PlaceholderChrome(
+                dividerColor: ResumePaperPalette.ink,
+                dividerHeight: 2,
+                dividerTopPadding: 25,
+                dividerBottomPadding: 1,
+                horizontalPadding: 58,
+                verticalPadding: 48
+            )
+        case .creative:
+            PlaceholderChrome(
+                dividerColor: ResumePaperPalette.coral,
+                dividerHeight: 2,
+                dividerTopPadding: 18,
+                dividerBottomPadding: 1,
+                horizontalPadding: 52,
+                verticalPadding: 40
+            )
+        case .timeline:
+            PlaceholderChrome(
+                dividerColor: ResumePaperPalette.teal,
+                dividerHeight: 2,
+                dividerTopPadding: 20,
+                dividerBottomPadding: nil,
+                horizontalPadding: 48,
+                verticalPadding: 43
+            )
+        }
+    }
+
     init(
         document: ResumeDocument,
         selectedProjectID: UUID?,
@@ -268,70 +319,23 @@ struct ResumePageView: View {
     }
 
     private var templatePlaceholderLayout: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            switch document.template {
-            case .editorial:
-                ResumePageHeader(
-                    document: document,
-                    template: .editorial,
-                    showsPlaceholders: true
-                )
-                Rectangle()
-                    .fill(ResumePaperPalette.ink)
-                    .frame(height: 1)
-                    .padding(.top, 20)
-                    .padding(.bottom, 2)
-                placeholderPageSections(template: .editorial)
-            case .minimal:
-                ResumePageHeader(
-                    document: document,
-                    template: .minimal,
-                    showsPlaceholders: true
-                )
-                Rectangle()
-                    .fill(ResumePaperPalette.ink)
-                    .frame(height: 2)
-                    .padding(.top, 25)
-                    .padding(.bottom, 1)
-                placeholderPageSections(template: .minimal)
-            case .creative:
-                ResumePageHeader(
-                    document: document,
-                    template: .creative,
-                    showsPlaceholders: true
-                )
-                Rectangle()
-                    .fill(ResumePaperPalette.coral)
-                    .frame(height: 2)
-                    .padding(.top, 18)
-                    .padding(.bottom, 1)
-                placeholderPageSections(template: .creative)
-            case .timeline:
-                ResumePageHeader(
-                    document: document,
-                    template: .timeline,
-                    showsPlaceholders: true
-                )
-                Rectangle()
-                    .fill(ResumePaperPalette.teal)
-                    .frame(height: 2)
-                    .padding(.top, 20)
-                placeholderPageSections(template: .timeline)
-            }
+        let chrome = Self.placeholderChrome(for: document.template)
+        return VStack(alignment: .leading, spacing: 0) {
+            ResumePageHeader(
+                document: document,
+                template: document.template,
+                showsPlaceholders: true
+            )
+            Rectangle()
+                .fill(chrome.dividerColor)
+                .frame(height: chrome.dividerHeight)
+                .padding(.top, chrome.dividerTopPadding)
+                .padding(.bottom, chrome.dividerBottomPadding ?? 0)
+            placeholderPageSections(template: document.template)
             Spacer(minLength: 0)
         }
-        .padding(
-            .horizontal,
-            document.template == .timeline
-                ? 48
-                : (document.template == .creative ? 52 : 58)
-        )
-        .padding(
-            .vertical,
-            document.template == .timeline
-                ? 43
-                : (document.template == .minimal ? 48 : (document.template == .creative ? 40 : 46))
-        )
+        .padding(.horizontal, chrome.horizontalPadding)
+        .padding(.vertical, chrome.verticalPadding)
     }
 
     @ViewBuilder

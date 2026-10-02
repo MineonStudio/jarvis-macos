@@ -273,7 +273,18 @@ final class AppModel {
             }
             loadedMeetingRecords[index].applyInterruptedLaunchRecovery()
             if loadedMeetingRecords[index] != original {
-                try? repository.save(loadedMeetingRecords[index])
+                do {
+                    try repository.save(loadedMeetingRecords[index])
+                } catch {
+                    // #38：以前 try? 静默吞掉。迁移写回失败意味着下次启动还会
+                    // 重复做同一份迁移——记下来，方便排查。内存里的记录不受影响。
+                    JarvisLog.error(
+                        category: .storage,
+                        event: "meeting.migration.save.failed",
+                        error: error,
+                        fields: ["meetingID": loadedMeetingRecords[index].id.uuidString]
+                    )
+                }
             }
         }
         meetingRecords = loadedMeetingRecords
@@ -694,7 +705,7 @@ extension AppModel {
         if !JarvisLocalSigning.isAvailable {
             let alert = NSAlert()
             alert.messageText = "安装后需要重新授权"
-            alert.informativeText = "这次更新会清除屏幕录制和辅助功能授权。"
+            alert.informativeText = "这次更新会清除屏幕录制、辅助功能、麦克风和摄像头授权。"
             alert.addButton(withTitle: "继续")
             alert.addButton(withTitle: "取消")
             guard alert.runModal() == .alertFirstButtonReturn else { return }

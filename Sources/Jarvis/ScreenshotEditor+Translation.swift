@@ -76,6 +76,9 @@ extension ScreenshotEditorModel {
     }
 
     func enterTranslationMode() {
+        // #11：和 selectTool 一致，先把正在输入的文字草稿提交，
+        // 再清工具/选中态，避免草稿收尾路径不一致。
+        commitTextEditing()
         selectedTool = nil
         selectedAnnotationID = nil
         translationMode = true
@@ -467,11 +470,21 @@ extension ScreenshotEditorModel {
             screenFrame: CGRect(origin: .zero, size: canvasSize),
             canvasSize: canvasSize
         ).outputRect(fromCanvasRect: selection)
-        return try? ScreenshotService().crop(
-            capture,
-            to: outputRect,
-            on: CGRect(origin: .zero, size: canvasSize)
-        ).data
+        do {
+            return try ScreenshotService().crop(
+                capture,
+                to: outputRect,
+                on: CGRect(origin: .zero, size: canvasSize)
+            ).data
+        } catch {
+            // 改进 #10：以前 `try?` 吞掉裁剪失败的真实原因，翻译没反应时无从排查。
+            JarvisLog.error(
+                category: .storage,
+                event: "translation.crop.failed",
+                error: error
+            )
+            return nil
+        }
     }
 
     private static func isCancellation(_ error: Error) -> Bool {

@@ -36,7 +36,10 @@ final class AppVersionTests: XCTestCase {
             downloadURL: XCTUnwrap(URL(string: "https://github.com/MineonStudio/jarvis-macos/releases/download/v1.4.5/Jarvis-update.zip")),
             assetDigest: "sha256:\(String(repeating: "a", count: 64))",
             archiveSize: 1,
-            isLegacyBootstrap: false
+            isLegacyBootstrap: false,
+            manifestAsset: nil,
+            signatureAsset: nil,
+            archiveName: "Jarvis-update.zip"
         )
 
         XCTAssertTrue(service.isNewer(release, than: "1.4.5", build: "343"))
@@ -104,6 +107,97 @@ final class AppVersionTests: XCTestCase {
 
     func testUpdateLogUsesUserLibraryLogsDirectory() {
         XCTAssertTrue(JarvisUpdateService.updateLogURL.path.hasSuffix("Library/Logs/Jarvis/update.log"))
+    }
+
+    func testSignedUpdateArchiveIgnoresTheDirectDownloadZip() throws {
+        let updateURL = try XCTUnwrap(
+            URL(string: "https://github.com/MineonStudio/jarvis-macos/releases/download/v1.4.16/Jarvis-update.zip")
+        )
+        let directURL = try XCTUnwrap(
+            URL(string: "https://github.com/MineonStudio/jarvis-macos/releases/download/v1.4.16/Jarvis-v1.4.16.zip")
+        )
+        let assets = [
+            GitHubReleaseAsset(name: "Jarvis-v1.4.16.zip", browserDownloadURL: directURL, digest: "sha256:\(String(repeating: "a", count: 64))", size: 10),
+            GitHubReleaseAsset(name: "Jarvis-1.4.16-macos.zip", browserDownloadURL: directURL, digest: "sha256:\(String(repeating: "a", count: 64))", size: 10),
+            GitHubReleaseAsset(name: "Jarvis-update.zip", browserDownloadURL: updateURL, digest: "sha256:\(String(repeating: "b", count: 64))", size: 11)
+        ]
+
+        XCTAssertEqual(JarvisUpdateService.signedUpdateArchive(in: assets)?.name, "Jarvis-update.zip")
+        XCTAssertNil(JarvisUpdateService.signedUpdateArchive(in: Array(assets.prefix(2))))
+    }
+
+    func testReleaseVersionMatchIgnoresALeadingV() {
+        XCTAssertTrue(JarvisUpdateSecurity.releaseVersionsMatch("1.4.16", "v1.4.16"))
+        XCTAssertFalse(JarvisUpdateSecurity.releaseVersionsMatch("1.4.16", "v1.4.17"))
+        XCTAssertTrue(
+            JarvisUpdateSecurity.digestBinds(
+                manifestSHA256: String(repeating: "ab", count: 32),
+                githubDigest: "sha256:\(String(repeating: "AB", count: 32))"
+            )
+        )
+        XCTAssertFalse(
+            JarvisUpdateSecurity.digestBinds(
+                manifestSHA256: String(repeating: "ab", count: 32),
+                githubDigest: "sha256:\(String(repeating: "cd", count: 32))"
+            )
+        )
+    }
+
+    func testSignedArchiveRejectsZipThatDoesNotMatchManifestHash() throws {
+        let original = Data("honest-archive".utf8)
+        let tampered = Data("tampered-archive".utf8)
+        let originalHash = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
+        let tamperedHash = SHA256.hash(data: tampered).map { String(format: "%02x", $0) }.joined()
+        let manifest = JarvisUpdateManifest(
+            schemaVersion: 1,
+            version: "1.4.16",
+            build: "354",
+            bundleIdentifier: "com.jarvis.mac",
+            channel: "stable",
+            archiveName: "Jarvis-update.zip",
+            sha256: originalHash
+        )
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jarvis-signed-archive-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try tampered.write(to: fileURL)
+
+        XCTAssertThrowsError(
+            try service.validateSignedArchive(
+                at: fileURL,
+                manifest: manifest,
+                githubDigest: "sha256:\(tamperedHash)"
+            )
+        ) { error in
+            guard let updateError = error as? JarvisUpdateError,
+                  case .checksumMismatch = updateError
+            else {
+                return XCTFail("Expected manifest hash mismatch, got \(error)")
+            }
+        }
+
+        XCTAssertThrowsError(
+            try service.validateSignedArchive(
+                at: fileURL,
+                manifest: manifest,
+                githubDigest: "sha256:\(originalHash)"
+            )
+        ) { error in
+            guard let updateError = error as? JarvisUpdateError,
+                  case .checksumMismatch = updateError
+            else {
+                return XCTFail("Expected downloaded byte mismatch, got \(error)")
+            }
+        }
+
+        try original.write(to: fileURL)
+        XCTAssertNoThrow(
+            try service.validateSignedArchive(
+                at: fileURL,
+                manifest: manifest,
+                githubDigest: "sha256:\(originalHash)"
+            )
+        )
     }
 
     func testUpdateDigestIsRequiredAndVerified() throws {

@@ -189,6 +189,14 @@ final class EntertainmentVideoDownloadTests: XCTestCase {
         try EntertainmentVideoFileActions.copyFile(at: source, to: destination)
         XCTAssertEqual(try Data(contentsOf: destination), contents)
 
+        // M-L：目标已存在时原子替换，不残留临时文件。
+        try Data("old".utf8).write(to: destination)
+        try EntertainmentVideoFileActions.copyFile(at: source, to: destination)
+        XCTAssertEqual(try Data(contentsOf: destination), contents)
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix(".jarvis-copy-") }
+        XCTAssertTrue(leftovers.isEmpty)
+
         let record = try EntertainmentVideoDownloadRecord(
             id: UUID(),
             platform: .youtube,

@@ -90,7 +90,7 @@ final class AIAPIConfigurationTests: XCTestCase {
         defaults.set("https://legacy.example/v1/chat/completions", forKey: AIAPIConfiguration.endpointKey)
         defaults.set("legacy-model", forKey: AIAPIConfiguration.modelKey)
 
-        let provider = AIAPIConfiguration.loadProvider(defaults: defaults, resolvedAPIKey: "sk-deepseek")
+        let provider = AIAPIConfiguration.load(defaults: defaults, resolvedAPIKey: "sk-deepseek")
         XCTAssertEqual(provider.endpoint, "https://api.deepseek.com/v1/chat/completions")
         XCTAssertEqual(provider.model, "deepseek-v4-flash")
         XCTAssertEqual(provider.apiKey, "sk-deepseek")

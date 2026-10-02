@@ -203,13 +203,21 @@ struct ResumeBasicInfo: Codable, Equatable, Sendable {
 
 enum ResumeCareerTimeline {
     static func years(from workYears: String) -> Int? {
-        guard let range = workYears.range(of: #"\d+(?:\.\d+)?"#, options: .regularExpression),
-              let value = Double(workYears[range]),
-              value >= 0
-        else {
+        guard let range = workYears.range(of: #"\d+(?:\.\d+)?"#, options: .regularExpression) else {
             return nil
         }
-        return Int(value.rounded(.down))
+        let matched = String(workYears[range])
+        // 整数解析：超长数字 Int 初始化直接返回 nil，不再经过 Double。
+        // Double 只有 53 位精度（18 位输入已被舍入失真），且
+        // Int(超过 Int.max 的 Double) 会 trap（S-4）。
+        if let integer = Int(matched) {
+            return integer
+        }
+        // 小数向下取整，只取整数部分；整数部分超长同样判非法。
+        guard let dotIndex = matched.firstIndex(of: ".") else {
+            return nil
+        }
+        return Int(matched[..<dotIndex])
     }
 
     static func period(for workYears: String, referenceDate: Date = Date()) -> String? {
@@ -386,6 +394,17 @@ enum ResumeExportFormat: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 导出菜单里的选项文案。改进 #1：PDF 是整页光栅化导出（`ResumeExportService`
+    /// 用 ImageRenderer 逐页画成位图再塞进 PDF），文字不可选取——必须在菜单里写清楚，
+    /// 不然用户会以为拿到的是可复制的文本 PDF。
+    var menuTitle: String {
+        switch self {
+        case .pdf: "导出为 PDF（图片式，文字不可选取）"
+        case .markdown: "导出为 Markdown"
+        case .json: "导出为 JSON"
+        }
+    }
+
     var fileExtension: String {
         switch self {
         case .pdf: "pdf"
@@ -516,6 +535,9 @@ enum ResumeDocumentCodec {
         let experience: [ResumeExperience]
         let skills: [String]
         let projects: [ResumeProject]
+        // #29：以前导出丢 template——重新导入后排版回到默认模板。
+        // decode 的 optionalDocumentKeys 本来就认 template，补上即 round-trip。
+        let template: ResumeTemplate
 
         init(_ document: ResumeDocument) {
             id = document.id
@@ -525,6 +547,7 @@ enum ResumeDocumentCodec {
             experience = document.experience
             skills = document.skills
             projects = document.projects
+            template = document.template
         }
     }
 
@@ -626,14 +649,8 @@ enum ResumeTextFormatter {
         return lines.joined(separator: "\n")
     }
 
-    static func plainText(for document: ResumeDocument) -> String {
-        markdown(for: document)
-            .replacingOccurrences(of: "**", with: "")
-            .replacingOccurrences(of: "### ", with: "")
-            .replacingOccurrences(of: "## ", with: "")
-            .replacingOccurrences(of: "# ", with: "")
-    }
-
+    // #30：plainText(for:) 已删除——它只是 markdown(for:) 套一层去标记，
+    // 生产代码零调用。需要纯文本时直接调 markdown(for:) 再处理。
     private static func appendEducation(_ education: [ResumeEducation], to lines: inout [String]) {
         guard !education.isEmpty else { return }
         lines.append("## 教育经历")

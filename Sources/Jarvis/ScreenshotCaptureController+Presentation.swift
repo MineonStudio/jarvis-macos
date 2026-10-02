@@ -51,6 +51,9 @@ extension ScreenshotCaptureController {
             )
             return
         } catch {
+            // 改进#11：Quartz 路径失败就静默 fallback 到 SCK，"为什么这次截图
+            // 慢了几秒"失去可观测性。记一条 error，带上真实原因。
+            JarvisLog.error(category: .window, event: "screenshot.capture.quartzFallback", error: error)
             // Fall through to ScreenCaptureKit.
         }
 
@@ -472,7 +475,10 @@ extension ScreenshotCaptureController {
             editor.translationVisible.toggle()
             resizeToolbar(for: editor, on: screenFrame)
         case .pin:
-            break
+            // 不应到达（#4）：工具栏的 pin 走 finishToolbarAction 带 Data 经
+            // AppModel 处理；这里收到说明 action 路由错了，数据会被静默吞掉。
+            assertionFailure("handleToolbarAction 不应收到 .pin")
+            JarvisLog.error(category: .window, event: "screenshot.toolbar.unexpectedPin")
         default:
             handleToolbarEditorAction(action, editor: editor, onAction: onAction)
         }

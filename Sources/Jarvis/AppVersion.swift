@@ -31,6 +31,10 @@ struct JarvisReleaseInfo: Equatable {
     let assetDigest: String?
     let archiveSize: Int64
     let isLegacyBootstrap: Bool
+    let manifestAsset: GitHubReleaseAsset?
+    let signatureAsset: GitHubReleaseAsset?
+    /// 应用内更新只安装这个名字对应的资产。必须等于验签后清单里的 `archiveName`。
+    let archiveName: String?
 }
 
 enum JarvisUpdateState: Equatable {
@@ -60,7 +64,7 @@ private struct GitHubRelease: Decodable {
     }
 }
 
-private struct GitHubReleaseAsset: Decodable {
+struct GitHubReleaseAsset: Decodable, Equatable {
     let name: String
     let browserDownloadURL: URL
     let digest: String?
@@ -90,6 +94,7 @@ enum JarvisUpdateError: LocalizedError {
     case toolFailed(String)
     case checksumUnavailable
     case checksumMismatch
+    case notNewerRelease
     case privacyPermissionResetFailed(String)
 
     var errorDescription: String? {
@@ -124,6 +129,8 @@ enum JarvisUpdateError: LocalizedError {
             "更新包缺少 SHA-256 校验信息，未进行安装"
         case .checksumMismatch:
             "更新包校验失败，未进行安装"
+        case .notNewerRelease:
+            "这个版本不比当前安装更新，已阻止安装"
         case let .privacyPermissionResetFailed(message):
             "清除旧的屏幕录制和辅助功能权限失败：\(message)"
         }
@@ -165,15 +172,9 @@ struct JarvisUpdateService {
             throw URLError(.resourceUnavailable)
         }
 
-        // 1.3.10 picked the first Jarvis zip and trusted GitHub's digest.
-        // Prefer the versioned app archive when a separate update zip is also attached.
-        let zipAssets = release.assets.filter { asset in
-            let name = asset.name.lowercased()
-            return name.contains("jarvis") && name.hasSuffix(".zip")
-        }
-        let asset = zipAssets.first { $0.name.hasPrefix("Jarvis-v") }
-            ?? zipAssets.first { !$0.name.lowercased().contains("update") }
-            ?? zipAssets.first
+        // 应用内更新只认清单点名的 Jarvis-update.zip。
+        // Jarvis-v* 和 Jarvis-<version>-macos.zip 是另一份直接下载包，哈希不同，不能拿来装。
+        let asset = Self.signedUpdateArchive(in: release.assets)
         let releaseInfo = JarvisReleaseInfo(
             version: release.tagName,
             build: nil,
@@ -181,7 +182,10 @@ struct JarvisUpdateService {
             downloadURL: asset?.browserDownloadURL,
             assetDigest: asset?.digest,
             archiveSize: asset?.size ?? 0,
-            isLegacyBootstrap: false
+            isLegacyBootstrap: false,
+            manifestAsset: release.assets.first { $0.name == Self.manifestAssetName },
+            signatureAsset: release.assets.first { $0.name == Self.signatureAssetName },
+            archiveName: asset?.name
         )
         JarvisLog.info(
             category: .update,
@@ -240,8 +244,31 @@ struct JarvisUpdateService {
                 fields: ["version": release.version]
             )
         }
-        guard let downloadURL = release.downloadURL else {
+        // S-1：先验签更新清单。清单缺失、签名无效都直接中止更新，
+        // 不降级为无验签安装（fail-closed）。权限重置放在 zip 哈希核对之后，
+        // 避免清单或安装包对不上时已经清掉用户的 TCC 授权。
+        let manifest = try await verifyUpdateManifest(for: release, operationID: operationID)
+        guard JarvisUpdateSecurity.isNewer(
+            remoteVersion: manifest.version,
+            remoteBuild: manifest.build,
+            than: JarvisAppVersion.shortVersion,
+            localBuild: JarvisAppVersion.build
+        ) else {
+            throw JarvisUpdateError.notNewerRelease
+        }
+        guard let downloadURL = release.downloadURL,
+              release.archiveName == manifest.archiveName
+        else {
             throw JarvisUpdateError.downloadUnavailable
+        }
+        if !JarvisUpdateSecurity.digestBinds(
+            manifestSHA256: manifest.sha256,
+            githubDigest: release.assetDigest
+        ) {
+            if release.assetDigest == nil {
+                throw JarvisUpdateError.checksumUnavailable
+            }
+            throw JarvisUpdateError.checksumMismatch
         }
 
         let launchedAppURL = Bundle.main.bundleURL.standardizedFileURL
@@ -253,11 +280,6 @@ struct JarvisUpdateService {
         let currentAppURL = try resolveInstallLocation(for: launchedAppURL)
         try validateInstallLocation(currentAppURL)
         cleanupStaleLaunchServices(preserving: [launchedAppURL, currentAppURL])
-
-        let keepsCodeIdentity = JarvisLocalSigning.isAvailable
-        if !keepsCodeIdentity {
-            try resetPrivacyPermissions()
-        }
 
         let fileManager = FileManager.default
         let temporaryDirectory = fileManager.temporaryDirectory
@@ -280,9 +302,18 @@ struct JarvisUpdateService {
             throw URLError(.badServerResponse)
         }
 
-        let archiveURL = temporaryDirectory.appendingPathComponent("Jarvis-update.zip")
+        let archiveURL = temporaryDirectory.appendingPathComponent(manifest.archiveName)
         try fileManager.moveItem(at: downloadedURL, to: archiveURL)
-        try verifyDigest(of: archiveURL, expected: release.assetDigest)
+        try validateSignedArchive(
+            at: archiveURL,
+            manifest: manifest,
+            githubDigest: release.assetDigest
+        )
+
+        let keepsCodeIdentity = JarvisLocalSigning.isAvailable
+        if !keepsCodeIdentity {
+            try resetPrivacyPermissions()
+        }
 
         let extractionDirectory = temporaryDirectory.appendingPathComponent("extracted", isDirectory: true)
         try fileManager.createDirectory(at: extractionDirectory, withIntermediateDirectories: true)
@@ -354,6 +385,62 @@ struct JarvisUpdateService {
         return try Data(contentsOf: fileURL, options: .mappedIfSafe)
     }
 
+    /// S-1：下载并验签更新清单。清单或签名资产缺失、签名无效、内嵌公钥缺失、
+    /// 清单版本与发布版本不一致时一律抛错，中止更新（fail-closed）。
+    private func verifyUpdateManifest(
+        for release: JarvisReleaseInfo,
+        operationID: String
+    ) async throws -> JarvisUpdateManifest {
+        do {
+            guard let manifestAsset = release.manifestAsset,
+                  let signatureAsset = release.signatureAsset
+            else {
+                throw JarvisUpdateError.missingSignedManifest
+            }
+            let manifestData = try await downloadSmallAsset(
+                manifestAsset,
+                maximumBytes: JarvisUpdateSecurity.maximumManifestBytes
+            )
+            let signatureData = try await downloadSmallAsset(
+                signatureAsset,
+                maximumBytes: JarvisUpdateSecurity.maximumSignatureBytes
+            )
+            let publicKey = try embeddedUpdatePublicKey()
+            let manifest = try JarvisUpdateSecurity.verifyManifest(
+                data: manifestData,
+                signatureData: signatureData,
+                publicKeyBase64: publicKey
+            )
+            guard JarvisUpdateSecurity.releaseVersionsMatch(manifest.version, release.version) else {
+                throw JarvisUpdateError.mismatchedVersion
+            }
+            JarvisLog.info(
+                category: .update,
+                event: "manifest.verify.success",
+                operationID: operationID,
+                fields: ["version": manifest.version]
+            )
+            return manifest
+        } catch {
+            JarvisLog.error(
+                category: .update,
+                event: "manifest.verify.failed",
+                error: error,
+                operationID: operationID
+            )
+            throw error
+        }
+    }
+
+    private func embeddedUpdatePublicKey() throws -> String {
+        guard let key = Bundle.main.object(forInfoDictionaryKey: "JarvisUpdatePublicKey") as? String,
+              !key.isEmpty
+        else {
+            throw JarvisUpdateError.missingSignedManifest
+        }
+        return key
+    }
+
     private func isAllowedGitHubAssetURL(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && url.host?.lowercased() == "github.com"
     }
@@ -418,6 +505,31 @@ struct JarvisUpdateService {
             throw JarvisUpdateError.ambiguousInstallLocation
         }
         return candidates[0]
+    }
+
+    static func signedUpdateArchive(in assets: [GitHubReleaseAsset]) -> GitHubReleaseAsset? {
+        assets.first { $0.name == JarvisUpdateSecurity.updateArchiveName }
+    }
+
+    /// 清单里的 sha256 才是信任根。GitHub digest 必须和它对上，下载到的字节也必须和它对上。
+    func validateSignedArchive(
+        at fileURL: URL,
+        manifest: JarvisUpdateManifest,
+        githubDigest: String?
+    ) throws {
+        if !JarvisUpdateSecurity.digestBinds(
+            manifestSHA256: manifest.sha256,
+            githubDigest: githubDigest
+        ) {
+            if githubDigest == nil {
+                throw JarvisUpdateError.checksumUnavailable
+            }
+            throw JarvisUpdateError.checksumMismatch
+        }
+        let actual = try sha256(of: fileURL)
+        guard actual.caseInsensitiveCompare(manifest.sha256) == .orderedSame else {
+            throw JarvisUpdateError.checksumMismatch
+        }
     }
 
     func verifyDigest(of fileURL: URL, expected: String?) throws {

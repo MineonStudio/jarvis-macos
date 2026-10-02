@@ -260,11 +260,15 @@ private enum QuartzDisplaySnapshot {
         )?.takeRetainedValue()
     }
 
+    /// dlopen 句柄只开一次（#1）：每次 load 都 dlopen 不 dlclose，
+    /// F1 高频截图下句柄引用计数无界累积。static let 延迟初始化且线程安全。
+    private nonisolated(unsafe) static let coreGraphicsHandle: UnsafeMutableRawPointer? = dlopen(
+        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+        RTLD_NOW
+    )
+
     private static func load<T>(_ name: String, as _: T.Type) -> T? {
-        guard let handle = dlopen(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
-            RTLD_NOW
-        ), let symbol = dlsym(handle, name) else {
+        guard let handle = coreGraphicsHandle, let symbol = dlsym(handle, name) else {
             return nil
         }
         return unsafeBitCast(symbol, to: T.self)

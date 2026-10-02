@@ -25,8 +25,10 @@ enum ScreenshotSharing {
             fileOptions: [],
             visibility: .all
         ) { completion in
+            // 改进 #9：以前每次拖拽写 Jarvis-<UUID>.png 到 tmp，从不清理，长期累积。
+            // 改成复用固定文件名：每次拖拽覆盖同一个文件，tmp 里最多只留一个。
             let fileURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("Jarvis-\(UUID().uuidString).png")
+                .appendingPathComponent("Jarvis-drag.png")
             do {
                 try data.write(to: fileURL, options: .atomic)
                 completion(fileURL, false, nil)
@@ -58,7 +60,10 @@ enum ClipboardSharing {
     static func canProvide(for item: ClipboardItem) -> Bool {
         switch item.kind {
         case .text:
-            return item.text != nil
+            // 超阈值文本不内联（M-H），只做 stat 不读文件。
+            if item.text != nil { return true }
+            guard let textPath = item.textPath else { return false }
+            return FileManager.default.fileExists(atPath: textPath)
         case .image:
             guard let path = item.imagePath else { return false }
             return FileManager.default.fileExists(atPath: path)
@@ -71,7 +76,7 @@ enum ClipboardSharing {
     static func itemProvider(for item: ClipboardItem) -> NSItemProvider? {
         switch item.kind {
         case .text:
-            guard let text = item.text else { return nil }
+            guard let text = item.resolvedText else { return nil }
             let provider = NSItemProvider(object: NSString(string: text))
             provider.suggestedName = item.fileName
             return provider

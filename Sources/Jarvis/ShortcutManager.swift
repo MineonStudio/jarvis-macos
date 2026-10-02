@@ -2,6 +2,17 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
+/// 改进 #12：裸 keyCode 魔法数字（53=Esc、49=空格、51/117=删除等）抽成命名常量。
+/// 值取自 Carbon `kVK_*`（本文件已引 Carbon），事件处理里直接写名字。
+enum JarvisKeyCode {
+    static let escape = UInt16(kVK_Escape)               // 53
+    static let space = UInt16(kVK_Space)                 // 49
+    static let delete = UInt16(kVK_Delete)               // 51
+    static let forwardDelete = UInt16(kVK_ForwardDelete) // 117
+    static let returnKey = UInt16(kVK_Return)            // 36
+    static let tab = UInt16(kVK_Tab)                     // 48
+}
+
 struct ScreenshotShortcut: Codable, Equatable {
     let keyCode: UInt16
     let modifiers: UInt
@@ -54,8 +65,8 @@ struct ScreenshotShortcut: Codable, Equatable {
         guard keyState == 0x0A else { return nil }
 
         switch keyType {
-        case 2: return 122 // Brightness down = physical F1
-        case 3: return 120 // Brightness up = physical F2
+        case 2: return 120 // NX_KEYTYPE_BRIGHTNESS_UP = physical F2
+        case 3: return 122 // NX_KEYTYPE_BRIGHTNESS_DOWN = physical F1
         case 32: return 99 // Mission Control = physical F3
         default: return nil
         }
@@ -121,12 +132,12 @@ struct ScreenshotShortcut: Codable, Equatable {
     /// built-in "退出贾维斯" menu item.
     var menuKeyEquivalent: String {
         switch keyCode {
-        case 36: "\r"
-        case 48: "\t"
-        case 49: " "
-        case 51: "\u{8}"
-        case 53: "\u{1B}"
-        case 117: "\u{7F}"
+        case JarvisKeyCode.returnKey: "\r"
+        case JarvisKeyCode.tab: "\t"
+        case JarvisKeyCode.space: " "
+        case JarvisKeyCode.delete: "\u{8}"
+        case JarvisKeyCode.escape: "\u{1B}"
+        case JarvisKeyCode.forwardDelete: "\u{7F}"
         case 123: Self.functionKey(0xF702)
         case 124: Self.functionKey(0xF703)
         case 125: Self.functionKey(0xF701)
@@ -177,8 +188,10 @@ struct ScreenshotShortcut: Codable, Equatable {
         23: "5", 24: "=", 25: "9", 26: "7", 27: "-", 28: "8", 29: "0",
         30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 37: "L",
         38: "J", 39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/",
-        45: "N", 46: "M", 47: ".", 50: "`", 36: "↩", 48: "⇥", 49: "空格",
-        51: "⌫", 53: "Esc", 117: "⌦", 123: "←", 124: "→", 125: "↓", 126: "↑",
+        45: "N", 46: "M", 47: ".", 50: "`",
+        JarvisKeyCode.returnKey: "↩", JarvisKeyCode.tab: "⇥",
+        JarvisKeyCode.space: "空格", JarvisKeyCode.delete: "⌫",
+        JarvisKeyCode.escape: "Esc", JarvisKeyCode.forwardDelete: "⌦",
         122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6",
         98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12"
     ]
@@ -232,7 +245,11 @@ final class ScreenshotShortcutManager {
         removeFallbackKeyMonitors()
         if let eventHandler {
             RemoveEventHandler(eventHandler)
+            self.eventHandler = nil
         }
+        // #5：闭包留在 eventHandlerUPP 上，随实例一起释放。
+        // Mach-O 的 DisposeEventHandlerUPP 只是空宏，没有可链接符号。
+        eventHandlerUPP = nil
     }
 
     @discardableResult
@@ -517,7 +534,7 @@ final class ShortcutRecorderNSView: NSView {
     override func keyDown(with event: NSEvent) {
         guard isRecording else { return }
 
-        if event.keyCode == 53 {
+        if event.keyCode == JarvisKeyCode.escape {
             isRecording = false
             onRecordingChanged?(false)
             needsDisplay = true

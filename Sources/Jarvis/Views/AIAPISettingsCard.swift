@@ -149,6 +149,13 @@ struct AIAPISettingsCard: View {
                     }
                 }
             }
+
+            // 改进 #2：数据去向必须在配置页写清楚。会议总结、简历 AI 生成等功能
+            // 会把相关内容（如会议逐字稿）发送给上面配置的服务商处理。
+            Text("数据说明：会议总结、简历 AI 生成等功能会把相关内容（如会议逐字稿）发送给此处配置的 AI 服务商处理。")
+                .font(JarvisTypography.caption)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

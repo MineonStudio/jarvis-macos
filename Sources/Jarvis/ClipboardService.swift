@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 enum ClipboardLimits {
     /// 超过这个大小的文件只记原始路径，不复制进缓存。空间上限另算。
     static let maximumStoredFileSize: Int64 = 1024 * 1024 * 1024
+    /// 超过这个大小的文本不内联进历史 JSON（M-H），全文只走 textPath 文件。
+    static let maximumInlineTextSize: Int64 = 1024 * 1024
 }
 
 enum ClipboardPasteboardPrivacy {
@@ -163,7 +165,13 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let createdAt: Date
     let kind: ClipboardKind
-    let text: String?
+    /// 内联文本。内容落盘到 textPath 后会被清空（改进 #6），避免密码等敏感内容
+    /// 在 JSON 索引和 txt 文件里各存一份；读取统一走 `resolvedText`。
+    var text: String?
+    /// 超阈值文本的前 N 字符，供卡片预览与搜索；全文在 textPath 文件里（M-H）。
+    /// 迁移清空内联文本时也会补这个片段（改进 #6），两处共用同一个长度。
+    static let textSnippetPrefixLength = 4000
+    var textSnippet: String?
     var textPath: String?
     var imagePath: String?
     var filePath: String?
@@ -180,6 +188,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
         createdAt: Date = Date(),
         kind: ClipboardKind,
         text: String? = nil,
+        textSnippet: String? = nil,
         textPath: String? = nil,
         imagePath: String? = nil,
         filePath: String? = nil,
@@ -195,6 +204,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
         self.createdAt = createdAt
         self.kind = kind
         self.text = text
+        self.textSnippet = textSnippet
         self.textPath = textPath
         self.imagePath = imagePath
         self.filePath = filePath
@@ -208,7 +218,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, createdAt, kind, text, textPath, imagePath, filePath, thumbnailPath, fileName
+        case id, createdAt, kind, text, textSnippet, textPath, imagePath, filePath, thumbnailPath, fileName
         case fileSize, fileUTI, fingerprintValue, isStoredCopy, isPinned
     }
 
@@ -218,6 +228,7 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         kind = try container.decode(ClipboardKind.self, forKey: .kind)
         text = try container.decodeIfPresent(String.self, forKey: .text)
+        textSnippet = try container.decodeIfPresent(String.self, forKey: .textSnippet)
         textPath = try container.decodeIfPresent(String.self, forKey: .textPath)
         imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
         filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
@@ -256,13 +267,18 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
     var preview: String {
         switch kind {
         case .text:
-            text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                ? text ?? "文本"
-                : "空文本"
+            if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text
+            }
+            // 超阈值文本不内联（M-H），用抓取时存的片段做预览与搜索。
+            if let textSnippet, !textSnippet.isEmpty {
+                return textSnippet
+            }
+            return "空文本"
         case .image:
-            "图片"
+            return "图片"
         case .file, .video:
-            fileName ?? URL(fileURLWithPath: filePath ?? "").lastPathComponent
+            return fileName ?? URL(fileURLWithPath: filePath ?? "").lastPathComponent
         }
     }
 
@@ -275,9 +291,18 @@ struct ClipboardItem: Codable, Identifiable, Equatable, Sendable {
         return try? String(contentsOf: URL(fileURLWithPath: textPath), encoding: .utf8)
     }
 
+    /// 敏感检测只扫前 32KB（M-I）：卡片 body 每次求值都会触发，全文正则在病态输入下很慢。
+    /// 密钥类内容通常出现在文本头部，截断是可接受的折中。
+    private static let sensitivityScanCharacterLimit = 32 * 1024
+
     var clipboardSensitivity: ClipboardSensitivity? {
         guard let resolvedText else { return nil }
-        return SensitiveContentDetector.detect(resolvedText)
+        let endIndex = resolvedText.index(
+            resolvedText.startIndex,
+            offsetBy: Self.sensitivityScanCharacterLimit,
+            limitedBy: resolvedText.endIndex
+        ) ?? resolvedText.endIndex
+        return SensitiveContentDetector.detect(String(resolvedText[..<endIndex]))
     }
 
     var isSensitive: Bool {
@@ -389,12 +414,39 @@ final class ClipboardService: @unchecked Sendable {
             return
         }
         let capturedAt = Date()
-        let fileURLs = Self.fileURLs(from: pasteboard)
-        let text = pasteboard.string(forType: .string)
-        let pngData = pasteboard.data(forType: .png)
-        let tiffData = pngData == nil ? pasteboard.data(forType: .tiff) : nil
+        // #18：主线程只取 changeCount。string/data(forType:) 是大内存拷贝，
+        // 550ms 轮询挂在主运行循环上，复制大截图会掉帧——数据读取放后台。
+        // 这里先同步记下 changeCount，避免两次 tick 重复处理同一份内容。
         lastChangeCount = changeCount
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let fileURLs = Self.fileURLs(from: pasteboard)
+            let text = pasteboard.string(forType: .string)
+            let pngData = pasteboard.data(forType: .png)
+            let tiffData = pngData == nil ? pasteboard.data(forType: .tiff) : nil
+            // 读取期间又有新复制：丢弃这次结果。新内容会触发下一次 tick
+            // （changeCount 已变），由新的读取处理，避免重复入库。
+            guard pasteboard.changeCount == changeCount else { return }
+            Task { @MainActor [weak self] in
+                self?.handleCapturedContent(
+                    fileURLs: fileURLs,
+                    text: text,
+                    pngData: pngData,
+                    tiffData: tiffData,
+                    capturedAt: capturedAt
+                )
+            }
+        }
+    }
 
+    /// #18 的下半段：处理后台读回来的剪贴板内容，跑在主线程。
+    /// 参数都是不可变快照；self 的 var 不在后台块里读，沿用 M-G 的约定。
+    private func handleCapturedContent(
+        fileURLs: [URL],
+        text: String?,
+        pngData: Data?,
+        tiffData: Data?,
+        capturedAt: Date
+    ) {
         if !fileURLs.isEmpty {
             JarvisLog.notice(
                 category: .clipboard,
@@ -426,10 +478,14 @@ final class ClipboardService: @unchecked Sendable {
                 let data = Data(text.utf8)
                 guard prepareCacheSpace?(Int64(data.count)) != false else { return }
                 let path = cacheStore.storeData(data, fileExtension: "txt")
+                // M-H：超阈值文本不内联进历史 JSON，全文只走 textPath 文件；
+                // 卡片预览与搜索用截断片段，复制/拖拽走 resolvedText 读文件。
+                let inlineText: String? = Int64(data.count) <= ClipboardLimits.maximumInlineTextSize ? text : nil
                 let item = ClipboardItem(
                     createdAt: capturedAt,
                     kind: .text,
-                    text: text,
+                    text: inlineText,
+                    textSnippet: inlineText == nil ? String(text.prefix(ClipboardItem.textSnippetPrefixLength)) : nil,
                     textPath: path,
                     fileSize: Int64(data.count),
                     fingerprintValue: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
@@ -438,7 +494,7 @@ final class ClipboardService: @unchecked Sendable {
                 JarvisLog.info(
                     category: .clipboard,
                     event: "capture.complete",
-                    result: path == nil ? "inlineOnly" : "stored",
+                    result: path == nil ? "inlineOnly" : (inlineText == nil ? "fileOnly" : "stored"),
                     fields: [
                         "kind": "text",
                         "bytes": String(data.count),
@@ -564,8 +620,8 @@ final class ClipboardService: @unchecked Sendable {
                 return
             }
 
-            let cacheStore = self.cacheStore
-            let prepareCacheSpace = self.prepareCacheSpace
+            // 复用函数入口在主线程捕获的 cacheStore/prepareCacheSpace：
+            // 后台块里重读 self 的 var 会与 MainActor 上 stop() 的写入竞态（M-G）。
             ClipboardVideoThumbnailGenerator.makeCGImageAsync(for: URL(fileURLWithPath: path)) { image in
                 guard let image,
                       let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])

@@ -51,7 +51,6 @@ final class EntertainmentPlatformTests: XCTestCase {
             JarvisWebPlatformNavigationPolicy.decision(
                 url: ads,
                 isMainFrame: false,
-                isPrimaryWebView: true,
                 shouldDownload: false,
                 allowsHost: EntertainmentPlatform.youtube.allowsHost
             ),
@@ -61,7 +60,6 @@ final class EntertainmentPlatformTests: XCTestCase {
             JarvisWebPlatformNavigationPolicy.decision(
                 url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
                 isMainFrame: true,
-                isPrimaryWebView: true,
                 shouldDownload: false,
                 allowsHost: EntertainmentPlatform.youtube.allowsHost
             ),
@@ -71,7 +69,29 @@ final class EntertainmentPlatformTests: XCTestCase {
             JarvisWebPlatformNavigationPolicy.decision(
                 url: URL(string: "https://evil.example/phish"),
                 isMainFrame: true,
-                isPrimaryWebView: true,
+                shouldDownload: false,
+                allowsHost: EntertainmentPlatform.youtube.allowsHost
+            ),
+            .openExternally
+        )
+    }
+
+    /// S-2 回归：window.open 产生的弹窗主帧此前被整段放行，
+    /// 钓鱼页可在弹窗内跳转任意域名。现在弹窗主帧同样走白名单判定。
+    func testPopupMainFrameNavigationGoesThroughTheAllowlist() {
+        XCTAssertEqual(
+            JarvisWebPlatformNavigationPolicy.decision(
+                url: URL(string: "https://www.youtube.com/"),
+                isMainFrame: true,
+                shouldDownload: false,
+                allowsHost: EntertainmentPlatform.youtube.allowsHost
+            ),
+            .allow
+        )
+        XCTAssertEqual(
+            JarvisWebPlatformNavigationPolicy.decision(
+                url: URL(string: "https://evil.example/phish"),
+                isMainFrame: true,
                 shouldDownload: false,
                 allowsHost: EntertainmentPlatform.youtube.allowsHost
             ),

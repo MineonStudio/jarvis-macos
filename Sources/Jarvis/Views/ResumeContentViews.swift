@@ -194,7 +194,7 @@ private extension ResumeContentView {
             JarvisDropdownMenu(
                 title: "导出简历",
                 options: ResumeExportFormat.allCases.map {
-                    JarvisDropdownOption(id: $0.rawValue, title: "导出为 \($0.title)")
+                    JarvisDropdownOption(id: $0.rawValue, title: $0.menuTitle)
                 },
                 accessibilityLabel: "导出简历",
                 help: "选择 PDF、Markdown 或 JSON",

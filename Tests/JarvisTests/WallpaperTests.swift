@@ -639,13 +639,17 @@ final class WallpaperTests: XCTestCase {
 
     /// 写盘失败必须让视图模型知道：`toggleFavorite` 只靠 catch 决定要不要提示
     /// 「收藏失败」，静默报告成功会让星星闪一下又弹回去。
+    ///
+    /// #43：以前靠 `chmod 0o500` 造只读目录，root 跑测试时照样写得进去，
+    /// 测试会误失败。注意报告里点的 `MoveFailingFileManager` 也帮不上忙——它只
+    /// override 了 `moveItem`（管的是损坏文件的留证挪动），而写盘走的是
+    /// `JarvisProtectedStorage.write`（`Data.write` atomic + `FileManager.default`），
+    /// 根本不经过注入的 fileManager。这里改成把目录整个换成普通文件：
+    /// 父路径不是目录时写盘在任何用户下都必定失败，与权限/身份无关。
     func testWallpaperStoreReportsFailedSaves() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-wallpaper-readonly-\(UUID().uuidString)", isDirectory: true)
-        defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-            try? FileManager.default.removeItem(at: directory)
-        }
+        defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let store = WallpaperStore(directoryURL: directory)
@@ -671,9 +675,10 @@ final class WallpaperTests: XCTestCase {
             )
         }
 
-        // 先留下一条能读出来的元数据，再让目录只读。
+        // 先留下一条能读出来的元数据，再把目录换成普通文件让写盘必败。
         try store.upsert(makeItem(id: "wallhaven:first"))
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        try FileManager.default.removeItem(at: directory)
+        XCTAssertTrue(FileManager.default.createFile(atPath: directory.path, contents: nil))
 
         XCTAssertThrowsError(try store.upsert(makeItem(id: "wallhaven:second")), "写入失败没有报告")
         XCTAssertThrowsError(try store.delete(makeItem(id: "wallhaven:first")), "删除失败没有报告")

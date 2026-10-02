@@ -51,11 +51,30 @@ enum EntertainmentVideoFileActions {
         return pasteboard.writeObjects([url as NSURL])
     }
 
+    /// M-L：先拷到同目录临时文件，成功后再原子落到目标位置；中途失败原文件
+    /// 还在（以前是先删目标再拷，拷失败原文件就没了）。临时文件与目标同目录，
+    /// 保证 move/replace 是同文件系统原子操作。
     static func copyFile(at url: URL, to destination: URL, fileManager: FileManager = .default) throws {
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        let tempURL = destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(".jarvis-copy-\(UUID().uuidString).tmp")
+        do {
+            try fileManager.copyItem(at: url, to: tempURL)
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.replaceItem(
+                    at: destination,
+                    withItemAt: tempURL,
+                    backupItemName: nil,
+                    options: [],
+                    resultingItemURL: nil
+                )
+            } else {
+                try fileManager.moveItem(at: tempURL, to: destination)
+            }
+        } catch {
+            try? fileManager.removeItem(at: tempURL)
+            throw error
         }
-        try fileManager.copyItem(at: url, to: destination)
     }
 }
 
@@ -330,7 +349,10 @@ struct EntertainmentVideoDownloadService: Sendable {
             .components(separatedBy: CharacterSet(charactersIn: "\\?%*|\"<>"))
             .joined()
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        var base = stripped.isEmpty ? "视频" : String(stripped.prefix(80))
+        // #25：前导点会产出 Finder 不可见的隐藏文件（如标题 "..."）。
+        // 先剥掉前导点；剥完变空（如标题就是 "..."）回退到"视频"。
+        let withoutLeadingDots = String(stripped.drop(while: { $0 == "." }))
+        var base = withoutLeadingDots.isEmpty ? "视频" : String(withoutLeadingDots.prefix(80))
         let suffix = ".\(ext)"
         if base.lowercased().hasSuffix(suffix) {
             base = String(base.dropLast(suffix.count))
@@ -514,6 +536,10 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     private let cancellation = EntertainmentDownloadCancellation()
     private let previewController = EntertainmentVideoPreviewController()
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    /// 已分配但下载尚未落盘的目标路径（M-K）：yt-dlp 期间只写 `<dest>.part`、
+    /// 结束瞬间才改名，同一视频快速点两次会分到同一目标、两个进程争写 .part。
+    /// download() 在 MainActor 上同步分配即插入，任务结束即释放。
+    private var allocatedDestinations: Set<URL> = []
 
     init(
         service: EntertainmentVideoDownloadService = EntertainmentVideoDownloadService(),
@@ -551,10 +577,14 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     func download(probe: EntertainmentVideoProbe, quality: EntertainmentVideoQuality) {
         let ext = quality.extractAudio ? "mp3" : "mp4"
         let filename = EntertainmentVideoDownloadService.sanitizedFilename(probe.title, ext: ext)
+        // M-K：在途目标不再二次分配，第二个任务自动顺延到 " (2)" 等空位。
+        let inFlight = allocatedDestinations
         let destination = AIConversationDownloadFileName.destination(
             in: downloadsDirectory,
-            suggestedFilename: filename
+            suggestedFilename: filename,
+            isTaken: { inFlight.contains($0) }
         )
+        allocatedDestinations.insert(destination)
         let id = UUID()
         let item = EntertainmentVideoDownloadItem(
             id: id,
@@ -610,7 +640,9 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
     }
 
     func open(_ item: EntertainmentVideoDownloadItem) {
-        guard let destinationURL = item.destinationURL else { return }
+        // #26：文件被用户手动删了还点"打开"，NSWorkspace.open 会静默无反应。
+        // canOpenFile 已包含"下载完成 + 文件真实存在"检查，直接复用。
+        guard item.canOpenFile, let destinationURL = item.destinationURL else { return }
         NSWorkspace.shared.open(destinationURL)
     }
 
@@ -629,7 +661,15 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
         panel.nameFieldStringValue = item.filename
         panel.begin { response in
             guard response == .OK, let destination = panel.url else { return }
-            try? EntertainmentVideoFileActions.copyFile(at: source, to: destination)
+            do {
+                try EntertainmentVideoFileActions.copyFile(at: source, to: destination)
+            } catch {
+                // M-L：以前这里是 try?，失败无声。现在明确告诉用户。
+                let alert = NSAlert()
+                alert.messageText = "保存副本失败"
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
         }
     }
 
@@ -703,6 +743,7 @@ final class EntertainmentVideoDownloadManager: ObservableObject {
             }
         }
         tasks[id] = nil
+        allocatedDestinations.remove(destination)
     }
 
     private func updateItem(_ id: UUID, _ update: (inout EntertainmentVideoDownloadItem) -> Void) {

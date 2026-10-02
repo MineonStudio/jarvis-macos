@@ -91,9 +91,12 @@ final class SelectionOverlayView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
+        // 防御性冗余说明：Esc（JarvisKeyCode.escape）实际由宿主窗口 sendEvent 先行拦截
+        // 并回调 onCancel，这里的 Esc 分支正常走不到，仅作视图被挪到普通窗口
+        // 时的兜底。
+        if event.keyCode == JarvisKeyCode.escape {
             onCancel?()
-        } else if event.keyCode == 49 {
+        } else if event.keyCode == JarvisKeyCode.space {
             spacePressed = true
         } else {
             super.keyDown(with: event)
@@ -101,7 +104,7 @@ final class SelectionOverlayView: NSView {
     }
 
     override func keyUp(with event: NSEvent) {
-        if event.keyCode == 49 {
+        if event.keyCode == JarvisKeyCode.space {
             spacePressed = false
         } else {
             super.keyUp(with: event)

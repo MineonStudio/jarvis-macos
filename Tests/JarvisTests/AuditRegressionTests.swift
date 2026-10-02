@@ -54,7 +54,7 @@ final class AuditRegressionTests: XCTestCase {
 
         // 缺陷行为：removeLegacyFiles 会把外部文件一并删掉。
         // 用 XCTExpectFailure 固定"当前是坏的"，这样测试套件保持全绿，
-        // 而一旦修复（AppModel+Clipboard.swift:86 改回 removeManagedFiles），
+        // 而一旦修复（AppModel+Clipboard.swift:129 改回 removeManagedFiles），
         // 这个用例会因为"预期失败但没有失败"而报错，提醒删除该标记。
         XCTExpectFailure("缺陷 C-1：removeLegacyFiles 会删除缓存目录之外的用户文件") {
             store.removeLegacyFiles(atPaths: [externalURL.path], reason: "auditRegression")
@@ -110,27 +110,22 @@ final class AuditRegressionTests: XCTestCase {
 
     // MARK: - 简历工作年限：不得因超长数字输入而崩溃
 
-    /// 审计报告 Critical（简历）：`ResumeCareerTimeline.years(from:)` 用
-    /// `Int(value.rounded(.down))` 做**会 trap** 的转换。19 位数字使
-    /// `Double` 超过 `Int.max`，直接 `Fatal error: Double value cannot be
-    /// converted to Int because the result would be greater than Int.max`。
+    /// 审计报告 Critical（简历）：`ResumeCareerTimeline.years(from:)` 曾用
+    /// `Int(value.rounded(.down))` 做**会 trap** 的转换——19 位数字使 `Double`
+    /// 超过 `Int.max`，直接 `Fatal error`（退出码 133 / SIGTRAP，见审计报告 §6）。
     ///
-    /// 独立复现（退出码 133 / SIGTRAP）：见审计报告 §6。
-    /// 修复前**不要**解除下面被注释的断言，否则整个测试进程会崩溃。
+    /// S-4 已修复：改用整数解析，超长数字返回 nil，小数向下取整只取整数部分。
     func testWorkYearsParsingRejectsAbsurdNumericInputInsteadOfTrapping() {
         XCTAssertEqual(ResumeCareerTimeline.years(from: "6 年经验"), 6)
         XCTAssertEqual(ResumeCareerTimeline.years(from: "3.7年"), 3)
         XCTAssertNil(ResumeCareerTimeline.years(from: "很多年"))
 
-        // 期望行为：超长数字应返回 nil 或夹到合理上限，而不是崩溃。
-        // 当前实现会 trap，所以这里只断言"18 位以内仍然可用"这一安全边界。
-        // 注意：Double 只有 53 位有效精度，18 位输入的解析结果本身已经失真
-        // （999999999999999999 被舍入成 1000000000000000000），
-        // 这本身就是 `Int(Double(...))` 这条路径不该用于整数解析的佐证。
-        XCTAssertEqual(ResumeCareerTimeline.years(from: "999999999999999999"), 1_000_000_000_000_000_000)
+        // 期望行为：超长数字返回 nil，而不是崩溃。整数解析下 18 位数字精确返回，
+        // 不再被 Double 舍入失真（此前 999999999999999999 会被舍入成 10^18）。
+        XCTAssertEqual(ResumeCareerTimeline.years(from: "999999999999999999"), 999_999_999_999_999_999)
 
-        // 修复后应启用：
-        // XCTAssertNil(ResumeCareerTimeline.years(from: "9999999999999999999"))
+        // S-4 修复：19 位数字超过 Int64 上限，返回 nil。
+        XCTAssertNil(ResumeCareerTimeline.years(from: "9999999999999999999"))
     }
 
     // MARK: - 壁纸刷新：加载中的筛选变更不得被丢弃
@@ -193,9 +188,9 @@ final class AuditRegressionTests: XCTestCase {
         XCTAssertEqual(restored, canvasSelection)
     }
 
-    // MARK: - H-7：mosaic（模糊/像素化）导出不能上下镜像
+    // MARK: - C-3：mosaic（模糊/像素化）导出不能上下镜像
 
-    /// 审计报告 H-7，本用例即为证实该缺陷的像素级试验。
+    /// 审计报告 C-3，本用例即为证实该缺陷的像素级试验。
     ///
     /// `renderFullCanvas` 为标注建立的是**上下镜像**的 CTM
     /// （`translateBy(y: pixelHeight)` + `scaleBy(y: -scale)`，见

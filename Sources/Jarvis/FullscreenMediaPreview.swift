@@ -303,7 +303,7 @@ private final class FullscreenMediaPreviewPanel: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53 {
+        if event.type == .keyDown, event.keyCode == JarvisKeyCode.escape {
             onEscape?()
             return
         }

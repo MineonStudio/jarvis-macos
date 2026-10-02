@@ -12,6 +12,7 @@ struct JarvisUpdateManifest: Codable, Equatable {
 }
 
 enum JarvisUpdateSecurity {
+    static let updateArchiveName = "Jarvis-update.zip"
     static let maximumManifestBytes = 64 * 1024
     static let maximumSignatureBytes = 1024
     static let maximumArchiveBytes: Int64 = 2 * 1024 * 1024 * 1024
@@ -45,7 +46,7 @@ enum JarvisUpdateSecurity {
               (Int(manifest.build) ?? 0) > 0,
               manifest.build.count <= 32,
               manifest.bundleIdentifier == "com.jarvis.mac",
-              manifest.archiveName == "Jarvis-update.zip",
+              manifest.archiveName == updateArchiveName,
               isValidSHA256(manifest.sha256)
         else {
             throw JarvisUpdateError.invalidManifest
@@ -55,6 +56,32 @@ enum JarvisUpdateSecurity {
 
     static func isValidSHA256(_ value: String) -> Bool {
         value.count == 64 && value.allSatisfy(\.isHexDigit)
+    }
+
+    /// GitHub 的 tag 常带前导 `v`，清单里的 version 不带。两边都规范化后再比。
+    static func releaseVersionsMatch(_ manifestVersion: String, _ releaseVersion: String) -> Bool {
+        guard let manifest = normalizedVersion(manifestVersion),
+              let release = normalizedVersion(releaseVersion)
+        else {
+            return false
+        }
+        return manifest == release
+    }
+
+    /// 发布 API 上的 digest 必须就是清单里签过名的那个哈希。
+    /// 只改 zip、或只改 digest，都会在这里失败。
+    static func digestBinds(manifestSHA256: String, githubDigest: String?) -> Bool {
+        guard isValidSHA256(manifestSHA256),
+              let githubDigest
+        else {
+            return false
+        }
+        let prefix = "sha256:"
+        guard githubDigest.lowercased().hasPrefix(prefix) else {
+            return false
+        }
+        let digest = githubDigest.dropFirst(prefix.count)
+        return digest.compare(manifestSHA256, options: .caseInsensitive) == .orderedSame
     }
 
     static func isValidVersion(_ value: String) -> Bool {

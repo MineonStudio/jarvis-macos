@@ -14,6 +14,11 @@ final class MeetingRepository: @unchecked Sendable {
     private let indexURL: URL
     private let lock = NSLock()
     private var writesDisabled = false
+    /// #15：搜索文本缓存（内存轻量索引）。detailMatchesSearch 以前每次按键都对
+    /// 全部会议逐条 lock + 读文件 + JSON 全量解码（含逐字稿），期间 save/load 被
+    /// NSLock 阻塞。现在解码一次后缓存可搜索文本，写详情/删除时失效。
+    /// 调用方持有 lock 时读写，无需额外同步。
+    private var searchTextCache: [UUID: [String]] = [:]
 
     init(
         directoryURL: URL? = nil,
@@ -74,6 +79,8 @@ final class MeetingRepository: @unchecked Sendable {
             if fileManager.fileExists(atPath: detailFileURL.path) {
                 try fileManager.removeItem(at: detailFileURL)
             }
+            // #15：会议删了，搜索缓存同步清掉。
+            searchTextCache[record.id] = nil
         }
     }
 
@@ -125,19 +132,31 @@ final class MeetingRepository: @unchecked Sendable {
     func detailMatchesSearch(for id: UUID, query: String) -> Bool {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return true }
-        return lock.withLock {
+        // #15：命中缓存直接比对，不再每次按键都读文件 + 全量 JSON 解码。
+        let searchableText: [String]? = lock.withLock {
+            if let cached = searchTextCache[id] {
+                return cached
+            }
             let url = detailFileURL(for: id)
             guard let data = try? Data(contentsOf: url),
                   let detail = try? JSONDecoder().decode(MeetingRecordDetail.self, from: data)
-            else { return false }
-            let searchableText = [detail.summary?.overview ?? ""]
-                + (detail.summary?.keyPoints ?? [])
-                + (detail.summary?.decisions ?? [])
-                + (detail.summary?.actionItems.map(\.task) ?? [])
-                + (detail.summary?.openQuestions ?? [])
-                + detail.transcript.map(\.text)
-            return searchableText.contains { $0.meetingSearchContains(normalizedQuery) }
+            else { return nil }
+            let texts = Self.searchableTexts(for: detail)
+            searchTextCache[id] = texts
+            return texts
         }
+        guard let searchableText else { return false }
+        return searchableText.contains { $0.meetingSearchContains(normalizedQuery) }
+    }
+
+    /// 与 detailMatchesSearch 原来的拼接顺序完全一致，保证语义不变。
+    private static func searchableTexts(for detail: MeetingRecordDetail) -> [String] {
+        [detail.summary?.overview ?? ""]
+            + (detail.summary?.keyPoints ?? [])
+            + (detail.summary?.decisions ?? [])
+            + (detail.summary?.actionItems.map(\.task) ?? [])
+            + (detail.summary?.openQuestions ?? [])
+            + detail.transcript.map(\.text)
     }
 
     func recordingsUsageBytes() -> Int64 {
@@ -270,7 +289,17 @@ final class MeetingRepository: @unchecked Sendable {
     private func replaceLegacyIndexIfNeeded() {
         let envelope = MeetingIndexEnvelope(format: MeetingIndexEnvelope.recordFilesFormat, version: 1)
         guard let data = try? JSONEncoder().encode(envelope) else { return }
-        try? JarvisProtectedStorage.write(data, to: indexURL)
+        do {
+            try JarvisProtectedStorage.write(data, to: indexURL)
+        } catch {
+            // #16：以前 try? 静默吞掉。索引替换失败意味着旧索引还在，
+            // 下次启动会重复走迁移分支——记下来，方便排查。
+            JarvisLog.error(
+                category: .storage,
+                event: "meeting.index.replace.failed",
+                error: error
+            )
+        }
     }
 
     private func writeRecordFile(_ record: MeetingRecord) throws {
@@ -281,6 +310,8 @@ final class MeetingRepository: @unchecked Sendable {
     private func writeDetailFile(_ detail: MeetingRecordDetail, for id: UUID) throws {
         let data = try JSONEncoder().encode(detail)
         try JarvisProtectedStorage.write(data, to: detailFileURL(for: id))
+        // #15：详情变了，搜索缓存失效（调用方持有 lock）。
+        searchTextCache[id] = nil
     }
 
     private func recordFileURL(for id: UUID) -> URL {

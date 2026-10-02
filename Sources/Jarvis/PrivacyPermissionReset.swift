@@ -2,11 +2,15 @@ import Foundation
 
 enum JarvisPrivacyPermissionResetError: LocalizedError {
     case commandFailed(service: String, message: String)
+    case multipleFailures(failures: [JarvisPrivacyPermissionResetError])
 
     var errorDescription: String? {
         switch self {
         case let .commandFailed(service, message):
-            "重置\(service)权限失败：\(message)"
+            return "重置\(service)权限失败：\(message)"
+        case let .multipleFailures(failures):
+            let details = failures.compactMap(\.errorDescription).joined(separator: "；")
+            return "重置部分权限失败：\(details)"
         }
     }
 }
@@ -30,14 +34,25 @@ enum JarvisPrivacyPermissionReset {
     }
 
     static func reset(bundleIdentifier: String) throws {
+        var failures: [JarvisPrivacyPermissionResetError] = []
         for arguments in arguments(bundleIdentifier: bundleIdentifier) {
             do {
-                // During an app update, a missing TCC entry is expected for
-                // fresh installs and simply means there is nothing to clean up.
+                // A missing TCC entry is expected on fresh installs and
+                // simply means there is nothing to clean up.
                 try run(arguments: arguments)
+            } catch let resetError as JarvisPrivacyPermissionResetError {
+                failures.append(resetError)
             } catch {
-                throw JarvisUpdateError.privacyPermissionResetFailed(error.localizedDescription)
+                failures.append(
+                    .commandFailed(
+                        service: arguments.dropFirst().first ?? "未知服务",
+                        message: error.localizedDescription
+                    )
+                )
             }
+        }
+        guard failures.isEmpty else {
+            throw JarvisPrivacyPermissionResetError.multipleFailures(failures: failures)
         }
     }
 

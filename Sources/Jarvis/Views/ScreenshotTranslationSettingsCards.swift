@@ -25,7 +25,13 @@ final class LanguagePackSettingsStore: ObservableObject {
     }
 
     func model(for target: ScreenshotTranslationLanguage) -> LanguagePackRowModel {
-        models[target]!
+        if let model = models[target] {
+            return model
+        }
+        // #10：init 已为所有 packTargets 建好 model，这里不应到达。
+        // 断言 + 现场补一个，避免强制解包崩溃。
+        assertionFailure("LanguagePackSettingsStore 缺少 \(target) 的 model")
+        return LanguagePackRowModel(target: target, service: SystemLanguagePackService())
     }
 
     func checkAll() async {

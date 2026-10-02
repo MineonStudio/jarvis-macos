@@ -28,7 +28,7 @@ final class ScreenshotImagePanel: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53 {
+        if event.type == .keyDown, event.keyCode == JarvisKeyCode.escape {
             if onEscapeIntercept?() == true {
                 return
             }
@@ -137,15 +137,8 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            // 与面板的 sendEvent 保持一致：先让编辑器决定，没人接手才结束整场。
-            if editor.handleEscape() {
-                return
-            }
-            onEscape?()
-            return
-        }
-
+        // 注：Esc（JarvisKeyCode.escape）由本窗口 sendEvent 先行拦截，这里收不到；
+        // 不要在这里加 Esc 分支，加了也走不到。
         let commandPressed = event.modifierFlags.contains(.command)
         let shiftPressed = event.modifierFlags.contains(.shift)
         let characters = event.charactersIgnoringModifiers?.lowercased()
@@ -153,7 +146,7 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
         // 键盘动作走和工具栏同一条 action 通道：直接改模型的话状态栏不会更新，
         // 同一个操作用鼠标点会提示、用快捷键就没有。
         if editor.selectedAnnotationID != nil,
-           event.keyCode == 51 || event.keyCode == 117
+           event.keyCode == JarvisKeyCode.delete || event.keyCode == JarvisKeyCode.forwardDelete
         {
             onAction?(.delete)
             return
@@ -173,11 +166,8 @@ final class ScreenshotCanvasHostingView: NSHostingView<ScreenshotCanvasView> {
     }
 
     override func mouseDown(with event: NSEvent) {
-        if event.type == .otherMouseDown, event.buttonNumber == 2 {
-            onMiddleClick?()
-            return
-        }
-
+        // 注：中键事件由 sendEvent 先行拦截为 .otherMouseDown 并派往
+        // otherMouseDown(with:)，不会进到这里；不要在这里加中键分支。
         onActivate?()
 
         if allowsSelectionTransform,

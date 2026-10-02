@@ -57,11 +57,16 @@ enum AIConversationDownloadFileName {
     static func destination(
         in directory: URL,
         suggestedFilename: String,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        isTaken: (URL) -> Bool = { _ in false }
     ) -> URL {
         let filename = sanitizedFilename(suggestedFilename)
         var candidate = directory.appendingPathComponent(filename, isDirectory: false)
-        guard fileManager.fileExists(atPath: candidate.path) else { return candidate }
+        // isTaken 供调用方传入内存占位（M-K）：文件尚不存在、但已有下载任务在途。
+        func isUnavailable(_ url: URL) -> Bool {
+            fileManager.fileExists(atPath: url.path) || isTaken(url)
+        }
+        guard isUnavailable(candidate) else { return candidate }
 
         let nsFilename = filename as NSString
         let basename = nsFilename.deletingPathExtension
@@ -73,7 +78,7 @@ enum AIConversationDownloadFileName {
                 : "\(basename) (\(suffix)).\(pathExtension)"
             candidate = directory.appendingPathComponent(numberedName, isDirectory: false)
             suffix += 1
-        } while fileManager.fileExists(atPath: candidate.path)
+        } while isUnavailable(candidate)
 
         return candidate
     }

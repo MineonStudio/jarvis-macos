@@ -48,13 +48,17 @@ enum WKWebsiteCookieExport {
         guard !filtered.isEmpty else { return nil }
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("jarvis-cookies-\(UUID().uuidString).txt")
-        do {
-            try NetscapeCookieFile.serialize(filtered).write(to: file, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-            return file
-        } catch {
+        // #23：以前先落盘再 chmod，中间有个窗口文件是 0644——Cookie 是敏感信息，
+        // 建文件时直接 0600，不留窗口。临时文件名带 UUID，不需要原子写入。
+        let data = Data(NetscapeCookieFile.serialize(filtered).utf8)
+        guard FileManager.default.createFile(
+            atPath: file.path,
+            contents: data,
+            attributes: [.posixPermissions: 0o600]
+        ) else {
             return nil
         }
+        return file
     }
 
     private static func allCookies() async -> [HTTPCookie] {

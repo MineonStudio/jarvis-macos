@@ -17,7 +17,7 @@ final class SelectionOverlayWindow: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53 {
+        if event.type == .keyDown, event.keyCode == JarvisKeyCode.escape {
             onEscape?()
             return
         }
@@ -386,7 +386,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53 {
+        if event.type == .keyDown, event.keyCode == JarvisKeyCode.escape {
             onEscape?()
             return
         }

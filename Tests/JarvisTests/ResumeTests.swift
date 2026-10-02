@@ -267,10 +267,9 @@ final class ResumeTests: XCTestCase {
         XCTAssertGreaterThan(pdf.pageCount, 1)
     }
 
-    func testMarkdownAndPlainTextExportIncludeAllExperienceSections() {
+    func testMarkdownExportIncludesAllExperienceSections() {
         let document = makeDocument()
         let markdown = ResumeTextFormatter.markdown(for: document)
-        let plainText = ResumeTextFormatter.plainText(for: document)
 
         XCTAssertTrue(markdown.contains("## 教育经历"))
         XCTAssertTrue(markdown.contains("## 工作经历"))
@@ -279,9 +278,6 @@ final class ResumeTests: XCTestCase {
         XCTAssertFalse(markdown.contains("负责团队协作"))
         XCTAssertTrue(markdown.contains("面向企业客户的智能工单协作平台"))
         XCTAssertTrue(markdown.contains("- 推动项目上线并持续迭代"))
-        XCTAssertFalse(plainText.contains("## "))
-        XCTAssertFalse(plainText.contains("# "))
-        XCTAssertTrue(plainText.contains("推动项目上线并持续迭代"))
     }
 
     func testResumeAIServiceGeneratesOneItemAndRetriesARepeatedExperience() async throws {

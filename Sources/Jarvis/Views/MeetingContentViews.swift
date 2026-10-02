@@ -548,6 +548,12 @@ private struct MeetingDetailPane: View {
                         {
                             MeetingNeedsSummaryCard(record: record)
                         }
+
+                        // 改进 #3：逐字稿以前在详情页根本没地方看（只能被搜索到）。
+                        // 默认折叠，展开后按时间列出每一段；只读展示，不做跳转交互。
+                        if !record.transcript.isEmpty {
+                            MeetingTranscriptSection(record: record)
+                        }
                     }
                     .frame(maxWidth: 860, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -775,6 +781,38 @@ private struct MeetingAudioSection: View {
                     recordingElapsed: 0,
                     pendingSeekTime: $pendingSeekTime,
                     citedPlayback: $citedPlayback
+                )
+            }
+        }
+    }
+}
+
+/// 改进 #3：默认折叠的逐字稿区。只读展示，展开后按时间列出每一段。
+private struct MeetingTranscriptSection: View {
+    @State private var isExpanded = false
+    let record: MeetingRecord
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DisclosureGroup(isExpanded: $isExpanded) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(record.transcript) { segment in
+                        HStack(alignment: .top, spacing: 10) {
+                            Text(formatMeetingTimestamp(segment.startTime))
+                                .font(JarvisTypography.caption)
+                                .foregroundStyle(Color.jarvisTextSecondary)
+                                .frame(width: 44, alignment: .leading)
+                            Text(segment.text)
+                                .font(MeetingDetailTypography.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            } label: {
+                MeetingSectionHeader(
+                    title: "逐字稿（\(record.transcript.count)）",
+                    systemImage: "text.quote"
                 )
             }
         }

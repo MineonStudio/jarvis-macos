@@ -8,6 +8,16 @@ struct ResumeInspector: View {
     var onBackgroundTap: () -> Void = {}
     @State private var projectGenerationDomain = ""
     @State private var isProjectGenerationPromptPresented = false
+    /// M-N：首次 AI 生成前的数据出境说明。用户确认一次后记住，不再打扰。
+    @State private var isDataDisclosurePresented = false
+    @State private var pendingGenerationSection: ResumeSection?
+    @State private var pendingProjectDomain: String?
+    private static let aiDataDisclosureKey = "jarvis.resume.aiDataDisclosureAcknowledged"
+
+    private var hasAcknowledgedAIDataDisclosure: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.aiDataDisclosureKey) }
+        nonmutating set { UserDefaults.standard.set(newValue, forKey: Self.aiDataDisclosureKey) }
+    }
 
     var body: some View {
         ScrollView {
@@ -34,6 +44,22 @@ struct ResumeInspector: View {
                     generate(.projects, projectDomain: domain)
                 }
             )
+        }
+        .alert("AI 生成会发送简历内容", isPresented: $isDataDisclosurePresented) {
+            Button("取消", role: .cancel) {
+                pendingGenerationSection = nil
+                pendingProjectDomain = nil
+            }
+            Button("知道了，开始生成") {
+                hasAcknowledgedAIDataDisclosure = true
+                if let section = pendingGenerationSection {
+                    generate(section, projectDomain: pendingProjectDomain)
+                }
+                pendingGenerationSection = nil
+                pendingProjectDomain = nil
+            }
+        } message: {
+            Text("生成时会把这份简历的内容（职位、学校、公司、项目经历等）发送到你在设置里配置的 AI 服务商，用于生成文本；姓名、联系方式不会发送。")
         }
     }
 
@@ -146,9 +172,16 @@ struct ResumeInspector: View {
             app.showToast(aiGenerationDisabledMessage)
             return
         }
+        // M-N：首次生成前先说明数据出境，用户确认后才发送；确认过一次就不再弹。
+        guard hasAcknowledgedAIDataDisclosure else {
+            pendingGenerationSection = section
+            pendingProjectDomain = projectDomain
+            isDataDisclosurePresented = true
+            return
+        }
         let documentID = draft.id
         let snapshot = draft
-        let configuration = AIAPIConfiguration.loadProvider()
+        let configuration = AIAPIConfiguration.load()
         let workspace = app.resumeWorkspace
 
         workspace.startGeneration(for: section) {
@@ -168,7 +201,20 @@ struct ResumeInspector: View {
                 return
             } catch {
                 guard !Task.isCancelled, draft.id == documentID else { return }
-                app.showToast(JarvisFeedbackCopy.processingFailed)
+                // #33：以前所有 AI 错误都显示"处理失败"。AIAPIError 自带按 case
+                // 区分的中文 errorDescription（缺配置/地址无效/响应格式错……），
+                // 直接展示，用户才知道是该去设置里填 Key 还是点重试。
+                JarvisLog.error(
+                    category: .network,
+                    event: "resume.ai.generate.failed",
+                    error: error,
+                    fields: ["section": section.title]
+                )
+                if let apiError = error as? AIAPIError {
+                    app.showToast(apiError.localizedDescription)
+                } else {
+                    app.showToast(JarvisFeedbackCopy.processingFailed)
+                }
             }
         }
     }

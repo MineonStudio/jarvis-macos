@@ -347,10 +347,17 @@ final class ClipboardCacheStore: @unchecked Sendable {
 
         do {
             try fileManager.copyItem(at: sourceURL, to: destination)
-            try? fileManager.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: destination.path
-            )
+            do {
+                try fileManager.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: destination.path
+                )
+            } catch {
+                // #17：chmod 失败不能吞——权限失败意味着敏感缓存可能以默认
+                // umask 落盘。直接 throw，外层 catch 会删文件、记 error 日志、
+                // 视同写入失败返回 nil。
+                throw error
+            }
             JarvisLog.info(
                 category: .clipboard,
                 event: "cache.write.complete",
@@ -568,6 +575,10 @@ final class ClipboardCacheStore: @unchecked Sendable {
         return (result.0, result.1, result.2)
     }
 
+    /// #19 说明：生产代码暂无调用方，但 ClipboardTests 有 4 个用例钉住其行为，
+    /// 故保留。与 `hasManagedReferences(for:)` 的区别：本函数要求文件真实存在；
+    /// 后者只要求路径仍在缓存目录名下（文件被外部清掉也算 true，供清理逻辑用）。
+    /// 选型时别混用。
     func hasManagedFiles(for item: ClipboardItem) -> Bool {
         lock.withLock {
             managedFileURLsLocked(for: item).contains { fileManager.fileExists(atPath: $0.path) }

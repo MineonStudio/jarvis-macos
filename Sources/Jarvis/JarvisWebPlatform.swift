@@ -36,7 +36,6 @@ enum JarvisWebPlatformNavigationPolicy {
     static func decision(
         url: URL?,
         isMainFrame: Bool,
-        isPrimaryWebView: Bool,
         shouldDownload: Bool,
         allowsHost: (String) -> Bool
     ) -> JarvisWebPlatformNavigationDecision {
@@ -46,7 +45,9 @@ enum JarvisWebPlatformNavigationPolicy {
         guard let url else {
             return .cancel
         }
-        if !isPrimaryWebView || !isMainFrame {
+        // 子帧（嵌入的 iframe 等）保持放行；主帧——包括弹窗主帧——一律走白名单判定。
+        // window.open 产生的弹窗此前被整段放行，钓鱼页可在弹窗内跳转任意域名。
+        if !isMainFrame {
             return .allow
         }
         if isAllowedNavigation(url, allowsHost: allowsHost) {
@@ -471,6 +472,10 @@ final class JarvisWebPlatformController: NSObject, ObservableObject {
     private var canGoForwardObservation: NSKeyValueObservation?
     private var fullscreenObservation: NSKeyValueObservation?
     private var popupWebViews: [WKWebView] = []
+    /// 改进 #4：同时存在的 `window.open` 弹窗上限。每个弹窗是独立 WKWebView +
+    /// WebContent 进程，恶意页面可批量 window.open 耗尽内存。达到上限后新的
+    /// window.open 直接拒绝（返回 nil），用户关掉旧弹窗后可再开。
+    private static let maxPopupWebViews = 3
     private var popupFullscreenObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
     private var loadTimeoutTask: Task<Void, Never>?
 
@@ -695,7 +700,6 @@ extension JarvisWebPlatformController: WKNavigationDelegate {
         switch JarvisWebPlatformNavigationPolicy.decision(
             url: navigationAction.request.url,
             isMainFrame: isMainFrame,
-            isPrimaryWebView: webView === self.webView,
             shouldDownload: navigationAction.shouldPerformDownload,
             allowsHost: platform.allowsHost
         ) {
@@ -808,6 +812,17 @@ extension JarvisWebPlatformController: WKUIDelegate {
         windowFeatures _: WKWindowFeatures
     ) -> WKWebView? {
         guard navigationAction.targetFrame == nil else { return nil }
+
+        // 改进 #4：弹窗数量上限，防批量 window.open 耗尽内存。
+        guard popupWebViews.count < Self.maxPopupWebViews else {
+            JarvisLog.notice(
+                category: .security,
+                event: "web.popup.limit.reached",
+                result: "rejected",
+                fields: ["limit": String(Self.maxPopupWebViews)]
+            )
+            return nil
+        }
 
         if navigationAction.navigationType == .linkActivated {
             if let url = navigationAction.request.url,

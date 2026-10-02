@@ -308,11 +308,6 @@ final class ScreenshotRenderPipeline {
         NSGraphicsContext.restoreGraphicsState()
         context.restoreGState()
     }
-
-    private func cgImage(from image: NSImage) -> CGImage? {
-        var proposedRect = NSRect(origin: .zero, size: image.size)
-        return image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
-    }
 }
 
 private func translationLineBounds(

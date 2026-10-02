@@ -132,6 +132,10 @@ extension AppModel {
 
     func startMeetingRecording(language: MeetingLanguage = .simplifiedChinese) async {
         guard meetingCurrentRecordingID == nil, !isStartingMeetingRecording else { return }
+        guard !meetingRecorder.isStopping else {
+            showToast(JarvisFeedbackCopy.meetingStopInProgress)
+            return
+        }
         isStartingMeetingRecording = true
         defer { isStartingMeetingRecording = false }
 
@@ -223,6 +227,9 @@ extension AppModel {
         meetingRecords[index] = record
         persistMeeting(record)
         meetingProcessingState = .processing(stage: .diarizing, progress: 0)
+        // 同步立 flag：下面的 Task 是异步调度的，不立的话用户可立即开始新会话，
+        // 旧 stop 恢复后会清掉新会话的采集状态（S-3）。
+        meetingRecorder.markStopInFlight()
         Task { @MainActor [weak self] in
             guard let self else { return }
             let stopResult = await meetingRecorder.stop()
@@ -245,6 +252,8 @@ extension AppModel {
         updateMeetingMenuBarState()
         meetingElapsed = duration
         selectedMeetingID = id
+        // 同上：同步立 flag，关掉 Task 调度窗口（S-3）。
+        meetingRecorder.markStopInFlight()
         Task { @MainActor [weak self] in
             guard let self else { return }
             let stopResult = await meetingRecorder.stop()
@@ -367,7 +376,22 @@ extension AppModel {
         meetingProcessingQueue.removeAll { $0.recordID == record.id }
         let wasActive = meetingActiveProcessingID == record.id
         if wasActive {
+            // #14：先取消任务，再同步清掉 active 标记。被取消任务的 defer
+            // （completeActiveMeetingProcessing）稍后才跑，会因 guard 直接 no-op，
+            // 不会把我们下面推进的状态覆盖掉。
             meetingProcessingTask?.cancel()
+            meetingProcessingTask = nil
+            meetingActiveProcessingID = nil
+        }
+        // #14：删的是正在处理的会议时，队列里有排队就起下一个，空了就回 .idle——
+        // 以前这里只在 !wasActive 时回 idle，删正在处理的会议会让状态永远卡在 .processing。
+        defer {
+            if wasActive {
+                startNextMeetingProcessingIfNeeded()
+            }
+            if meetingActiveProcessingID == nil {
+                meetingProcessingState = .idle
+            }
         }
         do {
             try meetingRepository.delete(record)
@@ -375,10 +399,13 @@ extension AppModel {
             if selectedMeetingID == record.id {
                 selectedMeetingID = meetingRecords.first?.id
             }
-            if !wasActive, meetingActiveProcessingID == nil {
-                meetingProcessingState = .idle
-            }
         } catch {
+            JarvisLog.error(
+                category: .storage,
+                event: "meeting.delete.failed",
+                error: error,
+                fields: ["meetingID": record.id.uuidString]
+            )
             showToast(JarvisFeedbackCopy.deleteFailed)
         }
     }
@@ -735,6 +762,12 @@ extension AppModel {
         do {
             try meetingRepository.save(record)
         } catch {
+            JarvisLog.error(
+                category: .storage,
+                event: "meeting.persist.failed",
+                error: error,
+                fields: ["meetingID": record.id.uuidString]
+            )
             showToast(JarvisFeedbackCopy.saveFailed)
         }
     }

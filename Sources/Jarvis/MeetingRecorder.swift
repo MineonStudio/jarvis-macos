@@ -32,6 +32,10 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
     private var systemAudioStarted = false
     private var systemAudioStartedAt: Date?
     private var expectsStopCallback = false
+    /// 上一次 stop() 的异步收尾是否在途。App 层在发起 stop 时同步立起（Task 调度有窗口），
+    /// stop() 返回时由 defer 落下。start 前必须检查：否则旧 stop 恢复后会清掉新会话的
+    /// 采集状态，新录音收不到系统音频但 UI 显示正常（S-3）。
+    private(set) var isStopping = false
     var onUnexpectedStop: (@MainActor () -> Void)?
 
     var isRecording: Bool {
@@ -42,6 +46,9 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
         microphoneURL: URL,
         systemAudioURL: URL
     ) async throws -> MeetingRecordingSources {
+        guard !isStopping else {
+            throw MeetingRecorderError.stopInProgress
+        }
         guard !isRecording else {
             return MeetingRecordingSources(
                 systemAudioStarted: systemAudioStarted,
@@ -84,7 +91,15 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
         }
     }
 
+    /// stop() 被丢进 Task 时同步立 flag：Task 调度有个窗口，不提前立的话
+    /// start 能从窗口溜进去。stop() 返回时由 defer 落下。
+    func markStopInFlight() {
+        isStopping = true
+    }
+
     func stop() async -> MeetingRecordingStopResult {
+        isStopping = true
+        defer { isStopping = false }
         expectsStopCallback = true
         let microphoneStartedAt = startedAt ?? Date()
         let recordedDuration = recorder?.currentTime ?? 0
@@ -110,6 +125,8 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func cancel() async {
+        isStopping = true
+        defer { isStopping = false }
         expectsStopCallback = true
         recorder?.stop()
         recorder = nil
@@ -120,15 +137,20 @@ final class MeetingRecorder: NSObject, AVAudioRecorderDelegate {
         expectsStopCallback = false
     }
 
-    nonisolated func audioRecorderDidFinishRecording(_: AVAudioRecorder, successfully flag: Bool) {
+    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         Task { @MainActor in
-            handleRecorderFinished(successfully: flag)
+            // #12：旧会话 stop() 的延迟回调可能在新会话 start() 之后才送达。
+            // 用 recorder 实例做 session token 校验：回调所属实例不是当前会话的
+            // 直接丢弃，否则 expectsStopCallback 守卫通过后会误杀新录音。
+            guard recorder === self.recorder else { return }
+            self.handleRecorderFinished(successfully: flag)
         }
     }
 
-    nonisolated func audioRecorderEncodeErrorDidOccur(_: AVAudioRecorder, error _: (any Error)?) {
+    nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error _: (any Error)?) {
         Task { @MainActor in
-            handleRecorderFinished(successfully: false)
+            guard recorder === self.recorder else { return }
+            self.handleRecorderFinished(successfully: false)
         }
     }
 
@@ -272,6 +294,10 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
                   )
             else { return }
 
+            // #13：audioFile 引用的创建与读取统一走 stateLock——writeQueue 与
+            // stop() 路径（clearCaptureState 置 nil）并发访问，类是 @unchecked Sendable。
+            // 锁内不调 recordFailure（它自己也拿锁，会死锁），先解锁再记失败。
+            self.stateLock.lock()
             if self.audioFile == nil {
                 do {
                     self.audioFile = try AVAudioFile(
@@ -279,13 +305,16 @@ private final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStre
                         settings: format.settings
                     )
                 } catch {
+                    self.stateLock.unlock()
                     self.recordFailure("无法写入系统音频：\(error.localizedDescription)")
                     return
                 }
             }
+            let audioFile = self.audioFile
+            self.stateLock.unlock()
 
             do {
-                try self.audioFile?.write(from: buffer)
+                try audioFile?.write(from: buffer)
                 self.stateLock.lock()
                 if !didWriteAudio {
                     firstBufferAt = Date()
@@ -475,10 +504,12 @@ enum MeetingAudioMixer {
 
 enum MeetingRecorderError: LocalizedError {
     case cannotStart
+    case stopInProgress
 
     var errorDescription: String? {
         switch self {
         case .cannotStart: "无法开始录音，请检查麦克风权限和输入设备"
+        case .stopInProgress: "上一次录音正在收尾，请稍后再试"
         }
     }
 }

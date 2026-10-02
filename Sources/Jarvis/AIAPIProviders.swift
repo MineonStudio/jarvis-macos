@@ -164,7 +164,18 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
     static func detect(endpoint: String) -> Self {
         let host = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines))?
             .host?.lowercased() ?? ""
-        return hostMatchers.first { host.contains($0.1) }?.0
-            ?? (host.contains("openai") ? .openAI : .custom)
+        return hostMatchers.first { hostMatches(host, pattern: $0.1) }?.0
+            ?? (hostMatches(host, pattern: "openai") ? .openAI : .custom)
+    }
+
+    /// 改进 #5：主机匹配必须认域名边界。以前用 `contains` 子串匹配，
+    /// `evil-deepseek.com` 会被误判成 DeepSeek（进而用错请求路径/默认地址）。
+    /// 现在只认四种：相等、开头（`volcengine.com`）、结尾（`ark…​.volces.com`）、
+    /// 中间（`api.deepseek.com`）。
+    private static func hostMatches(_ host: String, pattern: String) -> Bool {
+        host == pattern
+            || host.hasPrefix(pattern + ".")
+            || host.hasSuffix("." + pattern)
+            || host.contains("." + pattern + ".")
     }
 }

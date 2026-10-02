@@ -64,13 +64,8 @@ struct AIAPIConfiguration: Equatable, Sendable {
         load(defaults: defaults, resolvedAPIKey: keyStore.readIfAvailable())
     }
 
-    static func loadProvider(
-        defaults: UserDefaults = .standard,
-        keyStore: AIAPIKeyStore = .shared
-    ) -> Self {
-        load(defaults: defaults, keyStore: keyStore)
-    }
-
+    // #24：loadProvider 只是 load 的别名（provider 本来就是 load 里 detect 出来的），
+    // 别名已删除，调用方直接用 load。
     static func load(
         defaults: UserDefaults = .standard,
         resolvedAPIKey: String?
@@ -95,13 +90,6 @@ struct AIAPIConfiguration: Equatable, Sendable {
             apiKey: resolvedAPIKey ?? "",
             providerID: provider.rawValue
         )
-    }
-
-    static func loadProvider(
-        defaults: UserDefaults = .standard,
-        resolvedAPIKey: String?
-    ) -> Self {
-        load(defaults: defaults, resolvedAPIKey: resolvedAPIKey)
     }
 
     static func migrateLegacyKeys(defaults: UserDefaults = .standard) {

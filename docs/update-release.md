@@ -36,9 +36,14 @@ Upload every emitted asset to the matching non-prerelease GitHub Release:
 
 The update manifest is signed over its exact file bytes and includes the
 archive's SHA-256, bundle identifier, version, build number, and stable
-channel. The app selects the update archive by the exact `archiveName` in that
-verified manifest. Do not rename the update archive or edit either manifest
-file after signing.
+channel. The app downloads the asset named by `archiveName` in that verified
+manifest (`Jarvis-update.zip`). GitHub's digest for that asset must equal the
+signed `sha256`, and the downloaded bytes are hashed again and must match the
+same value. A release tag may start with `v`; that prefix is ignored when
+comparing the tag to the manifest `version`. Do not rename the update archive
+or edit either manifest file after signing. Direct-download archives
+(`Jarvis-<version>-macos.zip`, `Jarvis-v<version>.zip`) are a different zip
+and are not accepted by the in-app updater.
 
 New direct-download and DMG installs record their source once in the user's
 Jarvis preferences. The in-app update archive carries a neutral `unknown`

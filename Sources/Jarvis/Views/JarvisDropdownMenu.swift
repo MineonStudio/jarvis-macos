@@ -518,12 +518,12 @@ private struct JarvisDropdownMenuPanelPresenter: NSViewRepresentable {
                 showsSelectedOption: showsSelectedOption,
                 controlWidth: controlWidth,
                 onSelect: { [self] optionID in
+                    // #37：以前这里调了三次 dismiss()（同步两次 + 一次 async）。
+                    // dismiss() 本身幂等（panel 置 nil 后直接 return），留一次：
+                    // 先关面板，再回传选择（onSelect 会改 binding 走 update 关面板，
+                    // 是同一条路径的重复调用）。
                     dismiss()
                     onSelect(optionID)
-                    self.dismiss()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.dismiss()
-                    }
                 }
             )
             let hostingView = NSHostingView(rootView: menu.jarvisAccentAware())

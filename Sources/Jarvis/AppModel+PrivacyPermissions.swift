@@ -59,6 +59,19 @@ extension AppModel {
     }
 
     func clearAllPrivacyPermissionsAndRestart() {
+        // 在退出之前同步做重置：失败时弹框告知并停下来，否则用户在应用
+        // 已经退出的情况下看不到任何失败提示。
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? JarvisAppIdentity.bundleIdentifier
+        do {
+            try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "权限重置失败"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "好")
+            alert.runModal()
+            return
+        }
         shouldRelaunchAfterTermination = true
         NSApp.terminate(nil)
     }
@@ -66,13 +79,6 @@ extension AppModel {
     func performPermissionResetAndRelaunchIfNeeded() {
         guard shouldRelaunchAfterTermination else { return }
         shouldRelaunchAfterTermination = false
-        let bundleIdentifier = Bundle.main.bundleIdentifier ?? JarvisAppIdentity.bundleIdentifier
-        do {
-            try JarvisPrivacyPermissionReset.reset(bundleIdentifier: bundleIdentifier)
-        } catch {
-            showToast(error.localizedDescription)
-            return
-        }
         relaunchCurrentApp()
     }
 

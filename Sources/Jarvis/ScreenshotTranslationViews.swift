@@ -41,7 +41,10 @@ struct ScreenshotTranslationBlockView: View {
                     .font(.system(size: fontSize, weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                    // #6：不要在这里再缩字——导出端 drawTranslation 以同一套
+                    // ScreenshotTranslationTextLayout 判定的字号固定绘制、溢出裁剪；
+                    // 预览如果继续 minimumScaleFactor 缩小，两端看到的字号就不一致。
+                    // 溢出时两端都是裁剪（预览为尾部省略、导出为硬裁剪）。
                     .multilineTextAlignment(.leading)
                     .lineSpacing(0)
                     .padding(.horizontal, block.horizontalPadding)

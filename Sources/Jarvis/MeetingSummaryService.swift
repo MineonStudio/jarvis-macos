@@ -693,19 +693,22 @@ struct MeetingSummaryService: Sendable {
             }
 
             flush()
-            for piece in splitLongLine(line) {
-                chunks.append(TranscriptChunk(text: piece, segmentIDs: [segment.id]))
+            // 超长单行切分时每个 piece 都保留头部（含片段 ID 与说话人），
+            // 否则 decodeFacts 因引用不到 allowedSegmentIDs 中的 ID 而整条丢弃（M-E）。
+            let header = "[\(formatTime(segment.startTime))][\(segment.id.uuidString)] \(speaker)："
+            for piece in splitLongLine(body: segment.text) {
+                chunks.append(TranscriptChunk(text: header + piece, segmentIDs: [segment.id]))
             }
         }
         flush()
         return chunks
     }
 
-    private func splitLongLine(_ line: String) -> [String] {
+    private func splitLongLine(body: String) -> [String] {
         let targetCharacters = 6000
         var pieces: [String] = []
         var current = ""
-        for character in line {
+        for character in body {
             current.append(character)
             if current.count >= targetCharacters {
                 pieces.append(current)

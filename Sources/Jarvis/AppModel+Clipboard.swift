@@ -50,44 +50,116 @@ extension AppModel {
         showToast(hidden ? "敏感内容将默认隐藏" : "敏感内容将直接显示")
     }
 
+    /// 剪贴板文本缓存迁移：把历史里内联存文本的老条目写成 textPath 文件。
+    ///
+    /// M-J：原来在 MainActor 启动路径上逐条调 admitSharedCacheBytes（每次都要扫目录，
+    /// O(n·m) 主线程阻塞），改为迁移前只统计一次用量、文件写放后台队列；
+    /// 写失败的条目打标持久化，下次启动跳过（内联文本仍在，条目照常可用）。
     func migrateClipboardTextCache() {
-        var didChange = false
-        var migratedCount = 0
-        for index in clipboardItems.indices {
+        struct Candidate: Sendable {
+            let index: Int
+            let id: UUID
+            let text: String
+        }
+        let failedIDs = Self.textMigrationFailedIDs()
+        let candidates: [Candidate] = clipboardItems.indices.compactMap { index in
             let item = clipboardItems[index]
             guard item.kind == .text,
                   item.textPath == nil,
+                  !failedIDs.contains(item.id.uuidString),
                   let text = item.text,
                   !text.isEmpty
-            else {
-                continue
-            }
+            else { return nil }
+            return Candidate(index: index, id: item.id, text: text)
+        }
+        guard !candidates.isEmpty else { return }
 
-            let data = Data(text.utf8)
-            guard admitSharedCacheBytes(Int64(data.count), notify: false) else { continue }
-            guard let path = clipboardCacheStore.storeData(data, fileExtension: "txt") else {
-                continue
-            }
-            clipboardItems[index].textPath = path
-            clipboardItems[index].isStoredCopy = true
-            didChange = true
-            migratedCount += 1
-        }
+        // 用量只统计一次：原来每条都调 admitSharedCacheBytes，每次都要扫三个目录。
+        let clipboardUsage = clipboardCacheStore.usage()
+        let baseUsedBytes = clipboardUsage.usedBytes
+            + screenshotHistoryStore.storedUsage().bytes
+            + screenshotCacheStore.storedBytes()
+        let capacityBytes = clipboardUsage.capacityBytes
+        let cacheStore = clipboardCacheStore
 
-        if migratedCount > 0 {
-            JarvisLog.info(
-                category: .clipboard,
-                event: "cache.textMigration.complete",
-                fields: ["itemCount": String(migratedCount)]
-            )
+        Task.detached(priority: .utility) {
+            var usedBytes = baseUsedBytes
+            var succeeded: [(index: Int, id: UUID, path: String, snippet: String)] = []
+            var failed: [UUID] = []
+            for candidate in candidates {
+                let data = Data(candidate.text.utf8)
+                let incoming = Int64(data.count)
+                guard SharedCacheAdmission.allows(
+                    usedBytes: usedBytes,
+                    capacityBytes: capacityBytes,
+                    incomingBytes: incoming
+                ) else {
+                    break // 容量满了，后面的也不用试；不打标，下次启动容量可能已释放
+                }
+                if let path = cacheStore.storeData(data, fileExtension: "txt") {
+                    usedBytes += incoming
+                    succeeded.append((
+                        candidate.index,
+                        candidate.id,
+                        path,
+                        String(candidate.text.prefix(ClipboardItem.textSnippetPrefixLength))
+                    ))
+                } else {
+                    failed.append(candidate.id)
+                }
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                for (index, id, path, snippet) in succeeded {
+                    // 后台写文件期间可能有新条目插入，下标可能漂移，用 id 二次确认。
+                    let target: Int?
+                    if clipboardItems.indices.contains(index), clipboardItems[index].id == id {
+                        target = index
+                    } else {
+                        target = clipboardItems.firstIndex(where: { $0.id == id })
+                    }
+                    if let target {
+                        clipboardItems[target].textPath = path
+                        clipboardItems[target].isStoredCopy = true
+                        // 改进 #6：落盘成功就清空内联 text，避免密码等敏感内容在
+                        // JSON 索引和 txt 文件里各存一份；预览/搜索靠片段延续
+                        // （M-H 的约定），读/复制走 resolvedText。
+                        if clipboardItems[target].textSnippet == nil {
+                            clipboardItems[target].textSnippet = snippet
+                        }
+                        clipboardItems[target].text = nil
+                    }
+                }
+                for id in failed {
+                    Self.markTextMigrationFailed(id: id)
+                }
+                guard !succeeded.isEmpty else { return }
+                JarvisLog.info(
+                    category: .clipboard,
+                    event: "cache.textMigration.complete",
+                    fields: ["itemCount": String(succeeded.count)]
+                )
+                if !persistClipboardHistory() {
+                    JarvisLog.error(
+                        category: .clipboard,
+                        event: "history.textMigrationSave.failed",
+                        fields: ["recordCount": String(clipboardItems.count)]
+                    )
+                }
+            }
         }
-        if didChange, !persistClipboardHistory() {
-            JarvisLog.error(
-                category: .clipboard,
-                event: "history.textMigrationSave.failed",
-                fields: ["recordCount": String(clipboardItems.count)]
-            )
-        }
+    }
+
+    private static let textMigrationFailedIDsKey = "clipboard.textMigration.failedIDs"
+
+    private static func textMigrationFailedIDs() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: textMigrationFailedIDsKey) ?? [])
+    }
+
+    private static func markTextMigrationFailed(id: UUID) {
+        var ids = textMigrationFailedIDs()
+        ids.insert(id.uuidString)
+        UserDefaults.standard.set(Array(ids), forKey: textMigrationFailedIDsKey)
     }
 
     func receiveClipboardItem(_ item: ClipboardItem) {
@@ -243,7 +315,7 @@ extension AppModel {
 
         switch item.kind {
         case .text:
-            guard let text = item.text else { return false }
+            guard let text = item.resolvedText else { return false }
             pasteboard.clearContents()
             return pasteboard.setString(text, forType: .string)
         case .image:
@@ -506,7 +578,7 @@ extension AppModel {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "选择"
-        panel.message = "选择用于保存剪贴板文件的文件夹。截图仍在应用目录，占用计入同一上限。"
+        panel.message = "请选择一个专用的空文件夹（建议新建一个）。不要选文稿、桌面等已有文件的目录：目录内所有文件都会被计入缓存占用。截图仍在应用目录，占用计入同一上限。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {

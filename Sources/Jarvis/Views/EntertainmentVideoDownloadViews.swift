@@ -9,6 +9,10 @@ struct EntertainmentVideoDownloadView: View {
     @State private var analyzeError: String?
     @State private var probe: EntertainmentVideoProbe?
     @State private var selectedQualityID: String?
+    /// 解析请求的代数（M-M）：SPA 导航会频繁触发 onChange，旧解析的结果
+    /// 必须丢弃，不能覆盖新结果。
+    @State private var analyzeGeneration = 0
+    @State private var analyzeDebounceTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -45,13 +49,16 @@ struct EntertainmentVideoDownloadView: View {
         .onAppear {
             prefillURL()
             if EntertainmentVideoLink.match(urlText) != nil {
-                Task { await analyze() }
+                requestAnalyzeDebounced()
             }
+        }
+        .onDisappear {
+            analyzeDebounceTask?.cancel()
         }
         .onChange(of: initialURL) { _, _ in
             prefillURL()
             if EntertainmentVideoLink.match(urlText) != nil {
-                Task { await analyze() }
+                requestAnalyzeDebounced()
             }
         }
     }
@@ -222,22 +229,44 @@ struct EntertainmentVideoDownloadView: View {
 
     private func applyURLText(_ text: String) {
         guard urlText != text else { return }
+        // URL 变了，在途的解析结果已过期（M-M）。
+        analyzeGeneration += 1
         urlText = text
         probe = nil
         selectedQualityID = nil
         analyzeError = nil
     }
 
+    /// 自动触发走去抖：SPA 导航会连续触发 onChange，每次都起 yt-dlp 进程太浪费。
+    /// 用户点的解析按钮直接调 analyze()，不受去抖影响。
+    private func requestAnalyzeDebounced() {
+        analyzeDebounceTask?.cancel()
+        analyzeDebounceTask = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await analyze()
+        }
+    }
+
     private func analyze() async {
+        analyzeGeneration += 1
+        let generation = analyzeGeneration
         isAnalyzing = true
         analyzeError = nil
         probe = nil
-        defer { isAnalyzing = false }
+        defer {
+            // 只有最新一代能动 isAnalyzing，旧任务的 defer 不能关掉新任务的 spinner。
+            if generation == analyzeGeneration {
+                isAnalyzing = false
+            }
+        }
         do {
             let result = try await manager.probe(urlText: urlText)
+            guard generation == analyzeGeneration else { return }
             probe = result
             selectedQualityID = preferredQualityID(in: result.qualities)
         } catch {
+            guard generation == analyzeGeneration else { return }
             analyzeError = error.localizedDescription
         }
     }

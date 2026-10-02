@@ -1,6 +1,9 @@
 import Foundation
 
-/// 图片落盘时用的文件名：只有时间戳（`20260918-123100.png`）。
+/// 图片落盘时用的文件名：时间戳精确到毫秒（`20260918-123100-042.png`）。
+///
+/// 改进 #8：以前只有秒精度，同一秒内连截两张会撞名。毫秒后三位既保证同一秒内
+/// 的截图名字不同，又保留了按日期找图的习惯；用户手动极难在同一毫秒连截两次。
 ///
 /// 三个出口共用这一套：保存面板的默认名、历史截图拖到 Finder 的落盘名、剪贴板里的
 /// 图片拖出去的落盘名。这类文件是用户自己的图，按日期找得到就够了；前面挂应用名、
@@ -20,7 +23,7 @@ enum ScreenshotFileName {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return formatter
     }
 }

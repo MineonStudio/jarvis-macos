@@ -145,12 +145,18 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
         return lock.withLock {
             guard var items = try? itemsForWriting() else { return nil }
             guard let index = items.firstIndex(where: { $0.id == item.id }) else { return nil }
-            guard write(data, for: item) else { return nil }
+            // #7：先写同目录临时文件，索引落盘成功后再原子替换原图。
+            // 索引失败时原图纹丝不动，不会出现"内容已变、元数据没变"的分叉。
+            guard let tempURL = writeTemp(data, for: item) else { return nil }
 
             var updated = items[index]
             updated.updatedAt = date
             items[index] = updated
-            guard save(items) else { return nil }
+            guard save(items) else {
+                try? fileManager.removeItem(at: tempURL)
+                return nil
+            }
+            guard replaceFile(for: item, with: tempURL) else { return nil }
             return updated
         }
     }
@@ -259,6 +265,54 @@ final class ScreenshotHistoryStore: @unchecked Sendable {
             return 0
         }
         return size.int64Value
+    }
+
+    /// #7 的两个帮手：临时文件以 "." 开头，storedUsage 统计时自动跳过。
+    private func writeTemp(_ data: Data, for item: ScreenshotHistoryItem) -> URL? {
+        guard let url = safeFileURL(for: item.fileName) else { return nil }
+        let tempURL = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(item.fileName).tmp-\(UUID().uuidString)")
+        do {
+            try JarvisProtectedStorage.write(data, to: tempURL)
+            return tempURL
+        } catch {
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.writeTemp.failed",
+                error: error
+            )
+            return nil
+        }
+    }
+
+    private func replaceFile(for item: ScreenshotHistoryItem, with tempURL: URL) -> Bool {
+        guard let url = safeFileURL(for: item.fileName) else {
+            try? fileManager.removeItem(at: tempURL)
+            return false
+        }
+        do {
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.replaceItem(
+                    at: url,
+                    withItemAt: tempURL,
+                    backupItemName: nil,
+                    options: [],
+                    resultingItemURL: nil
+                )
+            } else {
+                // 原图已被外部删掉：直接搬过去，索引与内容依然一致。
+                try fileManager.moveItem(at: tempURL, to: url)
+            }
+            return true
+        } catch {
+            JarvisLog.error(
+                category: .storage,
+                event: "screenshot.history.replace.failed",
+                error: error
+            )
+            try? fileManager.removeItem(at: tempURL)
+            return false
+        }
     }
 
     private func discardFile(for item: ScreenshotHistoryItem) {

@@ -1466,7 +1466,18 @@ struct DesktopWallpaperService {
         } catch {
             for item in previous {
                 guard let previousURL = item.url else { continue }
-                try? setImage(previousURL, item.screen, item.options)
+                do {
+                    try setImage(previousURL, item.screen, item.options)
+                } catch {
+                    // #27：多屏回滚某一屏失败不能吞——用户会看到几屏新壁纸几屏旧壁纸，
+                    // 记下来才能定位是哪块屏。继续回滚其余屏幕。
+                    JarvisLog.error(
+                        category: .window,
+                        event: "wallpaper.rollback.failed",
+                        error: error,
+                        fields: ["screen": item.screen.localizedName]
+                    )
+                }
             }
             throw DesktopWallpaperServiceError.failed(error.localizedDescription)
         }

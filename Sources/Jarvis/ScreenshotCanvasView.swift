@@ -341,10 +341,6 @@ struct ScreenshotCanvasView: View {
         editor.commitTextEditing()
     }
 
-    private func cancelText() {
-        editor.endTextEditing()
-    }
-
     /// 输入区的宽度：跟着内容长，上限留到画布边。
     private var inlineFieldWidth: CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: inlineTextFont]
@@ -379,14 +375,6 @@ struct ScreenshotCanvasView: View {
             ofSize: editor.textFontSize,
             weight: editor.textBold ? .semibold : .regular
         )
-    }
-
-    private var inlineEditorWidth: CGFloat {
-        inlineFieldWidth + 96
-    }
-
-    private var inlineEditorHeight: CGFloat {
-        max(42, inlineTextEditorHeight + 10)
     }
 
     private func resetDragState() {

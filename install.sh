@@ -67,9 +67,21 @@ done
 # install, or one aimed somewhere else, has nothing to quit.
 quit_running_app_if_replacing() {
   [[ -d "${INSTALL_DIR}/${APP_NAME}" ]] || return 0
+  local target="${INSTALL_DIR}/${APP_NAME}/Contents/MacOS/Jarvis"
+  app_is_running() {
+    /bin/ps -axo pid=,command= \
+      | /usr/bin/grep -F "$target" \
+      | /usr/bin/grep -v -F "/usr/bin/grep" >/dev/null 2>&1
+  }
+  app_is_running || return 0
   log "退出正在运行的贾维斯…"
   osascript -e 'tell application "Jarvis" to quit' >/dev/null 2>&1 || true
-  sleep 1
+  local tick
+  for tick in {1..150}; do
+    app_is_running || return 0
+    sleep 0.1
+  done
+  die "贾维斯仍在运行。请先退出后再安装，以免替换正在使用的应用。"
 }
 
 if [[ "${UNINSTALL:-0}" == "1" ]]; then
@@ -123,11 +135,10 @@ log "下载 ${VERSION}…"
 ARCHIVE="$WORK_DIR/Jarvis.zip"
 curl -fsSL -o "$ARCHIVE" "$ZIP_URL" || die "下载失败。"
 
-if [[ -n "$DIGEST" ]]; then
-  ACTUAL="sha256:$(shasum -a 256 "$ARCHIVE" | cut -d' ' -f1)"
-  [[ "$ACTUAL" == "$DIGEST" ]] || die "校验和不匹配，安装包可能不完整。"
-  log "校验和匹配。"
-fi
+[[ -n "$DIGEST" ]] || die "安装包缺少校验和，拒绝安装。"
+ACTUAL="sha256:$(shasum -a 256 "$ARCHIVE" | cut -d' ' -f1)"
+[[ "$ACTUAL" == "$DIGEST" ]] || die "校验和不匹配，安装包可能不完整。"
+log "校验和匹配。"
 
 log "解压…"
 /usr/bin/ditto -x -k "$ARCHIVE" "$WORK_DIR/extracted"

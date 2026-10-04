@@ -4,7 +4,7 @@ import XCTest
 
 /// 回归测试：2026-09-17 缺陷审计中发现的问题。
 ///
-/// 这些用例对应审计报告 `测试报告.md` 中的编号。C-2 无法在此处自动化
+/// 这些用例对应 2026-09-17 审计里的编号。C-2 无法在此处自动化
 /// （`AppModel` 未开放 `ClipboardCacheStore` 注入，无法在不污染真实用户目录的前提下
 /// 构造"容量接近上限 + 存在 legacy 文本条目"的初始状态），其复现方式记录在该用例的注释里。
 final class AuditRegressionTests: XCTestCase {

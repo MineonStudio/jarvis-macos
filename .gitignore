@@ -13,3 +13,8 @@ DerivedData/
 # Local application data and secrets
 .env
 *.local
+
+# Local notes and editor environment. Not part of the public repo.
+/测试报告.md
+/会议记录模块审计.md
+.codex/

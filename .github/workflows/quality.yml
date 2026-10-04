@@ -12,10 +12,24 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install static-analysis tools
-        run: brew install swiftlint swiftformat
+        run: |
+          brew install swiftlint
+          # macos-26 already has SwiftFormat 0.63.0 and brew install will not
+          # replace it. 0.63.0 and 0.63.1 disagree on doc comments; this repo
+          # is formatted with 0.63.1.
+          curl -fsSL -o /tmp/swiftformat.zip -L https://github.com/nicklockwood/SwiftFormat/releases/download/0.63.1/swiftformat.zip
+          rm -rf /tmp/swiftformat-0.63.1
+          mkdir -p /tmp/swiftformat-0.63.1
+          unzip -o /tmp/swiftformat.zip -d /tmp/swiftformat-0.63.1
+          chmod +x /tmp/swiftformat-0.63.1/swiftformat
+          echo "/tmp/swiftformat-0.63.1" >> "$GITHUB_PATH"
+          /tmp/swiftformat-0.63.1/swiftformat --version
 
       - name: SwiftFormat check
-        run: swiftformat --lint --config .swiftformat Sources Tests
+        run: |
+          swiftformat --version
+          test "$(swiftformat --version)" = "0.63.1"
+          swiftformat --lint --config .swiftformat Sources Tests
 
       - name: SwiftLint check
         run: swiftlint lint --config .swiftlint.yml

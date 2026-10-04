@@ -5,16 +5,16 @@ import SwiftUI
 /// 改进 #12：裸 keyCode 魔法数字（53=Esc、49=空格、51/117=删除等）抽成命名常量。
 /// 值取自 Carbon `kVK_*`（本文件已引 Carbon），事件处理里直接写名字。
 enum JarvisKeyCode {
-    static let escape = UInt16(kVK_Escape)               // 53
-    static let space = UInt16(kVK_Space)                 // 49
-    static let delete = UInt16(kVK_Delete)               // 51
+    static let escape = UInt16(kVK_Escape) // 53
+    static let space = UInt16(kVK_Space) // 49
+    static let delete = UInt16(kVK_Delete) // 51
     static let forwardDelete = UInt16(kVK_ForwardDelete) // 117
-    static let returnKey = UInt16(kVK_Return)            // 36
-    static let tab = UInt16(kVK_Tab)                     // 48
-    static let leftArrow = UInt16(kVK_LeftArrow)         // 123
-    static let rightArrow = UInt16(kVK_RightArrow)       // 124
-    static let downArrow = UInt16(kVK_DownArrow)         // 125
-    static let upArrow = UInt16(kVK_UpArrow)             // 126
+    static let returnKey = UInt16(kVK_Return) // 36
+    static let tab = UInt16(kVK_Tab) // 48
+    static let leftArrow = UInt16(kVK_LeftArrow) // 123
+    static let rightArrow = UInt16(kVK_RightArrow) // 124
+    static let downArrow = UInt16(kVK_DownArrow) // 125
+    static let upArrow = UInt16(kVK_UpArrow) // 126
 }
 
 struct ScreenshotShortcut: Codable, Equatable {

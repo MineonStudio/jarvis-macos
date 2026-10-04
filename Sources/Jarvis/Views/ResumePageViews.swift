@@ -9,8 +9,8 @@ struct ResumePageContent: Sendable {
     var skills: [String]
     var projects: [ResumeProject]
 
-    // #31：本 struct 的 hasContent 已删除——分页入口用的是 ResumeDocument.hasContent，
-    // 这里这个零调用。判空直接看四个数组即可。
+    /// #31：本 struct 的 hasContent 已删除——分页入口用的是 ResumeDocument.hasContent，
+    /// 这里这个零调用。判空直接看四个数组即可。
     static func fullDocument(_ document: ResumeDocument) -> Self {
         Self(
             includesHeader: true,

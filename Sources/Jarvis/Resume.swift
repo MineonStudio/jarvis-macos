@@ -535,8 +535,8 @@ enum ResumeDocumentCodec {
         let experience: [ResumeExperience]
         let skills: [String]
         let projects: [ResumeProject]
-        // #29：以前导出丢 template——重新导入后排版回到默认模板。
-        // decode 的 optionalDocumentKeys 本来就认 template，补上即 round-trip。
+        /// #29：以前导出丢 template——重新导入后排版回到默认模板。
+        /// decode 的 optionalDocumentKeys 本来就认 template，补上即 round-trip。
         let template: ResumeTemplate
 
         init(_ document: ResumeDocument) {

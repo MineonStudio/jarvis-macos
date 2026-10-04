@@ -61,7 +61,9 @@ enum ClipboardSharing {
         switch item.kind {
         case .text:
             // 超阈值文本不内联（M-H），只做 stat 不读文件。
-            if item.text != nil { return true }
+            if item.text != nil {
+                return true
+            }
             guard let textPath = item.textPath else { return false }
             return FileManager.default.fileExists(atPath: textPath)
         case .image:

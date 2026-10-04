@@ -49,7 +49,7 @@ enum JarvisLegacyKeychainMigration {
             let status = SecItemDelete(query as CFDictionary)
             // #28：以前返回值直接丢掉。errSecItemNotFound 是正常情况（本来就没存过）；
             // 其他非零状态码说明删除失败——旧 Key 残留在钥匙串里，记下来。
-            if status != errSecSuccess && status != errSecItemNotFound {
+            if status != errSecSuccess, status != errSecItemNotFound {
                 JarvisLog.error(
                     category: .security,
                     event: "keychain.legacyDelete.failed",

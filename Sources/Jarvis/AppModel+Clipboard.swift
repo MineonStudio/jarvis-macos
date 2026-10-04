@@ -112,11 +112,10 @@ extension AppModel {
                 guard let self else { return }
                 for (index, id, path, snippet) in succeeded {
                     // 后台写文件期间可能有新条目插入，下标可能漂移，用 id 二次确认。
-                    let target: Int?
-                    if clipboardItems.indices.contains(index), clipboardItems[index].id == id {
-                        target = index
+                    let target: Int? = if clipboardItems.indices.contains(index), clipboardItems[index].id == id {
+                        index
                     } else {
-                        target = clipboardItems.firstIndex(where: { $0.id == id })
+                        clipboardItems.firstIndex(where: { $0.id == id })
                     }
                     if let target {
                         clipboardItems[target].textPath = path

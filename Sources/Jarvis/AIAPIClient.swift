@@ -64,8 +64,8 @@ struct AIAPIConfiguration: Equatable, Sendable {
         load(defaults: defaults, resolvedAPIKey: keyStore.readIfAvailable())
     }
 
-    // #24：loadProvider 只是 load 的别名（provider 本来就是 load 里 detect 出来的），
-    // 别名已删除，调用方直接用 load。
+    /// #24：loadProvider 只是 load 的别名（provider 本来就是 load 里 detect 出来的），
+    /// 别名已删除，调用方直接用 load。
     static func load(
         defaults: UserDefaults = .standard,
         resolvedAPIKey: String?

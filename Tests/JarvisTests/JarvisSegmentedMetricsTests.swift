@@ -99,8 +99,8 @@ extension JarvisSegmentedMetricsTests {
         // 亮一档还带一点蓝，按它去找容器会很脆。
         let containerGray: CGFloat = 0.5
         let containerColor = Color(red: containerGray, green: containerGray, blue: containerGray)
-        /// 选**第一项**：只有它贴着容器左边，左内缩才和上/下同义（第 2 项以后的左边
-        /// 是前一项，量出来的不是容器内边距——参考图里也是第一项选中）。
+        // 选**第一项**：只有它贴着容器左边，左内缩才和上/下同义（第 2 项以后的左边
+        // 是前一项，量出来的不是容器内边距——参考图里也是第一项选中）。
         func render(selected: EntertainmentPlatform) throws -> NSBitmapImageRep {
             let content = ZStack {
                 Color.white

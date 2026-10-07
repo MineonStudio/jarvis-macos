@@ -91,18 +91,23 @@ extension ScreenshotEditorModel {
         translationMode = false
     }
 
-    /// 点翻译图标：不在翻译态就进入并开始翻译，已经在就退出。
-    ///
-    /// 决策放在模型里而不是按钮闭包里：写在闭包里就只能靠肉眼验，上一版正是漏掉了
-    /// 「进入翻译态」这一步，二级栏再也出不来。
-    /// - Returns: 这一次是否需要真的发起翻译。
-    func toggleTranslationMode() -> Bool {
+    /// 点翻译图标只开关二级栏，不开始翻译。开始和重跑都走二级栏上的按钮。
+    func toggleTranslationMode() {
         if translationMode {
             exitTranslationMode()
-            return false
+        } else {
+            enterTranslationMode()
         }
-        enterTranslationMode()
-        return true
+    }
+
+    /// 还没翻过是「开始翻译」，一旦进入识别或已经有译文就改成「重新翻译」。
+    var translationActionTitle: String {
+        switch translationState {
+        case .idle where translationBlocks.isEmpty:
+            "开始翻译"
+        default:
+            "重新翻译"
+        }
     }
 
     func startTranslation() {

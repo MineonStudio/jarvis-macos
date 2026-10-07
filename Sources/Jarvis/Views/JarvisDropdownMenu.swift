@@ -241,7 +241,8 @@ private struct JarvisDropdownTriggerGlassModifier: ViewModifier {
     }
 }
 
-private struct JarvisDropdownPillMenuList: View {
+/// 玻璃胶囊选项。主窗口工具栏和截图里的目标语言菜单共用选中、悬浮和依次展开。
+struct JarvisDropdownPillMenuList: View {
     let options: [JarvisDropdownOption]
     let selectionID: String?
     let showsSelectedOption: Bool

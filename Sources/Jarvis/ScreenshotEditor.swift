@@ -125,6 +125,7 @@ struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
     enum Kind: Equatable {
         case arrow
         case rectangle
+        case pen
         case mosaic
         case text
     }
@@ -157,7 +158,13 @@ struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
         else {
             return .zero
         }
-        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        var box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        if kind == .pen {
+            // 横着的一笔高度是 0，右键热区会变成 1pt。把线宽算进去才能点到。
+            let pad = max(lineWidth, 1) / 2
+            box = box.insetBy(dx: -pad, dy: -pad)
+        }
+        return box
     }
 
     var start: CGPoint {
@@ -199,6 +206,9 @@ struct ScreenshotAnnotation: Identifiable, Equatable, Sendable {
             return rect.insetBy(dx: -padding, dy: -padding)
         case .rectangle:
             return rect.insetBy(dx: -(lineWidth / 2 + 4), dy: -(lineWidth / 2 + 4))
+        case .pen:
+            let padding = lineWidth / 2 + 4
+            return rect.insetBy(dx: -padding, dy: -padding)
         case .mosaic:
             let padding = mosaicMode == .brush ? brushSize / 2 + 4 : 4
             return rect.insetBy(dx: -padding, dy: -padding)
@@ -255,13 +265,15 @@ final class ScreenshotEditorModel: ObservableObject {
     @Published var mosaicMode: ScreenshotMosaicMode = .rectangle
     @Published var mosaicStyle: ScreenshotMosaicStyle = .blur
     @Published var arrowColor: ScreenshotTextColor = .red
-    @Published var arrowLineWidth: CGFloat = 5
+    @Published var arrowLineWidth: CGFloat = ScreenshotStrokeWidth.default
     @Published var arrowHeadSize: CGFloat = 20
     @Published var arrowHeadStyle: ScreenshotArrowHeadStyle = .filled
     @Published var rectangleColor: ScreenshotTextColor = .red
-    @Published var rectangleLineWidth: CGFloat = 5
+    @Published var rectangleLineWidth: CGFloat = ScreenshotStrokeWidth.default
     @Published var rectangleLineStyle: ScreenshotLineStyle = .solid
-    @Published var textFontSize: CGFloat = 22
+    @Published var penColor: ScreenshotTextColor = .red
+    @Published var penLineWidth: CGFloat = ScreenshotStrokeWidth.default
+    @Published var textFontSize: CGFloat = ScreenshotTextSize.default
     @Published var textColor: ScreenshotTextColor = .red
     @Published var textBold = true
     @Published var textItalic = false
@@ -377,6 +389,7 @@ extension ScreenshotEditorModel {
         translationMode
             || selectedTool == .arrow
             || selectedTool == .rectangle
+            || selectedTool == .pen
             || selectedTool == .mosaic
             || selectedTool == .text
     }
@@ -502,6 +515,23 @@ extension ScreenshotEditorModel {
             color: rectangleColor,
             lineWidth: rectangleLineWidth,
             lineStyle: rectangleLineStyle
+        ))
+    }
+
+    func addPen(points: [CGPoint]) {
+        guard points.count > 1 else { return }
+        let length = zip(points, points.dropFirst()).reduce(0.0) { total, pair in
+            total + hypot(pair.1.x - pair.0.x, pair.1.y - pair.0.y)
+        }
+        // 和马赛克笔触同一条线：只挡「没动」。阈值给大，短笔画会变成拖了却没反应。
+        guard length >= 2 else { return }
+        append(.init(
+            kind: .pen,
+            points: points,
+            text: nil,
+            brushSize: penLineWidth,
+            color: penColor,
+            lineWidth: penLineWidth
         ))
     }
 

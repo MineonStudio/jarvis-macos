@@ -55,6 +55,7 @@ struct ScreenshotPresentationPanels {
 enum ScreenshotTool: CaseIterable {
     case arrow
     case rectangle
+    case pen
     case mosaic
     case text
 
@@ -62,6 +63,7 @@ enum ScreenshotTool: CaseIterable {
         switch self {
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
+        case .pen: "pencil.tip"
         case .mosaic: "checkerboard.rectangle"
         case .text: "textformat"
         }
@@ -71,8 +73,85 @@ enum ScreenshotTool: CaseIterable {
         switch self {
         case .arrow: "箭头"
         case .rectangle: "框选"
+        case .pen: "画笔"
         case .mosaic: "马赛克"
         case .text: "文字"
+        }
+    }
+}
+
+/// 箭头、框选、画笔共用的五档线宽，从细到粗。
+enum ScreenshotStrokeWidth {
+    static let stages: [CGFloat] = [2, 4, 6, 10, 16]
+    /// 中间档。新箭头、新框和新笔画都从这里开始。
+    static let `default`: CGFloat = 6
+}
+
+/// 文字工具的三档字号。中档沿用原来的默认 22pt。
+enum ScreenshotTextSize {
+    struct Option: Identifiable, Equatable {
+        let title: String
+        let size: CGFloat
+        var id: CGFloat {
+            size
+        }
+    }
+
+    static let options: [Option] = [
+        Option(title: "小", size: 16),
+        Option(title: "中", size: 22),
+        Option(title: "大", size: 32)
+    ]
+    static let `default`: CGFloat = 22
+}
+
+/// 主行上的一格。
+///
+/// 截图、历史重编辑、贴图编辑都渲染这一份，面板宽度也从这里算。加一颗按钮只改
+/// 这个列表，视图和 `ScreenshotToolbarMetrics.baseWidth` 会一起跟上。
+enum ScreenshotToolbarSlot: Equatable {
+    case tool(ScreenshotTool)
+    case translate
+    case undo
+    case redo
+    case save
+    case cancel
+    case confirm
+    case divider
+}
+
+enum ScreenshotToolbarComposition {
+    static let mainRow: [ScreenshotToolbarSlot] = [
+        .tool(.arrow),
+        .tool(.rectangle),
+        .tool(.pen),
+        .tool(.mosaic),
+        .tool(.text),
+        .divider,
+        .translate,
+        .divider,
+        .undo,
+        .redo,
+        .divider,
+        .save,
+        .cancel,
+        .confirm
+    ]
+
+    static var buttonCount: Int {
+        mainRow.reduce(into: 0) { count, slot in
+            if case .divider = slot {
+                return
+            }
+            count += 1
+        }
+    }
+
+    static var dividerCount: Int {
+        mainRow.reduce(into: 0) { count, slot in
+            if case .divider = slot {
+                count += 1
+            }
         }
     }
 }
@@ -111,7 +190,8 @@ enum ScreenshotToolbarIconMetrics {
     private static let measuredInkHeights: [String: CGFloat] = [
         "arrow.up.right": 15.50,
         "rectangle": 19.25,
-        "character.bubble": 21.75,
+        "pencil.tip": 19.50,
+        "translate": 23.75,
         "arrow.uturn.backward": 19.75,
         "arrow.uturn.forward": 19.75,
         "square.and.arrow.down": 22.25,
@@ -168,10 +248,19 @@ enum ScreenshotToolbarMetrics {
         )
     }
 
-    /// 主按钮行的内容宽度：10 颗按钮，加 3 组分隔线（1pt 线 + 两侧各 8pt 留白）。
+    /// 分隔线本身的宽度，加上左右留白，就是它在主行里占的宽度。
+    /// 视图里的分隔线和这里用同一组数，改一边漏一边会让面板比内容宽或窄。
+    static let dividerLineWidth: CGFloat = 1
+    static let dividerHorizontalPadding: CGFloat = 8
+    static var dividerFootprint: CGFloat {
+        dividerLineWidth + (2 * dividerHorizontalPadding)
+    }
+
+    /// 主按钮行的内容宽度。颗数来自 `ScreenshotToolbarComposition`，不在这里再数一遍。
     /// 它和面板的固定宽度一起决定内缩的**上界**——内缩不是越大越好。
     static var mainRowContentWidth: CGFloat {
-        (10 * mainButtonSize) + (3 * (1 + 2 * 8))
+        (CGFloat(ScreenshotToolbarComposition.buttonCount) * mainButtonSize)
+            + (CGFloat(ScreenshotToolbarComposition.dividerCount) * dividerFootprint)
     }
 
     /// 行高 `rowHeight` 的胶囊要容下高 `contentHeight` 的内容，两端圆头至少要

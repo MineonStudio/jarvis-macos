@@ -102,6 +102,8 @@ final class ScreenshotRenderPipeline {
                 drawArrow(annotation, in: context)
             case .rectangle:
                 drawRectangle(annotation, in: context)
+            case .pen:
+                drawPen(annotation, in: context)
             case .mosaic:
                 drawMosaic(
                     annotation,
@@ -182,6 +184,21 @@ final class ScreenshotRenderPipeline {
         context.setLineJoin(.miter)
         context.setLineDash(phase: 0, lengths: annotation.lineStyle.dashPattern)
         context.stroke(rect)
+        context.restoreGState()
+    }
+
+    private func drawPen(_ annotation: ScreenshotAnnotation, in context: CGContext) {
+        guard annotation.points.count > 1 else { return }
+        context.saveGState()
+        context.setStrokeColor(annotation.color.nsColor.withAlphaComponent(0.96).cgColor)
+        context.setLineWidth(max(annotation.lineWidth, 1))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.move(to: annotation.points[0])
+        for point in annotation.points.dropFirst() {
+            context.addLine(to: point)
+        }
+        context.strokePath()
         context.restoreGState()
     }
 

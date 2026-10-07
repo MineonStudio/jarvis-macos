@@ -17,7 +17,8 @@ final class ScreenshotToolbarIconTests: XCTestCase {
         let symbols = [
             "arrow.up.right",
             "rectangle",
-            "character.bubble",
+            "pencil.tip",
+            "translate",
             "arrow.uturn.backward",
             "arrow.uturn.forward",
             "square.and.arrow.down",
@@ -81,7 +82,7 @@ final class ScreenshotToolbarIconTests: XCTestCase {
 
     /// 图标不能被画框裁掉：墨迹宽度和高度都得留得住。
     func testIconsFitInsideTheirBox() throws {
-        for symbol in ["arrow.up.right", "rectangle", "character.bubble", "square.and.arrow.down"] {
+        for symbol in ["arrow.up.right", "rectangle", "pencil.tip", "translate", "square.and.arrow.down"] {
             let box = try inkBox(
                 of: Image(systemName: symbol)
                     .font(

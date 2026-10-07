@@ -22,27 +22,45 @@ final class ScreenshotToolbarInteractionTests: XCTestCase {
     }
 
     /// 走按钮真正调用的那个入口：进入时必须置上 translationMode，否则二级栏根本
-    /// 不会出现（上一版就是漏了这一步，而且测试测的是模型方法、覆盖不到接线）。
-    func testFirstTranslationTapEntersModeAndStartsTranslation() throws {
+    /// 不会出现。点图标只打开二级栏，翻译要等「开始翻译」。
+    func testFirstTranslationTapOpensTheBarWithoutStarting() throws {
         let editor = try makeEditor()
         XCTAssertFalse(editor.secondaryBarVisible)
 
-        let shouldStart = editor.toggleTranslationMode()
+        editor.toggleTranslationMode()
 
-        XCTAssertTrue(shouldStart, "第一次点翻译图标应当发起翻译")
         XCTAssertTrue(editor.translationMode)
         XCTAssertTrue(editor.secondaryBarVisible, "进入翻译模式后二级栏应当展开")
+        XCTAssertEqual(editor.translationState, .idle)
+        XCTAssertEqual(editor.translationActionTitle, "开始翻译")
     }
 
     func testSecondTranslationTapLeavesModeWithoutRestarting() throws {
         let editor = try makeEditor()
-        XCTAssertTrue(editor.toggleTranslationMode())
+        editor.toggleTranslationMode()
 
-        let shouldStartAgain = editor.toggleTranslationMode()
+        editor.toggleTranslationMode()
 
-        XCTAssertFalse(shouldStartAgain, "再点一次只是退出，不该重跑一遍翻译")
         XCTAssertFalse(editor.translationMode)
         XCTAssertFalse(editor.secondaryBarVisible, "再点一次翻译图标应当收起二级栏")
+        XCTAssertEqual(editor.translationState, .idle)
+    }
+
+    func testTranslationButtonTitleSwitchesAfterARunStarts() throws {
+        let editor = try makeEditor()
+        XCTAssertEqual(editor.translationActionTitle, "开始翻译")
+
+        editor.translationState = .recognizing
+        XCTAssertEqual(editor.translationActionTitle, "重新翻译")
+
+        editor.translationState = .completed(count: 1)
+        XCTAssertEqual(editor.translationActionTitle, "重新翻译")
+
+        editor.translationState = .failed("没有识别到可翻译的文字")
+        XCTAssertEqual(editor.translationActionTitle, "重新翻译")
+
+        editor.translationState = .idle
+        XCTAssertEqual(editor.translationActionTitle, "开始翻译")
     }
 
     func testSelectingAnotherToolLeavesTranslationMode() throws {

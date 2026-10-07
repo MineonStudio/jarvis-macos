@@ -24,7 +24,7 @@ struct ScreenshotAnnotationView: View {
                 width: annotation.textSize.width,
                 height: annotation.textSize.height
             )
-        case .arrow, .rectangle, .mosaic:
+        case .arrow, .rectangle, .pen, .mosaic:
             annotation.canvasBounds
         }
         return content.insetBy(dx: -margin, dy: -margin).intersection(canvas)
@@ -54,6 +54,14 @@ struct ScreenshotAnnotationView: View {
                     color: annotation.color.color,
                     lineWidth: annotation.lineWidth,
                     lineStyle: annotation.lineStyle,
+                    origin: origin,
+                    isDraft: isDraft
+                )
+            case .pen:
+                PenAnnotationView(
+                    points: annotation.points,
+                    color: annotation.color.color,
+                    lineWidth: annotation.lineWidth,
                     origin: origin,
                     isDraft: isDraft
                 )
@@ -187,6 +195,26 @@ struct ArrowAnnotationView: View {
             head.addLine(to: right)
             head.closeSubpath()
             context.fill(head, with: .color(strokeColor))
+        }
+    }
+}
+
+struct PenAnnotationView: View {
+    let points: [CGPoint]
+    let color: Color
+    let lineWidth: CGFloat
+    let origin: CGPoint
+    let isDraft: Bool
+
+    var body: some View {
+        Canvas { context, _ in
+            context.translateBy(x: -origin.x, y: -origin.y)
+            guard points.count > 1 else { return }
+            context.stroke(
+                FreehandStroke(points: points).path(in: .zero),
+                with: .color(color.opacity(isDraft ? 0.58 : 0.96)),
+                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+            )
         }
     }
 }

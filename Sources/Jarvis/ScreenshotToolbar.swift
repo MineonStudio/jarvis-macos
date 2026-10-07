@@ -61,7 +61,7 @@ private extension View {
 /// `JarvisToolbarSelectionButton`、分组选择器是同一份实现；它到行胶囊两端的距离
 /// 由 `ScreenshotToolbarMetrics.secondaryRowHorizontalPadding` 给出，和上下同值。
 struct ScreenshotToolbarOptionButton: View {
-    let icon: String
+    var icon: String?
     var title: String?
     let selected: Bool
     let help: String
@@ -73,8 +73,10 @@ struct ScreenshotToolbarOptionButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .medium))
+                }
                 if let title {
                     Text(title)
                         .font(selected ? JarvisTypography.controlEmphasis : JarvisTypography.control)
@@ -107,25 +109,27 @@ struct ScreenshotToolbarOptionButton: View {
     }
 }
 
-/// 二级行里的下拉（目标语言、箭头样式、线型）：外形与选项药丸一致，右侧带 chevron。
-private struct SecondaryMenuChip<MenuContent: View>: View {
+/// 目标语言。箭头跟在文字右边，菜单从这颗胶囊的屏幕位置展开。
+///
+/// 不用 SwiftUI `Menu`：它在截图这层无边框面板里会把箭头拽到文字左边，弹出层也
+/// 对不齐这颗按钮。
+private struct TranslationLanguageChip: View {
     let title: String
-    var systemImage: String?
-    @ViewBuilder let menuContent: MenuContent
+    let selected: ScreenshotTranslationLanguage
+    let onSelect: (ScreenshotTranslationLanguage) -> Void
+
+    @State private var isPresented = false
 
     var body: some View {
-        Menu {
-            menuContent
+        Button {
+            isPresented.toggle()
         } label: {
             HStack(spacing: 4) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .medium))
-                }
                 Text(title)
                     .font(JarvisTypography.control)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
             }
             .foregroundStyle(Color.primary)
             .padding(.horizontal, 9)
@@ -133,8 +137,264 @@ private struct SecondaryMenuChip<MenuContent: View>: View {
             .background(Color.primary.opacity(0.06), in: Capsule())
             .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
+        .accessibilityLabel("目标语言")
+        .accessibilityValue(title)
+        .background {
+            TranslationLanguageMenuAnchor(
+                isPresented: $isPresented,
+                selected: selected,
+                onSelect: onSelect
+            )
+        }
+    }
+}
+
+/// 把语言列表贴在胶囊上。截图窗口盖住全屏，弹层必须是它的子窗口，否则会落到画面后面
+/// 或相对错误的坐标系弹出。选项样式跟主窗口工具栏的下拉菜单是同一套。
+private struct TranslationLanguageMenuAnchor: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    let selected: ScreenshotTranslationLanguage
+    let onSelect: (ScreenshotTranslationLanguage) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.anchorView = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(
+            anchorView: nsView,
+            isPresented: isPresented,
+            selected: selected,
+            onSelect: onSelect,
+            dismiss: { isPresented = false }
+        )
+    }
+
+    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+        coordinator.dismiss()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    @MainActor
+    final class Coordinator {
+        weak var anchorView: NSView?
+        private var panel: NSPanel?
+        private var outsideClickMonitor: Any?
+        private var dismissAction: (() -> Void)?
+
+        func update(
+            anchorView: NSView,
+            isPresented: Bool,
+            selected: ScreenshotTranslationLanguage,
+            onSelect: @escaping (ScreenshotTranslationLanguage) -> Void,
+            dismiss: @escaping () -> Void
+        ) {
+            self.anchorView = anchorView
+            dismissAction = dismiss
+            guard isPresented, anchorView.bounds.width > 1, anchorView.bounds.height > 1 else {
+                self.dismiss()
+                return
+            }
+            if panel == nil {
+                present(selected: selected, onSelect: onSelect)
+            } else {
+                positionPanel()
+            }
+        }
+
+        func dismiss() {
+            if let outsideClickMonitor {
+                NSEvent.removeMonitor(outsideClickMonitor)
+                self.outsideClickMonitor = nil
+            }
+            guard let panel else { return }
+            panel.parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
+            panel.close()
+            self.panel = nil
+        }
+
+        private func present(
+            selected: ScreenshotTranslationLanguage,
+            onSelect: @escaping (ScreenshotTranslationLanguage) -> Void
+        ) {
+            guard let anchorView, let parentWindow = anchorView.window else { return }
+
+            let panel = TranslationLanguageMenuPanel(
+                contentRect: .zero,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            let options = ScreenshotTranslationLanguage.allCases.map { language in
+                JarvisDropdownOption(id: language.rawValue, title: language.title)
+            }
+            let menu = JarvisDropdownPillMenuList(
+                options: options,
+                selectionID: selected.rawValue,
+                showsSelectedOption: true,
+                controlWidth: JarvisDropdownMetrics.menuWidth(
+                    for: selected.title,
+                    options: options
+                ),
+                onSelect: { [weak self] optionID in
+                    guard let language = ScreenshotTranslationLanguage(rawValue: optionID) else { return }
+                    self?.dismiss()
+                    self?.dismissAction?()
+                    onSelect(language)
+                }
+            )
+            let hostingView = NSHostingView(rootView: menu.jarvisAccentAware())
+            let fittingSize = hostingView.fittingSize
+            hostingView.frame = NSRect(origin: .zero, size: fittingSize)
+            panel.setContentSize(fittingSize)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.isFloatingPanel = true
+            panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            panel.becomesKeyOnlyIfNeeded = false
+            panel.ignoresMouseEvents = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+            panel.contentView = hostingView
+
+            self.panel = panel
+            parentWindow.addChildWindow(panel, ordered: .above)
+            positionPanel()
+            panel.makeKeyAndOrderFront(nil)
+            installOutsideClickMonitor()
+        }
+
+        private func positionPanel() {
+            guard let panel, let anchorView, let parentWindow = anchorView.window else { return }
+            let anchorRect = parentWindow.convertToScreen(anchorView.convert(anchorView.bounds, to: nil))
+            let visibleFrame = parentWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+            let panelSize = panel.frame.size
+            let gap = JarvisDropdownMetrics.triggerGap
+            let below = anchorRect.minY - gap - panelSize.height
+            let originY = below >= visibleFrame.minY
+                ? below
+                : min(anchorRect.maxY + gap, visibleFrame.maxY - panelSize.height)
+            let originX = JarvisDropdownMetrics.menuOriginX(
+                anchorMinX: anchorRect.minX,
+                panelWidth: panelSize.width,
+                visibleFrame: visibleFrame
+            )
+            panel.setFrameOrigin(NSPoint(x: originX, y: originY))
+        }
+
+        private func installOutsideClickMonitor() {
+            outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+                guard let self, let panel = self.panel else { return event }
+                if event.window === panel {
+                    return event
+                }
+                let closesFromAnchor = self.isAnchorClick(event)
+                self.dismiss()
+                self.dismissAction?()
+                return closesFromAnchor ? nil : event
+            }
+        }
+
+        private func isAnchorClick(_ event: NSEvent) -> Bool {
+            guard
+                let eventWindow = event.window,
+                let anchorView,
+                let anchorWindow = anchorView.window
+            else {
+                return false
+            }
+            let point = eventWindow.convertToScreen(
+                NSRect(origin: event.locationInWindow, size: .zero)
+            ).origin
+            let anchorRect = anchorWindow.convertToScreen(anchorView.convert(anchorView.bounds, to: nil))
+            return anchorRect.contains(point)
+        }
+    }
+}
+
+/// 截图浮层在 `.screenSaver`，普通弹层会落到画面后面。这层面板盖在工具栏上，
+/// 并且能成为 key window，悬浮跟踪才跟主窗口下拉菜单一样生效。
+private final class TranslationLanguageMenuPanel: NSPanel {
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
+}
+
+/// 箭头、框选、画笔的五档线宽。每一档是一个固定粗细，档位本身用越来越粗的笔触表示。
+private struct ScreenshotStrokeStagePicker: View {
+    @Binding var width: CGFloat
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(ScreenshotStrokeWidth.stages.enumerated()), id: \.offset) { index, stage in
+                ScreenshotStrokeStageButton(
+                    markHeight: Self.markHeight(at: index),
+                    stage: stage,
+                    selected: width == stage
+                ) {
+                    width = stage
+                }
+            }
+        }
+    }
+
+    /// 按钮里的笔触高度。和真实线宽同一方向变粗，但收进 26pt 高的控件里。
+    private static func markHeight(at index: Int) -> CGFloat {
+        let heights: [CGFloat] = [2, 3.5, 5, 7, 10]
+        guard heights.indices.contains(index) else { return heights.last ?? 2 }
+        return heights[index]
+    }
+}
+
+private struct ScreenshotStrokeStageButton: View {
+    let markHeight: CGFloat
+    let stage: CGFloat
+    let selected: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Capsule()
+                .fill(selected ? Color.white : Color.secondary)
+                .frame(width: 14, height: markHeight)
+                .frame(width: 28, height: ScreenshotToolbarMetrics.secondaryControlHeight)
+                .jarvisSelectionPill(isSelected: selected, isHovered: isHovered)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.97, pressedOpacity: 0.84))
+        .accessibilityLabel("粗细 \(Int(stage))")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .animation(
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
+            value: isHovered
+        )
+        .animation(
+            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
+            value: selected
+        )
+        .onHover { isHovering in
+            withAnimation(
+                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion)
+            ) {
+                isHovered = isHovering
+            }
+        }
     }
 }
 
@@ -234,29 +494,31 @@ extension ScreenshotToolbar {
         }
     }
 
-    /// 主按钮行自己是一条胶囊。
+    /// 主按钮行自己是一条胶囊。格子来自 `ScreenshotToolbarComposition`，这里不再另列一份。
     private var mainToolRow: some View {
         HStack(spacing: 0) {
-            toolButton(.arrow)
-            toolButton(.rectangle)
-            toolButton(.mosaic)
-            toolButton(.text)
+            ForEach(Array(ScreenshotToolbarComposition.mainRow.enumerated()), id: \.offset) { _, slot in
+                toolbarSlot(slot)
+            }
+        }
+    }
 
-            toolbarDivider
-
+    @ViewBuilder
+    private func toolbarSlot(_ slot: ScreenshotToolbarSlot) -> some View {
+        switch slot {
+        case let .tool(tool):
+            toolButton(tool)
+        case .translate:
             translationButton
-
-            toolbarDivider
-
+        case .undo:
             actionButton(icon: "arrow.uturn.backward", help: "撤销", enabled: editor.canUndo) {
                 onAction(.undo)
             }
+        case .redo:
             actionButton(icon: "arrow.uturn.forward", help: "重做", enabled: editor.canRedo) {
                 onAction(.redo)
             }
-
-            toolbarDivider
-
+        case .save:
             actionButton(
                 icon: "square.and.arrow.down",
                 help: "保存",
@@ -264,22 +526,28 @@ extension ScreenshotToolbar {
             ) {
                 onAction(.saveRequested)
             }
+        case .cancel:
             actionButton(
                 icon: "xmark",
                 help: "取消",
                 // 取消不受翻译/导出状态限制：它们是唯一能退出会话的方式，
                 // 灰掉就只剩 Esc 一条路（而 Esc 恰恰是最不容易被想到的）。
-                enabled: true
+                enabled: true,
+                iconColor: .red
             ) {
                 onAction(.cancel)
             }
+        case .confirm:
             actionButton(
                 icon: "checkmark",
                 help: "完成",
-                enabled: !editor.translationState.isRunning && !editor.isExporting
+                enabled: !editor.translationState.isRunning && !editor.isExporting,
+                iconColor: .green
             ) {
                 onAction(.confirmRequested)
             }
+        case .divider:
+            toolbarDivider
         }
     }
 
@@ -362,12 +630,10 @@ extension ScreenshotToolbar {
         .disabled(editor.translationState.isRunning)
     }
 
-    /// 与其它工具一致：点一下进翻译模式，再点一下退出。
+    /// 点一下展开二级栏，再点一下收起。翻译本身由二级栏里的「开始翻译」发起。
     private var translationButton: some View {
         Button {
-            if editor.toggleTranslationMode() {
-                onAction(.translation)
-            }
+            editor.toggleTranslationMode()
         } label: {
             if editor.translationState.isRunning {
                 ProgressView()
@@ -393,21 +659,10 @@ extension ScreenshotToolbar {
             value: isHoveringTranslation
         )
         .onHover { isHoveringTranslation = $0 }
-        .help(translationRetryHelp)
+        .help("截图翻译")
         .accessibilityLabel("截图翻译")
         .accessibilityAddTraits(editor.translationMode ? .isSelected : [])
         .disabled(editor.translationState.isRunning)
-    }
-
-    private var translationRetryHelp: String {
-        switch editor.translationState {
-        case let .failed(message):
-            message
-        case let .partiallyCompleted(completed, total):
-            "部分翻译完成：成功 \(completed)/\(total)，失败 \(max(0, total - completed))，点击重新翻译"
-        default:
-            "使用系统本地翻译，首次可能下载语言包"
-        }
     }
 
     @ViewBuilder
@@ -418,6 +673,8 @@ extension ScreenshotToolbar {
             arrowStyleControl
         } else if editor.selectedTool == .rectangle {
             rectangleStyleControl
+        } else if editor.selectedTool == .pen {
+            penStyleControl
         } else if editor.selectedTool == .mosaic {
             mosaicStyleControl
         } else if editor.selectedTool == .text {
@@ -431,38 +688,19 @@ extension ScreenshotToolbar {
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.secondary)
 
-            SecondaryMenuChip(title: editor.translationTargetLanguage.title) {
-                ForEach(ScreenshotTranslationLanguage.allCases) { language in
-                    Button {
-                        editor.translationTargetLanguage = language
-                        UserDefaults.standard.set(
-                            language.rawValue,
-                            forKey: ScreenshotTranslationConfiguration.targetLanguageKey
-                        )
-                    } label: {
-                        Label(
-                            language.title,
-                            systemImage: language == editor.translationTargetLanguage
-                                ? "checkmark"
-                                : "textformat"
-                        )
-                    }
-                }
-            }
-
-            if let status = editor.translationState.statusMessage {
-                secondaryDivider
-
-                Text(status)
-                    .font(JarvisTypography.caption)
-                    .foregroundStyle(editor.translationState.isFailure ? Color.red : Color.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 110, alignment: .leading)
+            TranslationLanguageChip(
+                title: editor.translationTargetLanguage.title,
+                selected: editor.translationTargetLanguage
+            ) { language in
+                editor.translationTargetLanguage = language
+                UserDefaults.standard.set(
+                    language.rawValue,
+                    forKey: ScreenshotTranslationConfiguration.targetLanguageKey
+                )
             }
 
             SecondaryCapsuleButton(
-                title: "重新翻译",
+                title: editor.translationActionTitle,
                 isProminent: true,
                 isEnabled: !editor.translationState.isRunning
             ) {
@@ -479,80 +717,32 @@ extension ScreenshotToolbar {
     }
 
     private var arrowStyleControl: some View {
-        HStack(spacing: 8) {
-            Text("颜色")
-                .font(JarvisTypography.control)
-                .foregroundStyle(Color.secondary)
-
-            colorButtons(selected: editor.arrowColor) { color in
-                editor.arrowColor = color
-            }
-
-            secondaryDivider
-
-            Text("粗细")
-                .font(JarvisTypography.control)
-                .foregroundStyle(Color.secondary)
-
-            Slider(value: $editor.arrowLineWidth, in: 2 ... 12, step: 1)
-                .frame(width: 82)
-
-            Text("\(Int(editor.arrowLineWidth))")
-                .font(JarvisTypography.monospaced)
-                .foregroundStyle(Color.secondary)
-                .frame(width: 18, alignment: .leading)
-
-            SecondaryMenuChip(
-                title: editor.arrowHeadStyle.title,
-                systemImage: "arrow.up.right"
-            ) {
-                ForEach(ScreenshotArrowHeadStyle.allCases) { style in
-                    Button {
-                        editor.arrowHeadStyle = style
-                    } label: {
-                        Label(style.title, systemImage: style == .none ? "line.diagonal" : "arrow.up.right")
-                    }
-                }
-            }
+        strokeStyleControl(color: editor.arrowColor, width: $editor.arrowLineWidth) { color in
+            editor.arrowColor = color
         }
     }
 
     private var rectangleStyleControl: some View {
+        strokeStyleControl(color: editor.rectangleColor, width: $editor.rectangleLineWidth) { color in
+            editor.rectangleColor = color
+        }
+    }
+
+    private var penStyleControl: some View {
+        strokeStyleControl(color: editor.penColor, width: $editor.penLineWidth) { color in
+            editor.penColor = color
+        }
+    }
+
+    private func strokeStyleControl(
+        color: ScreenshotTextColor,
+        width: Binding<CGFloat>,
+        setColor: @escaping (ScreenshotTextColor) -> Void
+    ) -> some View {
         HStack(spacing: 8) {
-            Text("颜色")
-                .font(JarvisTypography.control)
-                .foregroundStyle(Color.secondary)
-
-            colorButtons(selected: editor.rectangleColor) { color in
-                editor.rectangleColor = color
-            }
-
+            colorButtons(selected: color, action: setColor)
             secondaryDivider
-
-            Text("粗细")
-                .font(JarvisTypography.control)
-                .foregroundStyle(Color.secondary)
-
-            Slider(value: $editor.rectangleLineWidth, in: 1 ... 12, step: 1)
-                .frame(width: 82)
-
-            Text("\(Int(editor.rectangleLineWidth))")
-                .font(JarvisTypography.monospaced)
-                .foregroundStyle(Color.secondary)
-                .frame(width: 18, alignment: .leading)
-
-            SecondaryMenuChip(
-                title: editor.rectangleLineStyle.title,
-                systemImage: editor.rectangleLineStyle.icon
-            ) {
-                ForEach(ScreenshotLineStyle.allCases) { style in
-                    Button {
-                        editor.rectangleLineStyle = style
-                    } label: {
-                        Label(style.title, systemImage: style.icon)
-                    }
-                }
-            }
+            ScreenshotStrokeStagePicker(width: width)
         }
     }
 
@@ -630,18 +820,10 @@ extension ScreenshotToolbar {
     }
 
     private var textStyleControl: some View {
-        HStack(spacing: 9) {
-            Text("字号")
-                .font(JarvisTypography.control)
-                .foregroundStyle(Color.secondary)
-
-            Slider(value: $editor.textFontSize, in: 12 ... 48, step: 1)
-                .frame(width: 86)
-
-            Text("\(Int(editor.textFontSize))")
-                .font(JarvisTypography.monospaced)
-                .foregroundStyle(Color.secondary)
-                .frame(width: 22, alignment: .leading)
+        HStack(spacing: 8) {
+            colorButtons(selected: editor.textColor) { color in
+                editor.textColor = color
+            }
 
             secondaryDivider
 
@@ -671,8 +853,16 @@ extension ScreenshotToolbar {
 
             secondaryDivider
 
-            colorButtons(selected: editor.textColor) { color in
-                editor.textColor = color
+            HStack(spacing: 2) {
+                ForEach(ScreenshotTextSize.options) { option in
+                    ScreenshotToolbarOptionButton(
+                        title: option.title,
+                        selected: editor.textFontSize == option.size,
+                        help: option.title
+                    ) {
+                        editor.textFontSize = option.size
+                    }
+                }
             }
         }
     }
@@ -707,9 +897,11 @@ extension ScreenshotToolbar {
         icon: String,
         help: String,
         enabled: Bool = true,
+        iconColor: Color? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let actionKind = help
+        let tint = iconColor ?? Color.secondary
         return Button(action: action) {
             Image(systemName: icon)
                 .font(
@@ -718,7 +910,7 @@ extension ScreenshotToolbar {
                         weight: .medium
                     )
                 )
-                .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.35))
+                .foregroundStyle(enabled ? tint : tint.opacity(0.35))
                 .frame(
                     width: ScreenshotToolbarIconMetrics.box,
                     height: ScreenshotToolbarIconMetrics.box
@@ -754,7 +946,7 @@ extension ScreenshotToolbar {
     private var toolbarDivider: some View {
         Rectangle()
             .fill(ScreenshotToolbarDivider.color)
-            .frame(width: 1, height: 28)
-            .padding(.horizontal, 8)
+            .frame(width: ScreenshotToolbarMetrics.dividerLineWidth, height: 28)
+            .padding(.horizontal, ScreenshotToolbarMetrics.dividerHorizontalPadding)
     }
 }

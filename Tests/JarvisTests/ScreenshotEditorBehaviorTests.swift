@@ -71,6 +71,114 @@ final class ScreenshotEditorBehaviorTests: XCTestCase {
         XCTAssertEqual(editor.annotations.count, 1)
     }
 
+    func testShortPenStrokeIsIgnored() throws {
+        let editor = try makeEditor()
+        editor.penColor = .blue
+        editor.penLineWidth = 7
+        editor.addPen(points: [CGPoint(x: 20, y: 20), CGPoint(x: 21, y: 20)])
+        XCTAssertTrue(editor.annotations.isEmpty)
+
+        editor.addPen(points: [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 40), CGPoint(x: 90, y: 70)])
+        XCTAssertEqual(editor.annotations.count, 1)
+        let stroke = try XCTUnwrap(editor.annotations.first)
+        XCTAssertEqual(stroke.kind, .pen)
+        XCTAssertEqual(stroke.color, .blue)
+        XCTAssertEqual(stroke.lineWidth, 7, accuracy: 0.001)
+        XCTAssertEqual(stroke.points.count, 3)
+    }
+
+    func testHorizontalPenHitAreaIncludesTheStroke() throws {
+        let editor = try makeEditor()
+        editor.penLineWidth = 8
+        editor.addPen(points: [CGPoint(x: 10, y: 40), CGPoint(x: 120, y: 40)])
+        let stroke = try XCTUnwrap(editor.annotations.first)
+        XCTAssertEqual(stroke.canvasBounds.height, 8, accuracy: 0.001)
+        XCTAssertGreaterThan(stroke.bounds.height, 8)
+    }
+
+    /// 导出走的是另一条 Core Graphics 路径。预览画对了、存下来没了，这种错视图测试看不出来。
+    func testPenStrokeIsBakedIntoTheExport() throws {
+        let size = 48
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: size,
+            height: size,
+            bitsPerComponent: 8,
+            bytesPerRow: size * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            XCTFail("无法创建位图")
+            return
+        }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: size, height: size))
+        let image = try XCTUnwrap(context.makeImage())
+        let annotation = ScreenshotAnnotation(
+            kind: .pen,
+            points: [CGPoint(x: 4, y: 8), CGPoint(x: 44, y: 8)],
+            text: nil,
+            brushSize: 4,
+            color: .red,
+            lineWidth: 4
+        )
+        let rendered = try XCTUnwrap(
+            ScreenshotRenderPipeline().renderFullCanvas(
+                ScreenshotRenderRequest(
+                    image: image,
+                    canvasSize: CGSize(width: size, height: size),
+                    pixelScale: 1,
+                    annotations: [annotation],
+                    blurredImage: nil,
+                    pixelatedImage: nil
+                )
+            )
+        )
+        let rep = NSBitmapImageRep(cgImage: rendered)
+        var reddestY = -1
+        var reddest = 0.0
+        for y in 0 ..< rep.pixelsHigh {
+            guard let color = rep.colorAt(x: 24, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+            if Double(color.redComponent) > reddest, color.greenComponent < 0.5 {
+                reddest = Double(color.redComponent)
+                reddestY = y
+            }
+        }
+        XCTAssertGreaterThan(reddest, 0.7, "导出后画笔那一笔不见了")
+        XCTAssertLessThan(reddestY, 16, "画笔应当靠近图像上沿，现在落在第 \(reddestY) 行")
+    }
+
+    func testSelectingThePenOpensTheSecondaryBar() throws {
+        let editor = try makeEditor()
+        editor.selectTool(.pen)
+        XCTAssertEqual(editor.selectedTool, .pen)
+        XCTAssertTrue(editor.secondaryBarVisible)
+        editor.selectTool(nil)
+        XCTAssertNil(editor.selectedTool)
+        XCTAssertFalse(editor.secondaryBarVisible)
+    }
+
+    /// 线宽和字号是固定档，不是滑块能停住的任意值。
+    func testStrokeAndTextSizesAreFixedStages() throws {
+        XCTAssertEqual(ScreenshotStrokeWidth.stages, [2, 4, 6, 10, 16])
+        XCTAssertEqual(ScreenshotTextSize.options.map(\.title), ["小", "中", "大"])
+        XCTAssertEqual(ScreenshotTextSize.options.map(\.size), [16, 22, 32])
+
+        let editor = try makeEditor()
+        XCTAssertEqual(editor.arrowLineWidth, 6, accuracy: 0.001)
+        XCTAssertEqual(editor.rectangleLineWidth, 6, accuracy: 0.001)
+        XCTAssertEqual(editor.penLineWidth, 6, accuracy: 0.001)
+        XCTAssertEqual(editor.textFontSize, 22, accuracy: 0.001)
+        XCTAssertEqual(editor.arrowHeadStyle, .filled)
+        XCTAssertEqual(editor.rectangleLineStyle, .solid)
+
+        editor.addArrow(from: CGPoint(x: 12, y: 12), to: CGPoint(x: 80, y: 40))
+        editor.addRectangle(from: CGPoint(x: 20, y: 20), to: CGPoint(x: 90, y: 70))
+        editor.addPen(points: [CGPoint(x: 10, y: 10), CGPoint(x: 40, y: 18)])
+        XCTAssertEqual(editor.annotations.map { Int($0.lineWidth) }, [6, 6, 6])
+    }
+
     /// 工具栏视图本身（不是单个图标）从未被实例化过：接错 action、行序写反、把胶囊
     /// 排在错误的顺序上，都不会有任何测试信号。这里让它真的渲染一次。
     func testToolbarRendersInBothRowOrders() throws {
@@ -79,7 +187,7 @@ final class ScreenshotEditorBehaviorTests: XCTestCase {
 
         for placesAbove in [false, true] {
             layout.placesSecondaryRowAboveMain = placesAbove
-            for tool in [ScreenshotTool.arrow, .mosaic, .text] {
+            for tool in [ScreenshotTool.arrow, .pen, .mosaic, .text] {
                 editor.selectTool(tool)
                 let size = NSHostingView(
                     rootView: ScreenshotToolbar(editor: editor, layout: layout, onAction: { _ in })
@@ -93,6 +201,17 @@ final class ScreenshotEditorBehaviorTests: XCTestCase {
                 XCTAssertGreaterThan(size.width, 0)
             }
             editor.selectTool(nil)
+            editor.enterTranslationMode()
+            let translating = NSHostingView(
+                rootView: ScreenshotToolbar(editor: editor, layout: layout, onAction: { _ in })
+            ).fittingSize
+            XCTAssertEqual(
+                translating.height,
+                ScreenshotToolbarMetrics.expandedHeight,
+                accuracy: 1,
+                "翻译二级栏应当把工具栏撑到展开高度"
+            )
+            editor.exitTranslationMode()
             let collapsed = NSHostingView(
                 rootView: ScreenshotToolbar(editor: editor, layout: layout, onAction: { _ in })
             ).fittingSize

@@ -81,6 +81,20 @@ final class ScreenshotAnnotationPlacementTests: XCTestCase {
         XCTAssertEqual(ink.maxY, 140, accuracy: 6, "矩形的下边缘画错位置")
     }
 
+    func testPenStrokeIsDrawnAtItsCanvasPosition() throws {
+        let annotation = makeAnnotation(
+            kind: .pen,
+            points: [CGPoint(x: 50, y: 100), CGPoint(x: 220, y: 100)]
+        )
+
+        let ink = try inkBounds(of: annotation)
+
+        // 圆头会超出端点半个线宽（这里线宽是 6）。
+        XCTAssertEqual(ink.minX, 47, accuracy: 6, "画笔的起点画错位置")
+        XCTAssertEqual(ink.maxX, 223, accuracy: 6, "画笔的终点画错位置")
+        XCTAssertEqual(ink.midY, 100, accuracy: 4, "画笔的纵向位置画错了")
+    }
+
     func testArrowIsDrawnAtItsCanvasPosition() throws {
         let annotation = makeAnnotation(
             kind: .arrow,

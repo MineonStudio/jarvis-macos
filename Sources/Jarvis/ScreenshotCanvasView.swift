@@ -23,8 +23,10 @@ struct ScreenshotCanvasView: View {
     @State private var dragStart: CGPoint?
     @State private var dragCurrent: CGPoint?
     @State private var lastDragLocation: CGPoint?
-    @State private var mosaicPoints: [CGPoint] = []
+    @State private var freehandPoints: [CGPoint] = []
     @State private var activeAnnotationID: UUID?
+    @State private var translationToast: String?
+    @State private var translationToastTask: Task<Void, Never>?
 
     static let canvasCoordinateSpace = "jarvis.screenshot.canvas"
 
@@ -147,6 +149,36 @@ struct ScreenshotCanvasView: View {
             height: editor.canvasSize.height * canvasScale,
             alignment: .topLeading
         )
+        .overlay(alignment: .bottom) {
+            if interactive, let translationToast {
+                JarvisToast(message: translationToast)
+                    .padding(.bottom, 26)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onChange(of: editor.translationState.statusMessage) { _, message in
+            presentTranslationToast(message)
+        }
+        .onDisappear {
+            translationToastTask?.cancel()
+        }
+    }
+
+    /// 二级栏不再占一行状态。识别、翻译和失败改成和别的操作一样的短提示。
+    /// 完成或取消时提示自行消失，避免「正在翻译」还留在已经翻完的画面上。
+    private func presentTranslationToast(_ message: String?) {
+        translationToastTask?.cancel()
+        guard interactive, let message else {
+            translationToast = nil
+            return
+        }
+        translationToast = message
+        translationToastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: JarvisFeedbackCopy.displayDurationNanoseconds)
+            guard !Task.isCancelled else { return }
+            translationToast = nil
+            translationToastTask = nil
+        }
     }
 
     private var canvasGesture: some Gesture {
@@ -166,6 +198,9 @@ struct ScreenshotCanvasView: View {
                         }
                     } else {
                         editor.clearSelection()
+                        if isFreehandDrag {
+                            freehandPoints = [start]
+                        }
                     }
                 }
 
@@ -184,11 +219,9 @@ struct ScreenshotCanvasView: View {
                         within: editor.editingRect
                     )
                     self.lastDragLocation = currentPoint
-                } else if editor.selectedTool == .mosaic,
-                          editor.mosaicMode == .brush
-                {
-                    if mosaicPoints.last.map({ distance(from: $0, to: currentPoint) > 2 }) ?? true {
-                        mosaicPoints.append(currentPoint)
+                } else if isFreehandDrag {
+                    if freehandPoints.last.map({ distance(from: $0, to: currentPoint) > 2 }) ?? true {
+                        freehandPoints.append(currentPoint)
                     }
                     dragCurrent = currentPoint
                 } else {
@@ -212,9 +245,11 @@ struct ScreenshotCanvasView: View {
                     editor.addArrow(from: start, to: end)
                 case .rectangle:
                     editor.addRectangle(from: start, to: end)
+                case .pen:
+                    editor.addPen(points: freehandPoints.count > 1 ? freehandPoints : [start, end])
                 case .mosaic:
                     let points = editor.mosaicMode == .brush
-                        ? (mosaicPoints.count > 1 ? mosaicPoints : [start, end])
+                        ? (freehandPoints.count > 1 ? freehandPoints : [start, end])
                         : [start, end]
                     editor.addMosaic(points: points)
                 case .text:
@@ -300,8 +335,17 @@ struct ScreenshotCanvasView: View {
                 lineWidth: editor.rectangleLineWidth,
                 lineStyle: editor.rectangleLineStyle
             )
+        case .pen:
+            return .init(
+                kind: .pen,
+                points: freehandPoints.count > 1 ? freehandPoints : [start, end],
+                text: nil,
+                brushSize: editor.penLineWidth,
+                color: editor.penColor,
+                lineWidth: editor.penLineWidth
+            )
         case .mosaic:
-            let points = editor.mosaicMode == .brush ? mosaicPoints : [start, end]
+            let points = editor.mosaicMode == .brush ? freehandPoints : [start, end]
             return .init(
                 kind: .mosaic,
                 points: points,
@@ -381,8 +425,20 @@ struct ScreenshotCanvasView: View {
         dragStart = nil
         dragCurrent = nil
         lastDragLocation = nil
-        mosaicPoints.removeAll()
+        freehandPoints.removeAll()
         activeAnnotationID = nil
+    }
+
+    /// 画笔，以及马赛克的涂抹，都是沿途收点，不是拉一个矩形。
+    private var isFreehandDrag: Bool {
+        switch editor.selectedTool {
+        case .pen:
+            true
+        case .mosaic:
+            editor.mosaicMode == .brush
+        default:
+            false
+        }
     }
 
     private func distance(from start: CGPoint, to end: CGPoint) -> CGFloat {

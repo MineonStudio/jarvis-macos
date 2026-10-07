@@ -7,10 +7,10 @@ struct ScreenshotTranslationIcon: View {
     var selectedColor: Color = .jarvisAccent
 
     var body: some View {
-        Image(systemName: isSelected ? "character.bubble.fill" : "character.bubble")
+        Image(systemName: "translate")
             .font(
                 .system(
-                    size: ScreenshotToolbarIconMetrics.pointSize(for: "character.bubble"),
+                    size: ScreenshotToolbarIconMetrics.pointSize(for: "translate"),
                     weight: .medium
                 )
             )

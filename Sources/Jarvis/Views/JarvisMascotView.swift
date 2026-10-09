@@ -30,7 +30,7 @@ struct JarvisMascotView: View {
     }
 
     private var fillColor: Color {
-        app.activeColorScheme == .dark ? .white : .jarvisAccent
+        app.accentColorPreference.resolvedColor
     }
 
     private var maximumDragDistance: CGFloat {

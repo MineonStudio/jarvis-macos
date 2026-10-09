@@ -94,6 +94,63 @@ final class JarvisMainWindowControllerTests: XCTestCase {
         )
     }
 
+    func testResolvedLaunchFrameKeepsAnOnScreenSavedFrame() {
+        let savedFrame = NSRect(x: 120, y: 180, width: 1460, height: 820)
+        let frame = JarvisMainWindowController.resolvedLaunchFrame(
+            savedFrame: savedFrame,
+            fallbackOrigin: CGPoint(x: 10, y: 20),
+            visibleFrames: [NSRect(x: 0, y: 0, width: 2000, height: 1200)]
+        )
+
+        XCTAssertEqual(frame, savedFrame)
+    }
+
+    func testResolvedLaunchFrameDropsAnOffScreenOrigin() {
+        let savedFrame = NSRect(x: 4000, y: 180, width: 1460, height: 820)
+        let frame = JarvisMainWindowController.resolvedLaunchFrame(
+            savedFrame: savedFrame,
+            fallbackOrigin: CGPoint(x: 10, y: 20),
+            visibleFrames: [NSRect(x: 0, y: 0, width: 2000, height: 1200)]
+        )
+
+        XCTAssertEqual(frame, NSRect(x: 10, y: 20, width: 1460, height: 820))
+    }
+
+    func testResolvedLaunchFrameUsesTheDefaultSizeWhenNothingUsableWasSaved() {
+        let fallback = CGPoint(x: 8, y: 12)
+        let missing = JarvisMainWindowController.resolvedLaunchFrame(
+            savedFrame: nil,
+            fallbackOrigin: fallback,
+            visibleFrames: [NSRect(x: 0, y: 0, width: 2000, height: 1200)]
+        )
+        let tooSmall = JarvisMainWindowController.resolvedLaunchFrame(
+            savedFrame: NSRect(x: 120, y: 180, width: 420, height: 300),
+            fallbackOrigin: fallback,
+            visibleFrames: [NSRect(x: 0, y: 0, width: 2000, height: 1200)]
+        )
+        let expected = NSRect(origin: fallback, size: JarvisMainWindowController.defaultWindowSize)
+
+        XCTAssertEqual(missing, expected)
+        XCTAssertEqual(tooSmall, expected)
+    }
+
+    func testApplyLaunchFrameUsesTheSavedFrameWithoutAnimation() {
+        let savedFrame = NSRect(x: 40, y: 60, width: 1500, height: 900)
+        let window = JarvisFrameRecordingWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: true
+        )
+
+        JarvisMainWindowController.applyLaunchFrame(savedFrame, to: window)
+
+        XCTAssertEqual(window.frame, savedFrame)
+        XCTAssertEqual(window.animationBehavior, .none)
+        XCTAssertFalse(window.animatedFrameChanges.isEmpty)
+        XCTAssertFalse(window.animatedFrameChanges.contains(true))
+    }
+
     func testClipboardPanelMinimumWidthUsesTheSameGridMetrics() {
         XCTAssertEqual(
             JarvisWindowLayoutMetrics.clipboardPanelMinimumWidth,
@@ -147,5 +204,14 @@ final class JarvisMainWindowControllerTests: XCTestCase {
             JarvisWindowLayoutMetrics.clipboardMainCompactFilterBarHeight,
             JarvisWindowLayoutMetrics.clipboardPanelCompactFilterBarHeight
         )
+    }
+}
+
+private final class JarvisFrameRecordingWindow: NSWindow {
+    private(set) var animatedFrameChanges: [Bool] = []
+
+    override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
+        animatedFrameChanges.append(animateFlag)
+        super.setFrame(frameRect, display: displayFlag, animate: animateFlag)
     }
 }

@@ -128,34 +128,74 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
         )
     }
 
-    /// The scene uses this before SwiftUI creates the NSWindow. Feeding the
-    /// saved size into `.defaultSize` prevents the default frame from flashing
-    /// before the accessor can restore the complete frame.
+    /// Initial content size for the SwiftUI scene. The saved origin is applied
+    /// later, on the AppKit window, without animating from this size.
     static var launchWindowSize: CGSize {
         launchWindowSize(savedFrame: JarvisWindowFrameStore().load())
     }
 
     static func launchWindowSize(savedFrame: NSRect?) -> CGSize {
-        guard let savedFrame, isUsable(savedFrame) else { return defaultWindowSize }
-        return savedFrame.size
+        resolvedLaunchFrame(
+            savedFrame: savedFrame,
+            fallbackOrigin: .zero,
+            visibleFrames: []
+        ).size
     }
+
+    /// Full frame to show on launch. A saved frame that misses every visible
+    /// screen keeps its size and takes `fallbackOrigin`. A missing or too-small
+    /// frame uses the default size at that same origin.
+    static func resolvedLaunchFrame(
+        savedFrame: NSRect?,
+        fallbackOrigin: CGPoint,
+        visibleFrames: [NSRect]
+    ) -> NSRect {
+        guard let savedFrame, isUsable(savedFrame) else {
+            return NSRect(origin: fallbackOrigin, size: defaultWindowSize)
+        }
+        let isOnScreen = visibleFrames.contains { $0.intersects(savedFrame) }
+        let origin = isOnScreen ? savedFrame.origin : fallbackOrigin
+        return NSRect(origin: origin, size: savedFrame.size)
+    }
+
+    static func applyLaunchFrame(_ frame: NSRect, to window: NSWindow) {
+        window.animationBehavior = .none
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        window.setFrame(frame, display: false, animate: false)
+        NSAnimationContext.endGrouping()
+    }
+
+    private static func framesMatch(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
+        abs(lhs.origin.x - rhs.origin.x) < 0.5
+            && abs(lhs.origin.y - rhs.origin.y) < 0.5
+            && abs(lhs.width - rhs.width) < 0.5
+            && abs(lhs.height - rhs.height) < 0.5
+    }
+
+    /// How long to keep rejecting SwiftUI's animated restore after the window attaches.
+    private static let launchFramePinDuration: Duration = .milliseconds(400)
 
     private let frameStore = JarvisWindowFrameStore()
     private weak var window: NSWindow?
     private var frameObservers: [NSObjectProtocol] = []
     private var pendingFrameSave: Task<Void, Never>?
+    private var launchFrameTask: Task<Void, Never>?
+    private var pinnedLaunchFrame: NSRect?
+    private var isApplyingLaunchFrame = false
+    private var isCorrectingLaunchFrame = false
 
     func attach(to window: NSWindow?) {
         guard let window, self.window !== window else { return }
 
         detach()
         self.window = window
-        window.setFrameAutosaveName(Self.frameAutosaveName)
         window.minSize = NSSize(
             width: Self.minimumWindowSize.width,
             height: Self.minimumWindowSize.height
         )
-        restoreFrame(to: window)
+        pinLaunchFrame(on: window)
         configureAppearance(for: window)
         observeFrameChanges(of: window)
         if NSApp.isActive {
@@ -164,26 +204,79 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
     }
 
     private func detach() {
+        launchFrameTask?.cancel()
+        launchFrameTask = nil
+        if let window {
+            finishLaunchFramePin(on: window)
+        }
         pendingFrameSave?.cancel()
         pendingFrameSave = nil
         removeFrameObservers()
         window = nil
     }
 
-    private func restoreFrame(to window: NSWindow) {
-        guard let savedFrame = frameStore.load(),
-              Self.isUsable(savedFrame)
-        else {
+    /// SwiftUI creates the window at its default size and only then restores the
+    /// autosaved frame. Doing that restore after the window is on screen is what
+    /// animates the default size into the remembered one. Pin the saved frame,
+    /// with window animation disabled, before the first paint and until that
+    /// late restore has stopped changing the frame.
+    private func pinLaunchFrame(on window: NSWindow) {
+        let target = Self.resolvedLaunchFrame(
+            savedFrame: frameStore.load(),
+            fallbackOrigin: window.frame.origin,
+            visibleFrames: NSScreen.screens.map(\.visibleFrame)
+        )
+        pinnedLaunchFrame = target
+        isApplyingLaunchFrame = true
+        window.animationBehavior = .none
+        let hidesWhileCorrecting = !window.isVisible || !Self.framesMatch(window.frame, target)
+        if hidesWhileCorrecting {
+            window.alphaValue = 0
+        }
+        Self.applyLaunchFrame(target, to: window)
+        window.setFrameAutosaveName(Self.frameAutosaveName)
+        Self.applyLaunchFrame(target, to: window)
+        window.alphaValue = 1
+
+        launchFrameTask?.cancel()
+        launchFrameTask = Task { @MainActor [weak self, weak window] in
+            do {
+                try await Task.sleep(for: Self.launchFramePinDuration)
+            } catch {
+                return
+            }
+            guard let self, let window, self.window === window else { return }
+            self.finishLaunchFramePin(on: window)
+        }
+    }
+
+    private func finishLaunchFramePin(on window: NSWindow) {
+        guard isApplyingLaunchFrame else { return }
+        correctLaunchFrameIfNeeded()
+        window.animationBehavior = .default
+        window.alphaValue = 1
+        isApplyingLaunchFrame = false
+        isCorrectingLaunchFrame = false
+        pinnedLaunchFrame = nil
+    }
+
+    private func handleFrameDidChange() {
+        if isApplyingLaunchFrame {
+            correctLaunchFrameIfNeeded()
             return
         }
+        scheduleFrameSave()
+    }
 
-        let isVisibleOnScreen = NSScreen.screens.contains { screen in
-            screen.visibleFrame.intersects(savedFrame)
+    private func correctLaunchFrameIfNeeded() {
+        guard isApplyingLaunchFrame, !isCorrectingLaunchFrame, let window, let pinnedLaunchFrame else {
+            return
         }
-        let restoredFrame = isVisibleOnScreen
-            ? savedFrame
-            : NSRect(origin: window.frame.origin, size: savedFrame.size)
-        window.setFrame(restoredFrame, display: false)
+        guard !window.inLiveResize else { return }
+        guard !Self.framesMatch(window.frame, pinnedLaunchFrame) else { return }
+        isCorrectingLaunchFrame = true
+        Self.applyLaunchFrame(pinnedLaunchFrame, to: window)
+        isCorrectingLaunchFrame = false
     }
 
     private static func isUsable(_ frame: NSRect) -> Bool {
@@ -198,8 +291,8 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.scheduleFrameSave()
+                MainActor.assumeIsolated {
+                    self?.handleFrameDidChange()
                 }
             },
             notificationCenter.addObserver(
@@ -207,8 +300,8 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.scheduleFrameSave()
+                MainActor.assumeIsolated {
+                    self?.handleFrameDidChange()
                 }
             },
             notificationCenter.addObserver(
@@ -216,7 +309,8 @@ final class JarvisMainWindowController: NSObject, ObservableObject {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
+                    self?.correctLaunchFrameIfNeeded()
                     self?.saveFrameImmediately()
                 }
             }
@@ -304,16 +398,38 @@ struct JarvisMainWindowAccessor: NSViewRepresentable {
     let controller: JarvisMainWindowController
 
     func makeNSView(context _: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            controller.attach(to: view.window)
+        let view = JarvisMainWindowAnchorView(frame: .zero)
+        view.onResolveWindow = { [weak controller] window in
+            controller?.attach(to: window)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context _: Context) {
-        DispatchQueue.main.async {
+        MainActor.assumeIsolated {
             controller.attach(to: nsView.window)
+        }
+    }
+}
+
+/// Receives the NSWindow while it is being attached, before SwiftUI has a
+/// chance to show the default size and animate it to the saved frame.
+private final class JarvisMainWindowAnchorView: NSView {
+    var onResolveWindow: ((NSWindow) -> Void)?
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        guard let newWindow else { return }
+        MainActor.assumeIsolated {
+            onResolveWindow?(newWindow)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        MainActor.assumeIsolated {
+            onResolveWindow?(window)
         }
     }
 }

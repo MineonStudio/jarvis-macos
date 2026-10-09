@@ -5,8 +5,30 @@ enum SettingsLayout {
     static let contentMaxWidth: CGFloat = 760
     static let sidebarIdealWidth: CGFloat = 200
     static let sidebarMinimumWidth: CGFloat = 180
-    static let sidebarMaximumWidth: CGFloat = 240
-    static let modalSize = CGSize(width: 1040, height: 680)
+    /// Preferred card size. Width is 70% of the previous 1040pt card.
+    static let modalSize = CGSize(width: 728, height: 680)
+    /// Space kept between the card and the main window so the shadow and
+    /// the window edge never cover the settings sidebar.
+    static let modalEdgeMargin: CGFloat = 28
+
+    /// The card uses `modalSize` while the window is large enough. Once the
+    /// window is smaller, the card shrinks to stay fully inside it.
+    static func fittedModalSize(in available: CGSize) -> CGSize {
+        CGSize(
+            width: min(modalSize.width, max(0, available.width - modalEdgeMargin * 2)),
+            height: min(modalSize.height, max(0, available.height - modalEdgeMargin * 2))
+        )
+    }
+
+    /// Keeps the settings sidebar inside the card. A nested split view would
+    /// otherwise borrow the main window's leading column and get clipped
+    /// when that window shrinks.
+    static func sidebarWidth(forModalWidth width: CGFloat) -> CGFloat {
+        let minimumContentWidth: CGFloat = 280
+        guard width > 0 else { return 0 }
+        let fitted = min(sidebarIdealWidth, max(sidebarMinimumWidth, width - minimumContentWidth))
+        return min(width, fitted)
+    }
 }
 
 enum SettingsSection: String, CaseIterable, Hashable, Identifiable {
@@ -204,6 +226,7 @@ struct ShortcutSettingsCard: View {
         HStack(spacing: 14) {
             Text(title)
                 .font(SettingsTypography.itemTitle)
+                .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 8)
             ShortcutRecorderControl(
                 shortcut: shortcut,
@@ -216,6 +239,7 @@ struct ShortcutSettingsCard: View {
             }
             Button("恢复默认", action: onRestore)
                 .buttonStyle(JarvisSecondaryButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 }
@@ -254,6 +278,7 @@ private struct WindowLayoutShortcutRow: View {
         HStack(spacing: 14) {
             Text(layout.title)
                 .font(SettingsTypography.itemTitle)
+                .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 8)
             ShortcutRecorderControl(
                 shortcut: $shortcut,
@@ -267,6 +292,7 @@ private struct WindowLayoutShortcutRow: View {
             }
             Button("恢复默认", action: restoreDefault)
                 .buttonStyle(JarvisSecondaryButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
         }
         .onAppear {
             shortcut = app.windowLayoutShortcut(for: layout)
@@ -321,37 +347,36 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            NavigationSplitView {
-                JarvisSidebarNavigation(
-                    topItems: SettingsSection.allCases,
-                    selection: $selection,
-                    title: { $0.title },
-                    icon: { $0.icon },
-                    headerTitle: "设置",
-                    showsHeaderOrb: false
-                )
-                .navigationSplitViewColumnWidth(
-                    min: SettingsLayout.sidebarMinimumWidth,
-                    ideal: SettingsLayout.sidebarIdealWidth,
-                    max: SettingsLayout.sidebarMaximumWidth
-                )
-                .toolbar(removing: .sidebarToggle)
-            } detail: {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        Text(selection.title)
-                            .font(SettingsTypography.pageTitle)
-                            .foregroundStyle(.primary)
+            GeometryReader { proxy in
+                HStack(spacing: 0) {
+                    JarvisSidebarNavigation(
+                        topItems: SettingsSection.allCases,
+                        selection: $selection,
+                        title: { $0.title },
+                        icon: { $0.icon },
+                        headerTitle: "设置",
+                        showsHeaderOrb: false
+                    )
+                    .frame(width: SettingsLayout.sidebarWidth(forModalWidth: proxy.size.width))
+                    .frame(maxHeight: .infinity)
 
-                        detailContent
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text(selection.title)
+                                .font(SettingsTypography.pageTitle)
+                                .foregroundStyle(.primary)
+
+                            detailContent
+                        }
+                        .frame(maxWidth: SettingsLayout.contentMaxWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(JarvisMetrics.pageInset)
                     }
-                    .frame(maxWidth: SettingsLayout.contentMaxWidth, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(JarvisMetrics.pageInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.jarvisBackground)
                 }
-                .background(Color.jarvisBackground)
+                .frame(width: proxy.size.width, height: proxy.size.height)
             }
-            .navigationSplitViewStyle(.balanced)
             .background(Color.jarvisBackground)
 
             if let onClose {
@@ -533,6 +558,7 @@ struct SettingsView: View {
                     get: { app.themePreference },
                     set: { app.updateThemePreference($0) }
                 ))
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -546,6 +572,7 @@ struct SettingsView: View {
                     get: { app.appIconAppearance },
                     set: { app.updateAppIconAppearance($0) }
                 ))
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -572,7 +599,7 @@ struct SettingsView: View {
                     set: { app.updateLaunchAtLogin($0) }
                 ))
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .jarvisSwitchAccent()
                 .animation(
                     JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
                     value: app.launchAtLoginEnabled
@@ -593,6 +620,8 @@ struct SettingsView: View {
                         .font(JarvisTypography.monospacedSmall)
                         .foregroundStyle(Color.jarvisTextSecondary)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                     Spacer(minLength: 8)
                     Button {
                         guard let url = URL(string: "https://github.com/MineonStudio/jarvis-macos") else {
@@ -603,6 +632,7 @@ struct SettingsView: View {
                         Text("前往GitHub")
                     }
                     .buttonStyle(JarvisSecondaryButtonStyle())
+                    .fixedSize(horizontal: true, vertical: false)
                 }
             }
         }
@@ -618,6 +648,7 @@ struct SettingsView: View {
                         signingCertificatePrompt = hasLocalSigningCertificate ? .remove : .download
                     }
                     .buttonStyle(JarvisSecondaryButtonStyle())
+                    .fixedSize(horizontal: true, vertical: false)
                     .confirmationDialog(
                         signingCertificatePrompt?.title ?? "",
                         isPresented: Binding(
@@ -648,6 +679,7 @@ struct SettingsView: View {
                         isClearPermissionsConfirmationPresented = true
                     }
                     .buttonStyle(JarvisSecondaryButtonStyle())
+                    .fixedSize(horizontal: true, vertical: false)
                 }
                 JarvisPermissionList(cornerRadius: 12, mode: .settings)
             }
@@ -672,30 +704,31 @@ struct SettingsModalOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(Color.black.opacity(0.34))
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
+        GeometryReader { proxy in
+            let fitted = SettingsLayout.fittedModalSize(in: proxy.size)
+            ZStack {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Color.black.opacity(0.34))
+                    .contentShape(Rectangle())
 
-            SettingsView {
-                isPresented = false
+                SettingsView {
+                    isPresented = false
+                }
+                .frame(width: fitted.width, height: fitted.height)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.8)
+                }
+                .shadow(color: Color.black.opacity(0.30), radius: 34, y: 18)
+                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
-            .frame(
-                width: SettingsLayout.modalSize.width,
-                height: SettingsLayout.modalSize.height
-            )
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.8)
-            }
-            .shadow(color: Color.black.opacity(0.30), radius: 34, y: 18)
-            .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
         .onExitCommand {
             isPresented = false
         }
@@ -773,12 +806,13 @@ private struct MeetingModelSettingsRow: View {
                     Text(stage.modelName)
                         .font(JarvisTypography.monospacedSmall)
                         .foregroundStyle(Color.jarvisTextSecondary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
 
                 Spacer(minLength: 8)
                 action
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             if case let .downloading(activeStage, progress) = app.meetingModelState,
@@ -852,12 +886,18 @@ private struct MeetingModelSettingsRow: View {
     @ViewBuilder
     private var availabilityAction: some View {
         if isReady {
-            Button("移除", role: .destructive) {
-                app.removeMeetingModel(stage)
+            if stage == .chineseTranscription {
+                Text("系统已安装")
+                    .font(JarvisTypography.caption)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+            } else {
+                Button("移除", role: .destructive) {
+                    app.removeMeetingModel(stage)
+                }
+                .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
+                .disabled(!app.canManageMeetingModels)
+                .help("移除本机下载的 \(stage.title) 模型")
             }
-            .buttonStyle(JarvisSecondaryButtonStyle(tint: .red))
-            .disabled(!app.canManageMeetingModels)
-            .help("移除本机下载的 \(stage.title) 模型")
         } else {
             Button("下载") {
                 app.prepareMeetingModel(stage)
@@ -876,6 +916,7 @@ struct JarvisThemePicker: View {
             Text(theme.title)
                 .font(JarvisTypography.controlEmphasis)
                 .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .fixedSize(horizontal: true, vertical: false)
                 .frame(
                     minWidth: 54,
                     minHeight: JarvisMetrics.segmentedItemHeight,
@@ -899,6 +940,7 @@ struct JarvisAppIconPicker: View {
             Text(appearance.title)
                 .font(JarvisTypography.controlEmphasis)
                 .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .fixedSize(horizontal: true, vertical: false)
                 .frame(
                     minWidth: 54,
                     minHeight: JarvisMetrics.segmentedItemHeight,
@@ -974,19 +1016,14 @@ struct JarvisAccentColorPicker: View {
             .frame(height: Self.controlHeight)
             .jarvisGlass(in: Capsule(), interactive: true)
 
-            HStack(spacing: JarvisMetrics.segmentedItemSpacing) {
-                ForEach(accents) { accent in
-                    Text(accent.title)
-                        .font(JarvisTypography.captionEmphasis)
-                        .foregroundStyle(Color.jarvisTextSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .opacity(hoveredAccent == accent ? 1 : 0)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(.horizontal, JarvisMetrics.segmentedControlPadding)
+            Text(hoveredAccent?.title ?? " ")
+                .font(JarvisTypography.captionEmphasis)
+                .foregroundStyle(Color.jarvisTextSecondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, minHeight: 16)
+                .opacity(hoveredAccent == nil ? 0 : 1)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(

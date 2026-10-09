@@ -94,6 +94,7 @@ private struct JarvisRootView: View {
                 if isSettingsPresented {
                     SettingsModalOverlay(isPresented: $isSettingsPresented)
                         .environment(appModel)
+                        .zIndex(2)
                 }
             }
             .overlay(alignment: .bottom) {

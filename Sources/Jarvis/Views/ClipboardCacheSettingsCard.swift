@@ -30,7 +30,7 @@ struct ClipboardPrivacySettingsCard: View {
             Spacer(minLength: 8)
             Toggle(title, isOn: isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .jarvisSwitchAccent()
         }
     }
 }

@@ -451,6 +451,9 @@ extension ScreenshotCaptureController {
         switch action {
         case .saveRequested:
             finishToolbarAction(editor, onAction: onAction, makeAction: ScreenshotAction.save)
+        case .pinRequested:
+            let frame = editor.selectionFrame(on: screenFrame) ?? screenFrame
+            pinScreenshot(editor: editor, frame: frame, onAction: onAction)
         case .confirmRequested:
             dismissResult()
             finishToolbarAction(editor, onAction: onAction, makeAction: ScreenshotAction.confirm)

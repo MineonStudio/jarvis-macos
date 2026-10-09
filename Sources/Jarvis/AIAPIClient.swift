@@ -181,12 +181,6 @@ struct AICompletionOptions: Equatable, Sendable {
 
     static let standardJSON = Self(task: "generic-structured-json")
 
-    static let meetingFactExtraction = Self(
-        task: "meeting-fact-extraction",
-        temperature: 0,
-        responseFormat: .jsonObject
-    )
-
     static let meetingSummary = Self(
         task: "meeting-summary",
         temperature: 0,

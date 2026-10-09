@@ -57,6 +57,7 @@ enum JarvisFeedbackCopy {
     static let updateFailed = "更新失败"
     static let recordingStarted = "已开始录音"
     static let recordingStartedWithoutSystemAudio = "已开始录音，未采集系统音频"
+    static let systemAudioCaptureInterrupted = "系统音频在录音中途中断，已保留中断前的内容"
     static let recordingInterrupted = "录音已中断，正在处理"
     static let recordingStartFailed = "开始录音失败"
     static let meetingStopInProgress = "上一次录音正在收尾，请稍候"

@@ -3,46 +3,63 @@ import AppKit
 import SwiftUI
 import XCTest
 
-/// 一级编辑栏的图标必须**看起来**一样大。
+/// 一级编辑栏的 SF Symbol 共用一个字号，墨迹必须落在画框里。
 ///
-/// 光把字号写成同一个数做不到这一点：21pt 下 `arrow.up.right` 的墨迹只有 15.5pt，
-/// `square.and.arrow.down` 有 22.25pt，并排一行参差不齐。所以这里把每个图标真实
-/// 渲染出来量墨迹包围盒，钉住「墨迹高度一致」这个可见结果，而不是字号这个中间量。
+/// 字号一致时笔画粗细一致，叉、勾不会比箭头更粗，图钉也不会被单独缩小。
+/// 新符号不用再量墨迹、登记字号；装不进画框时这组测试会失败。
 @MainActor
 final class ScreenshotToolbarIconTests: XCTestCase {
     /// 允许的偏差：半像素级。再大肉眼就能看出高低不齐。
     private let tolerance: CGFloat = 1.0
 
-    func testSymbolIconsShareTheSameInkHeight() throws {
-        let symbols = [
-            "arrow.up.right",
-            "rectangle",
-            "pencil.tip",
-            "translate",
-            "arrow.uturn.backward",
-            "arrow.uturn.forward",
-            "square.and.arrow.down",
-            "xmark",
-            "checkmark"
-        ]
+    private let symbols = [
+        "arrow.up.right",
+        "rectangle",
+        "pencil.tip",
+        "translate",
+        "arrow.uturn.backward",
+        "arrow.uturn.forward",
+        "square.and.arrow.down",
+        "pin",
+        "xmark",
+        "checkmark"
+    ]
 
+    func testSymbolsShareOnePointSize() {
         for symbol in symbols {
-            let inkHeight = try inkHeight(
-                of: Image(systemName: symbol)
-                    .font(
-                        .system(
-                            size: ScreenshotToolbarIconMetrics.pointSize(for: symbol),
-                            weight: .medium
-                        )
-                    )
-            )
             XCTAssertEqual(
-                inkHeight,
-                ScreenshotToolbarIconMetrics.targetInkHeight,
-                accuracy: tolerance,
-                "\(symbol) 的墨迹高度是 \(inkHeight)pt，与同排其它图标不一致"
+                ScreenshotToolbarIconMetrics.pointSize(for: symbol),
+                ScreenshotToolbarIconMetrics.symbolPointSize,
+                "\(symbol) 不该再单独调字号"
             )
         }
+    }
+
+    func testSymbolInkFitsInTheSharedBox() throws {
+        for symbol in symbols {
+            let box = try inkBox(of: symbolImage(symbol))
+            XCTAssertLessThanOrEqual(
+                box.width,
+                ScreenshotToolbarIconMetrics.box,
+                "\(symbol) 的墨迹宽度超出画框，会被裁"
+            )
+            XCTAssertLessThanOrEqual(
+                box.height,
+                ScreenshotToolbarIconMetrics.box,
+                "\(symbol) 的墨迹高度超出画框，会被裁"
+            )
+            XCTAssertGreaterThan(box.height, 8, "\(symbol) 没有画出来")
+        }
+    }
+
+    private func symbolImage(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(
+                .system(
+                    size: ScreenshotToolbarIconMetrics.pointSize(for: symbol),
+                    weight: .medium
+                )
+            )
     }
 
     func testCustomIconsMatchTheSymbols() throws {
@@ -71,34 +88,10 @@ final class ScreenshotToolbarIconTests: XCTestCase {
             "文字工具的 T 与同排符号不一致"
         )
 
-        let translation = try inkHeight(of: ScreenshotTranslationIcon(isSelected: false))
-        XCTAssertEqual(
-            translation,
-            ScreenshotToolbarIconMetrics.targetInkHeight,
-            accuracy: tolerance,
-            "翻译图标与同排符号不一致"
-        )
-    }
-
-    /// 图标不能被画框裁掉：墨迹宽度和高度都得留得住。
-    func testIconsFitInsideTheirBox() throws {
-        for symbol in ["arrow.up.right", "rectangle", "pencil.tip", "translate", "square.and.arrow.down"] {
-            let box = try inkBox(
-                of: Image(systemName: symbol)
-                    .font(
-                        .system(
-                            size: ScreenshotToolbarIconMetrics.pointSize(for: symbol),
-                            weight: .medium
-                        )
-                    )
-            )
-            XCTAssertLessThanOrEqual(
-                box.width,
-                ScreenshotToolbarIconMetrics.box,
-                "\(symbol) 的墨迹宽度超出画框，会被裁"
-            )
-            XCTAssertLessThanOrEqual(box.height, ScreenshotToolbarIconMetrics.box, symbol)
-        }
+        let translation = try inkBox(of: ScreenshotTranslationIcon(isSelected: false))
+        XCTAssertLessThanOrEqual(translation.width, ScreenshotToolbarIconMetrics.box)
+        XCTAssertLessThanOrEqual(translation.height, ScreenshotToolbarIconMetrics.box)
+        XCTAssertGreaterThan(translation.height, 8, "翻译图标没有画出来")
     }
 
     // MARK: - 测量
@@ -109,13 +102,12 @@ final class ScreenshotToolbarIconTests: XCTestCase {
 
     private func inkBox(of content: some View) throws -> CGSize {
         let scale: CGFloat = 4
+        // 画框放得比图标大，裁切之前先量到真实墨迹。装在 24pt 框里再量的话，
+        // 被切掉的部分量不出来，超框测试会一律通过。
         let renderer = ImageRenderer(
             content: content
                 .foregroundStyle(Color.black)
-                .frame(
-                    width: ScreenshotToolbarIconMetrics.box,
-                    height: ScreenshotToolbarIconMetrics.box
-                )
+                .frame(width: 80, height: 80)
         )
         renderer.scale = scale
         let cgImage = try XCTUnwrap(renderer.cgImage, "离屏渲染失败")

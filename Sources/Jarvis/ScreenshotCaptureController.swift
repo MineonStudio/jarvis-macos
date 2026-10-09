@@ -4,6 +4,7 @@ import SwiftUI
 
 enum ScreenshotAction {
     case saveRequested
+    case pinRequested
     case confirmRequested
     case save(Data)
     case confirm(Data)
@@ -115,6 +116,7 @@ enum ScreenshotToolbarSlot: Equatable {
     case undo
     case redo
     case save
+    case pin
     case cancel
     case confirm
     case divider
@@ -127,13 +129,13 @@ enum ScreenshotToolbarComposition {
         .tool(.pen),
         .tool(.mosaic),
         .tool(.text),
-        .divider,
         .translate,
         .divider,
         .undo,
         .redo,
         .divider,
         .save,
+        .pin,
         .cancel,
         .confirm
     ]
@@ -173,38 +175,21 @@ final class ScreenshotToolbarLayoutModel: ObservableObject {
 
 /// 一级编辑栏里所有图标的视觉尺寸基准。
 ///
-/// 只把字号写成同一个数是不够的：21pt 下 `arrow.up.right` 的墨迹只有 15.5pt 高，
-/// 而 `square.and.arrow.down` 有 22.25pt、马赛克自绘图形是 24pt——并排放在一行里
-/// 参差不齐一眼就能看出来。这里按实测的墨迹高度反推每颗图标各自的字号，让它们的
-/// 墨迹高度统一落在 `targetInkHeight` 上。数字由 `ScreenshotToolbarIconTests`
-/// 复测，改了字号或换了符号会被测出来。
+/// SF Symbol 按同一套字号对齐笔画粗细。以前按墨迹高度给每个符号反推字号：叉和勾
+/// 被放大、图钉和保存被缩小，每加一个图标还得再量一次。现在整排符号共用
+/// `symbolPointSize`，新图标不用再登记。自绘的马赛克和文字 T 仍按 `targetInkHeight`
+/// 画，好跟这套字号的墨迹落在同一档。`ScreenshotToolbarIconTests` 会确认符号都装得进画框。
 enum ScreenshotToolbarIconMetrics {
-    /// 所有一级图标统一的墨迹高度。
+    /// 自绘图标（马赛克、文字 T）的墨迹边长。
     static let targetInkHeight: CGFloat = 18
-    /// 图标画框：比墨迹大一圈，宽图标才不会被裁。
-    static let box: CGFloat = 24
-    /// 量基准时用的字号。
-    private static let referencePointSize: CGFloat = 21
+    /// 图标画框。翻译符号在 19pt 下墨迹宽约 30pt，框要比它宽，否则两侧被切掉。
+    static let box: CGFloat = 32
+    /// 主行上每一个 SF Symbol 的字号。笔画粗细跟这个数走，不跟符号名走。
+    static let symbolPointSize: CGFloat = 19
 
-    /// 符号名 → 在 `referencePointSize` 下的实测墨迹高度。
-    private static let measuredInkHeights: [String: CGFloat] = [
-        "arrow.up.right": 15.50,
-        "rectangle": 19.25,
-        "pencil.tip": 19.50,
-        "translate": 23.75,
-        "arrow.uturn.backward": 19.75,
-        "arrow.uturn.forward": 19.75,
-        "square.and.arrow.down": 22.25,
-        "xmark": 16.75,
-        "checkmark": 17.75
-    ]
-
-    /// 某个符号要用的字号。
-    static func pointSize(for symbol: String) -> CGFloat {
-        guard let inkHeight = measuredInkHeights[symbol], inkHeight > 0 else {
-            return referencePointSize
-        }
-        return referencePointSize * targetInkHeight / inkHeight
+    /// 主行符号的字号。参数只说明这是哪颗图标，尺寸不随名字变。
+    static func pointSize(for _: String) -> CGFloat {
+        symbolPointSize
     }
 
     /// 文字工具那个衬线 "T" 的字号（24pt 下墨迹 17.25pt 高）。

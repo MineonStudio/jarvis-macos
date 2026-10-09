@@ -92,7 +92,7 @@ struct MeetingFact: Codable, Equatable, Identifiable, Sendable {
 }
 
 struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
-    static let currentPipelineVersion = 1
+    static let currentPipelineVersion = 2
 
     var pipelineVersion: Int
     var transcriptFingerprint: String
@@ -104,6 +104,10 @@ struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
     var directSummary: Bool?
     var errorMessage: String?
     var updatedAt: Date
+    /// Window minutes already accepted. A resumed run does not repeat those windows.
+    var windowSummaries: [MeetingSummary]?
+    /// Present only after a run finished. Resuming that checkpoint does not call the API again.
+    var finishedSummary: MeetingSummary?
 
     init(
         transcriptFingerprint: String,
@@ -124,6 +128,8 @@ struct MeetingSummaryCheckpoint: Codable, Equatable, Sendable {
         self.directSummary = directSummary
         self.errorMessage = errorMessage
         self.updatedAt = updatedAt
+        windowSummaries = nil
+        finishedSummary = nil
     }
 }
 
@@ -145,7 +151,7 @@ enum MeetingModelPreparationStage: String, CaseIterable, Identifiable, Sendable 
     var modelName: String {
         switch self {
         case .speakerDiarization: "pyannote/speaker-diarization-community-1 · Core ML"
-        case .chineseTranscription: "Paraformer-large-zh · INT8"
+        case .chineseTranscription: "系统中文语音资源，下载一次后可离线使用。应用不内置转写模型。"
         }
     }
 }
@@ -217,22 +223,106 @@ struct MeetingTranscriptSegment: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let startTime: TimeInterval
     let endTime: TimeInterval
-    let speakerID: String
+    var speakerID: String
     let text: String
+    var confidence: Double?
+    var isUncertainSpeaker: Bool
 
     init(
         id: UUID = UUID(),
         startTime: TimeInterval,
         endTime: TimeInterval,
         speakerID: String,
-        text: String
+        text: String,
+        confidence: Double? = nil,
+        isUncertainSpeaker: Bool = false
     ) {
         self.id = id
         self.startTime = startTime
         self.endTime = endTime
         self.speakerID = speakerID
         self.text = text
+        self.confidence = confidence
+        self.isUncertainSpeaker = isUncertainSpeaker
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case startTime
+        case endTime
+        case speakerID
+        case text
+        case confidence
+        case isUncertainSpeaker
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        startTime = try container.decode(TimeInterval.self, forKey: .startTime)
+        endTime = try container.decode(TimeInterval.self, forKey: .endTime)
+        speakerID = try container.decode(String.self, forKey: .speakerID)
+        text = try container.decode(String.self, forKey: .text)
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
+        isUncertainSpeaker = try container.decodeIfPresent(Bool.self, forKey: .isUncertainSpeaker) ?? false
+    }
+}
+
+struct MeetingEvidence: Codable, Equatable, Sendable, Identifiable {
+    var segmentID: UUID
+    var startMs: Int
+    var endMs: Int
+    var quote: String
+
+    var id: String {
+        "\(segmentID.uuidString)|\(startMs)|\(quote)"
+    }
+}
+
+struct MeetingDiscussionPoint: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var title: String
+    var detail: String
+    var evidence: [MeetingEvidence]
+    var isUserEdited: Bool
+
+    init(
+        id: String,
+        title: String,
+        detail: String,
+        evidence: [MeetingEvidence],
+        isUserEdited: Bool = false
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.evidence = evidence
+        self.isUserEdited = isUserEdited
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case detail
+        case evidence
+        case isUserEdited
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
+        evidence = try container.decodeIfPresent([MeetingEvidence].self, forKey: .evidence) ?? []
+        isUserEdited = try container.decodeIfPresent(Bool.self, forKey: .isUserEdited) ?? false
+    }
+}
+
+struct MeetingMinutesGeneration: Codable, Equatable, Sendable {
+    var modelName: String
+    var promptVersion: String
+    var generatedAt: Date
+    var transcriptFingerprint: String
 }
 
 struct MeetingActionItem: Codable, Equatable, Identifiable, Sendable {
@@ -241,19 +331,47 @@ struct MeetingActionItem: Codable, Equatable, Identifiable, Sendable {
     var owner: String
     var dueDate: String
     var isCompleted: Bool
+    var evidence: [MeetingEvidence]
+    var ownerMissing: String?
+    var dueMissing: String?
+    var isUserEdited: Bool
 
     init(
         id: UUID = UUID(),
         task: String,
         owner: String = "",
         dueDate: String = "",
-        isCompleted: Bool = false
+        isCompleted: Bool = false,
+        evidence: [MeetingEvidence] = [],
+        ownerMissing: String? = nil,
+        dueMissing: String? = nil,
+        isUserEdited: Bool = false
     ) {
         self.id = id
         self.task = task
         self.owner = owner
         self.dueDate = dueDate
         self.isCompleted = isCompleted
+        self.evidence = evidence
+        self.ownerMissing = ownerMissing
+        self.dueMissing = dueMissing
+        self.isUserEdited = isUserEdited
+    }
+
+    var ownerLabel: String {
+        let name = owner.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty {
+            return name
+        }
+        return ownerMissing ?? MeetingMinutesAlgorithm.ownerMissingLabel
+    }
+
+    var dueLabel: String {
+        let due = dueDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !due.isEmpty {
+            return due
+        }
+        return dueMissing ?? MeetingMinutesAlgorithm.dueMissingLabel
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -262,6 +380,10 @@ struct MeetingActionItem: Codable, Equatable, Identifiable, Sendable {
         case owner
         case dueDate
         case isCompleted
+        case evidence
+        case ownerMissing
+        case dueMissing
+        case isUserEdited
     }
 
     init(from decoder: Decoder) throws {
@@ -271,6 +393,10 @@ struct MeetingActionItem: Codable, Equatable, Identifiable, Sendable {
         owner = try container.decodeIfPresent(String.self, forKey: .owner) ?? ""
         dueDate = try container.decodeIfPresent(String.self, forKey: .dueDate) ?? ""
         isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        evidence = try container.decodeIfPresent([MeetingEvidence].self, forKey: .evidence) ?? []
+        ownerMissing = try container.decodeIfPresent(String.self, forKey: .ownerMissing)
+        dueMissing = try container.decodeIfPresent(String.self, forKey: .dueMissing)
+        isUserEdited = try container.decodeIfPresent(Bool.self, forKey: .isUserEdited) ?? false
     }
 }
 
@@ -287,6 +413,9 @@ struct MeetingSummary: Codable, Equatable, Sendable {
     var actionItems: [MeetingActionItem]
     var openQuestions: [String]
     var citations: [MeetingSummaryCitation]?
+    var points: [MeetingDiscussionPoint]
+    var overviewIsUserEdited: Bool
+    var generation: MeetingMinutesGeneration?
 
     init(
         overview: String,
@@ -294,7 +423,10 @@ struct MeetingSummary: Codable, Equatable, Sendable {
         decisions: [String],
         actionItems: [MeetingActionItem],
         openQuestions: [String],
-        citations: [MeetingSummaryCitation]? = nil
+        citations: [MeetingSummaryCitation]? = nil,
+        points: [MeetingDiscussionPoint] = [],
+        overviewIsUserEdited: Bool = false,
+        generation: MeetingMinutesGeneration? = nil
     ) {
         self.overview = overview
         self.keyPoints = keyPoints
@@ -302,6 +434,62 @@ struct MeetingSummary: Codable, Equatable, Sendable {
         self.actionItems = actionItems
         self.openQuestions = openQuestions
         self.citations = citations
+        self.points = points
+        self.overviewIsUserEdited = overviewIsUserEdited
+        self.generation = generation
+    }
+
+    /// Old records stored three lists. New records store `points`. Display uses points when present.
+    var renderedPoints: [MeetingDiscussionPoint] {
+        if !points.isEmpty {
+            return points
+        }
+        var synthesized: [MeetingDiscussionPoint] = []
+        func append(texts: [String], prefix: String) {
+            for (index, text) in texts.enumerated() where !text.isEmpty {
+                let evidence = (citations ?? [])
+                    .filter { $0.text == text }
+                    .flatMap(\.sourceSegmentIDs)
+                    .map { MeetingEvidence(segmentID: $0, startMs: 0, endMs: 0, quote: text) }
+                synthesized.append(
+                    MeetingDiscussionPoint(
+                        id: "\(prefix)\(index + 1)",
+                        title: text,
+                        detail: "",
+                        evidence: evidence
+                    )
+                )
+            }
+        }
+        append(texts: decisions, prefix: "D")
+        append(texts: openQuestions, prefix: "Q")
+        append(texts: keyPoints, prefix: "K")
+        return synthesized
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case overview
+        case keyPoints
+        case decisions
+        case actionItems
+        case openQuestions
+        case citations
+        case points
+        case overviewIsUserEdited
+        case generation
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        overview = try container.decodeIfPresent(String.self, forKey: .overview) ?? ""
+        keyPoints = try container.decodeIfPresent([String].self, forKey: .keyPoints) ?? []
+        decisions = try container.decodeIfPresent([String].self, forKey: .decisions) ?? []
+        actionItems = try container.decodeIfPresent([MeetingActionItem].self, forKey: .actionItems) ?? []
+        openQuestions = try container.decodeIfPresent([String].self, forKey: .openQuestions) ?? []
+        citations = try container.decodeIfPresent([MeetingSummaryCitation].self, forKey: .citations)
+        points = try container.decodeIfPresent([MeetingDiscussionPoint].self, forKey: .points) ?? []
+        overviewIsUserEdited = try container.decodeIfPresent(Bool.self, forKey: .overviewIsUserEdited) ?? false
+        generation = try container.decodeIfPresent(MeetingMinutesGeneration.self, forKey: .generation)
     }
 }
 
@@ -328,6 +516,21 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
     var summary: MeetingSummary?
     var summaryCheckpoint: MeetingSummaryCheckpoint?
     var errorMessage: String?
+    /// Set when a recording was still open at the last launch. Processing stays manual.
+    var interruptedRecording: Bool?
+    /// Nil on records written before capture mode existed. Playback then infers it from the system track.
+    var captureMode: MeetingCaptureMode?
+    var audioChunks: [MeetingAudioChunk]
+    var audioEvents: [MeetingAudioEvent]
+    /// True when the row was created before speech assets were installed.
+    var awaitingAssets: Bool?
+    var diarizationDegraded: Bool?
+    var diarizationDegradeReason: String?
+    var estimatedSpeakerCount: Int?
+    var uncertainSegmentRatio: Double?
+    var speakerTurns: [MeetingSpeakerTurnRecord]
+    var segmentSpeakerOverrides: [MeetingSegmentSpeakerOverride]
+    var minutesVersions: [MeetingMinutesVersion]
 
     init(
         id: UUID = UUID(),
@@ -344,7 +547,19 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         transcript: [MeetingTranscriptSegment] = [],
         summary: MeetingSummary? = nil,
         summaryCheckpoint: MeetingSummaryCheckpoint? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        interruptedRecording: Bool? = nil,
+        captureMode: MeetingCaptureMode? = nil,
+        audioChunks: [MeetingAudioChunk] = [],
+        audioEvents: [MeetingAudioEvent] = [],
+        awaitingAssets: Bool? = nil,
+        diarizationDegraded: Bool? = nil,
+        diarizationDegradeReason: String? = nil,
+        estimatedSpeakerCount: Int? = nil,
+        uncertainSegmentRatio: Double? = nil,
+        speakerTurns: [MeetingSpeakerTurnRecord] = [],
+        segmentSpeakerOverrides: [MeetingSegmentSpeakerOverride] = [],
+        minutesVersions: [MeetingMinutesVersion] = []
     ) {
         self.id = id
         self.title = title
@@ -361,6 +576,120 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         self.summary = summary
         self.summaryCheckpoint = summaryCheckpoint
         self.errorMessage = errorMessage
+        self.interruptedRecording = interruptedRecording
+        self.captureMode = captureMode
+        self.audioChunks = audioChunks
+        self.audioEvents = audioEvents
+        self.awaitingAssets = awaitingAssets
+        self.diarizationDegraded = diarizationDegraded
+        self.diarizationDegradeReason = diarizationDegradeReason
+        self.estimatedSpeakerCount = estimatedSpeakerCount
+        self.uncertainSegmentRatio = uncertainSegmentRatio
+        self.speakerTurns = speakerTurns
+        self.segmentSpeakerOverrides = segmentSpeakerOverrides
+        self.minutesVersions = minutesVersions
+    }
+
+    var resolvedCaptureMode: MeetingCaptureMode {
+        if let captureMode {
+            return captureMode
+        }
+        return systemAudioFileName == nil ? .microphone : .dual
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case createdAt
+        case duration
+        case audioFileName
+        case microphoneAudioFileName
+        case systemAudioFileName
+        case systemAudioStartOffset
+        case language
+        case status
+        case speakers
+        case transcript
+        case summary
+        case summaryCheckpoint
+        case errorMessage
+        case interruptedRecording
+        case captureMode
+        case audioChunks
+        case audioEvents
+        case awaitingAssets
+        case diarizationDegraded
+        case diarizationDegradeReason
+        case estimatedSpeakerCount
+        case uncertainSegmentRatio
+        case speakerTurns
+        case segmentSpeakerOverrides
+        case minutesVersions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? Self.defaultTitle
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
+        audioFileName = try container.decode(String.self, forKey: .audioFileName)
+        microphoneAudioFileName = try container.decodeIfPresent(String.self, forKey: .microphoneAudioFileName)
+        systemAudioFileName = try container.decodeIfPresent(String.self, forKey: .systemAudioFileName)
+        systemAudioStartOffset = try container.decodeIfPresent(TimeInterval.self, forKey: .systemAudioStartOffset)
+        language = try container.decodeIfPresent(MeetingLanguage.self, forKey: .language) ?? .simplifiedChinese
+        status = try container.decodeIfPresent(MeetingRecordStatus.self, forKey: .status) ?? .failed
+        speakers = try container.decodeIfPresent([MeetingSpeaker].self, forKey: .speakers) ?? []
+        transcript = try container.decodeIfPresent([MeetingTranscriptSegment].self, forKey: .transcript) ?? []
+        summary = try container.decodeIfPresent(MeetingSummary.self, forKey: .summary)
+        summaryCheckpoint = try container.decodeIfPresent(MeetingSummaryCheckpoint.self, forKey: .summaryCheckpoint)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        interruptedRecording = try container.decodeIfPresent(Bool.self, forKey: .interruptedRecording)
+        captureMode = try container.decodeIfPresent(MeetingCaptureMode.self, forKey: .captureMode)
+        audioChunks = try container.decodeIfPresent([MeetingAudioChunk].self, forKey: .audioChunks) ?? []
+        audioEvents = try container.decodeIfPresent([MeetingAudioEvent].self, forKey: .audioEvents) ?? []
+        awaitingAssets = try container.decodeIfPresent(Bool.self, forKey: .awaitingAssets)
+        diarizationDegraded = try container.decodeIfPresent(Bool.self, forKey: .diarizationDegraded)
+        diarizationDegradeReason = try container.decodeIfPresent(String.self, forKey: .diarizationDegradeReason)
+        estimatedSpeakerCount = try container.decodeIfPresent(Int.self, forKey: .estimatedSpeakerCount)
+        uncertainSegmentRatio = try container.decodeIfPresent(Double.self, forKey: .uncertainSegmentRatio)
+        speakerTurns = try container.decodeIfPresent([MeetingSpeakerTurnRecord].self, forKey: .speakerTurns) ?? []
+        segmentSpeakerOverrides = try container.decodeIfPresent(
+            [MeetingSegmentSpeakerOverride].self,
+            forKey: .segmentSpeakerOverrides
+        ) ?? []
+        minutesVersions = try container.decodeIfPresent([MeetingMinutesVersion].self, forKey: .minutesVersions) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(audioFileName, forKey: .audioFileName)
+        try container.encodeIfPresent(microphoneAudioFileName, forKey: .microphoneAudioFileName)
+        try container.encodeIfPresent(systemAudioFileName, forKey: .systemAudioFileName)
+        try container.encodeIfPresent(systemAudioStartOffset, forKey: .systemAudioStartOffset)
+        try container.encode(language, forKey: .language)
+        try container.encode(status, forKey: .status)
+        try container.encode(speakers, forKey: .speakers)
+        try container.encode(transcript, forKey: .transcript)
+        try container.encodeIfPresent(summary, forKey: .summary)
+        try container.encodeIfPresent(summaryCheckpoint, forKey: .summaryCheckpoint)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
+        try container.encodeIfPresent(interruptedRecording, forKey: .interruptedRecording)
+        try container.encodeIfPresent(captureMode, forKey: .captureMode)
+        try container.encode(audioChunks, forKey: .audioChunks)
+        try container.encode(audioEvents, forKey: .audioEvents)
+        try container.encodeIfPresent(awaitingAssets, forKey: .awaitingAssets)
+        try container.encodeIfPresent(diarizationDegraded, forKey: .diarizationDegraded)
+        try container.encodeIfPresent(diarizationDegradeReason, forKey: .diarizationDegradeReason)
+        try container.encodeIfPresent(estimatedSpeakerCount, forKey: .estimatedSpeakerCount)
+        try container.encodeIfPresent(uncertainSegmentRatio, forKey: .uncertainSegmentRatio)
+        try container.encode(speakerTurns, forKey: .speakerTurns)
+        try container.encode(segmentSpeakerOverrides, forKey: .segmentSpeakerOverrides)
+        try container.encode(minutesVersions, forKey: .minutesVersions)
     }
 
     static func isLegacyGeneratedTitle(_ title: String, createdAt: Date) -> Bool {
@@ -375,11 +704,14 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
     }
 
     var canRetryProcessing: Bool {
+        if awaitingAssets == true {
+            return false
+        }
         switch status {
         case .failed, .summaryFailed, .transcribed, .transcribing, .summarizing:
-            true
+            return true
         case .recording, .ready:
-            false
+            return false
         }
     }
 
@@ -393,7 +725,9 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
             return true
         }
         guard let summary else { return false }
+        let pointText = summary.renderedPoints.flatMap { [$0.title, $0.detail] }
         return ([summary.overview] + summary.keyPoints + summary.decisions + summary.openQuestions
+            + pointText
             + summary.actionItems.map(\.task))
             .contains { $0.meetingSearchContains(query) }
     }
@@ -402,7 +736,8 @@ struct MeetingRecord: Codable, Equatable, Identifiable, Sendable {
         switch status {
         case .recording:
             status = .failed
-            errorMessage = "应用上次退出时录音未正常结束；已保留已写入的原始录音，可重新处理"
+            interruptedRecording = true
+            errorMessage = "录音未正常结束，已保留约 \(MeetingRecordingStyle.formatDuration(duration))。可以手动继续处理，不会自动开始转写。"
         case .transcribing:
             status = .failed
             errorMessage = "转写中断，原始录音已保留，可重新处理"
@@ -437,9 +772,66 @@ struct MeetingRecordDetail: Codable, Equatable, Sendable {
     var transcript: [MeetingTranscriptSegment]
     var summary: MeetingSummary?
     var summaryCheckpoint: MeetingSummaryCheckpoint?
+    var speakerTurns: [MeetingSpeakerTurnRecord]
+    var segmentSpeakerOverrides: [MeetingSegmentSpeakerOverride]
+    var minutesVersions: [MeetingMinutesVersion]
 
     var isEmpty: Bool {
         speakers.isEmpty && transcript.isEmpty && summary == nil && summaryCheckpoint == nil
+            && speakerTurns.isEmpty && segmentSpeakerOverrides.isEmpty && minutesVersions.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case speakers
+        case transcript
+        case summary
+        case summaryCheckpoint
+        case speakerTurns
+        case segmentSpeakerOverrides
+        case minutesVersions
+    }
+
+    init(
+        speakers: [MeetingSpeaker],
+        transcript: [MeetingTranscriptSegment],
+        summary: MeetingSummary?,
+        summaryCheckpoint: MeetingSummaryCheckpoint?,
+        speakerTurns: [MeetingSpeakerTurnRecord] = [],
+        segmentSpeakerOverrides: [MeetingSegmentSpeakerOverride] = [],
+        minutesVersions: [MeetingMinutesVersion] = []
+    ) {
+        self.speakers = speakers
+        self.transcript = transcript
+        self.summary = summary
+        self.summaryCheckpoint = summaryCheckpoint
+        self.speakerTurns = speakerTurns
+        self.segmentSpeakerOverrides = segmentSpeakerOverrides
+        self.minutesVersions = minutesVersions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        speakers = try container.decodeIfPresent([MeetingSpeaker].self, forKey: .speakers) ?? []
+        transcript = try container.decodeIfPresent([MeetingTranscriptSegment].self, forKey: .transcript) ?? []
+        summary = try container.decodeIfPresent(MeetingSummary.self, forKey: .summary)
+        summaryCheckpoint = try container.decodeIfPresent(MeetingSummaryCheckpoint.self, forKey: .summaryCheckpoint)
+        speakerTurns = try container.decodeIfPresent([MeetingSpeakerTurnRecord].self, forKey: .speakerTurns) ?? []
+        segmentSpeakerOverrides = try container.decodeIfPresent(
+            [MeetingSegmentSpeakerOverride].self,
+            forKey: .segmentSpeakerOverrides
+        ) ?? []
+        minutesVersions = try container.decodeIfPresent([MeetingMinutesVersion].self, forKey: .minutesVersions) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(speakers, forKey: .speakers)
+        try container.encode(transcript, forKey: .transcript)
+        try container.encodeIfPresent(summary, forKey: .summary)
+        try container.encodeIfPresent(summaryCheckpoint, forKey: .summaryCheckpoint)
+        try container.encode(speakerTurns, forKey: .speakerTurns)
+        try container.encode(segmentSpeakerOverrides, forKey: .segmentSpeakerOverrides)
+        try container.encode(minutesVersions, forKey: .minutesVersions)
     }
 }
 
@@ -449,7 +841,10 @@ extension MeetingRecord {
             speakers: speakers,
             transcript: transcript,
             summary: summary,
-            summaryCheckpoint: summaryCheckpoint
+            summaryCheckpoint: summaryCheckpoint,
+            speakerTurns: speakerTurns,
+            segmentSpeakerOverrides: segmentSpeakerOverrides,
+            minutesVersions: minutesVersions
         )
     }
 
@@ -459,6 +854,9 @@ extension MeetingRecord {
         copy.transcript = []
         copy.summary = nil
         copy.summaryCheckpoint = nil
+        copy.speakerTurns = []
+        copy.segmentSpeakerOverrides = []
+        copy.minutesVersions = []
         return copy
     }
 
@@ -467,6 +865,9 @@ extension MeetingRecord {
         transcript = detail.transcript
         summary = detail.summary
         summaryCheckpoint = detail.summaryCheckpoint
+        speakerTurns = detail.speakerTurns
+        segmentSpeakerOverrides = detail.segmentSpeakerOverrides
+        minutesVersions = detail.minutesVersions
     }
 
     func markdownDocument(includeTranscript: Bool = true) -> String {
@@ -477,31 +878,40 @@ extension MeetingRecord {
             "- 时长：\(MeetingRecordingStyle.formatDuration(duration))",
             "- 状态：\(status.title)"
         ]
+        if !speakers.isEmpty {
+            lines.append("- 说话人：\(speakers.map(\.name).joined(separator: "、"))")
+        }
         if let summary {
             lines.append("")
-            lines.append("## 会议总结")
+            lines.append("## 概要")
             if !summary.overview.isEmpty {
                 lines.append("")
                 lines.append(summary.overview)
             }
-            appendMarkdownList(title: "关键讨论", items: summary.keyPoints, to: &lines)
-            appendMarkdownList(title: "明确决策", items: summary.decisions, to: &lines)
-            if !summary.actionItems.isEmpty {
+            let points = summary.renderedPoints
+            if !points.isEmpty {
                 lines.append("")
-                lines.append("## 待办事项")
-                lines.append("")
-                for item in summary.actionItems {
-                    var task = "- [\(item.isCompleted ? "x" : " ")] \(item.task)"
-                    if !item.owner.isEmpty {
-                        task += "（负责人：\(item.owner)）"
+                lines.append("## 讨论要点")
+                for point in points {
+                    lines.append("")
+                    lines.append("- **\(point.title)**")
+                    if !point.detail.isEmpty {
+                        lines.append("  \(point.detail)")
                     }
-                    if !item.dueDate.isEmpty {
-                        task += " 截止：\(item.dueDate)"
-                    }
-                    lines.append(task)
+                    appendEvidence(point.evidence, to: &lines)
                 }
             }
-            appendMarkdownList(title: "未解决问题", items: summary.openQuestions, to: &lines)
+            if !summary.actionItems.isEmpty {
+                lines.append("")
+                lines.append("## 待办")
+                for item in summary.actionItems {
+                    lines.append("")
+                    lines.append("- [\(item.isCompleted ? "x" : " ")] \(item.task)")
+                    lines.append("  负责人：\(item.ownerLabel)")
+                    lines.append("  期限：\(item.dueLabel)")
+                    appendEvidence(item.evidence.isEmpty ? legacyEvidence(for: item, in: summary) : item.evidence, to: &lines)
+                }
+            }
         }
         if includeTranscript, !transcript.isEmpty {
             lines.append("")
@@ -518,18 +928,89 @@ extension MeetingRecord {
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
     }
 
-    private func appendMarkdownList(title: String, items: [String], to lines: inout [String]) {
-        guard !items.isEmpty else { return }
-        lines.append("")
-        lines.append("## \(title)")
-        lines.append("")
-        for item in items {
-            lines.append("- \(item)")
+    func plainTranscriptDocument() -> String {
+        var lines = [
+            title,
+            createdAt.formatted(date: .long, time: .shortened),
+            ""
+        ]
+        if !speakers.isEmpty {
+            lines.append(speakers.map { "\($0.name)（\($0.id)）" }.joined(separator: "\n"))
+            lines.append("")
+        }
+        for segment in transcript {
+            let speaker = speakers.first { $0.id == segment.speakerID }?.name ?? segment.speakerID
+            lines.append("[\(MeetingRecordingStyle.formatTimestamp(segment.startTime))] \(speaker)：\(segment.text)")
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+    }
+
+    private func appendEvidence(_ evidence: [MeetingEvidence], to lines: inout [String]) {
+        for item in evidence {
+            let stamp = MeetingRecordingStyle.formatTimestamp(TimeInterval(item.startMs) / 1000)
+            lines.append("  - 出处 [\(stamp)] \(item.quote)")
+        }
+    }
+
+    private func legacyEvidence(for item: MeetingActionItem, in summary: MeetingSummary) -> [MeetingEvidence] {
+        guard let citation = summary.citations?.first(where: { $0.kind == .actionItem && $0.text == item.task }) else {
+            return []
+        }
+        return citation.sourceSegmentIDs.map { segmentID in
+            let segment = transcript.first { $0.id == segmentID }
+            return MeetingEvidence(
+                segmentID: segmentID,
+                startMs: Int(((segment?.startTime ?? 0) * 1000).rounded()),
+                endMs: Int(((segment?.endTime ?? 0) * 1000).rounded()),
+                quote: segment?.text ?? item.task
+            )
         }
     }
 }
 
+enum MeetingTranscriptConsent {
+    private static let key = "jarvis.meeting.transcriptOutboundConfirmed"
+
+    static var isConfirmed: Bool {
+        UserDefaults.standard.bool(forKey: key)
+    }
+
+    static func confirm() {
+        UserDefaults.standard.set(true, forKey: key)
+    }
+}
+
+struct MeetingTranscriptionTrack: Sendable {
+    var url: URL
+    var timeOffset: TimeInterval
+    var diarize: Bool
+    var trackID: String
+}
+
 struct MeetingTranscriptionResult: Sendable {
-    let speakers: [MeetingSpeaker]
-    let segments: [MeetingTranscriptSegment]
+    var speakers: [MeetingSpeaker]
+    var segments: [MeetingTranscriptSegment]
+    var speakerTurns: [MeetingSpeakerTurnRecord]
+    var diarizationDegraded: Bool
+    var diarizationDegradeReason: String?
+    var estimatedSpeakerCount: Int
+    var uncertainSegmentRatio: Double
+
+    init(
+        speakers: [MeetingSpeaker],
+        segments: [MeetingTranscriptSegment],
+        speakerTurns: [MeetingSpeakerTurnRecord] = [],
+        diarizationDegraded: Bool = false,
+        diarizationDegradeReason: String? = nil,
+        estimatedSpeakerCount: Int = 0,
+        uncertainSegmentRatio: Double = 0
+    ) {
+        self.speakers = speakers
+        self.segments = segments
+        self.speakerTurns = speakerTurns
+        self.diarizationDegraded = diarizationDegraded
+        self.diarizationDegradeReason = diarizationDegradeReason
+        self.estimatedSpeakerCount = estimatedSpeakerCount
+        self.uncertainSegmentRatio = uncertainSegmentRatio
+    }
 }

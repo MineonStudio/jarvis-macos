@@ -111,6 +111,21 @@ final class AppModel {
     var selectedMeetingID: UUID?
     var meetingProcessingState: MeetingProcessingState = .idle
     var meetingElapsed: TimeInterval = 0
+    var meetingElapsedOrigin = Date()
+    var meetingElapsedAccumulated: TimeInterval = 0
+    var meetingTranscriptConsentRecordID: UUID?
+    var meetingRecoverySnapshotBucket = -1
+    var meetingMicrophoneSilentSince: Date?
+    var meetingDidWarnAboutSilence = false
+    var meetingSystemSilentSince: Date?
+    var meetingDidWarnAboutSystemSilence = false
+    var meetingCaptureMode: MeetingCaptureMode = .dual
+    var meetingRecordingPaused = false
+    var meetingMicrophonePower: Float?
+    var meetingSystemPower: Float?
+    var meetingBytesWritten: Int64 = 0
+    var meetingModelDownloadCompletedBytes: Int64 = 0
+    var meetingModelDownloadTotalBytes: Int64 = 0
     var meetingModelState: MeetingModelPreparationState = .checking
     var meetingModelAvailability = MeetingModelAvailability(
         speakerDiarizationReady: false,
@@ -191,6 +206,7 @@ final class AppModel {
     @ObservationIgnored var clipboardCacheCleanupTimer: Timer?
     @ObservationIgnored var lastCacheFullNotice: Date?
     @ObservationIgnored var meetingRecordingTimer: Task<Void, Never>?
+    @ObservationIgnored var meetingPreserveUserEdits = true
     @ObservationIgnored var meetingProcessingTask: Task<Void, Never>?
     @ObservationIgnored var meetingModelPreparationTask: Task<Void, Never>?
     @ObservationIgnored var meetingModelAvailabilityTask: Task<Void, Never>?
@@ -291,6 +307,17 @@ final class AppModel {
         meetingRecorder = MeetingRecorder()
         meetingRecorder.onUnexpectedStop = { [weak self] in
             self?.handleUnexpectedMeetingStop()
+        }
+        meetingRecorder.onAudioEvent = { [weak self] event in
+            self?.appendMeetingAudioEvent(event)
+        }
+        if let storedMode = UserDefaults.standard.string(forKey: "jarvis.meeting.captureMode"),
+           let mode = MeetingCaptureMode(rawValue: storedMode)
+        {
+            meetingCaptureMode = mode
+        }
+        Task { @MainActor [weak self] in
+            await self?.recoverInterruptedMeetingAudio()
         }
         loadClipboardCacheCleanupSettings()
         loadScreenshotShortcut()
@@ -524,7 +551,7 @@ extension AppModel {
 
     private func handleScreenshotAction(_ action: ScreenshotAction) {
         switch action {
-        case .saveRequested, .confirmRequested:
+        case .saveRequested, .pinRequested, .confirmRequested:
             // The capture controller consumes these requests and renders the
             // final image before sending the completed action back here.
             break

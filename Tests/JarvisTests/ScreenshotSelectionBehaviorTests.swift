@@ -88,6 +88,33 @@ final class ScreenshotSelectionBehaviorTests: XCTestCase {
 }
 
 extension ScreenshotSelectionBehaviorTests {
+    func testWindowClickDoesNotPresentZeroSizeMarquee() {
+        let click = CGRect(x: 960, y: 540, width: 0, height: 0)
+        XCTAssertNil(
+            ScreenshotSelectionChrome.marqueeRect(movedRect: nil, dragRect: click, didDrag: false),
+            "点选窗口时按下鼠标不该出现 0×0 框选"
+        )
+        XCTAssertNil(
+            ScreenshotSelectionChrome.marqueeRect(movedRect: nil, dragRect: click, didDrag: true),
+            "拖动标志刚置上、指针还没分开时也不该画出 0×0"
+        )
+        XCTAssertNil(ScreenshotSelectionChrome.dimensionText(for: click))
+    }
+
+    func testDraggedMarqueeShowsItsOwnSize() {
+        let drag = CGRect(x: 40, y: 80, width: 320, height: 180)
+        XCTAssertEqual(
+            ScreenshotSelectionChrome.marqueeRect(movedRect: nil, dragRect: drag, didDrag: true),
+            drag
+        )
+        XCTAssertEqual(ScreenshotSelectionChrome.dimensionText(for: drag), "320 × 180")
+    }
+
+    func testHoveredWindowSizeUsesTheWindowRect() {
+        let window = CGRect(x: 120, y: 80, width: 1440, height: 900)
+        XCTAssertEqual(ScreenshotSelectionChrome.dimensionText(for: window), "1440 × 900")
+    }
+
     func testScreenshotCaptureFromCGImageHasPixelsBeforePNGEncode() throws {
         let png = try makePNGData(size: CGSize(width: 8, height: 6))
         let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))

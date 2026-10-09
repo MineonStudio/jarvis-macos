@@ -107,16 +107,43 @@ enum JarvisAccentColor: String, CaseIterable, Identifiable {
     }
 
     var color: Color {
+        Color(nsColor: nsColor)
+    }
+
+    /// 系统设置「外观」里的强调色色块。语义色 `Color.blue` / `systemGray` 比这八个更艳，
+    /// 石墨色也不是 `systemGray`。数值是 macOS 26 强调色展示色的 sRGB，随浅色 / 深色切换。
+    var nsColor: NSColor {
         switch self {
-        case .system: Color(nsColor: .controlAccentColor)
-        case .blue: .blue
-        case .purple: .purple
-        case .pink: .pink
-        case .red: .red
-        case .orange: .orange
-        case .yellow: .yellow
-        case .green: .green
-        case .graphite: Color(nsColor: .systemGray)
+        case .system:
+            .controlAccentColor
+        case .blue:
+            Self.accentSwatch(light: 0x0091FF, dark: 0x0091FF)
+        case .purple:
+            Self.accentSwatch(light: 0xA756A7, dark: 0xB669B6)
+        case .pink:
+            Self.accentSwatch(light: 0xFB6BAE, dark: 0xFB6BAE)
+        case .red:
+            Self.accentSwatch(light: 0xE8504F, dark: 0xFF6B6A)
+        case .orange:
+            Self.accentSwatch(light: 0xFA9521, dark: 0xFA9521)
+        case .yellow:
+            Self.accentSwatch(light: 0xFFCF30, dark: 0xFFCF00)
+        case .green:
+            Self.accentSwatch(light: 0x72C358, dark: 0x72C358)
+        case .graphite:
+            Self.accentSwatch(light: 0xA8A8A8, dark: 0x9E9E9E)
+        }
+    }
+
+    private static func accentSwatch(light: UInt32, dark: UInt32) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(
+                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1
+            )
         }
     }
 
@@ -582,9 +609,25 @@ struct JarvisFloatingPanelModifier: ViewModifier {
     }
 }
 
+/// `NSSwitch` 只在创建时读取强调色。根视图上的 tint 变了，已经出现的开关不会跟着变，
+/// 所以每个开关单独着色，并在强调色变化时重建。
+private struct JarvisSwitchAccentModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        let preference = JarvisAccentColorStore.shared.preference
+        content
+            .toggleStyle(.switch)
+            .tint(preference.resolvedColor)
+            .id(preference.rawValue)
+    }
+}
+
 extension View {
     func jarvisAccentAware() -> some View {
         modifier(JarvisAccentTintModifier())
+    }
+
+    func jarvisSwitchAccent() -> some View {
+        modifier(JarvisSwitchAccentModifier())
     }
 
     func jarvisTheme(_ theme: JarvisTheme, systemColorScheme: ColorScheme) -> some View {

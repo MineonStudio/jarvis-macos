@@ -37,7 +37,7 @@ struct WallpaperSourcesSettingsCard: View {
                         set: { setEnabled($0, source: source) }
                     ))
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .jarvisSwitchAccent()
                     .disabled(isOnlyEnabledSource)
                     .accessibilityLabel("在前台显示\(source.title)")
                 }

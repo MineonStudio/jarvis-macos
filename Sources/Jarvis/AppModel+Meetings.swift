@@ -13,9 +13,14 @@ extension AppModel {
               meetingModelAvailabilityTask == nil
         else { return }
         meetingModelAvailabilityTask = Task { @MainActor [weak self] in
-            let availability = await Task.detached(priority: .utility) {
+            let stored = await Task.detached(priority: .utility) {
                 MeetingModelStorage.availability()
             }.value
+            let speechReady = await MeetingSpeechAssets.isInstalled()
+            let availability = MeetingModelAvailability(
+                speakerDiarizationReady: stored.speakerDiarizationReady,
+                chineseTranscriptionReady: speechReady
+            )
             guard let self,
                   !Task.isCancelled,
                   meetingModelPreparationTask == nil
@@ -55,6 +60,9 @@ extension AppModel {
                                 return
                             }
                             meetingModelState = .downloading(stage: stage, progress: progress)
+                            let bytes = MeetingSpeechDownloadMeter.snapshot()
+                            meetingModelDownloadCompletedBytes = bytes.completed
+                            meetingModelDownloadTotalBytes = bytes.total
                         }
                     }
                     guard !Task.isCancelled else { break }
@@ -130,7 +138,10 @@ extension AppModel {
         }
     }
 
-    func startMeetingRecording(language: MeetingLanguage = .simplifiedChinese) async {
+    func startMeetingRecording(
+        language: MeetingLanguage = .simplifiedChinese,
+        reusing recordID: UUID? = nil
+    ) async {
         guard meetingCurrentRecordingID == nil, !isStartingMeetingRecording else { return }
         guard !meetingRecorder.isStopping else {
             showToast(JarvisFeedbackCopy.meetingStopInProgress)
@@ -146,44 +157,80 @@ extension AppModel {
         }
 
         guard await microphoneAccessForMeeting() else {
-            meetingProcessingState = .failed("请在系统设置中允许贾维斯访问麦克风")
+            meetingProcessingState = .failed("缺少麦克风权限。请到系统设置 > 隐私与安全性 > 麦克风，允许贾维斯。")
             refreshPermissionStatus()
             showToast(JarvisFeedbackCopy.microphoneRequired)
             return
         }
 
-        let id = UUID()
-        let now = Date()
-        let title = MeetingRecord.defaultTitle
+        let reused = reusableMeetingPlaceholder(recordID: recordID)
+        let id = reused?.id ?? UUID()
+        let now = reused?.createdAt ?? Date()
+        let title = reused?.title ?? MeetingRecord.defaultTitle
         let recordingURLs = meetingRepository.recordingURLs(for: id)
         let recordingsUsage = meetingRepository.recordingsUsageBytes()
         if recordingsUsage >= MeetingRepository.recordingsWarningBytes {
             let gigabytes = Double(recordingsUsage) / (1024 * 1024 * 1024)
             showToast(JarvisFeedbackCopy.recordingsUsageWarning(gigabytes))
         }
+        warnIfMeetingDiskIsLow()
 
+        let capturesSystemAudio = meetingCaptureMode == .dual
         do {
             let sources = try await meetingRecorder.start(
+                meetingID: id,
                 microphoneURL: recordingURLs.microphone,
-                systemAudioURL: recordingURLs.system
+                systemAudioURL: recordingURLs.system,
+                capturesSystemAudio: capturesSystemAudio
             )
-            let record = MeetingRecord(
-                id: id,
-                title: title,
-                createdAt: now,
-                audioFileName: recordingURLs.mixed.lastPathComponent,
-                microphoneAudioFileName: recordingURLs.microphone.lastPathComponent,
-                systemAudioFileName: sources.systemAudioStarted
+            let captureMode: MeetingCaptureMode = capturesSystemAudio && sources.systemAudioStarted
+                ? .dual
+                : .microphone
+            if let reusedIndex = meetingRecords.firstIndex(where: { $0.id == id }), reused != nil {
+                var record = meetingRecords[reusedIndex]
+                record.duration = 0
+                record.microphoneAudioFileName = recordingURLs.microphone.lastPathComponent
+                record.systemAudioFileName = sources.systemAudioStarted
                     ? recordingURLs.system.lastPathComponent
-                    : nil,
-                language: language
-            )
-            try meetingRepository.save(record)
-            meetingRecords.removeAll { $0.id == id }
-            meetingRecords.insert(record, at: 0)
+                    : nil
+                record.language = language
+                record.captureMode = captureMode
+                record.status = .recording
+                record.errorMessage = nil
+                record.interruptedRecording = nil
+                record.awaitingAssets = false
+                record.audioChunks = []
+                try meetingRepository.save(record)
+                meetingRecords[reusedIndex] = record
+            } else {
+                let record = MeetingRecord(
+                    id: id,
+                    title: title,
+                    createdAt: now,
+                    audioFileName: recordingURLs.mixed.lastPathComponent,
+                    microphoneAudioFileName: recordingURLs.microphone.lastPathComponent,
+                    systemAudioFileName: sources.systemAudioStarted
+                        ? recordingURLs.system.lastPathComponent
+                        : nil,
+                    language: language,
+                    captureMode: captureMode,
+                    awaitingAssets: false
+                )
+                try meetingRepository.save(record)
+                meetingRecords.removeAll { $0.id == id }
+                meetingRecords.insert(record, at: 0)
+            }
             meetingCurrentRecordingID = id
             selectedMeetingID = id
             meetingElapsed = 0
+            meetingElapsedOrigin = Date()
+            meetingElapsedAccumulated = 0
+            meetingRecoverySnapshotBucket = -1
+            meetingMicrophoneSilentSince = nil
+            meetingDidWarnAboutSilence = false
+            meetingSystemSilentSince = nil
+            meetingDidWarnAboutSystemSilence = false
+            meetingRecordingPaused = false
             updateMeetingMenuBarState()
             meetingProcessingState = .recording
             meetingRecordingTimer?.cancel()
@@ -191,9 +238,18 @@ extension AppModel {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(500))
                     guard let self, self.meetingCurrentRecordingID == id else { return }
-                    self.meetingElapsed = self.meetingRecorder.isRecording
-                        ? Date().timeIntervalSince(now)
-                        : self.meetingElapsed
+                    if !self.meetingRecordingPaused {
+                        self.meetingElapsed = self.meetingElapsedAccumulated
+                            + Date().timeIntervalSince(self.meetingElapsedOrigin)
+                    }
+                    let closed = self.meetingRecorder.rotateIfDue()
+                    if !closed.isEmpty {
+                        self.appendMeetingChunks(closed, recordID: id)
+                    }
+                    self.snapshotRecordingIfNeeded(id)
+                    self.refreshMeetingRecordingMeters()
+                    self.warnIfMicrophoneStaysSilent()
+                    self.warnIfSystemAudioStaysSilent()
                     self.updateMeetingMenuBarState()
                 }
             }
@@ -203,7 +259,7 @@ extension AppModel {
                 showToast(JarvisFeedbackCopy.recordingStarted)
             }
         } catch {
-            await meetingRecorder.cancel()
+            await meetingRecorder.discard()
             meetingProcessingState = .failed("开始录音失败：\(error.localizedDescription)")
             showToast(JarvisFeedbackCopy.recordingStartFailed)
         }
@@ -217,12 +273,14 @@ extension AppModel {
         let duration = meetingElapsed
         meetingRecordingTimer?.cancel()
         meetingRecordingTimer = nil
+        meetingRecordingPaused = false
         meetingElapsed = duration
         meetingCurrentRecordingID = nil
         updateMeetingMenuBarState()
 
         var record = meetingRecords[index]
         record.duration = max(duration, 0)
+        record.audioChunks = meetingRecorder.snapshotChunks()
         record.status = .transcribing
         meetingRecords[index] = record
         persistMeeting(record)
@@ -288,10 +346,40 @@ extension AppModel {
         summarizeMeeting(recordID: selectedMeetingID)
     }
 
-    func summarizeMeeting(recordID: UUID) {
+    func summarizeMeeting(recordID: UUID, preserveUserEdits: Bool = true) {
         guard meetingRecords.contains(where: { $0.id == recordID }) else { return }
         ensureMeetingDetailLoaded(recordID)
-        enqueueMeetingProcessing(recordID: recordID, kind: .summarizeOnly)
+        guard MeetingTranscriptConsent.isConfirmed else {
+            meetingPreserveUserEdits = preserveUserEdits
+            meetingTranscriptConsentRecordID = recordID
+            return
+        }
+        if !preserveUserEdits, let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+           let summary = meetingRecords[index].summary
+        {
+            meetingRecords[index].minutesVersions.append(MeetingMinutesVersion(summary: summary))
+            meetingRecords[index].summaryCheckpoint = nil
+            persistMeeting(meetingRecords[index])
+        }
+        meetingPreserveUserEdits = preserveUserEdits
+        enqueueMeetingProcessing(
+            recordID: recordID,
+            kind: .summarizeOnly,
+            preserveUserEdits: preserveUserEdits
+        )
+    }
+
+    func confirmMeetingTranscriptConsent() {
+        MeetingTranscriptConsent.confirm()
+        let recordID = meetingTranscriptConsentRecordID
+        meetingTranscriptConsentRecordID = nil
+        if let recordID {
+            summarizeMeeting(recordID: recordID, preserveUserEdits: meetingPreserveUserEdits)
+        }
+    }
+
+    func cancelMeetingTranscriptConsent() {
+        meetingTranscriptConsentRecordID = nil
     }
 
     func retryMeetingProcessing(_ record: MeetingRecord) {
@@ -341,6 +429,52 @@ extension AppModel {
             forType: .string
         )
         showToast(JarvisFeedbackCopy.copied)
+    }
+
+    func exportMeetingPlainTranscript(_ record: MeetingRecord) {
+        ensureMeetingDetailLoaded(record.id)
+        guard let current = meetingRecords.first(where: { $0.id == record.id }),
+              !current.transcript.isEmpty
+        else {
+            showToast(JarvisFeedbackCopy.nothingToExport)
+            return
+        }
+        let savePanel = NSSavePanel()
+        savePanel.canCreateDirectories = true
+        savePanel.allowedContentTypes = [.plainText]
+        savePanel.nameFieldStringValue = "\(current.title)-逐字稿.txt"
+        savePanel.begin { [weak self] response in
+            guard response == .OK, let url = savePanel.url else { return }
+            do {
+                try current.plainTranscriptDocument().write(to: url, atomically: true, encoding: .utf8)
+                self?.showToast(JarvisFeedbackCopy.exported)
+            } catch {
+                self?.showToast(JarvisFeedbackCopy.exportFailed)
+            }
+        }
+    }
+
+    func exportMeetingPDF(_ record: MeetingRecord) {
+        ensureMeetingDetailLoaded(record.id)
+        guard let current = meetingRecords.first(where: { $0.id == record.id }),
+              current.summary != nil || !current.transcript.isEmpty
+        else {
+            showToast(JarvisFeedbackCopy.nothingToExport)
+            return
+        }
+        let savePanel = NSSavePanel()
+        savePanel.canCreateDirectories = true
+        savePanel.allowedContentTypes = [.pdf]
+        savePanel.nameFieldStringValue = "\(current.title).pdf"
+        savePanel.begin { [weak self] response in
+            guard response == .OK, let url = savePanel.url else { return }
+            do {
+                try MeetingExport.pdfData(for: current).write(to: url)
+                self?.showToast(JarvisFeedbackCopy.exported)
+            } catch {
+                self?.showToast(JarvisFeedbackCopy.exportFailed)
+            }
+        }
     }
 
     func exportMeetingMarkdown(_ record: MeetingRecord, includeTranscript: Bool = false) {
@@ -439,11 +573,171 @@ extension AppModel {
         persistMeeting(meetingRecords[index])
     }
 
-    private func enqueueMeetingProcessing(recordID: UUID, kind: MeetingProcessingJob.Kind) {
+    func updateMeetingOverview(recordID: UUID, overview: String) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+              var summary = meetingRecords[index].summary
+        else { return }
+        summary.overview = overview
+        summary.overviewIsUserEdited = true
+        meetingRecords[index].summary = summary
+        persistMeeting(meetingRecords[index])
+    }
+
+    func updateMeetingPoint(recordID: UUID, pointID: String, title: String, detail: String) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+              var summary = meetingRecords[index].summary,
+              let pointIndex = summary.points.firstIndex(where: { $0.id == pointID })
+        else { return }
+        summary.points[pointIndex].title = title
+        summary.points[pointIndex].detail = detail
+        summary.points[pointIndex].isUserEdited = true
+        meetingRecords[index].summary = summary
+        persistMeeting(meetingRecords[index])
+    }
+
+    func updateMeetingActionItemText(recordID: UUID, actionItemID: UUID, task: String) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+              var summary = meetingRecords[index].summary,
+              let itemIndex = summary.actionItems.firstIndex(where: { $0.id == actionItemID })
+        else { return }
+        summary.actionItems[itemIndex].task = task
+        summary.actionItems[itemIndex].isUserEdited = true
+        meetingRecords[index].summary = summary
+        persistMeeting(meetingRecords[index])
+    }
+
+    func renameMeetingSpeaker(recordID: UUID, speakerID: String, name: String) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let speakerIndex = meetingRecords[index].speakers.firstIndex(where: { $0.id == speakerID })
+        else { return }
+        let oldName = meetingRecords[index].speakers[speakerIndex].name
+        guard oldName != trimmed else { return }
+        meetingRecords[index].speakers[speakerIndex].name = trimmed
+        if var summary = meetingRecords[index].summary {
+            for itemIndex in summary.actionItems.indices where summary.actionItems[itemIndex].owner == oldName {
+                summary.actionItems[itemIndex].owner = trimmed
+            }
+            meetingRecords[index].summary = summary
+        }
+        persistMeeting(meetingRecords[index])
+    }
+
+    func reassignMeetingSegment(recordID: UUID, segmentID: UUID, speakerID: String) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+              let segmentIndex = meetingRecords[index].transcript.firstIndex(where: { $0.id == segmentID }),
+              meetingRecords[index].speakers.contains(where: { $0.id == speakerID })
+        else { return }
+        meetingRecords[index].transcript[segmentIndex].speakerID = speakerID
+        meetingRecords[index].transcript[segmentIndex].isUncertainSpeaker =
+            speakerID == MeetingMinutesAlgorithm.uncertainSpeakerID
+        meetingRecords[index].segmentSpeakerOverrides.removeAll { $0.segmentID == segmentID }
+        meetingRecords[index].segmentSpeakerOverrides.append(
+            MeetingSegmentSpeakerOverride(segmentID: segmentID, speakerID: speakerID)
+        )
+        persistMeeting(meetingRecords[index])
+    }
+
+    func remergeMeetingSpeakers(recordID: UUID) {
+        ensureMeetingDetailLoaded(recordID)
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else { return }
+        let merged = MeetingSpeakerRemerge.apply(
+            segments: meetingRecords[index].transcript,
+            turns: meetingRecords[index].speakerTurns,
+            overrides: meetingRecords[index].segmentSpeakerOverrides,
+            speakers: meetingRecords[index].speakers
+        )
+        meetingRecords[index].transcript = merged.segments
+        meetingRecords[index].speakers = merged.speakers
+        persistMeeting(meetingRecords[index])
+    }
+
+    func restoreMeetingMinutesVersion(recordID: UUID, versionID: UUID) {
+        ensureMeetingDetailLoaded(recordID)
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }),
+              let versionIndex = meetingRecords[index].minutesVersions.firstIndex(where: { $0.id == versionID })
+        else { return }
+        let version = meetingRecords[index].minutesVersions[versionIndex]
+        if let current = meetingRecords[index].summary {
+            meetingRecords[index].minutesVersions.append(MeetingMinutesVersion(summary: current))
+        }
+        meetingRecords[index].minutesVersions.removeAll { $0.id == versionID }
+        meetingRecords[index].summary = version.summary
+        meetingRecords[index].status = .ready
+        meetingRecords[index].summaryCheckpoint = nil
+        meetingRecords[index].errorMessage = nil
+        persistMeeting(meetingRecords[index])
+    }
+
+    func setMeetingCaptureMode(_ mode: MeetingCaptureMode) {
+        meetingCaptureMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "jarvis.meeting.captureMode")
+    }
+
+    func createMeetingPlaceholder() {
+        let id = UUID()
+        let urls = meetingRepository.recordingURLs(for: id)
+        let record = MeetingRecord(
+            id: id,
+            title: MeetingRecord.defaultTitle,
+            audioFileName: urls.mixed.lastPathComponent,
+            status: .failed,
+            errorMessage: "识别资源还没准备好，这条会议先占着。资源下载完成后可以开始录音。",
+            awaitingAssets: true
+        )
+        do {
+            try meetingRepository.save(record)
+            meetingRecords.insert(record, at: 0)
+            selectedMeetingID = id
+        } catch {
+            showToast(JarvisFeedbackCopy.saveFailed)
+        }
+    }
+
+    func postponeMeetingAssetDownload() {
+        cancelMeetingModelPreparation()
+        if !meetingRecords.contains(where: { $0.awaitingAssets == true }) {
+            createMeetingPlaceholder()
+        }
+        showToast("资源稍后再准备。占位会议还不能录音。")
+    }
+
+    func pauseMeetingRecording() {
+        guard meetingCurrentRecordingID != nil, !meetingRecordingPaused else { return }
+        meetingElapsedAccumulated += Date().timeIntervalSince(meetingElapsedOrigin)
+        meetingElapsed = meetingElapsedAccumulated
+        meetingRecorder.pauseRecording()
+        meetingRecordingPaused = true
+        if let id = meetingCurrentRecordingID {
+            persistClosedRecorderChunks(id)
+        }
+    }
+
+    func resumeMeetingRecording() {
+        guard meetingCurrentRecordingID != nil, meetingRecordingPaused else { return }
+        do {
+            try meetingRecorder.resumeRecording()
+            meetingElapsedOrigin = Date()
+            meetingRecordingPaused = false
+        } catch {
+            showToast(JarvisFeedbackCopy.recordingStartFailed)
+        }
+    }
+
+    private func enqueueMeetingProcessing(
+        recordID: UUID,
+        kind: MeetingProcessingJob.Kind,
+        preserveUserEdits: Bool = true
+    ) {
         if meetingActiveProcessingID == recordID {
             return
         }
-        let job = MeetingProcessingJob(recordID: recordID, kind: kind)
+        let job = MeetingProcessingJob(
+            recordID: recordID,
+            kind: kind,
+            preserveUserEdits: preserveUserEdits
+        )
         if !meetingProcessingQueue.contains(job) {
             meetingProcessingQueue.append(job)
         }
@@ -467,7 +761,7 @@ extension AppModel {
         case .transcribeAndSummarize:
             processMeeting(record)
         case .summarizeOnly:
-            startSummarizeTask(record)
+            startSummarizeTask(record, preserveUserEdits: job.preserveUserEdits)
         }
     }
 
@@ -475,6 +769,7 @@ extension AppModel {
         meetingActiveProcessingID = record.id
         if let index = meetingRecords.firstIndex(where: { $0.id == record.id }) {
             meetingRecords[index].status = .transcribing
+            meetingRecords[index].interruptedRecording = false
             persistMeeting(meetingRecords[index])
         }
         meetingProcessingState = .processing(stage: .diarizing, progress: 0)
@@ -486,8 +781,14 @@ extension AppModel {
             do {
                 let prepared = try await prepareAudioForTranscription(record)
                 try await waitForMeetingAudioFile(at: prepared.mixedURL)
-                let transcription = try await meetingTranscriptionService.transcribe(
-                    audioURL: prepared.mixedURL,
+                let sourceRecord = meetingRecords.first { $0.id == record.id } ?? record
+                let tracks = transcriptionTracks(
+                    for: sourceRecord,
+                    mixedURL: prepared.mixedURL,
+                    systemAudioFileName: prepared.systemAudioFileName
+                )
+                let transcription = try await meetingTranscriptionService.transcribeTracks(
+                    tracks,
                     language: record.language
                 ) { [weak self] stage, progress in
                     Task { @MainActor [weak self] in
@@ -506,8 +807,15 @@ extension AppModel {
                 var updatedRecord = meetingRecords[currentIndex]
                 updatedRecord.speakers = transcription.speakers
                 updatedRecord.transcript = transcription.segments
+                updatedRecord.speakerTurns = transcription.speakerTurns
+                updatedRecord.diarizationDegraded = transcription.diarizationDegraded
+                updatedRecord.diarizationDegradeReason = transcription.diarizationDegradeReason
+                updatedRecord.estimatedSpeakerCount = transcription.estimatedSpeakerCount
+                updatedRecord.uncertainSegmentRatio = transcription.uncertainSegmentRatio
                 updatedRecord.systemAudioFileName = prepared.systemAudioFileName
-                updatedRecord.errorMessage = nil
+                updatedRecord.errorMessage = transcription.diarizationDegraded
+                    ? "说话人分离没有完成，逐字稿先不标说话人。纪要仍可生成。"
+                    : nil
                 if transcription.segments.isEmpty {
                     updatedRecord.status = .failed
                     updatedRecord.errorMessage = "未识别到有效语音，请检查音量后重新处理"
@@ -528,7 +836,12 @@ extension AppModel {
                     showToast(JarvisFeedbackCopy.configureAIFirst)
                     return
                 }
-                try await performSummarize(updatedRecord, configuration: configuration)
+                guard MeetingTranscriptConsent.isConfirmed else {
+                    meetingTranscriptConsentRecordID = updatedRecord.id
+                    meetingProcessingState = .idle
+                    return
+                }
+                try await performSummarize(updatedRecord, configuration: configuration, preserveUserEdits: true)
             } catch is CancellationError {
                 return
             } catch {
@@ -537,7 +850,7 @@ extension AppModel {
         }
     }
 
-    private func startSummarizeTask(_ record: MeetingRecord) {
+    private func startSummarizeTask(_ record: MeetingRecord, preserveUserEdits: Bool = true) {
         ensureMeetingDetailLoaded(record.id)
         let record = meetingRecords.first { $0.id == record.id } ?? record
         let configuration = AIAPIConfiguration.load()
@@ -552,6 +865,12 @@ extension AppModel {
             startNextMeetingProcessingIfNeeded()
             return
         }
+        guard MeetingTranscriptConsent.isConfirmed else {
+            meetingTranscriptConsentRecordID = record.id
+            meetingProcessingState = .idle
+            startNextMeetingProcessingIfNeeded()
+            return
+        }
 
         meetingActiveProcessingID = record.id
         if let index = meetingRecords.firstIndex(where: { $0.id == record.id }) {
@@ -563,7 +882,11 @@ extension AppModel {
             guard let self else { return }
             defer { completeActiveMeetingProcessing(for: record.id) }
             do {
-                try await performSummarize(record, configuration: configuration)
+                try await performSummarize(
+                    record,
+                    configuration: configuration,
+                    preserveUserEdits: preserveUserEdits
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -574,7 +897,8 @@ extension AppModel {
 
     private func performSummarize(
         _ record: MeetingRecord,
-        configuration: AIAPIConfiguration
+        configuration: AIAPIConfiguration,
+        preserveUserEdits: Bool
     ) async throws {
         if let index = meetingRecords.firstIndex(where: { $0.id == record.id }) {
             meetingRecords[index].status = .summarizing
@@ -595,7 +919,8 @@ extension AppModel {
         let summary = try await MeetingSummaryService(api: aiTextCompletionAPI).summarize(
             record: record,
             configuration: configuration,
-            checkpoint: record.summaryCheckpoint,
+            checkpoint: preserveUserEdits ? record.summaryCheckpoint : nil,
+            preserveUserEdits: preserveUserEdits,
             onCheckpoint: { [weak self] checkpoint in
                 guard let self,
                       let index = self.meetingRecords.firstIndex(where: { $0.id == record.id })
@@ -653,11 +978,13 @@ extension AppModel {
     private func prepareAudioForTranscription(
         _ record: MeetingRecord
     ) async throws -> (mixedURL: URL, systemAudioFileName: String?) {
-        let audioURL = try meetingRepository.audioURL(for: record)
-        let microphoneURL = try meetingRepository.microphoneAudioURL(for: record)
-        var systemAudioURL = try meetingRepository.systemAudioURL(for: record)
-        var systemAudioFileName = record.systemAudioFileName
-        let recordingURLs = meetingRepository.recordingURLs(for: record.id)
+        _ = await assembleMeetingChunksIfCanonicalMissing(recordID: record.id)
+        let source = meetingRecords.first { $0.id == record.id } ?? record
+        let audioURL = try meetingRepository.audioURL(for: source)
+        let microphoneURL = try meetingRepository.microphoneAudioURL(for: source)
+        var systemAudioURL = try meetingRepository.systemAudioURL(for: source)
+        var systemAudioFileName = source.systemAudioFileName
+        let recordingURLs = meetingRepository.recordingURLs(for: source.id)
 
         if let currentSystemURL = systemAudioURL,
            currentSystemURL.pathExtension.lowercased() == "caf",
@@ -668,18 +995,23 @@ extension AppModel {
                     inputURL: currentSystemURL,
                     outputURL: recordingURLs.systemCompressed
                 )
-                MeetingAudioMixer.removeFileIfExists(at: currentSystemURL)
                 systemAudioURL = recordingURLs.systemCompressed
                 systemAudioFileName = recordingURLs.systemCompressed.lastPathComponent
+                // Point the record at the m4a before deleting the caf, so a retry
+                // does not look up a file that has already been removed.
+                if let index = meetingRecords.firstIndex(where: { $0.id == source.id }) {
+                    meetingRecords[index].systemAudioFileName = systemAudioFileName
+                    persistMeeting(meetingRecords[index])
+                }
+                MeetingAudioMixer.removeFileIfExists(at: currentSystemURL)
             } catch {
                 try await MeetingAudioMixer.makeMixedAudio(
                     microphoneURL: microphoneURL,
                     systemAudioURL: currentSystemURL,
                     outputURL: audioURL,
-                    systemAudioDelay: record.resolvedSystemAudioStartOffset
+                    systemAudioDelay: source.resolvedSystemAudioStartOffset
                 )
-                MeetingAudioMixer.removeFileIfExists(at: currentSystemURL)
-                return (audioURL, nil)
+                return (audioURL, systemAudioFileName)
             }
         }
 
@@ -687,7 +1019,7 @@ extension AppModel {
             microphoneURL: microphoneURL,
             systemAudioURL: systemAudioURL,
             outputURL: audioURL,
-            systemAudioDelay: record.resolvedSystemAudioStartOffset
+            systemAudioDelay: source.resolvedSystemAudioStartOffset
         )
         MeetingAudioMixer.removeFileIfExists(at: recordingURLs.system)
         return (audioURL, systemAudioFileName)
@@ -702,6 +1034,7 @@ extension AppModel {
         guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else { return }
         var record = meetingRecords[index]
         record.duration = result.duration
+        record.audioChunks = result.chunks
         record.systemAudioStartOffset = result.systemAudioStartOffset
         if result.systemAudioStarted,
            let systemAudioURL = try? meetingRepository.systemAudioURL(for: record),
@@ -719,8 +1052,11 @@ extension AppModel {
         }
         meetingRecords[index] = record
         persistMeeting(record)
-        if result.systemAudioErrorMessage != nil, result.systemAudioStarted {
-            showToast(JarvisFeedbackCopy.recordingStartedWithoutSystemAudio)
+        if let message = MeetingSystemAudioStopNotice.message(
+            wroteSystemAudio: result.systemAudioStarted,
+            failureMessage: result.systemAudioErrorMessage
+        ) {
+            showToast(message)
         }
         if processAfterStop {
             enqueueMeetingProcessing(recordID: record.id, kind: .transcribeAndSummarize)
@@ -756,6 +1092,261 @@ extension AppModel {
                 ? JarvisFeedbackCopy.summaryFailed
                 : JarvisFeedbackCopy.processingFailed
         )
+    }
+
+    private func transcriptionTracks(
+        for record: MeetingRecord,
+        mixedURL: URL,
+        systemAudioFileName: String?
+    ) -> [MeetingTranscriptionTrack] {
+        let microphoneURL = (try? meetingRepository.microphoneAudioURL(for: record)) ?? mixedURL
+        var tracks = [
+            MeetingTranscriptionTrack(url: microphoneURL, timeOffset: 0, diarize: true, trackID: "mic")
+        ]
+        if record.resolvedCaptureMode == .dual,
+           let systemURL = readySystemAudioURL(
+               recordID: record.id,
+               preferredFileName: systemAudioFileName ?? record.systemAudioFileName
+           )
+        {
+            tracks.insert(
+                MeetingTranscriptionTrack(
+                    url: systemURL,
+                    timeOffset: record.resolvedSystemAudioStartOffset,
+                    diarize: true,
+                    trackID: "system"
+                ),
+                at: 0
+            )
+        }
+        return tracks
+    }
+
+    /// Prefer the name just produced by transcode, then the compressed m4a, then the caf.
+    private func readySystemAudioURL(recordID: UUID, preferredFileName: String?) -> URL? {
+        let urls = meetingRepository.recordingURLs(for: recordID)
+        var candidates: [URL] = []
+        if let preferredFileName {
+            let preferred = meetingRepository.recordingsDirectoryURL
+                .appendingPathComponent(preferredFileName, isDirectory: false)
+            candidates.append(preferred)
+        }
+        candidates.append(urls.systemCompressed)
+        candidates.append(urls.system)
+        var seen = Set<String>()
+        for url in candidates where seen.insert(url.path).inserted {
+            if MeetingAudioMixer.isReadyAudioFile(at: url) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private func appendMeetingChunks(_ chunks: [MeetingAudioChunk], recordID: UUID) {
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else { return }
+        for chunk in chunks {
+            meetingRecords[index].audioChunks.removeAll { $0.kind == chunk.kind && $0.index == chunk.index }
+            meetingRecords[index].audioChunks.append(chunk)
+        }
+        meetingRecords[index].audioChunks.sort { lhs, rhs in
+            if lhs.kind == rhs.kind {
+                return lhs.index < rhs.index
+            }
+            return lhs.kind.rawValue < rhs.kind.rawValue
+        }
+        persistMeeting(meetingRecords[index])
+    }
+
+    func appendMeetingAudioEvent(_ event: MeetingAudioEvent) {
+        guard let id = meetingCurrentRecordingID,
+              let index = meetingRecords.firstIndex(where: { $0.id == id })
+        else { return }
+        meetingRecords[index].audioEvents.append(event)
+        persistMeeting(meetingRecords[index])
+        persistClosedRecorderChunks(id)
+        showToast(event.message)
+    }
+
+    private func persistClosedRecorderChunks(_ id: UUID) {
+        let chunks = meetingRecorder.closedChunksSnapshot()
+        guard !chunks.isEmpty else { return }
+        appendMeetingChunks(chunks, recordID: id)
+    }
+
+    private func reusableMeetingPlaceholder(recordID: UUID?) -> MeetingRecord? {
+        let candidate = recordID ?? selectedMeetingID
+        guard let candidate,
+              let record = meetingRecords.first(where: { $0.id == candidate }),
+              record.awaitingAssets == true
+        else { return nil }
+        return record
+    }
+
+    private func refreshMeetingRecordingMeters() {
+        meetingMicrophonePower = meetingRecorder.microphoneAveragePower()
+        meetingSystemPower = meetingRecorder.systemAveragePower()
+        meetingBytesWritten = meetingRecorder.writtenByteCount()
+    }
+
+    private func warnIfSystemAudioStaysSilent() {
+        guard meetingCaptureMode == .dual, !meetingDidWarnAboutSystemSilence, !meetingRecordingPaused else { return }
+        guard let power = meetingRecorder.systemAveragePower() else { return }
+        if power < -45 {
+            if meetingSystemSilentSince == nil {
+                meetingSystemSilentSince = Date()
+            } else if let since = meetingSystemSilentSince, Date().timeIntervalSince(since) >= 30 {
+                meetingDidWarnAboutSystemSilence = true
+                showToast("系统音频已连续 30 秒没有声音，录音仍在继续")
+            }
+        } else {
+            meetingSystemSilentSince = nil
+        }
+    }
+
+    private func warnIfMeetingDiskIsLow() {
+        let directory = meetingRepository.recordingsDirectoryURL
+        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        if let bytes = values?.volumeAvailableCapacityForImportantUsage, bytes < 512 * 1024 * 1024 {
+            showToast("磁盘剩余空间不足 512MB，录音可能写不完整")
+        }
+    }
+
+    /// Builds canonical tracks from closed slices when stop() never finished that track.
+    /// A playable microphone file does not skip system slices that are still on disk.
+    private func assembleMeetingChunksIfCanonicalMissing(recordID: UUID) async -> Bool {
+        let urls = meetingRepository.recordingURLs(for: recordID)
+        let microphoneReady = await MeetingAudioAssembler.playableDuration(at: urls.microphone) != nil
+        let systemCAFReady = await MeetingAudioAssembler.playableDuration(at: urls.system) != nil
+        let systemM4AReady = await MeetingAudioAssembler.playableDuration(at: urls.systemCompressed) != nil
+        let systemReady = systemCAFReady || systemM4AReady
+        let plan = MeetingCanonicalAssembly.plan(
+            microphoneReady: microphoneReady,
+            systemReady: systemReady
+        )
+        if !plan.assembleMicrophone && !plan.assembleSystem {
+            return true
+        }
+        guard let record = meetingRecords.first(where: { $0.id == recordID }) else {
+            return microphoneReady
+        }
+        let directory = urls.microphone.deletingLastPathComponent()
+        let fileNames = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let merged = MeetingAudioChunkFile.mergedChunks(
+            stored: record.audioChunks,
+            discovered: MeetingAudioChunkFile.discoveredChunks(meetingID: recordID, fileNames: fileNames)
+        )
+        let playable = await recoverableChunkFiles(merged, directory: directory)
+        let microphone = plan.assembleMicrophone
+            ? playable.filter { $0.chunk.kind == .microphone }
+            : []
+        let system = plan.assembleSystem
+            ? playable.filter { $0.chunk.kind == .system }
+            : []
+        guard !microphone.isEmpty || !system.isEmpty else { return microphoneReady }
+
+        var consumedNames = Set<String>()
+        var assembledDuration: TimeInterval = 0
+        if !microphone.isEmpty,
+           let assembled = try? await MeetingAudioAssembler.concatenate(
+               urls: microphone.map(\.url),
+               outputURL: urls.microphone
+           ),
+           await MeetingAudioAssembler.playableDuration(at: urls.microphone) != nil
+        {
+            assembledDuration = max(assembled, microphone.reduce(0) { $0 + $1.chunk.duration })
+            consumedNames.formUnion(microphone.map(\.url.lastPathComponent))
+        }
+        var assembledSystemName: String?
+        if !system.isEmpty,
+           await (try? MeetingAudioAssembler.concatenate(
+               urls: system.map(\.url),
+               outputURL: urls.system
+           )) != nil,
+           await MeetingAudioAssembler.playableDuration(at: urls.system) != nil
+        {
+            assembledSystemName = urls.system.lastPathComponent
+            consumedNames.formUnion(system.map(\.url.lastPathComponent))
+        }
+        guard let index = meetingRecords.firstIndex(where: { $0.id == recordID }) else {
+            return await MeetingAudioAssembler.playableDuration(at: urls.microphone) != nil
+        }
+        if assembledDuration > 0 {
+            meetingRecords[index].microphoneAudioFileName = urls.microphone.lastPathComponent
+            meetingRecords[index].duration = max(meetingRecords[index].duration, assembledDuration)
+        }
+        if let assembledSystemName {
+            meetingRecords[index].systemAudioFileName = assembledSystemName
+            if meetingRecords[index].captureMode == nil {
+                meetingRecords[index].captureMode = .dual
+            }
+        }
+        if !consumedNames.isEmpty {
+            for name in consumedNames {
+                let url = directory.appendingPathComponent(name)
+                try? FileManager.default.removeItem(at: url)
+            }
+            meetingRecords[index].audioChunks.removeAll { consumedNames.contains($0.fileName) }
+            persistMeeting(meetingRecords[index])
+        }
+        return await MeetingAudioAssembler.playableDuration(at: urls.microphone) != nil
+    }
+
+    func recoverInterruptedMeetingAudio() async {
+        let snapshot = meetingRecords.map { record in
+            (id: record.id, interrupted: record.interruptedRecording == true)
+        }
+        for item in snapshot {
+            let ready = await assembleMeetingChunksIfCanonicalMissing(recordID: item.id)
+            guard item.interrupted, ready else { continue }
+            guard let index = meetingRecords.firstIndex(where: { $0.id == item.id }) else { continue }
+            let duration = meetingRecords[index].duration
+            meetingRecords[index].status = .failed
+            meetingRecords[index].interruptedRecording = true
+            meetingRecords[index].errorMessage =
+                "录音未正常结束，已保留约 \(MeetingRecordingStyle.formatDuration(duration))。可以手动继续处理，不会自动开始转写。"
+            persistMeeting(meetingRecords[index])
+        }
+    }
+
+    private func recoverableChunkFiles(
+        _ chunks: [MeetingAudioChunk],
+        directory: URL
+    ) async -> [(chunk: MeetingAudioChunk, url: URL)] {
+        var kept: [(MeetingAudioChunk, URL)] = []
+        for chunk in chunks where MeetingAudioChunkFile.isChunkFileName(chunk.fileName) {
+            let url = directory.appendingPathComponent(chunk.fileName)
+            guard MeetingAudioMixer.isReadyAudioFile(at: url) else { continue }
+            if chunk.closed {
+                kept.append((chunk, url))
+            } else if await MeetingAudioAssembler.playableDuration(at: url) != nil {
+                kept.append((chunk, url))
+            }
+        }
+        return kept
+    }
+
+    private func snapshotRecordingIfNeeded(_ id: UUID) {
+        let bucket = Int(meetingElapsed / 30)
+        guard bucket > 0, bucket != meetingRecoverySnapshotBucket else { return }
+        meetingRecoverySnapshotBucket = bucket
+        guard let index = meetingRecords.firstIndex(where: { $0.id == id }) else { return }
+        meetingRecords[index].duration = meetingElapsed
+        persistMeeting(meetingRecords[index])
+    }
+
+    private func warnIfMicrophoneStaysSilent() {
+        guard !meetingDidWarnAboutSilence else { return }
+        guard let power = meetingRecorder.microphoneAveragePower() else { return }
+        if power < -45 {
+            if meetingMicrophoneSilentSince == nil {
+                meetingMicrophoneSilentSince = Date()
+            } else if let since = meetingMicrophoneSilentSince, Date().timeIntervalSince(since) >= 30 {
+                meetingDidWarnAboutSilence = true
+                showToast("麦克风已连续 30 秒没有声音，录音仍在继续")
+            }
+        } else {
+            meetingMicrophoneSilentSince = nil
+        }
     }
 
     private func persistMeeting(_ record: MeetingRecord) {
@@ -822,6 +1413,7 @@ struct MeetingProcessingJob: Equatable, Sendable {
 
     let recordID: UUID
     let kind: Kind
+    var preserveUserEdits: Bool = true
 }
 
 private enum MeetingAudioFileError: LocalizedError {

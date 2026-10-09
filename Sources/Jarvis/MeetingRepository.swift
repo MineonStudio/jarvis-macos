@@ -71,6 +71,17 @@ final class MeetingRepository: @unchecked Sendable {
                     try fileManager.removeItem(at: url)
                 }
             }
+            let chunkPrefix = "meeting-\(record.id.uuidString)."
+            let recorded = (try? fileManager.contentsOfDirectory(
+                at: recordingsURL,
+                includingPropertiesForKeys: nil
+            )) ?? []
+            for url in recorded
+                where url.lastPathComponent.hasPrefix(chunkPrefix)
+                && MeetingAudioChunkFile.isChunkFileName(url.lastPathComponent)
+            {
+                try fileManager.removeItem(at: url)
+            }
             let recordFileURL = recordFileURL(for: record.id)
             if fileManager.fileExists(atPath: recordFileURL.path) {
                 try fileManager.removeItem(at: recordFileURL)
@@ -109,6 +120,10 @@ final class MeetingRepository: @unchecked Sendable {
             throw MeetingRepositoryError.invalidAudioFileName
         }
         return recordingsURL.appendingPathComponent(fileName, isDirectory: false)
+    }
+
+    var recordingsDirectoryURL: URL {
+        recordingsURL
     }
 
     func recordingURLs(for id: UUID) -> (mixed: URL, microphone: URL, system: URL, systemCompressed: URL) {
@@ -151,11 +166,13 @@ final class MeetingRepository: @unchecked Sendable {
 
     /// 与 detailMatchesSearch 原来的拼接顺序完全一致，保证语义不变。
     private static func searchableTexts(for detail: MeetingRecordDetail) -> [String] {
-        [detail.summary?.overview ?? ""]
+        let points = detail.summary?.renderedPoints.flatMap { [$0.title, $0.detail] } ?? []
+        return [detail.summary?.overview ?? ""]
             + (detail.summary?.keyPoints ?? [])
             + (detail.summary?.decisions ?? [])
             + (detail.summary?.actionItems.map(\.task) ?? [])
             + (detail.summary?.openQuestions ?? [])
+            + points
             + detail.transcript.map(\.text)
     }
 

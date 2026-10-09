@@ -6,15 +6,19 @@ final class SelectionOverlayView: NSView {
     /// 原来每次都 `needsDisplay = true`，而 `draw` 又忽略 `dirtyRect` 直接填满整屏：
     /// 6K 上拖选就是每个鼠标事件一次两千多万像素的填充+合成。这里只把新旧选区
     /// （含尺寸标签）的并集标脏，AppKit 会把绘制裁到那块。
-    private func invalidateSelectionArea(from old: CGRect?, to new: CGRect?) {
+    private func invalidateSelectionArea(_ rects: CGRect?...) {
         var dirty = CGRect.null
-        if let old {
-            dirty = dirty.union(old.insetBy(dx: -32, dy: -32))
+        var sawRect = false
+        for rect in rects {
+            if let rect {
+                sawRect = true
+                dirty = dirty.union(rect.insetBy(dx: -32, dy: -32))
+            }
         }
-        if let new {
-            dirty = dirty.union(new.insetBy(dx: -32, dy: -32))
-        }
-        guard !dirty.isNull else {
+        // 点下去还没拖开时三个矩形都是 nil。这里不能退回整屏重画，
+        // 否则每次轻微移动都会在 6K 上填满一帧。
+        guard sawRect else { return }
+        guard !dirty.isNull, !dirty.isInfinite else {
             needsDisplay = true
             return
         }
@@ -118,7 +122,6 @@ final class SelectionOverlayView: NSView {
         moveAnchor = nil
         didDragSelection = false
         windowCandidateAtMouseDown = updateHoveredWindowCandidate(at: startPoint)
-        invalidateSelectionArea(from: hoveredWindowCandidate?.localRect, to: nil)
     }
 
     func pinHoveredWindow() {
@@ -138,9 +141,13 @@ final class SelectionOverlayView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        var clearedWindowRect: CGRect?
         if let startPoint,
            hypot(point.x - startPoint.x, point.y - startPoint.y) > 4
         {
+            if !didDragSelection {
+                clearedWindowRect = hoveredWindowCandidate?.localRect
+            }
             didDragSelection = true
             hoveredWindowCandidate = nil
         }
@@ -155,9 +162,9 @@ final class SelectionOverlayView: NSView {
                 self.moveAnchor = point
             }
         } else {
-            let previous = selectionRect
+            let previous = visibleSelectionRect
             currentPoint = point
-            invalidateSelectionArea(from: previous, to: selectionRect)
+            invalidateSelectionArea(clearedWindowRect, previous, visibleSelectionRect)
         }
     }
 
@@ -202,7 +209,7 @@ final class SelectionOverlayView: NSView {
         if changed {
             let previous = hoveredWindowCandidate?.localRect
             hoveredWindowCandidate = candidate
-            invalidateSelectionArea(from: previous, to: candidate?.localRect)
+            invalidateSelectionArea(previous, candidate?.localRect)
         }
         return candidate
     }
@@ -231,8 +238,8 @@ final class SelectionOverlayView: NSView {
         // still shows the freeze-frame, not the live desktop underneath.
         let dimPath = CGMutablePath()
         dimPath.addRect(bounds)
-        if let selectionRect {
-            dimPath.addRect(selectionRect)
+        if let visibleSelectionRect {
+            dimPath.addRect(visibleSelectionRect)
         }
         context.saveGState()
         context.addPath(dimPath)
@@ -240,12 +247,12 @@ final class SelectionOverlayView: NSView {
         context.fillPath(using: .evenOdd)
         context.restoreGState()
 
-        if let selectionRect {
+        if let visibleSelectionRect {
             context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.95).cgColor)
             context.setLineWidth(2)
-            context.stroke(selectionRect)
+            context.stroke(visibleSelectionRect)
 
-            drawDimensionLabel(in: selectionRect, context: context)
+            drawDimensionLabel(in: visibleSelectionRect, context: context)
         } else if let hoveredWindowCandidate {
             context.saveGState()
             context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.95).cgColor)
@@ -253,7 +260,18 @@ final class SelectionOverlayView: NSView {
             context.setLineDash(phase: 0, lengths: [])
             context.stroke(hoveredWindowCandidate.localRect.insetBy(dx: 1.5, dy: 1.5))
             context.restoreGState()
+            drawDimensionLabel(in: hoveredWindowCandidate.localRect, context: context)
         }
+    }
+
+    /// 鼠标按下、还没拖开时，起点和当前点重合，几何选区是 0×0。
+    /// 点选窗口会走这条路径，不能把它画出来，否则点击处会冒出「0 × 0」。
+    private var visibleSelectionRect: CGRect? {
+        ScreenshotSelectionChrome.marqueeRect(
+            movedRect: movedSelectionRect,
+            dragRect: selectionRect,
+            didDrag: didDragSelection
+        )
     }
 
     private var selectionRect: CGRect? {
@@ -292,7 +310,7 @@ final class SelectionOverlayView: NSView {
     }
 
     private func drawDimensionLabel(in rect: CGRect, context _: CGContext) {
-        let text = "\(Int(rect.width)) × \(Int(rect.height))"
+        guard let text = ScreenshotSelectionChrome.dimensionText(for: rect) else { return }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.white
@@ -307,5 +325,27 @@ final class SelectionOverlayView: NSView {
         NSColor.systemBlue.withAlphaComponent(0.9).setFill()
         NSBezierPath(roundedRect: labelRect, xRadius: 5, yRadius: 5).fill()
         text.draw(at: CGPoint(x: labelRect.minX + 8, y: labelRect.minY + 4), withAttributes: attributes)
+    }
+}
+
+enum ScreenshotSelectionChrome {
+    /// 按下还没拖开时，几何选区是 0×0。点选窗口会走这条路径，不能把它画成框选。
+    static func marqueeRect(
+        movedRect: CGRect?,
+        dragRect: CGRect?,
+        didDrag: Bool
+    ) -> CGRect? {
+        if let movedRect {
+            return movedRect
+        }
+        guard didDrag, let dragRect else { return nil }
+        guard dragRect.width >= 1 || dragRect.height >= 1 else { return nil }
+        return dragRect
+    }
+
+    /// 宽高都不到 1 点时不写尺寸。`Int` 会把这种选区收成「0 × 0」。
+    static func dimensionText(for rect: CGRect) -> String? {
+        guard rect.width >= 1 || rect.height >= 1 else { return nil }
+        return "\(Int(rect.width)) × \(Int(rect.height))"
     }
 }

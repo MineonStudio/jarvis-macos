@@ -17,18 +17,10 @@ struct AIAPIBaseURL: Hashable, Identifiable, Sendable {
 enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
     case openAI = "openai"
     case deepSeek = "deepseek"
-    case googleGemini = "google-gemini"
+    case xAI = "xai"
     case openRouter = "openrouter"
     case moonshot
     case zhipu
-    case dashScope = "dashscope"
-    case doubao
-    case siliconFlow = "siliconflow"
-    case groq
-    case mistral
-    case xAI = "xai"
-    case together
-    case fireworks
     case custom
 
     var id: String {
@@ -39,18 +31,10 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
         switch self {
         case .openAI: "OpenAI"
         case .deepSeek: "DeepSeek"
-        case .googleGemini: "Google Gemini"
-        case .openRouter: "OpenRouter"
-        case .moonshot: "Moonshot / Kimi"
-        case .zhipu: "智谱 AI"
-        case .dashScope: "阿里云百炼"
-        case .siliconFlow: "硅基流动"
-        case .groq: "Groq"
-        case .mistral: "Mistral"
         case .xAI: "xAI"
-        case .together: "Together AI"
-        case .fireworks: "Fireworks AI"
-        case .doubao: "豆包 / 火山方舟"
+        case .openRouter: "OpenRouter"
+        case .moonshot: "Kimi"
+        case .zhipu: "智谱 AI"
         case .custom: "自定义"
         }
     }
@@ -59,18 +43,10 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
         switch self {
         case .openAI: ("gpt", "svg")
         case .deepSeek: ("deepseek", "svg")
-        case .googleGemini: ("google-gemini", "png")
+        case .xAI: ("xai", "png")
         case .openRouter: ("openrouter", "svg")
         case .moonshot: ("kimi", "png")
         case .zhipu: ("zai", "svg")
-        case .dashScope: ("alibabacloud", "png")
-        case .doubao: ("doubao", "png")
-        case .siliconFlow: ("siliconflow", "png")
-        case .groq: ("groq", "png")
-        case .mistral: ("mistral", "png")
-        case .xAI: ("xai", "png")
-        case .together: ("together", "svg")
-        case .fireworks: ("fireworks", "png")
         case .custom: nil
         }
     }
@@ -81,11 +57,8 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
             [AIAPIBaseURL("https://api.openai.com/v1", title: "官方 API")]
         case .deepSeek:
             [AIAPIBaseURL("https://api.deepseek.com", title: "官方 API")]
-        case .googleGemini:
-            [AIAPIBaseURL(
-                "https://generativelanguage.googleapis.com/v1beta/openai/",
-                title: "OpenAI 兼容接口"
-            )]
+        case .xAI:
+            [AIAPIBaseURL("https://api.x.ai/v1", title: "官方 API")]
         case .openRouter:
             [AIAPIBaseURL("https://openrouter.ai/api/v1", title: "官方 API")]
         case .moonshot:
@@ -98,35 +71,6 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
                 AIAPIBaseURL("https://open.bigmodel.cn/api/paas/v4", title: "中国大陆"),
                 AIAPIBaseURL("https://api.z.ai/api/paas/v4", title: "国际线路")
             ]
-        case .dashScope:
-            [
-                AIAPIBaseURL(
-                    "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                    title: "中国（北京）"
-                ),
-                AIAPIBaseURL(
-                    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-                    title: "新加坡"
-                ),
-                AIAPIBaseURL(
-                    "https://dashscope-us.aliyuncs.com/compatible-mode/v1",
-                    title: "美国（弗吉尼亚）"
-                )
-            ]
-        case .siliconFlow:
-            [AIAPIBaseURL("https://api.siliconflow.cn/v1", title: "官方 API")]
-        case .groq:
-            [AIAPIBaseURL("https://api.groq.com/openai/v1", title: "官方 API")]
-        case .mistral:
-            [AIAPIBaseURL("https://api.mistral.ai/v1", title: "官方 API")]
-        case .xAI:
-            [AIAPIBaseURL("https://api.x.ai/v1", title: "官方 API")]
-        case .together:
-            [AIAPIBaseURL("https://api.together.xyz/v1", title: "官方 API")]
-        case .fireworks:
-            [AIAPIBaseURL("https://api.fireworks.ai/inference/v1", title: "官方 API")]
-        case .doubao:
-            [AIAPIBaseURL("https://ark.cn-beijing.volces.com/api/v3", title: "中国（北京）")]
         case .custom:
             []
         }
@@ -145,20 +89,10 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
     private static let hostMatchers: [(Self, String)] = [
         (.deepSeek, "deepseek"),
         (.openRouter, "openrouter"),
-        (.googleGemini, "generativelanguage.googleapis.com"),
         (.moonshot, "moonshot"),
         (.zhipu, "bigmodel.cn"),
         (.zhipu, "z.ai"),
-        (.dashScope, "dashscope"),
-        (.dashScope, "maas.aliyuncs.com"),
-        (.siliconFlow, "siliconflow"),
-        (.groq, "groq"),
-        (.mistral, "mistral"),
-        (.xAI, "x.ai"),
-        (.together, "together"),
-        (.fireworks, "fireworks"),
-        (.doubao, "volces.com"),
-        (.doubao, "volcengine")
+        (.xAI, "x.ai")
     ]
 
     static func detect(endpoint: String) -> Self {
@@ -170,7 +104,7 @@ enum AIAPIProvider: String, CaseIterable, Hashable, Identifiable, Sendable {
 
     /// 改进 #5：主机匹配必须认域名边界。以前用 `contains` 子串匹配，
     /// `evil-deepseek.com` 会被误判成 DeepSeek（进而用错请求路径/默认地址）。
-    /// 现在只认四种：相等、开头（`volcengine.com`）、结尾（`ark…​.volces.com`）、
+    /// 现在只认四种：相等（`x.ai`）、开头（`deepseek.com`）、结尾（`api.moonshot`）、
     /// 中间（`api.deepseek.com`）。
     private static func hostMatches(_ host: String, pattern: String) -> Bool {
         host == pattern

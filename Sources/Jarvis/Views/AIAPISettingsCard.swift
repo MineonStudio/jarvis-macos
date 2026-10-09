@@ -88,7 +88,7 @@ struct AIAPISettingsCard: View {
                     .font(SettingsTypography.itemTitle)
 
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+                    columns: [GridItem(.adaptive(minimum: 200), spacing: 10)],
                     spacing: 10
                 ) {
                     ForEach(AIAPIProvider.allCases) { option in
@@ -249,24 +249,24 @@ struct AIAPISettingsCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            JarvisDropdownMenu(
-                title: selection.wrappedValue.isEmpty ? emptyTitle : selection.wrappedValue,
-                options: options.map {
-                    JarvisDropdownOption(id: $0, title: $0)
-                },
-                selectionID: options.contains(selection.wrappedValue) ? selection.wrappedValue : nil,
-                accessibilityLabel: title,
-                help: "选择\(title)",
-                // Fetched model identifiers run long; let the control grow
-                // past the toolbar cap so the selection stays readable.
-                maximumControlWidth: 480,
-                isEnabled: !isDisabled,
-                onSelect: { selectedValue in
-                    selection.wrappedValue = selectedValue
-                }
-            )
-            // The menu sizes itself to its content, so a plain
-            // `maxWidth: .infinity` frame centers it inside the control box.
+            GeometryReader { proxy in
+                JarvisDropdownMenu(
+                    title: selection.wrappedValue.isEmpty ? emptyTitle : selection.wrappedValue,
+                    options: options.map {
+                        JarvisDropdownOption(id: $0, title: $0)
+                    },
+                    selectionID: options.contains(selection.wrappedValue) ? selection.wrappedValue : nil,
+                    accessibilityLabel: title,
+                    help: "选择\(title)",
+                    // 模型名很长。宽度跟设置卡片走，避免 480pt 的上限在变窄后被卡片裁掉。
+                    maximumControlWidth: max(proxy.size.width, 1),
+                    isEnabled: !isDisabled,
+                    onSelect: { selectedValue in
+                        selection.wrappedValue = selectedValue
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
             .frame(
                 maxWidth: .infinity,
                 minHeight: SettingsFormMetrics.controlHeight,
@@ -369,7 +369,7 @@ private struct AIAPIProviderCapsule: View {
                     .font(JarvisTypography.control)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 Spacer(minLength: 0)
 

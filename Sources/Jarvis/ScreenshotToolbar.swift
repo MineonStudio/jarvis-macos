@@ -526,6 +526,14 @@ extension ScreenshotToolbar {
             ) {
                 onAction(.saveRequested)
             }
+        case .pin:
+            actionButton(
+                icon: "pin",
+                help: "贴图",
+                enabled: !editor.translationState.isRunning && !editor.isExporting
+            ) {
+                onAction(.pinRequested)
+            }
         case .cancel:
             actionButton(
                 icon: "xmark",

@@ -7,14 +7,10 @@ protocol MeetingTranscribing: Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws
 
-    func prepareModels(
-        progress: @escaping @Sendable (MeetingModelPreparationStage, Double) -> Void
-    ) async throws
-
     func removeModel(_ stage: MeetingModelPreparationStage) async throws
 
-    func transcribe(
-        audioURL: URL,
+    func transcribeTracks(
+        _ tracks: [MeetingTranscriptionTrack],
         language: MeetingLanguage,
         progress: @escaping @Sendable (MeetingProcessingStage, Double) -> Void
     ) async throws -> MeetingTranscriptionResult
@@ -22,23 +18,8 @@ protocol MeetingTranscribing: Sendable {
     func releaseCachedModels() async
 }
 
-extension MeetingTranscribing {
-    func releaseCachedModels() async {}
-}
-
 actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
-    private var chineseASR: ParaformerManager?
     private var offlineDiarizer: SendableOfflineDiarizer?
-
-    func prepareModels(
-        progress: @escaping @Sendable (MeetingModelPreparationStage, Double) -> Void
-    ) async throws {
-        for stage in MeetingModelPreparationStage.allCases {
-            try await prepareModel(stage) { value in
-                progress(stage, value)
-            }
-        }
-    }
 
     func prepareModel(
         _ stage: MeetingModelPreparationStage,
@@ -53,10 +34,7 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
                 offlineDiarizer = manager
             }
         case .chineseTranscription:
-            if chineseASR == nil {
-                progress(0.02)
-                chineseASR = try await ParaformerManager.load(precision: .int8)
-            }
+            try await MeetingSpeechAssets.install(onProgress: progress)
         }
         progress(1)
     }
@@ -65,76 +43,101 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
         switch stage {
         case .speakerDiarization:
             offlineDiarizer = nil
+            try await Task.detached(priority: .utility) {
+                try MeetingModelStorage.removeModel(for: stage)
+            }.value
         case .chineseTranscription:
-            chineseASR = nil
+            throw MeetingTranscriptionError.speechAssetUnavailable(
+                "中文转写使用的是系统语音资源，不能从贾维斯里移除。"
+            )
         }
-        try await Task.detached(priority: .utility) {
-            try MeetingModelStorage.removeModel(for: stage)
-        }.value
     }
 
-    func transcribe(
-        audioURL: URL,
+    func transcribeTracks(
+        _ tracks: [MeetingTranscriptionTrack],
         language _: MeetingLanguage,
         progress: @escaping @Sendable (MeetingProcessingStage, Double) -> Void
     ) async throws -> MeetingTranscriptionResult {
-        if offlineDiarizer == nil || chineseASR == nil {
-            try await prepareModels { stage, preparationProgress in
-                switch stage {
-                case .speakerDiarization:
-                    progress(.diarizing, preparationProgress * 0.48)
-                case .chineseTranscription:
-                    progress(.transcribing, 0.5 + preparationProgress * 0.42)
-                }
+        if tracks.contains(where: \.diarize), offlineDiarizer == nil {
+            try await prepareModel(.speakerDiarization) { value in
+                progress(.diarizing, value * 0.2)
+            }
+        }
+        if await !MeetingSpeechAssets.isInstalled() {
+            try await prepareModel(.chineseTranscription) { value in
+                progress(.transcribing, 0.2 + value * 0.2)
             }
         }
 
-        guard let offlineDiarizer, let asr = chineseASR else {
-            throw MeetingTranscriptionError.modelsUnavailable
-        }
-
-        progress(.diarizing, 0.02)
-        let diarization = try await offlineDiarizer.process(audioURL) { completed, total in
-            let progressValue = total == 0 ? 0 : Double(completed) / Double(total)
-            progress(.diarizing, min(0.48, progressValue * 0.48))
-        }
-
-        progress(.transcribing, 0.5)
-        let samples = try AudioConverter(sampleRate: 16000).resampleAudioFile(audioURL)
-        let sampleRate = 16000
-        let chunkSize = 24 * sampleRate
-        let overlapSize = 2 * sampleRate
-        let stride = max(1, chunkSize - overlapSize)
         var tokens: [TimedToken] = []
-        let chunkCount = max(1, Int(ceil(Double(max(0, samples.count - overlapSize)) / Double(stride))))
-
-        for chunkIndex in 0 ..< chunkCount {
-            try Task.checkCancellation()
-            let start = chunkIndex * stride
-            let end = min(samples.count, start + chunkSize)
-            guard start < end else { continue }
-            let chunk = Array(samples[start ..< end])
-            let timestamped = try await asr.transcribeWithTimestamps(audio: chunk)
-            let offset = Double(start) / Double(sampleRate)
-            let minimumLocalTime = chunkIndex == 0 ? 0.0 : Double(overlapSize) / Double(sampleRate)
-            tokens.append(contentsOf: timestamped.compactMap { token in
-                guard token.startTime + 0.02 >= minimumLocalTime else { return nil }
-                return TimedToken(
-                    startTime: token.startTime + offset,
-                    endTime: token.endTime + offset,
-                    text: token.text
+        var turns: [MeetingMinutesAlgorithm.SpeakerTurn] = []
+        var degraded = false
+        var reasons: [String] = []
+        let count = max(tracks.count, 1)
+        for (index, track) in tracks.enumerated() {
+            let span = 1 / Double(count)
+            let base = Double(index) * span
+            let turnCountBefore = turns.count
+            if track.diarize {
+                do {
+                    guard let offlineDiarizer else {
+                        throw MeetingTranscriptionError.modelsUnavailable
+                    }
+                    progress(.diarizing, base + span * 0.1)
+                    let diarization = try await offlineDiarizer.process(track.url) { completed, total in
+                        let fraction = total == 0 ? 0 : Double(completed) / Double(total)
+                        progress(.diarizing, base + span * fraction * 0.45)
+                    }
+                    turns.append(contentsOf: diarization.segments.map { segment in
+                        MeetingMinutesAlgorithm.SpeakerTurn(
+                            speakerID: "\(track.trackID):\(segment.speakerId)",
+                            startTime: TimeInterval(segment.startTimeSeconds) + track.timeOffset,
+                            endTime: TimeInterval(segment.endTimeSeconds) + track.timeOffset
+                        )
+                    })
+                } catch {
+                    degraded = true
+                    reasons.append(error.localizedDescription)
+                }
+            }
+            do {
+                progress(.transcribing, base + span * 0.5)
+                let speechTokens = try await MeetingSpeechAssets.transcribe(audioURL: track.url)
+                tokens.append(contentsOf: speechTokens.map {
+                    TimedToken(
+                        startTime: $0.startTime + track.timeOffset,
+                        endTime: $0.endTime + track.timeOffset,
+                        text: $0.text,
+                        confidence: $0.confidence
+                    )
+                })
+            } catch {
+                turns = MeetingTrackFailure.turnsAfterFailedTranscription(
+                    turns,
+                    appendedFrom: turnCountBefore
                 )
-            })
-            progress(.transcribing, 0.5 + 0.48 * Double(chunkIndex + 1) / Double(chunkCount))
+                reasons.append(error.localizedDescription)
+            }
         }
-
-        let result = makeResult(tokens: tokens, diarizationSegments: diarization.segments)
+        guard !tokens.isEmpty else {
+            throw MeetingTranscriptionError.speechAssetUnavailable(
+                reasons.last ?? "没有识别到语音"
+            )
+        }
+        var result = makeResult(tokens: tokens, turns: turns)
+        result.diarizationDegraded = degraded
+        let reason = reasons.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        result.diarizationDegradeReason = reason.isEmpty ? nil : reason
+        if degraded, result.speakers.isEmpty {
+            result.speakers = [
+                MeetingSpeaker(id: "unlabeled", name: "未标注", colorIndex: 0)
+            ]
+        }
         progress(.transcribing, 1)
         return result
     }
 
     func releaseCachedModels() async {
-        chineseASR = nil
         offlineDiarizer = nil
     }
 
@@ -142,101 +145,120 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
         let startTime: TimeInterval
         let endTime: TimeInterval
         let text: String
+        let confidence: Double?
     }
 
     private func makeResult(
         tokens: [TimedToken],
-        diarizationSegments: [TimedSpeakerSegment]
+        turns suppliedTurns: [MeetingMinutesAlgorithm.SpeakerTurn]
     ) -> MeetingTranscriptionResult {
         let sortedTokens = tokens.sorted { $0.startTime < $1.startTime }
-        var orderedSpeakerIDs: [String] = []
-        var utterances: [MeetingTranscriptSegment] = []
-        var currentSpeakerID: String?
+        var pieces: [(start: TimeInterval, end: TimeInterval, text: String, confidence: Double?)] = []
         var currentStart = 0.0
         var currentEnd = 0.0
         var currentText = ""
+        var confidenceSum = 0.0
+        var confidenceCount = 0
+
+        func flush() {
+            let text = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            let confidence = confidenceCount > 0 ? confidenceSum / Double(confidenceCount) : nil
+            pieces.append((currentStart, currentEnd, text, confidence))
+            currentText = ""
+            confidenceSum = 0
+            confidenceCount = 0
+        }
 
         for token in sortedTokens where !token.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let speakerID = speakerID(
-                for: token,
-                in: diarizationSegments,
-                fallback: currentSpeakerID ?? "S1"
+            let shouldSplit = MeetingMinutesAlgorithm.shouldSplitUtterance(
+                currentText: currentText,
+                currentStart: currentStart,
+                currentEnd: currentEnd,
+                nextStart: token.startTime,
+                nextEnd: token.endTime,
+                turns: suppliedTurns
             )
-            if !orderedSpeakerIDs.contains(speakerID) {
-                orderedSpeakerIDs.append(speakerID)
+            if shouldSplit {
+                flush()
             }
-
-            let shouldStartNewUtterance = currentSpeakerID != speakerID
-                || token.startTime - currentEnd > 1.4
-                || currentText.count > 180
-
-            if shouldStartNewUtterance, !currentText.isEmpty, let currentSpeakerID {
-                utterances.append(
-                    MeetingTranscriptSegment(
-                        startTime: currentStart,
-                        endTime: currentEnd,
-                        speakerID: currentSpeakerID,
-                        text: currentText
-                    )
-                )
-            }
-
-            if shouldStartNewUtterance {
-                currentSpeakerID = speakerID
+            if currentText.isEmpty {
                 currentStart = token.startTime
                 currentText = token.text
             } else {
                 appendToken(token.text, to: &currentText)
             }
             currentEnd = max(currentEnd, token.endTime)
-
+            if let confidence = token.confidence {
+                confidenceSum += confidence
+                confidenceCount += 1
+            }
             if let lastCharacter = currentText.last, "。！？.!?".contains(lastCharacter) {
-                if let currentSpeakerID {
-                    utterances.append(
-                        MeetingTranscriptSegment(
-                            startTime: currentStart,
-                            endTime: currentEnd,
-                            speakerID: currentSpeakerID,
-                            text: currentText
-                        )
-                    )
-                }
-                currentSpeakerID = nil
-                currentText = ""
+                flush()
             }
         }
+        flush()
 
-        if !currentText.isEmpty, let currentSpeakerID {
-            utterances.append(
-                MeetingTranscriptSegment(
-                    startTime: currentStart,
-                    endTime: currentEnd,
-                    speakerID: currentSpeakerID,
-                    text: currentText
+        let turns = suppliedTurns
+        var orderedSpeakerIDs: [String] = []
+        var sawUncertain = false
+        let utterances: [MeetingTranscriptSegment] = pieces.map { piece in
+            let speakerID: String
+            let uncertain: Bool
+            if turns.isEmpty {
+                speakerID = "unlabeled"
+                uncertain = false
+            } else {
+                speakerID = MeetingMinutesAlgorithm.assignedSpeakerID(
+                    startTime: piece.start,
+                    endTime: piece.end,
+                    turns: turns
+                )
+                uncertain = speakerID == MeetingMinutesAlgorithm.uncertainSpeakerID
+            }
+            if uncertain {
+                sawUncertain = true
+            } else if !orderedSpeakerIDs.contains(speakerID) {
+                orderedSpeakerIDs.append(speakerID)
+            }
+            return MeetingTranscriptSegment(
+                startTime: piece.start,
+                endTime: piece.end,
+                speakerID: speakerID,
+                text: piece.text,
+                confidence: piece.confidence,
+                isUncertainSpeaker: uncertain
+            )
+        }
+        var speakers = orderedSpeakerIDs.enumerated().map { index, id in
+            let name = id == "unlabeled" ? "未标注" : "说话人 \(index + 1)"
+            return MeetingSpeaker(id: id, name: name, colorIndex: index)
+        }
+        if sawUncertain {
+            speakers.append(
+                MeetingSpeaker(
+                    id: MeetingMinutesAlgorithm.uncertainSpeakerID,
+                    name: MeetingMinutesAlgorithm.uncertainSpeakerName,
+                    colorIndex: speakers.count
                 )
             )
         }
-
-        let speakers = orderedSpeakerIDs.enumerated().map { index, id in
-            MeetingSpeaker(id: id, name: "说话人 \(index + 1)", colorIndex: index)
-        }
-        return MeetingTranscriptionResult(speakers: speakers, segments: utterances)
-    }
-
-    private func speakerID(
-        for token: TimedToken,
-        in segments: [TimedSpeakerSegment],
-        fallback: String
-    ) -> String {
-        let tokenStart = token.startTime
-        let tokenEnd = max(token.endTime, token.startTime + 0.01)
-        let best = segments.max { lhs, rhs in
-            overlap(tokenStart, tokenEnd, lhs) < overlap(tokenStart, tokenEnd, rhs)
-        }
-        guard let best, overlap(tokenStart, tokenEnd, best) > 0 else {
-            return fallback
-        }
-        return best.speakerId
+        let uncertainCount = utterances.filter(\.isUncertainSpeaker).count
+        let ratio = utterances.isEmpty ? 0 : Double(uncertainCount) / Double(utterances.count)
+        let estimated = speakers.filter { $0.id != MeetingMinutesAlgorithm.uncertainSpeakerID }.count
+        return MeetingTranscriptionResult(
+            speakers: speakers,
+            segments: utterances.sorted { $0.startTime < $1.startTime },
+            speakerTurns: turns.map {
+                MeetingSpeakerTurnRecord(
+                    startTime: $0.startTime,
+                    endTime: $0.endTime,
+                    clusterID: $0.speakerID
+                )
+            },
+            estimatedSpeakerCount: estimated,
+            uncertainSegmentRatio: ratio
+        )
     }
 
     private func appendToken(_ text: String, to current: inout String) {
@@ -255,18 +277,6 @@ actor FluidAudioMeetingTranscriptionService: MeetingTranscribing {
     private func needsSpace(between lhs: String, and rhs: String) -> Bool {
         guard let last = lhs.last, let first = rhs.first else { return false }
         return last.isLetter && last.isASCII && first.isLetter && first.isASCII
-    }
-
-    private func overlap(
-        _ start: TimeInterval,
-        _ end: TimeInterval,
-        _ segment: TimedSpeakerSegment
-    ) -> TimeInterval {
-        max(
-            0,
-            min(end, TimeInterval(segment.endTimeSeconds))
-                - max(start, TimeInterval(segment.startTimeSeconds))
-        )
     }
 }
 
@@ -292,12 +302,27 @@ private final class SendableOfflineDiarizer: @unchecked Sendable {
     }
 }
 
+enum MeetingTrackFailure {
+    /// Drops speaker turns added for a track whose transcription just failed.
+    static func turnsAfterFailedTranscription(
+        _ turns: [MeetingMinutesAlgorithm.SpeakerTurn],
+        appendedFrom index: Int
+    ) -> [MeetingMinutesAlgorithm.SpeakerTurn] {
+        guard index >= 0, index <= turns.count else { return turns }
+        return Array(turns.prefix(index))
+    }
+}
+
 enum MeetingTranscriptionError: LocalizedError {
     case modelsUnavailable
+    case speechAssetUnavailable(String)
 
     var errorDescription: String? {
         switch self {
-        case .modelsUnavailable: "会议识别模型尚未准备好，请先下载模型"
+        case .modelsUnavailable:
+            "说话人识别模型尚未准备好，请先下载。中文转写使用系统语音资源。"
+        case let .speechAssetUnavailable(message):
+            message
         }
     }
 }

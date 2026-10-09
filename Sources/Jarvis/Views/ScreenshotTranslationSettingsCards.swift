@@ -152,10 +152,12 @@ private struct LanguagePackRowView: View {
             Text(message)
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.red)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
             Button("重试") { model.startDownload() }
                 .buttonStyle(JarvisSecondaryButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 }

@@ -7,8 +7,34 @@ final class JarvisMainWindowControllerTests: XCTestCase {
     func testSettingsModalUsesFixedCenteredLayoutSize() {
         XCTAssertEqual(
             SettingsLayout.modalSize,
-            CGSize(width: 1040, height: 680)
+            CGSize(width: 728, height: 680)
         )
+        XCTAssertEqual(SettingsLayout.modalSize.width, 1040 * 0.7, accuracy: 0.001)
+    }
+
+    func testSettingsModalShrinksToStayInsideTheMainWindow() {
+        XCTAssertEqual(
+            SettingsLayout.fittedModalSize(in: CGSize(width: 1600, height: 1000)),
+            SettingsLayout.modalSize
+        )
+
+        let tight = SettingsLayout.fittedModalSize(in: CGSize(width: 700, height: 600))
+        let margin = SettingsLayout.modalEdgeMargin * 2
+        XCTAssertEqual(tight.width, 700 - margin, accuracy: 0.001)
+        XCTAssertEqual(tight.height, 600 - margin, accuracy: 0.001)
+        XCTAssertLessThan(tight.width, SettingsLayout.modalSize.width)
+        XCTAssertLessThan(tight.height, SettingsLayout.modalSize.height)
+    }
+
+    func testSettingsSidebarStaysInsideTheCard() {
+        XCTAssertEqual(
+            SettingsLayout.sidebarWidth(forModalWidth: SettingsLayout.modalSize.width),
+            SettingsLayout.sidebarIdealWidth
+        )
+        let narrow = SettingsLayout.sidebarWidth(forModalWidth: 480)
+        XCTAssertGreaterThan(narrow, 0)
+        XCTAssertLessThan(narrow, 480)
+        XCTAssertEqual(SettingsLayout.sidebarWidth(forModalWidth: 0), 0)
     }
 
     func testSettingsSectionsExposeStableSidebarOrder() {

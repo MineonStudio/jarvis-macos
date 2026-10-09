@@ -222,24 +222,29 @@ final class AIAPIConfigurationTests: XCTestCase {
     }
 
     func testProviderCatalogOffersPresetsAndRegionalBaseURLs() {
-        XCTAssertTrue(AIAPIProvider.allCases.contains(.openAI))
-        XCTAssertTrue(AIAPIProvider.allCases.contains(.deepSeek))
-        XCTAssertTrue(AIAPIProvider.allCases.contains(.googleGemini))
-        XCTAssertTrue(AIAPIProvider.allCases.contains(.doubao))
-        XCTAssertTrue(AIAPIProvider.allCases.contains(.custom))
+        XCTAssertEqual(
+            AIAPIProvider.allCases.map(\.rawValue),
+            ["openai", "deepseek", "xai", "openrouter", "moonshot", "zhipu", "custom"]
+        )
+        XCTAssertEqual(AIAPIProvider.allCases.map(\.title), [
+            "OpenAI", "DeepSeek", "xAI", "OpenRouter", "Kimi", "智谱 AI", "自定义"
+        ])
+        XCTAssertNil(AIAPIProvider(rawValue: "groq"))
+        XCTAssertNil(AIAPIProvider(rawValue: "google-gemini"))
         for provider in AIAPIProvider.allCases where provider != .custom {
             XCTAssertNotNil(provider.brandIconResource, "Missing brand icon for \(provider.title)")
         }
-        XCTAssertEqual(AIAPIProvider.dashScope.baseURLs.count, 3)
         XCTAssertEqual(AIAPIProvider.zhipu.baseURLs.count, 2)
+        XCTAssertEqual(AIAPIProvider.moonshot.baseURLs.count, 2)
         XCTAssertEqual(AIAPIProvider.deepSeek.defaultBaseURL, "https://api.deepseek.com")
-        XCTAssertEqual(AIAPIProvider.doubao.defaultBaseURL, "https://ark.cn-beijing.volces.com/api/v3")
     }
 
     func testProviderDetectionAndProviderSpecificEndpointPaths() {
         XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.deepseek.com"), .deepSeek)
-        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.groq.com/openai/v1"), .groq)
-        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://ark.cn-beijing.volces.com/api/v3"), .doubao)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.moonshot.cn/v1"), .moonshot)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.x.ai/v1"), .xAI)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://api.groq.com/openai/v1"), .custom)
+        XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://ark.cn-beijing.volces.com/api/v3"), .custom)
         XCTAssertEqual(AIAPIProvider.detect(endpoint: "https://unknown.example/v1"), .custom)
         XCTAssertEqual(
             OpenAICompatibleAPIClient.normalizedEndpointURL(

@@ -247,7 +247,11 @@ struct JarvisPermissionList: View {
 
     var body: some View {
         if mode == .settings {
-            HStack(spacing: 10) {
+            // 卡片变窄后，四个等分胶囊会把「屏幕录制」挤成省略号。按内容宽度换行，文字保持完整。
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 136), spacing: 10)],
+                spacing: 10
+            ) {
                 ForEach(JarvisRequiredPermission.allCases) { permission in
                     JarvisPermissionStatusCapsule(permission: permission)
                 }
@@ -286,6 +290,7 @@ private struct JarvisPermissionStatusCapsule: View {
                 .font(JarvisTypography.control)
                 .foregroundStyle(Color.primary)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
             if isGranted {
                 Image(systemName: "checkmark.circle.fill")

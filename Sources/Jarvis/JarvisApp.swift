@@ -90,12 +90,8 @@ private struct JarvisRootView: View {
                         .environment(appModel)
                 }
             }
-            .overlay {
-                if isSettingsPresented {
-                    SettingsModalOverlay(isPresented: $isSettingsPresented)
-                        .environment(appModel)
-                        .zIndex(2)
-                }
+            .background {
+                SettingsOverlayAnchor(isPresented: $isSettingsPresented, app: appModel)
             }
             .overlay(alignment: .bottom) {
                 JarvisToastHost(message: appModel.toastMessage)
@@ -103,10 +99,6 @@ private struct JarvisRootView: View {
                     .allowsHitTesting(false)
             }
             .animation(.easeInOut(duration: 0.2), value: appModel.taskPermissionPrompt)
-            .animation(.easeInOut(duration: 0.2), value: isSettingsPresented)
-            // The settings overlay is a focused surface; keep the main window's
-            // module toolbar from showing through above it.
-            .toolbarVisibility(isSettingsPresented ? .hidden : .visible, for: .windowToolbar)
             // Keep the system title-bar region and its native window controls.
             // Apple recommends removing only the title and toolbar background
             // when content should extend beneath that region.

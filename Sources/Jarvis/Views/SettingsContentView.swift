@@ -461,13 +461,10 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: updateStatusWraps)
                     .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             } else {
-                HStack(spacing: 8) {
-                    Text("版本号")
-                    Text("Jarvis \(JarvisAppVersion.shortVersion)")
-                }
-                .font(SettingsTypography.itemSubtitle)
-                .foregroundStyle(Color.jarvisTextSecondary)
-                .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
+                Text("Jarvis V\(JarvisAppVersion.shortVersion)")
+                    .font(SettingsTypography.itemSubtitle)
+                    .foregroundStyle(Color.jarvisTextSecondary)
+                    .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
         .animation(
@@ -579,12 +576,15 @@ struct SettingsView: View {
 
     private var accentColorSettingsCard: some View {
         JarvisCard {
-            VStack(alignment: .leading, spacing: SettingsFormMetrics.cardContentSpacing) {
+            HStack(spacing: 14) {
                 SettingsCardHeader(title: "强调色", systemImage: "paintpalette")
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
                 JarvisAccentColorPicker(selection: Binding(
                     get: { app.accentColorPreference },
                     set: { app.updateAccentColorPreference($0) }
                 ))
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -701,15 +701,16 @@ struct SettingsView: View {
 
 struct SettingsModalOverlay: View {
     @Binding var isPresented: Bool
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
             let fitted = SettingsLayout.fittedModalSize(in: proxy.size)
             ZStack {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .overlay(Color.black.opacity(0.34))
+                // 模糊由窗口上的 NSGlassEffectView 绘制。这里只接住点击，
+                // 避免再叠一层材质把系统玻璃盖住。
+                Color.clear
                     .contentShape(Rectangle())
 
                 SettingsView {
@@ -726,6 +727,11 @@ struct SettingsModalOverlay: View {
                 .transition(JarvisMotion.contentTransition(reduceMotion: reduceMotion))
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+            .overlay(alignment: .bottom) {
+                JarvisToastHost(message: app.toastMessage)
+                    .padding(.bottom, 26)
+                    .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
@@ -734,6 +740,378 @@ struct SettingsModalOverlay: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("设置")
+    }
+}
+
+/// Installs the settings card above the window's AppKit sidebar and toolbar.
+/// Those views are outside the SwiftUI overlay order, so hiding them was the
+/// only way to keep the card visible, and that reflowed the main window.
+struct SettingsOverlayAnchor: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    /// Passed in directly. Reading `@Environment` here crashes while AppKit
+    /// builds the key-view loop, before that environment value is installed.
+    let app: AppModel
+
+    func makeCoordinator() -> SettingsOverlayAnchorView {
+        SettingsOverlayAnchorView()
+    }
+
+    func makeNSView(context: Context) -> SettingsOverlayAnchorView {
+        context.coordinator
+    }
+
+    func updateNSView(_ anchor: SettingsOverlayAnchorView, context _: Context) {
+        anchor.update(isPresented: isPresented, app: app) {
+            isPresented = $0
+        }
+    }
+}
+
+final class SettingsOverlayAnchorView: NSView {
+    private var presented = false
+    private var app: AppModel?
+    private var setPresented: ((Bool) -> Void)?
+    private var container: SettingsOverlayContainer?
+
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        MainActor.assumeIsolated {
+            sync()
+        }
+    }
+
+    func update(isPresented: Bool, app: AppModel, setPresented: @escaping (Bool) -> Void) {
+        presented = isPresented
+        self.app = app
+        self.setPresented = setPresented
+        sync()
+    }
+
+    private func sync() {
+        guard presented, let app, setPresented != nil, let parent = overlayParent else {
+            container?.dismiss()
+            return
+        }
+
+        let container = self.container ?? SettingsOverlayContainer()
+        self.container = container
+        let binding = Binding<Bool>(
+            get: { [weak self] in
+                self?.presented ?? false
+            },
+            set: { [weak self] newValue in
+                self?.presented = newValue
+                self?.setPresented?(newValue)
+            }
+        )
+        container.present(isPresented: binding, app: app, in: parent)
+    }
+
+    private var overlayParent: NSView? {
+        guard let contentView = window?.contentView else { return nil }
+        return contentView.superview ?? contentView
+    }
+}
+
+private struct SettingsOverlayRoot: View {
+    @Binding var isPresented: Bool
+    let app: AppModel
+
+    var body: some View {
+        SettingsModalOverlay(isPresented: $isPresented)
+            .environment(app)
+            .tint(app.accentColorPreference.resolvedColor)
+            .accentColor(app.accentColorPreference.resolvedColor)
+            .jarvisTheme(app.themePreference, systemColorScheme: app.systemColorScheme)
+    }
+}
+
+private final class ClearHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool {
+        false
+    }
+
+    /// SwiftUI's first layout pass sizes a hosting view to the card. That pass
+    /// was shrinking the main window the first time settings opened.
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(lockedSize ?? newSize)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        clearBacking()
+    }
+
+    override func layout() {
+        super.layout()
+        clearBacking()
+    }
+
+    /// Fill the overlay. A proposal smaller than the overlay is the fitting pass.
+    private var lockedSize: NSSize? {
+        guard let container = superview else { return nil }
+        let size = container.bounds.size
+        guard size.width > 1, size.height > 1 else { return nil }
+        return size
+    }
+
+    private func clearBacking() {
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+}
+
+/// WebKit decides whether the page is under the pointer by hit-testing
+/// `window.contentView` only. The settings glass is a sibling of that view,
+/// so the page still sees the pointer through the scrim.
+enum SettingsBackdropLock {
+    nonisolated(unsafe) static var isActive = false
+}
+
+private final class SettingsOverlayContainer: NSView {
+    /// System Settings → 外观 → Liquid Glass. `.clear` is the lighter system
+    /// preset and still follows that slider. `.regular` on a full window reads
+    /// as a heavy frost, and a material plus a black dim does not follow it.
+    private let scrim = NSGlassEffectView(frame: .zero)
+    private let hosting = ClearHostingView(rootView: AnyView(Color.clear))
+    private var observers: [NSObjectProtocol] = []
+    private var eventMonitor: Any?
+    private var isBringingToFront = false
+    private var isInstalled = false
+
+    override var isOpaque: Bool {
+        false
+    }
+
+    init() {
+        super.init(frame: .zero)
+        scrim.style = .clear
+        scrim.cornerRadius = 0
+        scrim.translatesAutoresizingMaskIntoConstraints = true
+        scrim.autoresizingMask = [.width, .height]
+        hosting.sizingOptions = []
+        hosting.safeAreaRegions = []
+        hosting.translatesAutoresizingMaskIntoConstraints = true
+        // Keep the glass view outside a layer-backed parent so its backdrop
+        // samples the main window instead of an empty container layer.
+        addSubview(scrim)
+        addSubview(hosting)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+
+    /// Glass hit-testing returns the page underneath the scrim. Keep those
+    /// events here so the window behind the settings card cannot scroll or
+    /// activate. Traffic-light buttons stay outside this view.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let localPoint = convert(point, from: superview)
+        guard bounds.contains(localPoint), !coversWindowButton(at: localPoint) else { return nil }
+        if let hit = hosting.hitTest(localPoint), hit.isDescendant(of: hosting) {
+            return hit
+        }
+        return self
+    }
+
+    override func mouseDown(with _: NSEvent) {}
+
+    override func mouseUp(with _: NSEvent) {}
+
+    override func mouseDragged(with _: NSEvent) {}
+
+    override func rightMouseDown(with _: NSEvent) {}
+
+    override func rightMouseUp(with _: NSEvent) {}
+
+    override func rightMouseDragged(with _: NSEvent) {}
+
+    override func otherMouseDown(with _: NSEvent) {}
+
+    override func otherMouseUp(with _: NSEvent) {}
+
+    override func otherMouseDragged(with _: NSEvent) {}
+
+    override func scrollWheel(with _: NSEvent) {}
+
+    override func magnify(with _: NSEvent) {}
+
+    override func rotate(with _: NSEvent) {}
+
+    override func swipe(with _: NSEvent) {}
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        installObservers()
+        bringToFront()
+    }
+
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        super.viewWillMove(toSuperview: newSuperview)
+        if newSuperview == nil {
+            removeObservers()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        if let superview, frame != superview.bounds {
+            frame = superview.bounds
+        }
+        scrim.frame = bounds
+        hosting.frame = bounds
+        bringToFront()
+    }
+
+    func present(isPresented: Binding<Bool>, app: AppModel, in parent: NSView) {
+        SettingsBackdropLock.isActive = true
+        installEventMonitor()
+        // Replacing rootView resets the settings selection, so install it once per open.
+        let installing = !isInstalled
+        // Size to the window before the SwiftUI tree is installed, so its first
+        // layout sees the real window instead of the card's ideal size.
+        frame = parent.bounds
+        scrim.frame = bounds
+        hosting.frame = bounds
+        if superview !== parent {
+            autoresizingMask = [.width, .height]
+            parent.addSubview(self, positioned: .above, relativeTo: nil)
+        }
+        if installing {
+            hosting.sizingOptions = []
+            hosting.safeAreaRegions = []
+            hosting.rootView = AnyView(
+                SettingsOverlayRoot(isPresented: isPresented, app: app)
+            )
+            hosting.sizingOptions = []
+            isInstalled = true
+        }
+        bringToFront()
+        guard installing else { return }
+        window?.makeFirstResponder(hosting)
+    }
+
+    func dismiss() {
+        guard superview != nil || isInstalled else { return }
+        SettingsBackdropLock.isActive = false
+        removeEventMonitor()
+        isInstalled = false
+        hosting.rootView = AnyView(Color.clear)
+        removeFromSuperview()
+    }
+
+    /// Events over the glass never reach the page. The settings card and the
+    /// window buttons still receive theirs.
+    private func installEventMonitor() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [
+                .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+                .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+                .scrollWheel, .magnify, .swipe, .rotate, .mouseMoved
+            ]
+        ) { [weak self] event in
+            guard let self, SettingsBackdropLock.isActive, event.window === self.window else {
+                return event
+            }
+            if self.shouldPassThroughScrim(event) {
+                return event
+            }
+            NSCursor.arrow.set()
+            return nil
+        }
+    }
+
+    private func removeEventMonitor() {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+        eventMonitor = nil
+    }
+
+    private func shouldPassThroughScrim(_ event: NSEvent) -> Bool {
+        let localPoint = convert(event.locationInWindow, from: nil)
+        if coversWindowButton(at: localPoint) {
+            return true
+        }
+        let fitted = SettingsLayout.fittedModalSize(in: bounds.size)
+        let card = CGRect(
+            x: bounds.midX - fitted.width / 2,
+            y: bounds.midY - fitted.height / 2,
+            width: fitted.width,
+            height: fitted.height
+        ).insetBy(dx: -8, dy: -8)
+        return card.contains(localPoint)
+    }
+
+    private func bringToFront() {
+        guard !isBringingToFront, let superview, superview.subviews.last !== self else { return }
+        isBringingToFront = true
+        superview.addSubview(self, positioned: .above, relativeTo: nil)
+        isBringingToFront = false
+    }
+
+    private func coversWindowButton(at localPoint: NSPoint) -> Bool {
+        guard let window else { return false }
+        let windowPoint = convert(localPoint, to: nil)
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        return buttons.contains { kind in
+            guard let button = window.standardWindowButton(kind), let buttonParent = button.superview else {
+                return false
+            }
+            let local = buttonParent.convert(windowPoint, from: nil)
+            return button.frame.insetBy(dx: -4, dy: -4).contains(local)
+        }
+    }
+
+    private func installObservers() {
+        removeObservers()
+        guard let window else { return }
+        let center = NotificationCenter.default
+        let resizeNames: [Notification.Name] = [
+            NSWindow.didResizeNotification,
+            NSWindow.didEndLiveResizeNotification
+        ]
+        for name in resizeNames {
+            observers.append(
+                center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.bringToFront()
+                    }
+                }
+            )
+        }
+        observers.append(
+            center.addObserver(
+                forName: NSSplitView.didResizeSubviewsNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.bringToFront()
+                }
+            }
+        )
+    }
+
+    private func removeObservers() {
+        let center = NotificationCenter.default
+        observers.forEach(center.removeObserver)
+        observers.removeAll()
     }
 }
 
@@ -958,96 +1336,70 @@ struct JarvisAccentColorPicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredAccent: JarvisAccentColor?
 
-    /// 跟主题切换器同一条高度：选项 28，上下各 4，容器内边距各 2。
-    private static let itemHeight = JarvisMetrics.segmentedItemHeight
-        + JarvisMetrics.segmentedItemVerticalPadding * 2
-    private static let controlHeight = itemHeight + JarvisMetrics.segmentedControlPadding * 2
+    /// 色块中心距。截图里九颗圆按 36pt 排开，不随卡片变宽被拉开。
+    private static let pitch: CGFloat = 36
+    /// 跟上面应用图标那条分段控件一样高，色块在这行里垂直居中。
+    private static var controlHeight: CGFloat {
+        JarvisMetrics.segmentedItemHeight
+            + JarvisMetrics.segmentedItemVerticalPadding * 2
+            + JarvisMetrics.segmentedControlPadding * 2
+    }
 
     private var accents: [JarvisAccentColor] {
         Array(JarvisAccentColor.allCases)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            GeometryReader { proxy in
-                let spacing = JarvisMetrics.segmentedItemSpacing
-                let inset = JarvisMetrics.segmentedControlPadding
-                let count = CGFloat(accents.count)
-                let itemWidth = max(
-                    0,
-                    (proxy.size.width - inset * 2 - spacing * max(count - 1, 0)) / max(count, 1)
-                )
-                let selectedIndex = accents.firstIndex(of: selection) ?? 0
-                ZStack(alignment: .topLeading) {
-                    Color.clear
-                        .frame(width: itemWidth, height: Self.itemHeight)
-                        .background(AccentColorSwatch.selectionFill(selection), in: Capsule())
-                        .offset(x: CGFloat(selectedIndex) * (itemWidth + spacing))
-                        .allowsHitTesting(false)
-                        .animation(
-                            JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
-                            value: selection
-                        )
-
-                    if let hoveredAccent,
-                       hoveredAccent != selection,
-                       let hoveredIndex = accents.firstIndex(of: hoveredAccent)
-                    {
-                        Capsule()
-                            .fill(JarvisMotion.hoverPillTint)
-                            .frame(width: itemWidth, height: Self.itemHeight)
-                            .offset(x: CGFloat(hoveredIndex) * (itemWidth + spacing))
-                            .allowsHitTesting(false)
-                            .animation(
-                                JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
-                                value: hoveredAccent
-                            )
-                    }
-
-                    HStack(spacing: spacing) {
-                        ForEach(accents) { accent in
-                            accentTab(accent, width: itemWidth)
-                        }
-                    }
+        GeometryReader { proxy in
+            let pitch = fittedPitch(in: proxy.size.width)
+            HStack(spacing: 0) {
+                ForEach(accents) { accent in
+                    accentTab(accent, pitch: pitch)
                 }
-                .padding(inset)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.controlHeight)
-            .jarvisGlass(in: Capsule(), interactive: true)
-
-            Text(hoveredAccent?.title ?? " ")
-                .font(JarvisTypography.captionEmphasis)
-                .foregroundStyle(Color.jarvisTextSecondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: .infinity, minHeight: 16)
-                .opacity(hoveredAccent == nil ? 0 : 1)
-                .accessibilityHidden(true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Self.controlHeight)
         .animation(
             JarvisMotion.animation(JarvisMotion.selection, reduceMotion: reduceMotion),
             value: selection
         )
         .animation(
-            JarvisMotion.animation(JarvisMotion.content, reduceMotion: reduceMotion),
+            JarvisMotion.animation(JarvisMotion.hover, reduceMotion: reduceMotion),
             value: hoveredAccent
         )
     }
 
-    private func accentTab(_ accent: JarvisAccentColor, width: CGFloat) -> some View {
+    /// 宽够用时保持 36pt。标题必须留在一行里，窄的时候只把色块间距收回去。
+    private func fittedPitch(in available: CGFloat) -> CGFloat {
+        let count = CGFloat(accents.count)
+        guard available > 1 else { return Self.pitch }
+        return min(Self.pitch, max(AccentColorSwatch.slot, available / count))
+    }
+
+    private func accentTab(_ accent: JarvisAccentColor, pitch: CGFloat) -> some View {
         let isSelected = selection == accent
         return Button {
             selection = accent
         } label: {
-            // 选中色在底下滑过去，色块留在原位淡出，格子宽度不变。
-            AccentColorSwatch(accent: accent)
-                .opacity(isSelected ? 0 : 1)
-                .frame(width: width, height: Self.itemHeight)
-                .contentShape(Capsule())
+            AccentColorSwatch(accent: accent, isSelected: isSelected)
+                .overlay(alignment: .top) {
+                    Text(accent.title)
+                        .font(JarvisTypography.caption)
+                        // 系统设置里这行名称大约是 42% 的黑，比 secondary 更浅。
+                        .foregroundStyle(Color.primary.opacity(0.42))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(y: AccentColorSwatch.slot + 2)
+                        .opacity(hoveredAccent == accent ? 1 : 0)
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
         .buttonStyle(JarvisPressButtonStyle(pressedScale: 0.985, pressedOpacity: 0.9))
+        .frame(width: pitch, height: Self.controlHeight)
         .accessibilityLabel("强调色：\(accent.title)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { isHovering in
@@ -1060,33 +1412,49 @@ struct JarvisAccentColorPicker: View {
     }
 }
 
-/// 切换器里只放色块。跟随系统不是单一颜色，用实心色轮表示。
+/// 未选中是一颗实心圆。选中时圆的大小不变，外面加一圈同色环，环和圆之间露出底色。
+/// 跟随系统不是单一颜色，用色轮表示。
 private struct AccentColorSwatch: View {
     let accent: JarvisAccentColor
+    var isSelected: Bool
 
-    /// 主题选项内容高 28，色块留一点边，切换器总高才跟主题一致。
-    static let diameter: CGFloat = 22
-
-    var body: some View {
-        Circle()
-            .fill(Self.selectionFill(accent))
-            .overlay {
-                Circle()
-                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.6)
-            }
-            .frame(width: Self.diameter, height: Self.diameter)
-            .accessibilityHidden(true)
+    static let diameter: CGFloat = 24
+    static let ringLineWidth: CGFloat = 2
+    static let ringGap: CGFloat = 2
+    static var slot: CGFloat {
+        diameter + (ringLineWidth + ringGap) * 2
     }
 
-    static func selectionFill(_ accent: JarvisAccentColor) -> AnyShapeStyle {
+    var body: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(ringColor, lineWidth: Self.ringLineWidth)
+                .opacity(isSelected ? 1 : 0)
+            Circle()
+                .fill(fill)
+                .padding(Self.ringLineWidth + Self.ringGap)
+        }
+        .frame(width: Self.slot, height: Self.slot)
+        .accessibilityHidden(true)
+    }
+
+    private var fill: AnyShapeStyle {
         if accent == .system {
-            AnyShapeStyle(wheel)
+            AnyShapeStyle(Self.wheel)
         } else {
             AnyShapeStyle(accent.color)
         }
     }
 
-    fileprivate static let wheel = AngularGradient(
+    private var ringColor: Color {
+        if accent == .system {
+            Color(nsColor: .controlAccentColor)
+        } else {
+            accent.color
+        }
+    }
+
+    private static let wheel = AngularGradient(
         colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink, .red],
         center: .center
     )

@@ -10,10 +10,9 @@ struct ContentView: View {
     @State private var navigationSelection: TopLevelSection = .home
     @State private var loadedSection: AppSection = .home
     @State private var homePointerTracker = JarvisHomePointerTracker()
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: columnVisibilityBinding) {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             JarvisSidebarNavigation(
                 topItems: topNavigationItems,
                 bottomItems: bottomNavigationItems,
@@ -51,12 +50,6 @@ struct ContentView: View {
             } else {
                 homePointerTracker.location = nil
             }
-        }
-        .onChange(of: isSettingsPresented) { _, presented in
-            // The main sidebar is an AppKit column that can paint above the
-            // settings card. Hide it while settings is open so resizing the
-            // window cannot cover that card.
-            columnVisibility = presented ? .detailOnly : .all
         }
         .onChange(of: loadedSection) { _, section in
             if section != .home {
@@ -97,19 +90,6 @@ struct ContentView: View {
             // transaction so old and new module hierarchies never overlap.
             loadedSection = nextSection
         }
-    }
-
-    /// Writes from the split view are ignored while settings is open, so a
-    /// resize cannot put the main sidebar back on top of the settings card.
-    private var columnVisibilityBinding: Binding<NavigationSplitViewVisibility> {
-        Binding(
-            get: { columnVisibility },
-            set: { _ in
-                if !isSettingsPresented {
-                    columnVisibility = .all
-                }
-            }
-        )
     }
 
     private func selectSection(_ section: TopLevelSection) {

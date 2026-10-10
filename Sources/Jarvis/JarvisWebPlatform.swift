@@ -293,6 +293,75 @@ final class JarvisWebPlatformViewContainer: NSView {
         publishHostVisibility()
     }
 
+    /// While settings is open, this container — not the page — is what
+    /// `contentView` hit-testing finds, so WebKit stops treating the page as
+    /// the view under the pointer.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard SettingsBackdropLock.isActive else { return super.hitTest(point) }
+        let localPoint = convert(point, from: superview)
+        return bounds.contains(localPoint) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.mouseUp(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.mouseDragged(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.rightMouseDown(with: event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.rightMouseUp(with: event)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.rightMouseDragged(with: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.otherMouseDown(with: event)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.otherMouseUp(with: event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.otherMouseDragged(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.scrollWheel(with: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.mouseMoved(with: event)
+    }
+
+    override func magnify(with event: NSEvent) {
+        guard !SettingsBackdropLock.isActive else { return }
+        super.magnify(with: event)
+    }
+
     private var isHostVisible: Bool {
         guard !isHiddenOrHasHiddenAncestor, !NSApplication.shared.isHidden else {
             return false

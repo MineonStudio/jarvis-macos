@@ -151,6 +151,55 @@ final class JarvisMainWindowControllerTests: XCTestCase {
         XCTAssertFalse(window.animatedFrameChanges.contains(true))
     }
 
+    func testPinnedFrameFollowsAMoveAndStillBlocksAShrink() {
+        let pinned = NSRect(x: 562, y: 319, width: 1677, height: 987)
+        let moved = NSRect(x: 796, y: 280, width: 1677, height: 987)
+        let shrunk = NSRect(x: 562, y: 843, width: 645, height: 463)
+
+        XCTAssertNil(
+            JarvisMainWindowController.pinnedFrame(
+                insteadOf: moved,
+                pinned: pinned,
+                isLiveResizing: false,
+                isUserMoving: true
+            )
+        )
+        XCTAssertEqual(
+            JarvisMainWindowController.pinnedFrame(
+                insteadOf: moved,
+                pinned: pinned,
+                isLiveResizing: false,
+                isUserMoving: false
+            ),
+            pinned
+        )
+        XCTAssertEqual(
+            JarvisMainWindowController.pinnedFrame(
+                insteadOf: shrunk,
+                pinned: pinned,
+                isLiveResizing: false,
+                isUserMoving: true
+            ),
+            pinned
+        )
+        XCTAssertNil(
+            JarvisMainWindowController.pinnedFrame(
+                insteadOf: shrunk,
+                pinned: pinned,
+                isLiveResizing: true,
+                isUserMoving: false
+            )
+        )
+        XCTAssertNil(
+            JarvisMainWindowController.pinnedFrame(
+                insteadOf: pinned,
+                pinned: pinned,
+                isLiveResizing: false,
+                isUserMoving: false
+            )
+        )
+    }
+
     func testClipboardPanelMinimumWidthUsesTheSameGridMetrics() {
         XCTAssertEqual(
             JarvisWindowLayoutMetrics.clipboardPanelMinimumWidth,

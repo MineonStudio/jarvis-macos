@@ -103,24 +103,39 @@ private struct LanguagePackRowView: View {
             Text(model.target.title)
                 .font(SettingsTypography.itemTitle)
                 .foregroundStyle(Color.primary)
-            Spacer()
-            statusView
+            Spacer(minLength: 8)
+            statusSlot
         }
         .padding(.horizontal, 10)
         .frame(minHeight: 30)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        // Uninstalled pairs can only be prepared via `.translationTask`.
-        .translationTask(model.sessionConfiguration) { session in
-            await model.consumeSession(
-                SystemLanguagePackSessionHandler(target: model.target, session: session)
-            )
+        // 挂在背景上。直接修饰这一行时，translationTask 的首帧会把行高撑开一下。
+        .background {
+            Color.clear
+                .translationTask(model.sessionConfiguration) { session in
+                    await model.consumeSession(
+                        SystemLanguagePackSessionHandler(target: model.target, session: session)
+                    )
+                }
         }
+        .animation(nil, value: model.phase)
         .alert("无法打开系统设置", isPresented: $showingSettingsOpenFailure) {
             Button("知道了", role: .cancel) {}
         } message: {
             Text("无法打开“系统设置”的“语言与地区”页面，请稍后重试。")
         }
         .id("language-pack-\(model.target.rawValue)-\(model.channelGeneration)")
+    }
+
+    /// 打开设置时相位还是「检测中」。先按最终按钮占住高度，状态回来才不会把整张卡片顶下去。
+    private var statusSlot: some View {
+        ZStack(alignment: .trailing) {
+            Button("移除") {}
+                .buttonStyle(JarvisSecondaryButtonStyle())
+                .hidden()
+                .accessibilityHidden(true)
+            statusView
+        }
     }
 
     @ViewBuilder

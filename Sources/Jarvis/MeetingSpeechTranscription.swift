@@ -6,8 +6,8 @@ import Speech
 
 enum MeetingSpeechDownloadMeter {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var completedBytes: Int64 = 0
-    nonisolated(unsafe) private static var totalBytes: Int64 = 0
+    private nonisolated(unsafe) static var completedBytes: Int64 = 0
+    private nonisolated(unsafe) static var totalBytes: Int64 = 0
 
     static func reset() {
         lock.lock()

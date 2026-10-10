@@ -18,6 +18,12 @@ struct MeetingMicrophoneSpeechGate {
     private var speakingUntil: TimeInterval = -.infinity
     private var held: [Float] = []
 
+    /// Xcode 26.6 makes the memberwise initializer private because the clock
+    /// and buffer are private. Callers only choose whether the gate is on.
+    init(enabled: Bool) {
+        self.enabled = enabled
+    }
+
     mutating func consume(
         samples: [Float],
         sampleRate: Double,

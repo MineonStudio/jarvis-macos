@@ -919,7 +919,9 @@ final class MeetingTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(pair.1 + 0.0001, pair.0)
         }
     }
+}
 
+extension MeetingTests {
     func testInsufficientBalanceIsQuotaAndBareBalanceIsNot() {
         let screenshot = AIAPIError.server(
             "Insufficient Balance (request_id: 6f26e052-8f08-47b0-a908-442d3ca847e4)"
